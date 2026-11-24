@@ -62,7 +62,7 @@ import {
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, pendingLaunches, recoveryPlan,
 } from './live-checks.mjs';
 import {PER_CONTEXT_NAME, assertInputWrite, inputWriteRefusal, ownerValueName, perContextCommand, readPerContextState, selectsSource, unsetPerContext, writePerContext} from './hitoolbox.mjs';
-import {ownerInputCause, venueInputCause} from './owner-input.mjs';
+import {malformedBaseline, ownerInputCause, venueInputCause} from './owner-input.mjs';
 import {readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
@@ -414,15 +414,15 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
       steps.hidComposition = {skipped: cause};
       return null;
     }
-  } else if ((venue = koreanVenue(io))) {
-    // The runner could not enable Korean 2-Set (ruling 1189): nothing is saved or selected, type_text is NO VERDICT.
-    steps.inputSource = {written: false, venueMissing: [KOREAN_2SET]};
+  } else if ((venue = koreanVenue(io)) || (venue = saveInputSource({io}).refused)) {
+    // The runner could not enable Korean 2-Set (ruling 1189), or its baseline is one a restore could not put back: nothing
+    // is selected or written, type_text is NO VERDICT venue.
+    steps.inputSource = {written: false, ...(koreanVenue(io) ? {venueMissing: [KOREAN_2SET]} : {refused: venue})};
     steps.precondition = {selected: false, readBack: null, perContextOff: null, met: false};
     steps.typeText = {measured: false, venueInput: venue, reason: venue};
     steps.hidComposition = {skipped: venue};
     return null;
   } else {
-    saveInputSource({io});
     const read = io.readPerContext();
     steps.inputSource = {written: true, perContext: {read, setOff: read === true, restored: null}};
     if (read === true) io.writePerContext(false);
@@ -562,13 +562,17 @@ export const ownerInput = io => ({source: io.probe(['input-source', 'current'])?
 
 // The owner's source and per-context preference, saved before the first switch, with whether the preference's
 // dictionary existed (so a restore of "unset" leaves the domain as it was); a record a run that died left is kept.
-// Hosted only: off a hosted runner nothing is switched, so nothing is saved (ruling 1188).
+// Hosted only: off a hosted runner nothing is switched, so nothing is saved (ruling 1188). A baseline a restore could
+// not put back (the preference read malformed, now or in a kept record) is refused: no record, {refused}, and the
+// caller switches nothing.
 export function saveInputSource({io}) {
   assertInputWrite('saving the owner\'s input source for a switch', {env: io.env, platform: io.platform});
   const file = io.savedInputSource, existing = readSaved(file);
-  if (existing) return {kept: true, saved: existing};
+  if (existing) return malformedBaseline(existing.perContext) ? {kept: true, refused: malformedBaseline(existing.perContext), saved: existing} : {kept: true, saved: existing};
   // The preference's value and its dictionary's presence from one typed read, so the baseline is one snapshot.
   const preference = io.readPerContextState();
+  const refused = malformedBaseline(preference.value);
+  if (refused) return {kept: false, refused, saved: null};
   const saved = {savedAt: new Date().toISOString(), source: {id: io.probe(['input-source', 'current']).id}, perContext: preference.value, perContextDict: preference.dict};
   fs.mkdirSync(dirname(file), {recursive: true});
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`, {mode: 0o600});
@@ -586,6 +590,7 @@ export async function inputSourceCheck({io}) {
   const venue = koreanVenue(io);
   if (venue) return {venueInput: venue, verdict: {pass: false, failed: [], noVerdict: venue}};
   const save = saveInputSource({io});
+  if (save.refused) return {venueInput: save.refused, verdict: {pass: false, failed: [], noVerdict: save.refused}};
   let selected = null, readBack = null, error = null;
   try {
     const answer = io.probe(['input-source', KOREAN_2SET]);

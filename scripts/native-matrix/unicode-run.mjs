@@ -19,7 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {ownerInputCause, ownerInputMarks, ownerInputNow, venueInputCause, venueInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
@@ -47,10 +47,10 @@ export async function unicodeSection(ctx, plan) {
         if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
         // Off a hosted runner the owner's values are read again at each field: they may have changed since the last.
         if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `unicode ${condition}:${field}`);
-        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition], ctx.ownerInputWhy) : null;
+        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition], ctx.venueReadOnly) : null;
         const unset = condition !== 'perContext' && ctx.perContextOff !== true
           ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
-        if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owned)}); continue; }
+        if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, owned)}); continue; }
         if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
         if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
         else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
@@ -84,7 +84,7 @@ export const SELECTS = Object.freeze({latin: [ABC], korean: [KOREAN_2SET], midSw
 // one the venue could not enable, never selected (it does not hold). -> whether it holds.
 function useSource(ctx, id, when) {
   if (ctx.venueMissing?.includes(id)) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not enabled on this runner (ruling 1189)'}); return false; }
-  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: ctx.ownerInputWhy ?? 'not selected off a hosted runner (ruling 1188)'}); return false; }
+  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: ctx.venueReadOnly ?? 'not selected off a hosted runner (ruling 1188)'}); return false; }
   const out = device(ctx, ['source', 'select', '--source', id]);
   const held = out?.selected === true && out.current === id;
   ctx.meta.unicode.readings.push({when, select: id, held, layout: out?.layout ?? null});
@@ -149,8 +149,8 @@ async function frontmostRows(ctx, field, rows, source) {
   else { const latin = establishSource(ctx, source, when); if (!latin.held) failed = {why: notHeld(source, field), mismatch: mismatchOf(source, latin.read, `with ${field} in front`)}; }
   // Off a hosted runner nothing was selected: another source read, before or after a refocus, is the owner's switch.
   if (failed?.mismatch && ctx.ownerInput) {
-    const cause = `${ctx.ownerInputWhy ?? INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${failed.mismatch.text}`;
-    for (const r of rows) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(cause)});
+    const cause = `${ctx.venueReadOnly ?? INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${failed.mismatch.text}`;
+    for (const r of rows) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, cause)});
     return;
   }
   if (failed) { for (const r of rows) invalidRow(ctx, r, failed.why); return; }

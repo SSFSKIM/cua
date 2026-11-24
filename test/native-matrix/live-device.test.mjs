@@ -505,6 +505,13 @@ test('saveInputSource: the record keeps whether the preference\'s dictionary exi
   saveInputSource({io: single});
   const record = JSON.parse(fs.readFileSync(once, 'utf8'));
   assert.deepEqual([reads, record.perContext, record.perContextDict], [1, null, false]);
+  // A malformed preference is no baseline a restore can put back: refused, no record, so nothing is switched behind it.
+  const bad = join(scratch(), 'input-source.json');
+  const {io: malformed} = fakeInput({perContext: {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'}});
+  malformed.savedInputSource = bad;
+  const refused = saveInputSource({io: malformed});
+  assert.match(refused.refused, /reads malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\): a restore could not put it back/);
+  assert.equal(fs.existsSync(bad), false);
   const file = join(scratch(), 'input-source.json');
   const {io} = fakeInput({at: OWNERS_MAC});
   io.savedInputSource = file;
@@ -571,6 +578,22 @@ test('pasteCheck and inputSourceCheck on a hosted runner without Korean 2-Set: n
   assert.deepEqual([check.verdict.pass, check.verdict.failed], [false, []]);
   assert.match(check.verdict.noVerdict, /could not enable com\.apple\.inputmethod\.Korean\.2SetKorean .*ruling 1189/);
   assert.deepEqual([state.probes, state.writes, fs.existsSync(io.savedInputSource)], [[], [], false]);
+});
+
+// A baseline the save refuses (malformed) leaves the live Korean checks unswitched: NO VERDICT venue, nothing selected.
+test('pasteCheck and inputSourceCheck on a hosted runner whose per-context baseline reads malformed: nothing selected or written, NO VERDICT venue', async () => {
+  const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
+  const device = pasteDevice({perContext: malformed});
+  const out = await pasteRun(device);
+  assert.deepEqual([out.verdict.pass, out.verdict.failed], [false, []]);
+  assert.match(out.verdict.noVerdict, /reads malformed .*: a restore could not put it back/);
+  assert.equal(out.steps.typeText.venueInput, out.verdict.noVerdict);
+  assert.deepEqual([device.input.probes.filter(p => p !== 'input-source current'), device.input.writes, fs.existsSync(device.file)], [[], [], false]);
+  const {state, io} = fakeInput({perContext: malformed});
+  io.savedInputSource = join(scratch(), 'input-source.json');
+  const check = await inputSourceCheck({io});
+  assert.match(check.verdict.noVerdict, /reads malformed/);
+  assert.deepEqual([state.probes.filter(p => p !== 'input-source current'), state.writes, fs.existsSync(io.savedInputSource)], [[], [], false]);
 });
 
 test('launchProbe: an input-source selection off a hosted runner is refused before anything is launched; a reading is not a selection', () => {

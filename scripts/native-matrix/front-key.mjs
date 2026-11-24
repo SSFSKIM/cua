@@ -43,7 +43,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   unread: 'front/key readings missing (hosted) or unread, or the alert guard could not read the alert windows\' bounds',
   activation: 'the activate step did not take front and key',
   alert: 'an app other than the cell\'s front or key (an alert), or the alert guard refused the cell unsent (an alert over the run\'s window, or holding the front or key)',
-  venue: 'the run\'s vendor and cua runs did not stand on one frame (ruling 1169): no sample of that run, on either side, is judged; or an input source the row selects that the runner\'s setup could not enable (ruling 1189)',
+  venue: 'the run\'s vendor and cua runs did not stand on one frame (ruling 1169): no sample of that run, on either side, is judged; or an input source the row selects that the runner\'s setup could not enable (ruling 1189), or a hosted runner\'s per-context preference read malformed, a baseline no restore could put back, so nothing was written',
   keyWindow: 'a click or key cell refused unsent because its scene\'s app did not hold the window the cell acts in as its own key window (ruling 1169\'s addition)',
   ownerInput: 'off a GitHub-hosted runner, the owner\'s input source or per-context preference was not the row\'s, and the harness never changes them there (ruling 1188)',
   invalid: 'the harness\'s own invalid reason',

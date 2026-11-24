@@ -412,7 +412,8 @@ export async function source(action, {id, value} = {}, io) {
     // `venueMissing`: the sources this runner's setup could not enable (ruling 1189), never selected by the run.
     case 'state': return {writable: !refused, ...(refused ? {refused} : {}), ...reading(io.probe(['input-source', 'current'])), perContext: io.readPerContext(),
       venueMissing: io.venueInputMissing?.() ?? []};
-    case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
+    // A baseline the restore could not put back is refused by the save itself ({refused}): the run switches nothing.
+    case 'save': { const out = io.saveInput(); return {kept: out.kept, ...(out.refused ? {refused: out.refused} : {}), saved: out.saved ? {source: out.saved.source?.id ?? null, perContext: out.saved.perContext ?? null} : null}; }
     case 'current': return reading(io.probe(['input-source', 'current']));
     case 'select': {
       if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');

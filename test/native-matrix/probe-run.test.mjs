@@ -662,21 +662,28 @@ test('probe cells off a hosted runner: run under the owner\'s ABC with the prefe
   assert.deepEqual(validateCellResult(drifted.result), []);
 });
 
-// A baseline the restore could not put back (the owner's preference read malformed) is refused before anything is
-// saved, selected or written, even on a hosted runner: the run only reads, and the rows needing a write are NO VERDICT
-// ownerInput naming why.
-test('probe cells on a hosted runner whose per-context baseline reads malformed: nothing saved, written or selected; NO VERDICT ownerInput naming it', async () => {
+// A baseline the restore could not put back (the runner's preference read malformed) is refused before anything is
+// written or selected: the run only reads, and the rows needing a write are NO VERDICT venue (a hosted runner's
+// precondition, not the owner's state), naming why. Refused where it shows: at the first reading, or at the save's own.
+test('probe cells on a hosted runner whose per-context baseline reads malformed, at the first reading or at the save: nothing written or selected; NO VERDICT venue naming it', async () => {
   const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
-  const ops = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state'
-    ? {...base(a), answer: {writable: true, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext: malformed, venueMissing: []}} : base(a))};
-  const {steps, result} = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', ops, cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
-  assert.deepEqual(sourceSteps(steps), ['state', 'state'], 'read only: never saved, written, selected or restored');
-  assert.deepEqual(matrixSteps(steps, 'probe'), []);
-  assert.match(result.meta.inputSource.refused, /reads malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\): a restore could not put it back, so nothing is saved, selected or written/);
-  const row = rowOf(result, 'chrome/concurrent@textedit');
-  assert.equal(sampleCause(row).category, 'ownerInput');
-  assert.match(row.ownerInput, /^the owner's per-context input preference .* reads malformed .*; the row needs the per-context input preference .* off, the owner's is malformed/);
-  assert.deepEqual(validateCellResult(result), []);
+  const refusal = /the per-context input preference \(.*\) reads malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\): a restore could not put it back, so nothing is saved, selected or written/;
+  const hosted = perContext => ({writable: true, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext, venueMissing: []});
+  const atState = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state' ? {...base(a), answer: hosted(malformed)} : base(a))};
+  // The state read valid, then the save's own read malformed (the preference changed in between).
+  const atSave = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state' ? {...base(a), answer: hosted(false)}
+    : a[0] === 'source' && a[1] === 'save' ? {...base(a), answer: {kept: false, refused: 'the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) reads malformed (AppleGlobalTextInputProperties is a string, not a dictionary): a restore could not put it back, so nothing is saved, selected or written', saved: null}} : base(a))};
+  for (const [name, ops, expected] of [['the first reading', atState, ['state', 'state']], ['the save', atSave, ['state', 'save', 'state']]]) {
+    const {steps, result} = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', ops, cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+    assert.deepEqual(sourceSteps(steps), expected, `${name}: read only, never written, selected or restored`);
+    assert.deepEqual(matrixSteps(steps, 'probe'), [], name);
+    assert.match(result.meta.inputSource.refused, refusal, name);
+    const row = rowOf(result, 'chrome/concurrent@textedit');
+    assert.equal(sampleCause(row).category, 'venue', name);
+    assert.equal(row.ownerInput, undefined, name);
+    assert.match(row.venueInput, /^the per-context input preference .* reads malformed .*: a restore could not put it back, so nothing is saved, selected or written; the row needs /, name);
+    assert.deepEqual(validateCellResult(result), [], name);
+  }
 });
 
 test('probe cells when the venue could not enable ABC: NO VERDICT venue naming it, ABC never selected, nothing posted', async () => {

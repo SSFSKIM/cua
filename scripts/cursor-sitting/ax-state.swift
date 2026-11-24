@@ -158,8 +158,16 @@ if args[1] == "window" {
       else { answer[key] = "other" }
       if key == "focusedWindow" {
         var described: [String: Any] = ["role": role.map { $0 as Any } ?? NSNull(), "subrole": (read(w, kAXSubroleAttribute).value as? String).map { $0 as Any } ?? NSNull(), "frame": rectWire(frame(w))]
-        // A sheet's parent, by its frame (ruling 1214: which window a focused sheet lies on).
-        if role == kAXSheetRole as String { described["parentFrame"] = rectWire(element(read(w, kAXParentAttribute).value).flatMap { frame($0) }) }
+        // A sheet's parent, by its frame (ruling 1214: which window a focused sheet lies on), and what decided its side
+        // (ruling 1219, s3; diagnostics only): sheetOf's own answer against the window read, its parent's role, and
+        // whether the app lists the sheet among its AXWindows.
+        if role == kAXSheetRole as String {
+          let parent = element(read(w, kAXParentAttribute).value)
+          described["parentFrame"] = rectWire(parent.flatMap { frame($0) })
+          described["parentRole"] = parent.flatMap { read($0, kAXRoleAttribute).value as? String }.map { $0 as Any } ?? NSNull()
+          described["sheetOf"] = run.map { sheetOf(w, $0) as Any } ?? NSNull()
+          described["listed"] = windows.contains { CFEqual($0, w) }
+        }
         answer["focusedWindowElement"] = described
       }
     }

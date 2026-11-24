@@ -107,3 +107,15 @@ test('the focused window: joined only to a unique window; unread kept apart from
   assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: null, ok: false, failed: ['focusedWindow'], focusedWindowElement: 'unread'})).focused, 'unread');
   assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'none', focusedWindowElement: null})).focused, null);
 });
+
+// Ruling 1219 (s3), diagnostics only: for a focused AXSheet ax-state also says what decided its side: sheetOf's own
+// answer against the window read, its parent's role, and whether the app lists the sheet among its AXWindows. The
+// reading keeps them on `focused.sheetAx`; nothing is judged on them.
+test('a focused sheet carries what ax-state saw of it: sheetOf, its parent\'s role, whether it is listed', () => {
+  const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({frontmost: false, focusedWindow: 'sheet', mainWindow: 'run',
+    focusedWindowElement: {role: 'AXSheet', subrole: null, frame: SHEET.bounds, parentFrame: UNTITLED.bounds, sheetOf: true, parentRole: 'AXWindow', listed: false}}));
+  assert.deepEqual(r.focused, {number: 11, frame: SHEET.bounds, role: 'AXSheet', subrole: null, parent: 9, sheetAx: {sheetOf: true, parentRole: 'AXWindow', listed: false}});
+  const odd = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({focusedWindow: 'other',
+    focusedWindowElement: {role: 'AXSheet', subrole: null, frame: SHEET.bounds, sheetOf: null, parentRole: 7, listed: 'x'}}));
+  assert.deepEqual(odd.focused.sheetAx, {sheetOf: null, parentRole: null, listed: null}, 'anything malformed is unread');
+});

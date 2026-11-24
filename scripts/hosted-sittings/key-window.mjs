@@ -78,8 +78,12 @@ function focusedOf(answer, windows, pid, read) {
   const one = f => { const m = matches(f); return m.length === 1 ? m[0].number ?? null : null; };
   const frame = isRect(el.frame) ? el.frame : null, here = matches(frame);
   const parent = answer.focusedWindow === 'sheet' ? read : el.role === 'AXSheet' ? one(el.parentFrame) : null;
+  // What ax-state saw of a focused sheet (ruling 1219, s3), kept when it says it: diagnostics, never judged.
+  const flag = v => (typeof v === 'boolean' ? v : null);
+  const sheetAx = el.role === 'AXSheet' && ['sheetOf', 'parentRole', 'listed'].some(k => k in el)
+    ? {sheetAx: {sheetOf: flag(el.sheetOf), parentRole: typeof el.parentRole === 'string' ? el.parentRole.slice(0, 40) : null, listed: flag(el.listed)}} : {};
   return {number: here.length === 1 ? here[0].number ?? null : null, frame, role: typeof el.role === 'string' ? el.role : null,
-    subrole: typeof el.subrole === 'string' ? el.subrole : null, parent, ...(here.length > 1 ? {ambiguous: here.length} : {})};
+    subrole: typeof el.subrole === 'string' ? el.subrole : null, parent, ...(here.length > 1 ? {ambiguous: here.length} : {}), ...sheetAx};
 }
 export const SHEET_PARENTS = 'Accessibility shows the window in front as a sheet of more than one window behind it, none of them the one expected';
 

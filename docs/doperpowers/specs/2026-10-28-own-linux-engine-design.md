@@ -26,7 +26,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-11-02T00:10Z) M3 — cua's own Linux service, the device mode, the capability report and the truncation line; its release (`linux-engine-v0.3.0`). Twelve loop tasks, every code change reviewed clean (the task reviews, and the branch review by `doperpowers:reviewer-high` after one fix round), and the verdict run `m3-gate-musl` exiting 0 on the shipped x64 bytes (Outcomes & Retrospective, M3).
 - [x] (2026-11-14T21:00Z) M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release (`linux-engine-v0.4.0`). Loop tasks 28 to 80, every code change reviewed clean: the task reviews; the whole-branch review by `doperpowers:reviewer-high` in five slices, after six fix waves; and the gate's re-judge scripts and audit-leak-fix by `doperpowers:reviewer-medium`, after one fix wave. The release gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`), and the published x64 asset is the same bytes (Outcomes & Retrospective, M4).
 - [x] (2026-11-23T06:22Z) M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch. Accepted at H8 = 048140a2 on linux-engine 0.4.3 on both arches (ruling 1090); three engine releases in M5 (0.4.1, 0.4.2, 0.4.3, #459); the owner's yes to the flip (1093), merged as T10 (a15d0618, plugin 0.29.0); the whole-branch review's harness fixes (task 139) moved no stored verdict; #487 and #488 to 0.4.4.
-- [ ] M6a — A vendor-free Linux runtime: a Linux session, computer or browser-only, resolves and launches from cua's own parts (the ModuleTree, the managed Node, the sandbox helper, `cua-engine` with cua's service) with no vendor tree read. It was built to the ruled pre-flight (`2026-10-28-own-linux-engine-m6a-preflight.md`, ruling 1110) in nine loop tasks (143–155), each reviewed clean. Acceptance 12 was counted at H = f41546d08 on x64 and on hosted arm64, 12 of 12 cells each, with the x64 regression (R1, R3, R4, the fallback part) and F10's credit (task 155; evidence `docs/evidence/2026-10-28-own-linux-engine/m6a/`). The branch review and the PR follow (Outcomes, M6a).
+- [x] (2026-11-24T01:39Z) M6a — A vendor-free Linux runtime: a Linux session, computer or browser-only, resolves and launches from cua's own parts (the ModuleTree, the managed Node, the sandbox helper, `cua-engine` with cua's service) with no vendor tree read. It was built to the ruled pre-flight (`2026-10-28-own-linux-engine-m6a-preflight.md`, ruling 1110) in nine loop tasks (143–155), each reviewed clean. Acceptance 12 was counted at H = f41546d08 on x64 and on hosted arm64, 12 of 12 cells each, with the x64 regression (R1, R3, R4, the fallback part) and F10's credit (task 155; evidence `docs/evidence/2026-10-28-own-linux-engine/m6a/`). The branch was reviewed by `doperpowers:reviewer-high`, in one fix round of two waves (task 156; rulings 1180 and 1187), and an x64 re-pilot after it matched H in every cell path, doctor row and traced `runtimes/` count (Outcomes, M6a).
 - [ ] M6b — Retirement of the vendor's Linux package (after the soak).
 
 ## Scope, inheritance and evidence
@@ -2948,3 +2948,33 @@ Written per milestone as each lands; the whole-plan retrospective at finish. The
   - When a guard stop recurs, capture beside it rather than reason about it. One attributed stop turned #432 from a class into a cause and a planned fix.
   - Write the release's facts into the tree before tagging: a placeholder filled after the tag broke the pinned trust rule. And read the clock, not an estimate, for every time put in a ledger or a message.
   - The whole-branch review still found five faults after every task review: three harness false passes (fixed, with no stored verdict moving) and two engine settle faults left to 0.4.4 as #487 (P2) and #488 (P3). Run the branch review before the owner's decision, not after it.
+
+### M6a — A vendor-free Linux runtime (2026-11-24)
+
+**Achieved.** A Linux session, computer or browser-only, now resolves and launches from cua's own parts, with no read of the vendor tree under `<home>/runtimes/` except when `CUA_NATIVE_ENGINE=vendor` is set. The parts are:
+- the ModuleTree, 23 packages per architecture fetched from npm and authenticated against the vendor lock;
+- the managed Node;
+- the sandbox helper;
+- `cua-engine` with cua's own service.
+
+`cua install` places the common parts first, each lane on its own. Every refusal and every doctor fail names this checkout's own installer by absolute path. The vendor tree stays only for the vendor selection, which M6b retires after the soak.
+
+**Acceptance 12** was counted at H = f41546d08: 12 of 12 cells on x64, on hosted arm64 and on the hosted x64 control (run 45273664518). The x64 regression passed: R1, R3, R4 and the fallback part. F10's credit carried item 6 through 0.4.4's text-neutral diff. After the whole-branch review's fix round, an x64 re-pilot matched H in every cell path, doctor row and traced `runtimes/` count.
+
+**Measured.** Serve start to first answer did not change: −41, +22 and +5 ms against the cua before M6a. Install on an empty home takes about 22 s on the hosted legs.
+
+**What went well**
+- The pre-flight, through an adversarial review in three rounds, caught six P1s before any code: the vendor Node reachable by default, install order stranding a lane, the old checkout's installer as the remedy, an unauthenticated lock, the provisioner's deb dependency, and the ASCII smoke credited as item 6. The build then followed its forks with no redesign.
+- Wave 0's hosted arm64 pilot settled the venue on day one, so M6a needed no VM. That mattered, because the arm VM's lease ran out mid-build.
+- Integrating T3 into T4 kept the doctor rows in one owner's hands, where T3's selection changes had broken 13 of them.
+
+**What to keep doing**
+- Review harness judges for false greens before they count. T6's judges went through three review rounds plus my own checks, and each round found a way a missing record could pass. The judge of a counted cell is code that decides a release; it earns the same review as the product.
+- Prove a no-read guarantee on a trace of the real entry point, with the vendor tree present. The whole-branch review's P1, `git` found through a PATH entry inside the tree, was invisible to a recorder that started after `projectRoot()`.
+- When a guard resolves paths, resolve the way the kernel does, once, and use that one result everywhere. Node's `realpathSync` and `path.join` collapse `..` lexically, which is how two reviews found a guard and a launch disagreeing about the same path.
+
+**Left open**
+- #531 (P2): the kernel's by-name `import('playwright')` and `import('sharp')` fail on every platform, though the js tool's description recommends the first. The acceptance judges those two by load, and by equality with the older cua, until #531 lands.
+- parity-browser-stress fails the same five Playwright download and file-chooser assertions on main, so it predates M6a. It has never been green since the gate was added (#382), and it is #383 (#564 was filed as a duplicate).
+- `scripts/sandbox-probe/linux-probes.mjs` still reads the vendor tree; it's on the tracker for M6b.
+- M6b deletes the vendor's Linux package after the soak.

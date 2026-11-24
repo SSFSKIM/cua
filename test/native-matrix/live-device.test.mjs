@@ -551,6 +551,28 @@ test('pasteCheck off a hosted runner: the Korean window reads the owner\'s value
   assert.deepEqual([met.input.probes.filter(p => p !== 'input-source current'), met.input.writes, met.input.current], [[], [], KOREAN_2SET]);
 });
 
+// Ruling 1189 on the live device: a hosted runner whose setup could not enable Korean 2-Set skips the Korean window
+// before anything is saved or selected; type_text is NO VERDICT venue, and a measured paste failure still fails.
+test('pasteCheck and inputSourceCheck on a hosted runner without Korean 2-Set: nothing saved or selected, NO VERDICT venue; a measured failure still fails', async () => {
+  const lacking = pasteDevice({venueMissing: [KOREAN_2SET]});
+  const out = await pasteRun(lacking);
+  assert.deepEqual([out.verdict.pass, out.verdict.failed], [false, []]);
+  assert.match(out.verdict.noVerdict, /could not enable com\.apple\.inputmethod\.Korean\.2SetKorean .*ruling 1189/);
+  assert.deepEqual(out.steps.inputSource, {written: false, venueMissing: [KOREAN_2SET]});
+  assert.equal(out.steps.typeText.venueInput, out.verdict.noVerdict);
+  assert.equal(lacking.client.calls.some(c => c.method === 'type_text'), false);
+  assert.deepEqual([lacking.input.probes, lacking.input.writes, fs.existsSync(lacking.file)], [[], [], false], 'nothing read, saved, selected or written for Korean');
+  const alsoFailed = await pasteRun(pasteDevice({venueMissing: [KOREAN_2SET], clipboardAfter: 'another digest'}));
+  assert.deepEqual([alsoFailed.verdict.pass, alsoFailed.verdict.failed, alsoFailed.verdict.noVerdict], [false, ['clipboardTypesUnchanged'], undefined]);
+  assert.match(alsoFailed.verdict.typeTextNoVerdict, /ruling 1189/);
+  const {state, io} = fakeInput();
+  Object.assign(io, {savedInputSource: join(scratch(), 'input-source.json'), venueInputMissing: () => [KOREAN_2SET]});
+  const check = await inputSourceCheck({io});
+  assert.deepEqual([check.verdict.pass, check.verdict.failed], [false, []]);
+  assert.match(check.verdict.noVerdict, /could not enable com\.apple\.inputmethod\.Korean\.2SetKorean .*ruling 1189/);
+  assert.deepEqual([state.probes, state.writes, fs.existsSync(io.savedInputSource)], [[], [], false]);
+});
+
 test('launchProbe: an input-source selection off a hosted runner is refused before anything is launched; a reading is not a selection', () => {
   const run = scratch(), device = probeDevice();
   for (const args of [['input-source', ABC], ['input-source', KOREAN_2SET, '--at', '1700000000000']]) {
@@ -1172,7 +1194,7 @@ const ENGINE_PID = 31;
 const CURSOR_WINDOW = {ownerPid: ENGINE_PID, ownerName: 'cua Engine', ownerBundleId: 'io.github.ssfskim.cua.engine', layer: 0, number: 990, name: 'cua Agent Cursor',
   bounds: {x: 0, y: 0, width: 1512, height: 982}};
 function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0,
-  cursor = false, enginePids = cursor ? [ENGINE_PID] : [], at = HOSTED, current = ABC} = {}) {
+  cursor = false, enginePids = cursor ? [ENGINE_PID] : [], at = HOSTED, current = ABC, venueMissing = []} = {}) {
   const file = join(scratch(), 'input-source.json');
   const {state: input, io: inputIo} = fakeInput({current, perContext, at, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
@@ -1194,7 +1216,7 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     frontmost: () => ({pid: screen.front.pid, bundleId: screen.front === TEXTEDIT ? 'com.apple.TextEdit' : 'com.apple.finder'}),
     frontWindow: ({skipPids = []} = {}) => (screen.cursor && !skipPids.includes(ENGINE_PID) ? {topWindow: {ownerPid: ENGINE_PID, number: CURSOR_WINDOW.number, bounds: CURSOR_WINDOW.bounds}}
       : {topWindow: {ownerPid: screen.front.pid, number: screen.front.window.number, bounds: screen.front.window.bounds}}),
-    enginePids: () => enginePids,
+    enginePids: () => enginePids, venueInputMissing: () => venueMissing,
     keyboardLayout: () => ({inputSourceId: input.current, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'})});
   const execute = client.execute.bind(client);
   client.execute = async (method, args, options) => {

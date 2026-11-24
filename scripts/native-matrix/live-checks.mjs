@@ -309,10 +309,13 @@ export function menuComparison(cua, vendor) {
 export function pasteVerdict(steps) {
   const {userInFront, text, markdown, typeText, inputSource, pasteAlert, clipboard} = steps ?? {};
   const measured = typeText?.measured === true;
+  // type_text unmeasured because the owner's input values are not the window's (ruling 1188, `ownerInput`) or the
+  // runner's setup could not enable Korean 2-Set (ruling 1189, `venueInput`): never a pass, never a failure.
+  const typeTextNoVerdict = typeText?.ownerInput ?? typeText?.venueInput ?? null;
   const expectations = {
     textLands: text?.ok === true && text.route === 'paste' && text.lands === true,
     markdownLands: markdown?.ok === true && markdown.route === 'paste' && markdown.lands === true,
-    ...(measured ? {typeTextPasteRoute: typeText.route === 'paste', typeTextLands: typeText.ok === true && typeText.lands === true} : typeText?.ownerInput ? {} : {typeTextMeasured: false}),
+    ...(measured ? {typeTextPasteRoute: typeText.route === 'paste', typeTextLands: typeText.ok === true && typeText.lands === true} : typeTextNoVerdict ? {} : {typeTextMeasured: false}),
     userStaysInFront: Array.isArray(userInFront) && userInFront.length > 0 && userInFront.every(Boolean),
     // Off a hosted runner nothing was written (ruling 1188), so there is nothing to restore.
     inputSourceRestored: inputSource?.written === false || inputSource?.restored === true,
@@ -323,10 +326,8 @@ export function pasteVerdict(steps) {
   const finding = measured && typeText.ok === true && typeText.route !== 'paste'
     ? `engine finding: type_text keyed (route ${typeText.route}) with Korean 2-Set selected and read back and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
     : null;
-  // type_text unmeasured because the owner's input source or preference is not the window's (ruling 1188): never a
-  // pass, never a failure. It is the check's NO VERDICT only when nothing measured failed; beside a failure it stays a
+  // Unmeasured type_text is the check's NO VERDICT only when nothing measured failed; beside a failure it stays a
   // sub-result (`typeTextNoVerdict`), and the failure is the headline.
-  const typeTextNoVerdict = typeText?.ownerInput ?? null;
   const noVerdict = failed.length ? null : typeTextNoVerdict;
   return {pass: failed.length === 0 && !noVerdict, failed, ...(noVerdict ? {noVerdict} : {}), ...(typeTextNoVerdict ? {typeTextNoVerdict} : {}), typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
     recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null, perContext: inputSource?.perContext ?? null, sourceAfter: typeText?.sourceAfter ?? null}};

@@ -354,6 +354,23 @@ test('pasteVerdict off a hosted runner: nothing written needs no restore; type_t
     [false, ['textLands', 'clipboardTypesUnchanged'], undefined, 'off a GitHub-hosted runner …; the row needs the input source Korean']);
 });
 
+// Ruling 1189: type_text unmeasured because the runner could not enable Korean is NO VERDICT venue, never a failure,
+// and it never hides a measured plain-text or Markdown failure.
+test('pasteVerdict on a hosted runner without Korean 2-Set: type_text is NO VERDICT venue; a plain-text or Markdown failure stays the headline', () => {
+  const cause = 'the runner\'s setup could not enable com.apple.inputmethod.Korean.2SetKorean (…; ruling 1189): the row needs it, and is never run under the US layout';
+  const steps = {
+    userInFront: [true, true], text: {ok: true, route: 'paste', posted: true, lands: true}, markdown: {ok: true, route: 'paste', posted: true, lands: true, bold: true},
+    precondition: {selected: false, readBack: null, perContextOff: null, met: false}, inputSource: {written: false, venueMissing: [KOREAN_2SET]},
+    typeText: {measured: false, venueInput: cause, reason: cause}, pasteAlert: false, clipboard: {typesUnchanged: true},
+  };
+  const out = pasteVerdict(steps);
+  assert.deepEqual([out.pass, out.failed, out.noVerdict, out.typeTextNoVerdict], [false, [], cause, cause]);
+  for (const [name, over] of [['textLands', {text: {ok: true, route: 'paste', posted: true, lands: false}}], ['markdownLands', {markdown: {ok: false, route: 'paste', posted: true, lands: false}}]]) {
+    const failed = pasteVerdict({...steps, ...over});
+    assert.deepEqual([failed.pass, failed.failed, failed.noVerdict, failed.typeTextNoVerdict], [false, [name], undefined, cause], name);
+  }
+});
+
 test('restoreTarget: the owner\'s saved source, ABC only when nothing was saved', () => {
   assert.equal(restoreTarget({source: {id: 'com.apple.keylayout.US'}}), 'com.apple.keylayout.US');
   assert.equal(restoreTarget(null), ABC);

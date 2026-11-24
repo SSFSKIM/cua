@@ -62,7 +62,8 @@ import {
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, pendingLaunches, recoveryPlan,
 } from './live-checks.mjs';
 import {PER_CONTEXT_NAME, assertInputWrite, inputWriteRefusal, ownerValueName, perContextCommand, readPerContextState, selectsSource, unsetPerContext, writePerContext} from './hitoolbox.mjs';
-import {ownerInputCause} from './owner-input.mjs';
+import {ownerInputCause, venueInputCause} from './owner-input.mjs';
+import {readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -403,6 +404,7 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
   // input context and the engine would read the owner's source), Korean 2-Set selected, both read back. Off a hosted
   // runner nothing is written (ruling 1188): the owner's values are read, and type_text is measured only when they are
   // already the window's; otherwise it is NO VERDICT, the cause naming what it needed.
+  let venue = null;
   if (inputRefusal(io)) {
     const owner = ownerInput(io), cause = ownerInputCause(owner, {source: KOREAN_2SET, perContext: false});
     steps.inputSource = {written: false, owner};
@@ -412,6 +414,13 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
       steps.hidComposition = {skipped: cause};
       return null;
     }
+  } else if ((venue = koreanVenue(io))) {
+    // The runner could not enable Korean 2-Set (ruling 1189): nothing is saved or selected, type_text is NO VERDICT.
+    steps.inputSource = {written: false, venueMissing: [KOREAN_2SET]};
+    steps.precondition = {selected: false, readBack: null, perContextOff: null, met: false};
+    steps.typeText = {measured: false, venueInput: venue, reason: venue};
+    steps.hidComposition = {skipped: venue};
+    return null;
   } else {
     saveInputSource({io});
     const read = io.readPerContext();
@@ -545,6 +554,9 @@ const readSaved = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8'
 // Why this device may not select an input source or write com.apple.HIToolbox (ruling 1188, ./hitoolbox.mjs): null on
 // a GitHub-hosted runner. `io.env` and `io.platform` are the device's, the process's when not given.
 const inputRefusal = io => inputWriteRefusal({env: io.env ?? process.env, platform: io.platform ?? process.platform});
+// Why Korean 2-Set may not be selected on this hosted runner (ruling 1189: its setup could not enable it, the runner's
+// record says), or null. Read before anything is saved or selected.
+const koreanVenue = io => venueInputCause(io.venueInputMissing?.() ?? [], [KOREAN_2SET]);
 // The owner's source and per-context preference as they are now, read only. -> {source, perContext}.
 export const ownerInput = io => ({source: io.probe(['input-source', 'current'])?.id ?? null, perContext: io.readPerContext()});
 
@@ -571,6 +583,8 @@ export async function inputSourceCheck({io}) {
     const owner = ownerInput(io), cause = ownerInputCause(owner, {switch: `${KOREAN_2SET} selected through the probe and read back`});
     return {owner, ownerInput: cause, verdict: {pass: false, failed: [], noVerdict: cause}};
   }
+  const venue = koreanVenue(io);
+  if (venue) return {venueInput: venue, verdict: {pass: false, failed: [], noVerdict: venue}};
   const save = saveInputSource({io});
   let selected = null, readBack = null, error = null;
   try {
@@ -1179,6 +1193,7 @@ export const defaultIo = run => {
   // The per-context preference (./hitoolbox.mjs): read anywhere, written and unset only on a hosted runner.
   readPerContext: () => readPerContextState().value,
   readPerContextState: () => readPerContextState(),
+  venueInputMissing: () => venueInputMissingOf(readRunnerRecord()) ?? [],
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
   keyboardLayout: () => keyboardLayout(),

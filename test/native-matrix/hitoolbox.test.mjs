@@ -4,7 +4,7 @@
 // proves what cfprefsd and plutil do with the rewrite and never touches this Mac's own preferences.
 import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -142,6 +142,33 @@ test('the unset is safe to repeat and fails closed: already unset writes nothing
   }
 });
 
+// The script is a CLI a person can run, so it guards the real domain itself: off a GitHub-hosted runner a plain run
+// refuses before any defaults call, and only the owner's explicit `--manual-recovery` reaches the real domain. The
+// defaults here is a recorder that never delegates, so not even a guard that failed could touch this Mac's domain.
+test('the script refuses the real domain off a hosted runner unless asked for manual recovery; scratch path domains stay allowed', {skip: !darwin}, () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-hitoolbox-')));
+  scratches.push(dir);
+  const log = join(dir, 'calls'), recorder = join(dir, 'defaults');
+  fs.writeFileSync(recorder, `#!/bin/sh\necho "$*" >> '${log}'\necho 'the recorder never answers' >&2\nexit 1\n`, {mode: 0o755});
+  const {RUNNER_ENVIRONMENT, ...offHosted} = process.env;
+  const run = (args, env = offHosted) => spawnSync('/bin/sh', [UNSET_SCRIPT, ...args], {encoding: 'utf8', env: {...env, UNSET_DEFAULTS: recorder}});
+  const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : []);
+  for (const args of [[], ['--delete-if-empty'], [HITOOLBOX], ['--delete-if-empty', HITOOLBOX]]) {
+    const refused = run(args);
+    assert.equal(refused.status, 2, `${args.join(' ')}: ${refused.stderr}`);
+    assert.match(refused.stderr, /refused: off a GitHub-hosted runner .*com\.apple\.HIToolbox.*--manual-recovery/);
+    assert.deepEqual(calls(), [], 'no defaults call');
+  }
+  // The owner's own recovery, and a hosted runner's run, reach the domain (here, the recorder).
+  assert.equal(run(['--manual-recovery', '--delete-if-empty']).status, 1);
+  assert.equal(run([], {...offHosted, RUNNER_ENVIRONMENT: 'github-hosted'}).status, 1);
+  assert.deepEqual(calls(), ['export com.apple.HIToolbox -', 'export com.apple.HIToolbox -']);
+  // A scratch path domain is a test's, never the owner's: allowed anywhere.
+  const d = scratchDomain(plist(`${SOURCES}${withKey('<true/>', OTHERS)}`));
+  const scratch = spawnSync('/bin/sh', [UNSET_SCRIPT, d.file], {encoding: 'utf8', env: offHosted});
+  assert.deepEqual([scratch.status, scratch.stdout.trim()], [0, 'rewritten'], scratch.stderr);
+});
+
 test('on and off are written into the dictionary, keeping its other keys', {skip: !darwin}, () => {
   const d = scratchDomain(plist(`<key>${GLOBAL_PROPERTIES}</key><dict>${OTHERS}</dict>`));
   writePerContext(true, {exec: d.exec, ...HOSTED});
@@ -155,8 +182,8 @@ test('on and off are written into the dictionary, keeping its other keys', {skip
 test('the command that sets each owner value back is exact, and the unset one runs as given and again', {skip: !darwin}, () => {
   assert.equal(perContextCommand(true), `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} -dict-add ${PER_CONTEXT_KEY} -bool true`);
   assert.equal(perContextCommand(false), `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} -dict-add ${PER_CONTEXT_KEY} -bool false`);
-  assert.equal(perContextCommand(null, {dictBefore: true}), 'sh scripts/native-matrix/unset-per-context.sh (in the harness checkout)');
-  assert.equal(perContextCommand(null, {dictBefore: false}), 'sh scripts/native-matrix/unset-per-context.sh --delete-if-empty (in the harness checkout)');
+  assert.equal(perContextCommand(null, {dictBefore: true}), 'sh scripts/native-matrix/unset-per-context.sh --manual-recovery (in the harness checkout)');
+  assert.equal(perContextCommand(null, {dictBefore: false}), 'sh scripts/native-matrix/unset-per-context.sh --manual-recovery --delete-if-empty (in the harness checkout)');
   assert.match(perContextCommand({malformed: 'x'}), /^none: .*by hand$/);
   const d = scratchDomain(plist(`${SOURCES}${withKey('<true/>', OTHERS)}`));
   const repo = new URL('../../', import.meta.url).pathname;

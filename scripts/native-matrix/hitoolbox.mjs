@@ -89,10 +89,11 @@ export function unsetPerContext({dictBefore, exec = run, env, platform, domain =
 // The owner's value as a person reads it.
 export const ownerValueName = value => (value === true ? 'on' : value === false ? 'off' : value?.malformed ? `malformed (${value.malformed})` : 'unset');
 // The exact command that sets the preference back to the owner's value (`dictBefore`: whether the dictionary existed
-// before the run). For "unset" it is the script unsetPerContext runs, from the harness checkout; a System Settings toggle
-// cannot express it. Each is safe to repeat.
+// before the run). For "unset" it is the script unsetPerContext runs, from the harness checkout, in its owner's
+// manual-recovery mode (off a hosted runner a plain run refuses the real domain); a System Settings toggle cannot
+// express it. Each is safe to repeat.
 export function perContextCommand(owner, {dictBefore} = {}) {
   if (owner === true || owner === false) return `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} -dict-add ${PER_CONTEXT_KEY} -bool ${owner ? 'true' : 'false'}`;
   if (owner?.malformed) return `none: the owner's value was saved malformed (${owner.malformed}); set ${PER_CONTEXT_NAME} by hand`;
-  return `sh scripts/native-matrix/unset-per-context.sh${dictBefore === false ? ' --delete-if-empty' : ''} (in the harness checkout)`;
+  return `sh scripts/native-matrix/unset-per-context.sh --manual-recovery${dictBefore === false ? ' --delete-if-empty' : ''} (in the harness checkout)`;
 }

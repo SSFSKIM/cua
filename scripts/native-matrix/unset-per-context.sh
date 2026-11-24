@@ -1,7 +1,10 @@
 #!/bin/sh
 # The per-context input preference put back to "unset" (rulings 1181 and 1188; ./hitoolbox.mjs unsetPerContext runs
 # this on a hosted runner, and a restore that did not hold names it for a person to run by hand):
-#   sh scripts/native-matrix/unset-per-context.sh [--delete-if-empty] [<domain>]
+#   sh scripts/native-matrix/unset-per-context.sh [--manual-recovery] [--delete-if-empty] [<domain>]
+# Hosted only (ruling 1188): against the real domain it refuses off a GitHub-hosted runner, before any defaults call,
+# unless run with --manual-recovery, the owner's own recovery after a restore that did not hold (the command a
+# failure names). A scratch path domain (tests) is never the owner's and runs anywhere.
 # It removes TextInputGlobalPropertyPerContextInput from com.apple.HIToolbox's AppleGlobalTextInputProperties and
 # writes back only that one top-level key, typed, through cfprefsd (defaults). With --delete-if-empty (the dictionary
 # was absent before the run) a dictionary left empty is deleted instead. It fails closed: an export, extraction or
@@ -11,8 +14,23 @@
 # rewritten or deleted.
 set -eu
 delete_if_empty=no
-if [ "${1:-}" = --delete-if-empty ]; then delete_if_empty=yes; shift; fi
+manual_recovery=no
+while [ $# -gt 0 ]; do
+  case $1 in
+    --delete-if-empty) delete_if_empty=yes; shift ;;
+    --manual-recovery) manual_recovery=yes; shift ;;
+    --*) echo "unset-per-context: unknown option $1" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
 domain=${1:-com.apple.HIToolbox}
+case $domain in
+  /*) ;;
+  *) if [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ] && [ "$manual_recovery" != yes ]; then
+       echo "unset-per-context: refused: off a GitHub-hosted runner the harness never writes $domain (ruling 1188); the owner's own recovery runs with --manual-recovery" >&2
+       exit 2
+     fi ;;
+esac
 dict=AppleGlobalTextInputProperties
 key=TextInputGlobalPropertyPerContextInput
 defaults=${UNSET_DEFAULTS:-/usr/bin/defaults}

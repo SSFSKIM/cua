@@ -436,7 +436,7 @@ test('restoreInputSource: a value that will not stay fails after the bounded rou
   const commands = {
     on: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true',
     off: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool false',
-    unset: 'sh scripts/native-matrix/unset-per-context.sh (in the harness checkout)',
+    unset: 'sh scripts/native-matrix/unset-per-context.sh --manual-recovery (in the harness checkout)',
   };
   for (const [name, owner] of [['on', true], ['off', false], ['unset', null]]) {
     const file = join(scratch(), 'input-source.json');
@@ -466,7 +466,7 @@ test('restoreInputSource: a restore that throws keeps the record and names the o
     const out = await restoreInputSource({io});
     assert.deepEqual([out.sourceRestored, out.perContextRestored], [false, false], what);
     assert.match(out.error, /could not (unset|read) the per-context input preference/);
-    assert.ok(out.reason.includes(`the owner's input source is ${ABC}: select it in the menu bar's input menu; the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) is the owner's unset: set it back with sh scripts/native-matrix/unset-per-context.sh --delete-if-empty (in the harness checkout)`), out.reason);
+    assert.ok(out.reason.includes(`the owner's input source is ${ABC}: select it in the menu bar's input menu; the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) is the owner's unset: set it back with sh scripts/native-matrix/unset-per-context.sh --manual-recovery --delete-if-empty (in the harness checkout)`), out.reason);
     assert.equal(fs.existsSync(file), true, `${what}: the record stays`);
   }
 });
@@ -517,7 +517,7 @@ test('off a hosted runner: the input-source check selects nothing and is NO VERD
   const differs = await restoreInputSource({io});
   assert.deepEqual([differs.sourceRestored, differs.perContextRestored, differs.perContextWritten], [false, false, false]);
   assert.match(differs.skipped, /ruling 1188/);
-  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with sh scripts\/native-matrix\/unset-per-context\.sh \(in the harness checkout\)/);
+  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with sh scripts\/native-matrix\/unset-per-context\.sh --manual-recovery \(in the harness checkout\)/);
   assert.equal(fs.existsSync(io.savedInputSource), true);
   Object.assign(state, {current: ABC, perContext: null});
   const holds = await restoreInputSource({io});
@@ -562,7 +562,7 @@ test('begin: an input-source record a run left unrestored refuses the next run, 
   const out = await begin({run, commit: 'c1', io});
   assert.equal(out.refusals.length, 1);
   assert.ok(out.refusals[0].startsWith(`an input-source record a run left unrestored, ${savedInputSource}: the owner's input source com.apple.keylayout.US and the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) unset; before begin, run on the device: node scripts/native-matrix/live-device.mjs input-source-restore`), out.refusals[0]);
-  assert.match(out.refusals[0], /set the preference with sh scripts\/native-matrix\/unset-per-context\.sh --delete-if-empty \(in the harness checkout\), then remove the record/);
+  assert.match(out.refusals[0], /set the preference with sh scripts\/native-matrix\/unset-per-context\.sh --manual-recovery --delete-if-empty \(in the harness checkout\), then remove the record/);
   assert.deepEqual(calls, [], 'nothing saved, the engine untouched');
   assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
   fs.rmSync(savedInputSource);

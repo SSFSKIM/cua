@@ -13,7 +13,7 @@
 // `cua doctor`. Liveness is kill(pid, 0): a reused pid only keeps a stale session longer, never removes a live one.
 // Within run/ a session's names belong to its owner: once the owner is gone they are removed by name. Entries with no
 // readable record (left by a cua that wrote none, or not cua's) are reported, never removed.
-import {lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {homeLayout, realHome} from './layout.mjs';
 
@@ -97,6 +97,22 @@ const defaultAlive = pid => {
 
 // Removes the sessions whose recorded owner is gone. Returns what it found: {swept: [{session, pid}], live: [{session,
 // pid}], unowned: [entry names with no readable record], failed: [{session, pid, errors}]}.
+// The pid a session record at `path` holds, read only from a regular file, opened without following a link or blocking
+// and read to a bound (#171 M6b: a record that is a link, into the vendor's tree or anywhere, is no record, and what it
+// leads to is never opened) -> the number, or NaN.
+const RECORD_MAX_BYTES = 64;
+function recordedPid(path) {
+  let fd;
+  try {
+    if (!lstatSync(path).isFile()) return NaN;
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) return NaN;
+    const buffer = Buffer.alloc(RECORD_MAX_BYTES + 1);
+    const length = readSync(fd, buffer, 0, buffer.length, 0);
+    return length > RECORD_MAX_BYTES ? NaN : Number(buffer.subarray(0, length).toString('utf8').trim());
+  } catch { return NaN; } finally { if (fd !== undefined) closeSync(fd); }
+}
+
 export function sweepRun(home, {alive = defaultAlive} = {}) {
   const {run} = homeLayout(realHome(home));
   assertSessionParents(dirname(run));
@@ -110,8 +126,7 @@ export function sweepRun(home, {alive = defaultAlive} = {}) {
   for (const name of names) {
     const session = RECORD.exec(name)?.[1];
     if (!session) continue;
-    let pid;
-    try { pid = Number(readFileSync(join(run, name), 'utf8').trim()); } catch { continue; }
+    const pid = recordedPid(join(run, name));
     if (!Number.isSafeInteger(pid) || pid <= 0) continue;  // unreadable, or still being written: not a record yet
     recorded.add(session);
     if (alive(pid)) { result.live.push({session, pid}); continue; }

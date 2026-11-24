@@ -526,6 +526,7 @@ function wholeHome(t) {
 function linkIntoTree(h, path) {
   const planted = join(h.runtimes, `planted-${relative(h.home, path).replaceAll('/', '-')}`);
   if (fs.existsSync(path)) { fs.cpSync(path, planted, {recursive: true}); fs.rmSync(path, {recursive: true}); } else fs.mkdirSync(planted, {recursive: true});
+  fs.mkdirSync(dirname(path), {recursive: true});
   fs.symlinkSync(planted, path);
   return path;
 }
@@ -545,6 +546,21 @@ const LINKED = {
   'sandbox/': h => ({link: linkIntoTree(h, join(h.home, 'sandbox'))}),
   'staging/': h => ({link: linkIntoTree(h, join(h.home, 'staging'))}),
   'current.json': h => ({link: linkIntoTree(h, join(h.home, 'current.json'))}),
+  // the deny list's directories and state/codex, which doctor's sandbox row resolves by their real paths (fix wave 1)
+  'state/': h => ({link: linkIntoTree(h, join(h.home, 'state')), sandbox: true}),
+  'state/codex/': h => ({link: linkIntoTree(h, join(h.home, 'state', 'codex')), sandbox: true}),
+  'remote/': h => ({link: linkIntoTree(h, join(h.home, 'remote')), sandbox: true}),
+  'chrome/': h => ({link: linkIntoTree(h, join(h.home, 'chrome')), sandbox: true}),
+  'run/': h => ({link: linkIntoTree(h, join(h.home, 'run')), sandbox: true}),
+  // a session record in a real run/ that is a link into the tree: doctor's sweep reads no record through a link
+  'a run/ record': h => {
+    const record = join(h.home, 'run', '6f1c2d3e-0000-4000-8000-0000000006b2.pid');
+    const planted = join(h.runtimes, 'planted.pid');
+    fs.mkdirSync(dirname(record), {recursive: true});
+    fs.writeFileSync(planted, '123\n');
+    fs.symlinkSync(planted, record);
+    return {link: record};
+  },
 };
 
 test('the replay: each linked part through the whole of doctor and of install, the report stubbed then real, touches nothing under runtimes/ but the report\'s own, and a reinstall acquires nothing', async t => {
@@ -553,7 +569,7 @@ test('the replay: each linked part through the whole of doctor and of install, t
     const linked = link(h);
     const before = releaseState(h.release);
     const yardstick = reportsOwn(h.home);
-    assert.ok(yardstick.some(entry => entry.startsWith('openSync ')) && yardstick.some(entry => entry.startsWith('readdirSync ')), 'the report names the release and walks it');
+    assert.ok(yardstick.some(entry => entry.startsWith('openSync ')) && yardstick.some(entry => entry.startsWith('opendirSync ')), 'the report names the release and walks it');
     for (const [label, retired] of [['stubbed', NO_RETIRED], ['real', undefined]]) {
       const doctor = await recordedRun(() => doctorOf(h, retired));
       assert.equal(doctor.error, undefined, `${name}, doctor (${label}): ${doctor.error?.stack}`);
@@ -572,6 +588,11 @@ test('the replay: each linked part through the whole of doctor and of install, t
         const row = doctor.value.checks.find(c => c.name === 'runtime.node');
         assert.equal(row.status, 'fail', name);
         assert.ok(row.detail.includes(`move ${linked.link} aside, then`), `${name}: ${row.detail}`);
+      }
+      if (linked.sandbox) {
+        const row = doctor.value.checks.find(c => c.name === 'sandbox');
+        assert.equal(row.status, 'fail', name);
+        assert.ok(row.detail.includes(`under the vendor's tree`) && row.detail.includes(`move ${linked.link} aside, then`), `${name}: ${row.detail}`);
       }
       if (label === 'real') {
         assert.deepEqual(installed.value.report.retired.map(tree => tree.path), [h.release], name);
@@ -675,6 +696,8 @@ test('a full install with every part missing and staging/ a link into the record
   const {h, archives} = await stagedHome(t);
   linkStaging(h);
   await installsRefused(h, archives, Object.values(LANE));
+  // each fresh lane refused before it created anything of its own: no node/, modules/, sandbox/ or engine/
+  assert.deepEqual(fs.readdirSync(h.home).sort(), ['runtimes', 'staging']);
   assert.equal(await unguardedReaches(h, archives), true, 'the negative control: unguarded, the mkdtemp lands in the release');
 });
 

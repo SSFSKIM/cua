@@ -17,8 +17,9 @@
 //
 // On Linux (#171 M6b, the pre-flight's §3.4) the step first keeps its reads out of the vendor's tree an older cua placed,
 // as a session's lookup does (managed-node.mjs managedNodeIntoVendorTree): a pointer, an install record or a bin/node that
-// leads there is refused (target_occupied), naming the link to move aside, with nothing there read. Its staging/ is
-// created only when it acquires, and refused as a link before that (vendor-tree.mjs stagingOutsideVendorTree).
+// leads there is refused (target_occupied), naming the link to move aside, with nothing there read. It creates node/
+// and staging/ only when it acquires, and refuses a staging/ that is a link before it creates either
+// (vendor-tree.mjs stagingOutsideVendorTree).
 //
 // The signature checker, the version probe, fetch and the tool lookup are injectable for tests through this module
 // API only; the CLI always uses codesign, the binary itself, the global fetch and the PATH.
@@ -73,7 +74,8 @@ export async function installNode({home, pin, archivePath, fetch = globalThis.fe
   const create = dir => {
     try { mkdirSync(dir, {recursive: true, mode: 0o700}); } catch (error) { fail('node_install_failed', `could not create ${dir} (${error.code ?? error.message})`, {cause: error}); }
   };
-  for (const dir of [nodes.root, ...(linux ? [] : [staging])]) create(dir);
+  // On Linux nothing is created before the lane knows it acquires, and staging/ is checked before anything is.
+  if (!linux) for (const dir of [nodes.root, staging]) create(dir);
   const target = nodes.version(pin.version);
   const result = (record, changed, activated) => ({version: pin.version, root: target, node: join(target, 'bin', 'node'), changed, activated, source: record.source});
   const checks = {verifySignature, versionOf};
@@ -91,10 +93,13 @@ export async function installNode({home, pin, archivePath, fetch = globalThis.fe
     pointer.commit();
     return result(existing, false, pointer.needed);
   }
+  if (linux) {
+    stagingOutsideVendorTree(real);
+    for (const dir of [nodes.root, staging]) create(dir);
+  }
   assertTargetFree(target);
 
   const unpack = requireTools(NODE_TOOLS, tools, `cua install needs them to unpack Node ${pin.version}`);
-  if (linux) create(stagingOutsideVendorTree(real));
   const stage = mkdtempSync(join(staging, `node-${pin.version}-`));
   try {
     const archive = join(stage, 'node.tar.gz');

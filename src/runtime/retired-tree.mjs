@@ -7,13 +7,13 @@
 // It reads, and changes nothing: no write, rename, unlink or exec. Of the home it touches runtimes/ and the two release
 // names below by lstat, never listing runtimes/ and never following a link there (N3). Inside a release whose install
 // record passes, one open of install.json (no link followed, never blocking, at most 64 KiB), then the size walk's
-// lstat and readdir.
+// lstat and opendir, which reads a directory's entries one at a time.
 //
 // A release is named only when the record cua's install wrote there (install.mjs, before M6b) says that release was
 // placed from its pinned archive. That shows a cua install recorded placing it, not what the files below are now, so
 // the sentence says no more (§3.3). The two archives are this module's own constants, not the provenance records,
 // which install may not read (1193 (a)); a test ties each to its record. They carry no URL.
-import {closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync} from 'node:fs';
+import {closeSync, constants, fstatSync, lstatSync, opendirSync, openSync, readSync} from 'node:fs';
 import {join} from 'node:path';
 import {homeLayout, realHome} from './layout.mjs';
 import {VENDOR_ENGINE_RETIRED_IN} from './launch.mjs';
@@ -29,7 +29,9 @@ const RECORD_MAX_BYTES = 64 * 1024;
 // The walk's bound: the real tree holds 2,345 files in 327 directories.
 export const WALK_MAX_ENTRIES = 200_000;
 const RECORD_KEYS = ['schema', 'release', 'archive', 'source', 'installedAt'];
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+// The form install.mjs wrote (Date#toISOString), and only a real date in it: one that round-trips exactly, so the
+// sentence's date is the one the record names (2026-02-30 parses as March 2 and does not).
+const isInstant = value => typeof value === 'string' && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value;
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hasExactly = (value, keys) => isObject(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -78,13 +80,14 @@ function recordOf(dir, release) {
   const valid = hasExactly(record, RECORD_KEYS) && record.schema === 1 && record.release === release
     && hasExactly(record.archive, ['sha256', 'length']) && record.archive.sha256 === archive.sha256 && record.archive.length === archive.length
     && ['archive', 'download'].includes(record.source)
-    && typeof record.installedAt === 'string' && ISO_DATE.test(record.installedAt) && !Number.isNaN(Date.parse(record.installedAt));
+    && isInstant(record.installedAt);
   return valid ? record : null;
 }
 
 // The tree's size by lstat, following nothing (§3.2) -> {bytes} or {bytes: null, stopped: code}: regular files and
 // symbolic links by their own size (a link by its length, not its target's), a file with several links once by device
-// and inode, and nothing for a directory or any other entry. It stops at its first error, or past `maxEntries`.
+// and inode, and nothing for a directory or any other entry. Each directory's entries are read one at a time, so the walk
+// stops enumerating, not only measuring, past `maxEntries`; it stops at its first error too.
 function treeBytes(root, maxEntries) {
   const seen = new Set();
   let bytes = 0, entries = 0;
@@ -92,18 +95,21 @@ function treeBytes(root, maxEntries) {
   try {
     while (pending.length) {
       const dir = pending.pop();
-      for (const name of readdirSync(dir)) {
-        if (++entries > maxEntries) return {bytes: null, stopped: 'too_many_entries'};
-        const path = join(dir, name);
-        const stat = lstatSync(path);
-        if (stat.isDirectory()) pending.push(path);
-        else if (stat.isFile() || stat.isSymbolicLink()) {
-          const inode = `${stat.dev}:${stat.ino}`;
-          if (stat.nlink > 1 && seen.has(inode)) continue;
-          seen.add(inode);
-          bytes += stat.size;
+      const handle = opendirSync(dir);
+      try {
+        for (let entry; (entry = handle.readSync()) !== null;) {
+          if (++entries > maxEntries) return {bytes: null, stopped: 'too_many_entries'};
+          const path = join(dir, entry.name);
+          const stat = lstatSync(path);
+          if (stat.isDirectory()) pending.push(path);
+          else if (stat.isFile() || stat.isSymbolicLink()) {
+            const inode = `${stat.dev}:${stat.ino}`;
+            if (stat.nlink > 1 && seen.has(inode)) continue;
+            seen.add(inode);
+            bytes += stat.size;
+          }
         }
-      }
+      } finally { handle.closeSync(); }
     }
   } catch (error) {
     return {bytes: null, stopped: error.code ?? 'error'};

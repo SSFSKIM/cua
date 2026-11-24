@@ -9,7 +9,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {Dir, chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join, relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {RETIRED_RELEASES, retiredSentence, retiredTrees} from '../src/runtime/retired-tree.mjs';
@@ -95,6 +95,8 @@ test('a release whose record is not exactly the one cua\'s install wrote is not 
     'an extra archive key': retiredRecord('x64', {archive: {sha256: RETIRED.x64.sha256, length: RETIRED.x64.length, format: 'deb'}}),
     'no installedAt': retiredRecord('x64', {installedAt: undefined}),
     'installedAt no date': retiredRecord('x64', {installedAt: 'yesterday'}),
+    'installedAt an impossible date': retiredRecord('x64', {installedAt: '2026-02-30T09:12:33.123Z'}),
+    'installedAt not in the writer\'s form': retiredRecord('x64', {installedAt: '2026-10-28T09:12:33Z'}),
     'another source': retiredRecord('x64', {source: 'mirror'}),
     'not JSON': '{"schema": 1,',
     'over 64 KiB': big,
@@ -135,7 +137,7 @@ test('anything but a real release directory of the two names is not named: no li
     let report;
     const seen = recorded(() => { report = retiredTrees({home}); });
     assert.deepEqual(report, {trees: [], lines: []}, name);
-    assert.ok(!seen.some(({call, path}) => call === 'readdirSync' && path === join(home, 'runtimes')), `${name}: runtimes/ listed`);
+    assert.ok(!seen.some(({call, path}) => /^(readdirSync|opendirSync)$/.test(call) && path === join(home, 'runtimes')), `${name}: runtimes/ listed`);
     if (laid.followed) assert.deepEqual(under(seen, laid.followed), [], `${name}: a link followed`);
   }
 });
@@ -153,6 +155,24 @@ test('the size is a lstat walk: a hard-linked pair once, a link by its own lengt
   const report = retiredTrees({home});
   assert.equal(report.trees[0].bytes, planted + 1000 + Buffer.byteLength(target), 'the pair once, the link by its own length, nothing for the fifo or a directory');
   assert.deepEqual(report.lines, [measured(root, `${planted + 1000 + Buffer.byteLength(target)} bytes`)]);
+});
+
+// The bound stops the enumeration, not only the measuring: a directory's entries are read one at a time, and no more
+// are read once the walk is past it.
+test('a directory over the walk\'s bound is not enumerated past it', t => {
+  const home = scratchHome(t);
+  const {root} = plantRetiredRelease(home);
+  mkdirSync(join(root, 'many'));
+  for (let i = 0; i < 300; i++) writeFileSync(join(root, 'many', `f${i}`), '');
+  const read = Dir.prototype.readSync;
+  let reads = 0;
+  Dir.prototype.readSync = function (...args) { reads++; return read.apply(this, args); };
+  let report;
+  try { report = retiredTrees({home, maxEntries: 20}); } finally { Dir.prototype.readSync = read; }
+  assert.equal(report.trees[0].bytes, null);
+  // the 21st entry stops it; the other reads are the end of the few directories walked before 'many'
+  assert.ok(reads > 0 && reads <= 30, `entries read one at a time: ${reads}, of more than 300`);
+  assert.match(report.lines[0], /its size could not be measured \(too_many_entries\)/);
 });
 
 test('a walk past its bound, or one that fails, says its size could not be measured and still names the release', t => {
@@ -182,15 +202,15 @@ test('what the module does, under the recorder: lstat of runtimes/ and the two n
   const there = under(seen, runtimes);
   const calls = new Set(seen.map(({call}) => call));
   // readSync is addressed by the descriptor the one open gave (the recorder notes its buffer, not a path)
-  assert.deepEqual([...calls].filter(call => !['lstatSync', 'readdirSync', 'openSync', 'readSync', 'realpathSync'].includes(call)), [], 'no other kind of call');
+  assert.deepEqual([...calls].filter(call => !['lstatSync', 'opendirSync', 'openSync', 'readSync', 'realpathSync'].includes(call)), [], 'no other kind of call');
   assert.deepEqual(seen.filter(({call}) => call === 'realpathSync').map(({path}) => path), [home], 'the home resolved, nothing else');
   const inside = ({call, path}) => within(path, root) && !(path === root && call === 'lstatSync');
   const atTop = there.filter(entry => !inside(entry)).map(({call, path}) => `${call} ${relative(home, path)}`);
   assert.deepEqual(atTop, ['lstatSync runtimes', `lstatSync runtimes/${RETIRED.x64.release}`, `lstatSync runtimes/${RETIRED.arm64.release}`], 'runtimes/ and the two names, by lstat');
-  assert.deepEqual([...new Set(there.filter(inside).map(({call}) => call))].sort(), ['lstatSync', 'openSync', 'readdirSync'], 'inside the release');
+  assert.deepEqual([...new Set(there.filter(inside).map(({call}) => call))].sort(), ['lstatSync', 'openSync', 'opendirSync'].sort(), 'inside the release');
   const opened = there.filter(({call}) => call === 'openSync');
   assert.deepEqual(opened.map(({path}) => path), [join(root, 'install.json')], 'one open, of install.json');
-  assert.ok(there.some(({call}) => call === 'readdirSync'), 'the walk lists the release');
+  assert.ok(there.some(({call}) => call === 'opendirSync'), 'the walk reads the release');
   assert.ok(!there.some(({path}) => path.includes('added-')), 'the added entries are touched by nothing');
   assert.deepEqual(snapshot(join(home, 'runtimes')), before);
 });

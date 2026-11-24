@@ -340,6 +340,22 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   // deny list its kernel would get: a layout whose deny targets overlap, or whose store cannot be listed, is refused in
   // scoped and default alike.
   const session = join(owned.run, 'session');
+  // On Linux every path of the home this row resolves by its real path is kept out of the vendor's tree first, before
+  // the deny list or the protected paths are normalized: the deny list's state/, remote/, chrome/ and run/ (with the
+  // session directory), and the scoped check's protected directories and state/codex. One that leads there is named, and
+  // nothing there is resolved (#171 M6b). The five a launch's preflight refuses (sandbox.mjs
+  // assertHomeRootsOutsideVendorTree) are said as it says them.
+  if (linux) {
+    const preflight = [owned.node, owned.staging, owned.sandbox, owned.engine, owned.modules];
+    for (const root of [...preflight, join(owned.home, 'state'), owned.codexHome, join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')]) {
+      const at = outsideVendorTree(root, owned.home);
+      if (!at.lead) continue;
+      const remedy = `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``;
+      return result('sandbox', 'fail', preflight.includes(root)
+        ? `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the scoped sandbox protects it by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict): ${remedy}`
+        : `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the sandbox's check takes it by its real path, which is not resolved there, so the sandbox is not checked: ${remedy}`);
+    }
+  }
   let deny;
   try {
     const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
@@ -355,13 +371,6 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const workerNetwork = ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)';
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read and write nowhere, so profile labels, screenshots and other features that need scratch space fail; '
     + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
-  // The home's own directories the check resolves by their real paths are kept out of the vendor's tree first, as a
-  // launch's preflight keeps them (sandbox.mjs): one that leads there is named, and nothing there is resolved (#171 M6b).
-  if (linux) for (const root of [owned.node, owned.staging, owned.sandbox, owned.engine, owned.modules]) {
-    const at = outsideVendorTree(root, owned.home);
-    if (at.lead) return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the scoped sandbox `
-      + `protects it by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict): move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``);
-  }
   // On Linux the module tree is not trusted code (nothing trusted imports from it) but cua's module trees are protected
   // all the same, as a launch protects them (#171 M6a).
   const conflicts = sandboxConflicts({

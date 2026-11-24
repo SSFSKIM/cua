@@ -1,0 +1,3 @@
+H1: 560 drop rows {"electron":560}; rest_ms of the settle records {"30":560}
+H2: 560 drop rows {"electron":560}; rest_ms of the settle records {"30":560}
+L4a: 560 drop rows {"electron":560}; rest_ms of the settle records {"30":560}

@@ -1,0 +1,34 @@
+== head 2c66966bdab7b29836779401019f43abc6cb9890, 2026-11-24T06:35:37Z, aarch64, node v24.22.1; the pin's arm64 sha256 f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c
+installing cua's Linux runtime cua-linux-arm64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d
+installed cua's module tree at /Users/new/.local/share/cua-171/m5/home-arm64-045/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c
+installed cua's sandbox helper at /Users/new/.local/share/cua-171/m5/home-arm64-045/sandbox/rust-v0.163.0/codex-linux-sandbox
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at /Users/new/.local/share/cua-171/m5/home-arm64-045/node/24.22.0
+current.json now names cua-linux-arm64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d, cua's own runtime
+installed cua's Linux engine 0.4.5 (linux-engine-v0.4.5) at /Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine
+installing the vendor's release 26.928.40906-linux-arm64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_arm64.deb
+installed the vendor's release 26.928.40906-linux-arm64 at /Users/new/.local/share/cua-171/m5/home-arm64-045/runtimes/26.928.40906-linux-arm64, kept for CUA_NATIVE_ENGINE=vendor
+sessions here, by what is installed and set: browser-only sessions open; computer sessions open on cua's engine, which this home selects; with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine
+--- engine
+-rwxr-xr-x 1 new new 1905024 Nov 23 22:35 /Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine
+sha256 f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c
+sha256 equals H10's pin
+cua-engine 0.4.5 (77ed101d43ea)
+/Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, BuildID[sha1]=89b4fd51249b667adba2673a4b77a520e43ac07e, stripped
+{
+  "schema": 1,
+  "build": "pinned",
+  "version": "0.4.5",
+  "release": "linux-engine-v0.4.5",
+  "sha256": "f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c",
+  "source": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-arm64",
+  "installedAt": "2026-11-24T06:35:41.408Z"
+}
+
+26.928.40906-linux-arm64
+--- the secret store is empty: 0 entries
+--- gate.mjs check --pinned
+acceptance on the pinned release: /Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine
+candidate: sha256 f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c, aarch64-unknown-linux-musl static, cua-engine 0.4.5 (77ed101d43ea); the pin's arm64 asset of linux-engine-v0.4.5; native/linux-engine as at 77ed101d43ea9b071bd9783dd9bb3387733f9f6d, the checkout at 2c66966bdab7b29836779401019f43abc6cb9890; attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/45335176072/attempts/1, built from 77ed101d43ea9b071bd9783dd9bb3387733f9f6d (refs/heads/engine-045) on a github-hosted runner
+{"gate":"pinned","sha256":"f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c","target":"aarch64-unknown-linux-musl","linkage":"static","version":"cua-engine 0.4.5 (77ed101d43ea)","commit":"2c66966bdab7b29836779401019f43abc6cb9890","clean":true,"attestation":{"verified":true,"signer_workflow":"SSFSKIM/cua/.github/workflows/linux-engine.yml","attestations":[{"subjects":[{"name":"cua-engine-0.4.5-linux-x64","sha256":"ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a"},{"name":"cua-engine-0.4.5-linux-arm64","sha256":"f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"}],"predicate":"https://slsa.dev/provenance/v1","source_commit":"77ed101d43ea9b071bd9783dd9bb3387733f9f6d","source_ref":"refs/heads/engine-045","signer":"https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/engine-045","run":"https://github.com/SSFSKIM/cua/actions/runs/45335176072/attempts/1","runner":"github-hosted"}]},"pin":{"arch":"arm64","version":"0.4.5","release":"linux-engine-v0.4.5","sha256":"f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"},"installed":{"path":"/Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/install.json","build":"pinned","release":"linux-engine-v0.4.5","version":"0.4.5","installedAt":"2026-11-24T06:35:41.408Z"},"engine_tree":{"path":"native/linux-engine","commit":"77ed101d43ea9b071bd9783dd9bb3387733f9f6d","equal":true}}
+check exit 0

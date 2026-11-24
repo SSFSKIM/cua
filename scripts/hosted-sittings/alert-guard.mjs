@@ -114,24 +114,28 @@ export function recordKeyUnread(record, cell) {
 // the scene window not on screen) refuses nothing: the cell goes unchecked and is counted (recordKeyWindowReading), as a
 // key cell's unread key is. -> {category: 'keyWindow', detail} | null.
 // A sheet of the scene window holding the focus (`focusedWindow` 'sheet': ax-state saw the app's AXFocusedWindow be an
-// AXSheet whose parent is the scene window) holds as the scene window does: pilots C-3 and C-4 saw TextEdit's focused
-// window become the sheet super+w or super+s opened on the run's document, and the sheet's cells and cleanup refused.
+// AXSheet of the window read) holds as that window does only where the caller says it is exempt (`sheetExempt`; ruling
+// 1214: a case that opens a sheet itself, in its own cells, cleanup and reset, the sheet on the run's own window,
+// ../native-matrix/steps.mjs keyWindowGuard). Pilots C-3 and C-4 saw TextEdit's focused window become the sheet super+w
+// or super+s opened on the run's document, and the sheet's cells and cleanup refused. Anywhere else a sheet is refused.
 // A refusal names the window Accessibility held focused when the reading carries it (`focused`, ./key-window.mjs: its
 // number from the window list, frame, role and, on the matrix, `of`: the scene's, the run's own or neither), kept on the
 // cause as `focused`.
 const ownWindowText = w => (w === 'run' ? 'the scene window' : w === 'sheet' ? 'a sheet of the scene window' : w === 'other' ? 'another of its windows' : 'none');
 const OF_TEXT = Object.freeze({scene: 'the scene\'s', own: 'the run\'s own', neither: 'neither the scene\'s nor the run\'s own'});
-const focusedText = f => (f === null ? 'none read' : [
+const focusedText = f => (f === null ? 'none' : f === 'unread' ? 'unread' : [
   `${f.number === null ? 'not in the window list, at' : `window ${f.number} at`} ${f.frame ? `${f.frame.x},${f.frame.y} ${f.frame.width}x${f.frame.height}` : 'an unread frame'}`,
-  [f.role ?? 'no role', f.subrole].filter(Boolean).join('/'), ...(OF_TEXT[f.of] ? [OF_TEXT[f.of]] : [])].join(', '));
-export function keyWindowCause(ownKey) {
+  [f.role ?? 'no role', f.subrole].filter(Boolean).join('/'), ...(f.role === 'AXSheet' ? [`a sheet of ${f.parent === null || f.parent === undefined ? 'an unresolved window' : `window ${f.parent}`}`] : []),
+  ...(OF_TEXT[f.of] ? [OF_TEXT[f.of]] : [])].join(', '));
+export function keyWindowCause(ownKey, {sheetExempt = false} = {}) {
   if (ownKey?.trusted !== true || ownKey.ok !== true) return null;
   const {scene, number, frontmost, focusedWindow, mainWindow} = ownKey;
-  if (focusedWindow === 'run' || focusedWindow === 'sheet' || (frontmost === false && focusedWindow === 'none' && mainWindow === 'run')) return null;
+  if (focusedWindow === 'run' || (focusedWindow === 'sheet' && sheetExempt) || (frontmost === false && focusedWindow === 'none' && mainWindow === 'run')) return null;
   const which = `the scene window ${number ?? '?'}`;
   const named = 'focused' in ownKey ? {text: ` (Accessibility's focused window: ${focusedText(ownKey.focused)})`, focused: ownKey.focused} : {text: '', focused: undefined};
   const cause = detail => ({category: 'keyWindow', detail: `${detail}${named.text}`, ...(named.focused !== undefined ? {focused: named.focused} : {})});
   if (focusedWindow === 'other') return cause(`the ${scene} app's key window is another of its windows, not ${which}`);
+  if (focusedWindow === 'sheet') return cause(`the ${scene} app's key window is a sheet on ${which}, outside a case that opened it on the run's own window`);
   return cause(`the ${scene} app holds no key window (its focused window ${ownWindowText(focusedWindow)}, its main window ${mainWindow === 'run' ? which : ownWindowText(mainWindow)}) while ${frontmost === false ? 'in the background' : 'frontmost'}`);
 }
 // The key-window reading of a click or key cell that is sent (`ownKey`, ./key-window.mjs; null when the guard's reading

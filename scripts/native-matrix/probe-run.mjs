@@ -70,6 +70,7 @@ async function resetHeldFixture(ctx) {
     ownWindowClosed(ctx);
   }
   held.entry.reset = !failed;
+  if (held.row) sheetOnRow(ctx, held.row, held.key);
   // The guard's own cause when it refused the cleanup (./steps.mjs AlertGuarded: `alert` or `unread`), else the held key's.
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
   if (!failed) return;
@@ -130,13 +131,14 @@ async function sampledRows(ctx, base, attempt) {
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});
     cleanupFailed ??= await cleanedUp(out);
+    sheetOnRow(ctx, pushed, key);
     // A cleanup whose keys the capture alert held leaves what it would have closed: kept as the run's held fixture, reset
     // before anything else is collected (resetHeldFixture).
     if (cleanupFailed instanceof AlertHeld) {
       pushed.outcome = {...(pushed.outcome ?? {}), cleanupHeld: cleanupFailed.message};
       const entry = {row: pushed.id, sample: pushed.sample, scene: span.fixture?.scene ?? base.scene, reset: null};
       (ctx.meta.fixturesHeld ??= []).push(entry);
-      ctx.heldFixture = {scene: entry.scene, cleanup: out.cleanup, entry};
+      ctx.heldFixture = {scene: entry.scene, cleanup: out.cleanup, entry, row: pushed, key};
       return pushed;
     }
     if (cleanupFailed) {
@@ -153,6 +155,12 @@ function heldReadings(ctx, base, error, span) {
   const app = SCENES[base.regime === 'background' ? base.user : base.scene].bundleId;
   const apps = [...new Set([SCENES[base.scene].bundleId, ...(base.user ? [SCENES[base.user].bundleId] : [])])];
   return {apps, activate: activationOf(ctx, app), before: error.reading, after: keyReading(span.add(read(ctx, null, {frontKey: true})))};
+}
+// The sheet exemption a row's cells, cleanup or reset used (ruling 1214; ./steps.mjs keyWindowGuard), on the row:
+// `keyWindowSheet` {count, focused}, the window Accessibility held focused with its role and parent's number.
+function sheetOnRow(ctx, row, key) {
+  const kept = ctx.meta.keyWindowSheets?.[key];
+  if (kept) row.keyWindowSheet = {count: kept.count, focused: kept.focused};
 }
 // An attempt's cleanup run. -> null, or what it threw.
 const cleanedUp = async out => { try { await out.cleanup?.(); return null; } catch (error) { return error; } };
@@ -284,7 +292,7 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
   const known = sceneWindowNumbers(ctx, driven);
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   span.made(driven, () => closeUntitled(ctx, keys));
-  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, driven, known);
+  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, driven, known, {opensSheet: true});
   if (!opened?.ok || opened.value?.opened !== true) {
     await closeUntitled(ctx, keys);
     return span.end({invalid: `the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`});
@@ -526,7 +534,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const known = sceneWindowNumbers(ctx, scene);
   const opened = await keys(NEW_DOCUMENT_CELL, ['super+n']);
   span.made(scene, cleanup);
-  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, scene, known);
+  if (opened?.ok && opened.value?.opened === true) ownWindowOpened(ctx, scene, known, {opensSheet: true});
   if (!opened?.ok || opened.value?.opened !== true) return unprepared(`the untitled document did not open (${opened?.error ?? opened?.value?.reason ?? 'not sent'})`);
   alertCheck(ctx, `before ${id} typing`);
   const typed = await keys(SHEET_TYPE_CELL, ['typeText']);

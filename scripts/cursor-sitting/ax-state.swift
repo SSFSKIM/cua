@@ -7,7 +7,8 @@
 //       AXMain, whether the app's AXFocusedWindow and AXMainWindow are that window ("run"), another ("other") or none
 //       ("none"), the focused one also "sheet" when it is an AXSheet of that window, its AXParent or child (pilot C-4: a sheet
 //       on a document is the app's focused window, not the document), the focused window's role, subrole and frame
-//       (`focusedWindowElement`, null when there is none), and the count of its AXWindows. `ok` is false, and `failed`
+//       (`focusedWindowElement`, null when there is none, "unread" when AXFocusedWindow's read failed; a sheet's with
+//       its AXParent's frame, `parentFrame`), and the count of its AXWindows. `ok` is false, and `failed`
 //       names the reads, when a read the answer rests on did not succeed.
 //       With sheet bounds, `sheet` says whether the matched window has a child of role AXSheet at them (within 2 pt):
 //       the proof that a window-list window Accessibility lists no window for is that window's sheet (null when the
@@ -152,10 +153,16 @@ if args[1] == "window" {
       else if key == "focusedWindow", let run, role == kAXSheetRole as String, sheetOf(w, run) { answer[key] = "sheet" }
       else { answer[key] = "other" }
       if key == "focusedWindow" {
-        answer["focusedWindowElement"] = ["role": role.map { $0 as Any } ?? NSNull(), "subrole": (read(w, kAXSubroleAttribute).value as? String).map { $0 as Any } ?? NSNull(), "frame": rectWire(frame(w))]
+        var described: [String: Any] = ["role": role.map { $0 as Any } ?? NSNull(), "subrole": (read(w, kAXSubroleAttribute).value as? String).map { $0 as Any } ?? NSNull(), "frame": rectWire(frame(w))]
+        // A sheet's parent, by its frame (ruling 1214: which window a focused sheet lies on).
+        if role == kAXSheetRole as String { described["parentFrame"] = rectWire(element(read(w, kAXParentAttribute).value).flatMap { frame($0) }) }
+        answer["focusedWindowElement"] = described
       }
     }
-    else { answer[key] = NSNull(); failed.append(key) }
+    else {
+      answer[key] = NSNull(); failed.append(key)
+      if key == "focusedWindow" { answer["focusedWindowElement"] = "unread" }
+    }
   }
   // The sheet asked about: an AXSheet child of the matched window at its bounds.
   if let sheetBounds {

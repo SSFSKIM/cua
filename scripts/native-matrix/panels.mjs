@@ -328,7 +328,7 @@ export async function untitledDocument(ctx, apps) {
     if (!(error instanceof AlertHeld)) throw error;
     return {skipped: {apps, activate: activationOf(ctx, SCENES.textedit.bundleId), before: error.reading, after: readKey(ctx)}, held: error.row};
   }
-  if (made?.ok && made.value?.opened === true) { ownWindowOpened(ctx, 'textedit', known); return null; }
+  if (made?.ok && made.value?.opened === true) { ownWindowOpened(ctx, 'textedit', known, {opensSheet: true}); return null; }
   await closeUntitledDocument(ctx);
   return {problem: `the untitled document did not open (${made?.error ?? made?.value?.reason ?? 'not sent'})`};
 }

@@ -154,15 +154,17 @@ test('an own window no longer on screen is read as the scene\'s window: another 
 // and names the app's focused window: the scene document, the untitled one once ⌘N landed, the sheet while it is up.
 const rect = (x, y, width, height) => ({x, y, width, height});
 const wire = b => [b.x, b.y, b.width, b.height].join(',');
-function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null} = {}) {
+// `sheetOn`: the window the sheet opens on ('document', or 'scene': the scene's own document); `stray`: a sheet up on
+// the scene document from the start, which no case of the run opened.
+function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null, sheetOn = 'document', stray = false} = {}) {
   const DOC = {ownerPid: 600, layer: 0, number: 428, bounds: rect(213, 78, 507, 877)};
   const DOCUMENT = {ownerPid: 600, layer: 0, number: 586, bounds: rect(240, 100, 500, 400)};
-  const SHEET = {ownerPid: 600, layer: 0, number: 590, bounds: rect(250, 122, 480, 300)};
+  const SHEET = {ownerPid: 600, layer: 0, number: 590, bounds: rect(250, 122, 460, 300)};
   // `aux`: a second window that ⌘N's document brings with it (a window the list shows that Accessibility does not).
   const AUX = {ownerPid: 600, layer: 0, number: 777, bounds: rect(260, 140, 40, 20)};
   let holding = false;
   const world = () => {
-    let untitled = false, sheet = false;
+    let untitled = false, sheet = stray;
     for (const t of calls.map(c => tagOf(c.code)).filter(Boolean)) {
       if (t === 'sheet.new') untitled = true;
       if (t === 'sheet.open' || t === 'savesheet.open') sheet = true;
@@ -176,11 +178,12 @@ function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null} = 
   const readings = [];
   const io = {state: () => ({scenes: {textedit: {pid: 600, window: {number: 428}}}}), windows, axState: (pid, bounds, sheetAt) => {
     const {untitled, sheet} = world(), listed = [DOC, ...(untitled ? [DOCUMENT] : [])], at = listed.find(w => wire(w.bounds) === bounds) ?? null, f = focusedEl();
-    const focusedWindow = !at ? 'other' : at === f ? 'run' : f === SHEET && at === DOCUMENT ? 'sheet' : 'other';
+    const parent = stray || sheetOn === 'scene' ? DOC : DOCUMENT;
+    const focusedWindow = !at ? 'other' : at === f ? 'run' : f === SHEET && at === parent ? 'sheet' : 'other';
     const main = untitled ? DOCUMENT : DOC;
     return {trusted: true, ok: Boolean(at), found: Boolean(at), failed: [], frontmost, focusedWindow, mainWindow: at === main ? 'run' : 'other',
-      focusedWindowElement: {role: f === SHEET ? 'AXSheet' : 'AXWindow', subrole: f === SHEET ? null : 'AXStandardWindow', frame: f.bounds},
-      ...(sheetAt === undefined ? {} : {sheet: at === DOCUMENT && sheet && sheetAt === wire(SHEET.bounds)})};
+      focusedWindowElement: {role: f === SHEET ? 'AXSheet' : 'AXWindow', subrole: f === SHEET ? null : 'AXStandardWindow', frame: f.bounds, ...(f === SHEET ? {parentFrame: parent.bounds} : {})},
+      ...(sheetAt === undefined ? {} : {sheet: at === parent && sheet && sheetAt === wire(SHEET.bounds)})};
   }};
   const matrix = (base, a) => {
     if (a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit') holding = false;
@@ -227,7 +230,11 @@ test('C-4\'s sequence: ⌘N to TextEdit in the background with Electron in front
     assert.ok(te.readings.some(r => r.own === '586' && r.focusedWindow === 'sheet'), engine);
     const sheets = Object.values(result.meta.keyWindowSheets ?? {});
     assert.ok(sheets.length >= 2, `${engine}: ${JSON.stringify(result.meta.keyWindowSheets)}`);
-    for (const s of sheets) assert.deepEqual(s.focused, {number: 590, frame: te.SHEET.bounds, role: 'AXSheet', subrole: null, of: 'own'});
+    for (const s of sheets) assert.deepEqual(s.focused, {number: 590, frame: te.SHEET.bounds, role: 'AXSheet', subrole: null, parent: 586, of: 'own'});
+    // The row that used the exemption records the sheet it held, its parent the run's own document (ruling 1214).
+    const row = result.rows.find(r => r.id === 'textedit/concurrent.sheet@electron');
+    assert.deepEqual(row.keyWindowSheet?.focused, {number: 590, frame: te.SHEET.bounds, role: 'AXSheet', subrole: null, parent: 586, of: 'own'}, `${engine}: ${JSON.stringify(row.keyWindowSheet)}`);
+    assert.ok(row.keyWindowSheet.count >= 1, 'the cells sent under it');
   }
 });
 
@@ -236,11 +243,11 @@ test('C-4 before the fix: a reading that names the sheet another window refuses 
   const calls = [];
   const te = c4TextEdit(calls);
   // The reader as it was: the sheet focused is just another window.
-  const old = {matrix: (base, a) => { const out = te.ops.matrix(base, a); return out.ownKey?.focusedWindow === 'sheet' ? {...out, ownKey: {...out.ownKey, focusedWindow: 'other', focused: {...out.ownKey.focused, of: 'neither'}}} : out; }};
+  const old = {matrix: (base, a) => { const out = te.ops.matrix(base, a); return out.ownKey?.focusedWindow === 'sheet' ? {...out, ownKey: {...out.ownKey, focusedWindow: 'other'}} : out; }};
   const {result} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: c4Cells, ops: old});
   const refused = result.meta.alertGuards.find(g => g.cause === 'keyWindow');
-  assert.match(refused.detail, /^the textedit app's key window is another of its windows, not the scene window 586 \(Accessibility's focused window: window 590 at 250,122 480x300, AXSheet, neither the scene's nor the run's own\)$/);
-  assert.deepEqual(refused.focused, {number: 590, frame: te.SHEET.bounds, role: 'AXSheet', subrole: null, of: 'neither'});
+  assert.match(refused.detail, /^the textedit app's key window is another of its windows, not the scene window 586 \(Accessibility's focused window: window 590 at 250,122 460x300, AXSheet, a sheet of window 586, the run's own\)$/);
+  assert.deepEqual(refused.focused, {number: 590, frame: te.SHEET.bounds, role: 'AXSheet', subrole: null, parent: 586, of: 'own'});
   const row = result.rows.find(r => r.id === 'textedit/concurrent.sheet@electron');
   assert.deepEqual(row.alertGuard.focused, refused.focused);
   assert.equal(typeof keyWindowCause, 'function');
@@ -268,18 +275,40 @@ test('the own window is Accessibility\'s focused window when it is a new one: th
   assert.deepEqual(result.meta.ownWindows, [{owner: 'textedit/concurrent.sheet@electron', scene: 'textedit', number: 586, from: 'focused', focused: 586, newcomer: null, newcomerReason: '2 new windows'}]);
 });
 
-test('a focused window that is no new window (the scene\'s own document still focused) is not taken: the newcomer stands', async () => {
+// Review finding 2: the focused window is taken only when it is joined to one window, new since the opening, and the
+// newcomer's when there is one; the old focus, or focus unread or none, leaves the one newcomer to stand; evidence that
+// conflicts records the disagreement and takes no own window, so the guard reads as before and no sheet is exempt.
+test('the own window\'s cross-check: the old focus or unread focus leaves the newcomer; conflicting evidence takes none', async () => {
   const {ownWindowOpened} = await import('../../scripts/native-matrix/steps.mjs');
   const doc = {scene: 'textedit', number: 428, recorded: true, bounds: rect(213, 78, 507, 877)};
   const fresh = {scene: 'textedit', number: 586, recorded: false, bounds: rect(240, 100, 500, 400)};
-  const answer = focusedNumber => ({alertBounds: {alerts: [], windows: [doc, fresh]}, ownKey: {trusted: true, ok: true, focused: {number: focusedNumber, frame: null, role: 'AXWindow', subrole: null}}});
-  for (const [focusedNumber, want] of [[428, {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility\'s focused window, 428, is no new window'}],
-    [null, {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility\'s focused window is not in the window list'}]]) {
-    const ctx = {caseOwner: 'o', meta: {}, run: '/r', watcher: null, ops: {matrix: () => answer(focusedNumber)}, records: {}};
-    ownWindowOpened(ctx, 'textedit', new Set([428]));
-    assert.deepEqual(ctx.meta.ownWindows, [{owner: 'o', scene: 'textedit', ...want}]);
-    assert.equal(ctx.ownWindow.number, 586);
+  const other = {scene: 'textedit', number: 600, recorded: false, bounds: rect(300, 300, 400, 300)};
+  const answer = (focused, windows = [doc, fresh]) => ({alertBounds: {alerts: [], windows}, ownKey: {trusted: true, ok: true, focused}});
+  const win = (number, extra = {}) => ({number, frame: null, role: 'AXWindow', subrole: null, parent: null, ...extra});
+  const cases = [
+    [answer(win(428)), {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility\'s focused window, 428, is no new window'}],
+    [answer(undefined), {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility\'s focused window was unread'}],
+    [answer('unread'), {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility\'s focused window was unread'}],
+    [answer(null), {number: 586, from: 'newcomer', focused: null, newcomer: 586, focusedReason: 'Accessibility named no focused window'}],
+    [answer(win(586)), {number: 586, from: 'focused', focused: 586, newcomer: 586}],
+    // Two new windows: the focused one among them is taken, the newcomer unknown.
+    [answer(win(586), [doc, fresh, other]), {number: 586, from: 'focused', focused: 586, newcomer: null, newcomerReason: '2 new windows'}],
+    [answer(win(null)), {focused: null, newcomer: 586, disagreement: 'Accessibility\'s focused window is not in the window list'}],
+    [answer(win(null, {ambiguous: 2})), {focused: null, newcomer: 586, disagreement: 'Accessibility\'s focused window is at the frame of 2 windows'}],
+    [answer(win(700)), {focused: 700, newcomer: 586, disagreement: 'Accessibility\'s focused window, 700, is not among the windows new since the opening'}],
+  ];
+  for (const [read, want] of cases) {
+    const ctx = {caseOwner: 'o', meta: {}, run: '/r', watcher: null, ops: {matrix: () => read}, records: {}};
+    ownWindowOpened(ctx, 'textedit', new Set([428]), {opensSheet: true});
+    const entry = want.disagreement ? {...want, reason: `${want.disagreement}: no own window taken`} : want;
+    assert.deepEqual(ctx.meta.ownWindows, [{owner: 'o', scene: 'textedit', ...entry}], JSON.stringify(read.ownKey.focused));
+    assert.equal(ctx.ownWindow?.number ?? null, want.disagreement ? null : 586);
   }
+  // Focused new but not the one newcomer: a disagreement.
+  const split = {alertBounds: {alerts: [], windows: [doc, other]}, ownKey: {trusted: true, ok: true, focused: win(586)}};
+  const ctx = {caseOwner: 'o', meta: {}, run: '/r', watcher: null, ops: {matrix: () => split}, records: {}};
+  ownWindowOpened(ctx, 'textedit', new Set([428]), {opensSheet: true});
+  assert.deepEqual([ctx.ownWindow, ctx.meta.ownWindows[0].disagreement], [null, 'Accessibility\'s focused window, 586, is not among the windows new since the opening']);
 });
 
 test('the device names the focused window as the scene\'s, the run\'s own or neither', async () => {
@@ -288,13 +317,41 @@ test('the device names the focused window as the scene\'s, the run\'s own or nei
   const own = {ownerPid: 300, number: UNTITLED, layer: 0, bounds: rect(240, 100, 500, 400)};
   const stray = {ownerPid: 300, number: 501, layer: 0, bounds: rect(600, 100, 300, 300)};
   const sheet = {ownerPid: 300, number: 590, layer: 0, bounds: rect(250, 122, 480, 300)};
-  const at = (focusedWindow, w, role = 'AXWindow') => ({state: () => ({scenes: {textedit: {pid: 300, window: {number: 428}}}}), windows: () => [sheet, doc, own, stray],
-    axState: () => ({trusted: true, ok: true, found: true, failed: [], frontmost: true, focusedWindow, mainWindow: 'run', focusedWindowElement: {role, subrole: null, frame: w.bounds}})});
+  const at = (focusedWindow, w, role = 'AXWindow', parentFrame = undefined) => ({state: () => ({scenes: {textedit: {pid: 300, window: {number: 428}}}}), windows: () => [sheet, doc, own, stray],
+    axState: () => ({trusted: true, ok: true, found: true, failed: [], frontmost: true, focusedWindow, mainWindow: 'run', focusedWindowElement: {role, subrole: null, frame: w.bounds, ...(parentFrame ? {parentFrame} : {})}})});
   const of = (io, ownNumber) => sceneKeyWindow('textedit', io, ownNumber).focused?.of;
   assert.equal(of(at('run', own), String(UNTITLED)), 'own');
   assert.equal(of(at('other', doc), String(UNTITLED)), 'scene');
   assert.equal(of(at('other', stray), String(UNTITLED)), 'neither');
   assert.equal(of(at('sheet', sheet, 'AXSheet'), String(UNTITLED)), 'own', 'a sheet of the run\'s own window is the own window\'s');
-  assert.equal(of(at('sheet', sheet, 'AXSheet')), 'scene', 'with no own window the read window is the scene\'s');
+  // A sheet whose parent was not resolved is nobody's: never the scene's for want of an own window (review, minor 4).
+  assert.equal(of(at('other', sheet, 'AXSheet')), 'neither');
   assert.equal(of(at('run', doc)), 'scene');
+  // A sheet belongs to the window it is a sheet of: on the scene document while the own one is read, the scene's.
+  assert.equal(of(at('other', sheet, 'AXSheet', doc.bounds), String(UNTITLED)), 'scene');
+});
+
+// Ruling 1214: the sheet exemption holds only for a case that opens a sheet itself, in its own cells, cleanup and reset,
+// with the sheet's parent the run's own window. A sheet anywhere else is refused, recorded with its role and parent.
+test('ruling 1214: a sheet on the scene\'s own document, in the sheet variant, is refused and named with its parent', async () => {
+  const calls = [];
+  const te = c4TextEdit(calls, {sheetOn: 'scene'});
+  const {result} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: c4Cells, ops: te.ops});
+  const refused = result.meta.alertGuards.find(g => g.cause === 'keyWindow');
+  assert.ok(refused, JSON.stringify(result.meta.alertGuards));
+  assert.deepEqual([refused.focused.role, refused.focused.parent, refused.focused.of], ['AXSheet', 428, 'scene']);
+  assert.match(refused.detail, /a sheet of window 428, the scene's\)$/);
+  assert.equal(result.meta.keyWindowSheets, undefined, 'no exemption taken');
+});
+
+test('ruling 1214: a sheet up in a case that opens none is refused, even on the scene\'s own window', async () => {
+  const calls = [];
+  const te = c4TextEdit(calls, {frontmost: true, stray: true});
+  const plan = {...planOf('concurrent-use-sheet'), sheet: false, intervention: ['fires'], id: 'test'};
+  const {result} = await runWith({plan, cellName: 'concurrent-use-sheet', calls, cell: c4Cells, ops: te.ops});
+  const fires = result.rows.find(r => r.id === 'textedit/intervention.fires');
+  assert.equal(fires.alertGuard?.cause, 'keyWindow', JSON.stringify(fires));
+  assert.match(fires.alertGuard.detail, /^the textedit app's key window is a sheet on the scene window 428, outside a case that opened it on the run's own window/);
+  assert.deepEqual([fires.alertGuard.focused.role, fires.alertGuard.focused.parent], ['AXSheet', 428]);
+  assert.equal(result.meta.keyWindowSheets, undefined);
 });

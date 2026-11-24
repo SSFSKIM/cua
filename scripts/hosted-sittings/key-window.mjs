@@ -61,40 +61,59 @@ const ask = (axState, at, sheet = null) => {
   catch (error) { return {answer: null, error: String(error?.message ?? error).split('\n')[0].slice(0, 200)}; }
 };
 export const NOT_A_SHEET = 'Accessibility lists no window at the scene window\'s bounds, and shows it as no sheet of the window behind it';
-// The app's focused window as ax-state described it (`focusedWindowElement`: its role, subrole and frame), its number
-// the process's on-screen window at that frame (within 2 pt) or null: what a refusal names, and what the run takes a
-// window it opened from (../native-matrix/steps.mjs ownWindowOpened). undefined when the reader said nothing of it, null
-// when the app has no focused window. -> {number, frame, role, subrole} | null | undefined.
-function focusedOf(answer, windows, pid) {
+// The app's focused window as ax-state described it (`focusedWindowElement`: its role, subrole and frame, and a sheet's
+// parent's frame), its number the process's on-screen window at that frame (within 2 pt) or null: what a refusal names,
+// and what the run takes a window it opened from (../native-matrix/steps.mjs ownWindowOpened). A sheet's `parent` is the
+// window read when ax-state named it that window's sheet, else the window at its parent's frame (ruling 1214: C-5 proves
+// which window a focused sheet lies on); null for any other window or a parent not resolved. A frame is joined to a
+// window of the same process only when exactly one is at it (`ambiguous`: how many were, when more than one). undefined
+// when the reader said nothing of it, 'unread' when its read of AXFocusedWindow failed, null when the app has no
+// focused window. -> {number, frame, role, subrole, parent, ambiguous?} | 'unread' | null | undefined.
+function focusedOf(answer, windows, pid, read) {
   if (!answer || !('focusedWindowElement' in answer)) return undefined;
   const el = answer.focusedWindowElement;
+  if (el === 'unread') return 'unread';
   if (!el || typeof el !== 'object') return null;
-  const frame = isRect(el.frame) ? el.frame : null;
-  const listed = frame ? windowsOf(windows, pid).find(w => near(w.bounds, frame)) : null;
-  return {number: listed?.number ?? null, frame, role: typeof el.role === 'string' ? el.role : null, subrole: typeof el.subrole === 'string' ? el.subrole : null};
+  const matches = f => (isRect(f) ? windowsOf(windows, pid).filter(w => near(w.bounds, f)) : []);
+  const one = f => { const m = matches(f); return m.length === 1 ? m[0].number ?? null : null; };
+  const frame = isRect(el.frame) ? el.frame : null, here = matches(frame);
+  const parent = answer.focusedWindow === 'sheet' ? read : el.role === 'AXSheet' ? one(el.parentFrame) : null;
+  return {number: here.length === 1 ? here[0].number ?? null : null, frame, role: typeof el.role === 'string' ? el.role : null,
+    subrole: typeof el.subrole === 'string' ? el.subrole : null, parent, ...(here.length > 1 ? {ambiguous: here.length} : {})};
 }
+export const SHEET_PARENTS = 'Accessibility shows the window in front as a sheet of more than one window behind it, none of them the one expected';
 
-// The reading for one target ({scene, pid, number?}); `axState(pid, 'x,y,w,h'[, 'sheet x,y,w,h'])` the compiled
-// ax-state.swift's answer.
+// The reading for one target ({scene, pid, number?, expect?}); `axState(pid, 'x,y,w,h'[, 'sheet x,y,w,h'])` the
+// compiled ax-state.swift's answer. A front window Accessibility does not list is a sheet of the window behind it that
+// Accessibility confirms (an AXSheet child at its bounds), asked of every window of the process enclosing it: the one
+// expected (`expect`, the scene's recorded window) when it is among the confirmed, else the only one confirmed; several
+// confirmed and none expected is no reading (SHEET_PARENTS).
 // -> {scene, number, trusted (null when the reader failed), ok, found, failed, frontmost, focusedWindow, mainWindow,
 // sheet?, focused?, reason?}, or {scene, number: null, trusted: null, ok: false, reason} when no window is on screen.
 export function ownKeyWindow(windows, target, axState) {
   let at = sceneWindowOf(windows, target);
   if (!at) return {scene: target.scene, number: null, trusted: null, ok: false, reason: 'the scene window is not on screen'};
   let {answer, error} = ask(axState, at), sheet = null, notSheet = false;
+  let several = false;
   if (!error && answer?.trusted === true && answer.found === false) {
-    const parent = windowsOf(windows, at.pid).find(w => w.number !== at.number && within(at.bounds, w.bounds));
-    if (parent) {
+    const enclosing = windowsOf(windows, at.pid).filter(w => w.number !== at.number && within(at.bounds, w.bounds));
+    const confirmed = [];
+    let failedAsk = null;
+    for (const parent of enclosing) {
       const behind = {pid: at.pid, number: parent.number ?? null, bounds: parent.bounds};
       const asked = ask(axState, behind, at.bounds);
-      // Its parent only when Accessibility shows the front window as an AXSheet of it; else the reading is not taken.
-      if (!asked.error && asked.answer?.trusted === true && asked.answer.sheet === true) { sheet = at.number; at = behind; ({answer, error} = asked); }
-      else if (asked.error || asked.answer?.trusted !== true) ({answer, error} = asked);
-      else notSheet = true;
+      // Its parent only when Accessibility shows the front window as an AXSheet of it.
+      if (!asked.error && asked.answer?.trusted === true && asked.answer.sheet === true) confirmed.push({behind, asked});
+      else if (asked.error || asked.answer?.trusted !== true) failedAsk ??= asked;
     }
+    const chosen = confirmed.find(c => target.expect !== undefined && target.expect !== null && c.behind.number === target.expect) ?? (confirmed.length === 1 ? confirmed[0] : null);
+    if (chosen) { sheet = at.number; at = chosen.behind; ({answer, error} = chosen.asked); }
+    else if (confirmed.length > 1) several = true;
+    else if (failedAsk) ({answer, error} = failedAsk);
+    else if (enclosing.length) notSheet = true;
   }
-  const reason = notSheet ? NOT_A_SHEET : unreadReason(answer, error);
-  const focused = error ? undefined : focusedOf(answer, windows, at.pid);
+  const reason = several ? SHEET_PARENTS : notSheet ? NOT_A_SHEET : unreadReason(answer, error);
+  const focused = error ? undefined : focusedOf(answer, windows, at.pid, at.number);
   return {scene: target.scene, number: at.number, trusted: error ? null : answer?.trusted === true, ok: reason === null,
     found: typeof answer?.found === 'boolean' ? answer.found : null, failed: Array.isArray(answer?.failed) ? answer.failed : [],
     frontmost: typeof answer?.frontmost === 'boolean' ? answer.frontmost : null, focusedWindow: sideOf(answer?.focusedWindow), mainWindow: sideOf(answer?.mainWindow),

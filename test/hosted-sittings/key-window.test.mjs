@@ -4,7 +4,7 @@
 // from a window that was not there.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {ownKeyWindow, sceneWindowOf} from '../../scripts/hosted-sittings/key-window.mjs';
+import {ownKeyWindow, sceneWindowOf, SHEET_PARENTS} from '../../scripts/hosted-sittings/key-window.mjs';
 
 const rect = (x, y, width, height) => ({x, y, width, height});
 const win = (number, bounds, pid = 600) => ({ownerPid: pid, layer: 0, number, bounds});
@@ -29,9 +29,10 @@ test('a sheet in front counts as the window it lies on: Accessibility lists no w
   const asked = [];
   const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600}, (pid, bounds, sheet) => {
     asked.push([bounds, sheet]);
-    return bounds === '323,149,480,300' ? unmatched : answer({sheet: sheet === '323,149,480,300'});
+    return bounds === '323,149,480,300' ? unmatched : answer({sheet: bounds === '262,127,603,505' && sheet === '323,149,480,300'});
   });
-  assert.deepEqual(asked, [['323,149,480,300', undefined], ['262,127,603,505', '323,149,480,300']]);
+  // Every window enclosing it is asked; only the untitled document has it as its AXSheet.
+  assert.deepEqual(asked, [['323,149,480,300', undefined], ['262,127,603,505', '323,149,480,300'], ['242,107,603,505', '323,149,480,300']]);
   assert.deepEqual([r.number, r.ok, r.focusedWindow, r.sheet], [9, true, 'run', 11]);
 });
 
@@ -67,13 +68,42 @@ test('a sheet of the window read is its focused window: kept as `sheet`, and the
   const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({frontmost: false, focusedWindow: 'sheet', mainWindow: 'run',
     focusedWindowElement: {role: 'AXSheet', subrole: null, frame: SHEET.bounds}}));
   assert.deepEqual([r.number, r.ok, r.focusedWindow], [9, true, 'sheet']);
-  assert.deepEqual(r.focused, {number: 11, frame: SHEET.bounds, role: 'AXSheet', subrole: null});
+  assert.deepEqual(r.focused, {number: 11, frame: SHEET.bounds, role: 'AXSheet', subrole: null, parent: 9});
   // Another window focused: its number when the list holds a window at its frame, else null with the frame kept.
   const other = ownKeyWindow([UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({focusedWindow: 'other', focusedWindowElement: {role: 'AXWindow', subrole: 'AXStandardWindow', frame: {...SCENE.bounds, x: 243}}}));
-  assert.deepEqual(other.focused, {number: 4, frame: {...SCENE.bounds, x: 243}, role: 'AXWindow', subrole: 'AXStandardWindow'});
+  assert.deepEqual(other.focused, {number: 4, frame: {...SCENE.bounds, x: 243}, role: 'AXWindow', subrole: 'AXStandardWindow', parent: null});
   const unlisted = ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'other', focusedWindowElement: {role: 'AXWindow', subrole: null, frame: rect(1, 2, 3, 4)}}));
-  assert.deepEqual(unlisted.focused, {number: null, frame: rect(1, 2, 3, 4), role: 'AXWindow', subrole: null});
+  assert.deepEqual(unlisted.focused, {number: null, frame: rect(1, 2, 3, 4), role: 'AXWindow', subrole: null, parent: null});
+  // Ruling 1214: a sheet of another window focused keeps its parent's number, from the parent's frame ax-state reads.
+  const elsewhere = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({focusedWindow: 'other',
+    focusedWindowElement: {role: 'AXSheet', subrole: null, frame: SHEET.bounds, parentFrame: SCENE.bounds}}));
+  assert.deepEqual(elsewhere.focused, {number: 11, frame: SHEET.bounds, role: 'AXSheet', subrole: null, parent: 4});
   // No focused window: none recorded; a reader that says nothing of it (an older reader): no `focused` at all.
   assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'none', focusedWindowElement: null})).focused, null);
   assert.equal('focused' in ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer()), false);
+});
+
+// Review of b12c7121a..2a2dd8dd6, finding 1: the window behind a sheet in front is the one Accessibility confirms, never
+// merely the first enclosing one; the expected document wins among several confirmed, and several with none expected
+// is no reading.
+test('a sheet in front: the enclosing window Accessibility confirms is read, the expected one among several; several unexpected are unread', () => {
+  const ax = parents => (pid, bounds, sheet) => (bounds === '323,149,480,300' ? unmatched : answer({sheet: Boolean(sheet) && parents.includes(bounds)}));
+  // The first enclosing window (the untitled document) is not its parent; the scene document behind it is.
+  const second = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600}, ax(['242,107,603,505']));
+  assert.deepEqual([second.number, second.ok, second.sheet], [4, true, 11]);
+  // Both confirmed (an Accessibility that answers so): the expected scene window, else no reading.
+  const both = ax(['262,127,603,505', '242,107,603,505']);
+  assert.deepEqual([ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, expect: 4}, both).number, ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, expect: 9}, both).number], [4, 9]);
+  const unexpected = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, expect: 77}, both);
+  assert.deepEqual([unexpected.ok, unexpected.reason], [false, SHEET_PARENTS]);
+});
+
+// Finding 2's join and minor 4: a focused frame matching two windows joins none; an AXFocusedWindow read that failed is
+// 'unread', distinct from no focused window (null).
+test('the focused window: joined only to a unique window; unread kept apart from none', () => {
+  const twin = win(12, SCENE.bounds);
+  const r = ownKeyWindow([UNTITLED, SCENE, twin], {scene: 'textedit', pid: 600, number: 9}, () => answer({focusedWindow: 'other', focusedWindowElement: {role: 'AXWindow', subrole: null, frame: SCENE.bounds}}));
+  assert.deepEqual([r.focused.number, r.focused.ambiguous], [null, 2]);
+  assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: null, ok: false, failed: ['focusedWindow'], focusedWindowElement: 'unread'})).focused, 'unread');
+  assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'none', focusedWindowElement: null})).focused, null);
 });

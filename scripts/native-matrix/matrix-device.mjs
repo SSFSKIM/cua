@@ -245,15 +245,17 @@ function guardReading(io) {
 // ownKeyWindowNumber; pilot C-3), read for in place of the scene's own window while it is on screen; one no longer on
 // screen (closed) is read as no window at all would be: the scene's own lookup, `ownGone` naming the number.
 // The focused window the reading carries (`focused`) is named `of`: the run's own window ('own'), the scene's recorded
-// window ('scene'), or neither; a sheet of the window read (`focusedWindow` 'sheet'), or that window itself, is the read
-// window's: the own window's when it was read for, else the scene's.
+// window ('scene'), or neither; a sheet is its parent's, and a sheet of the window read (`focusedWindow` 'sheet'), or
+// that window itself, is the read window's: the own window's when it was read for, else the scene's.
 export function sceneKeyWindow(scene, io, own = null) {
   const reading = sceneKeyWindowReading(scene, io, own);
   const f = reading.focused;
-  if (!f) return reading;
+  if (!f || typeof f !== 'object') return reading;
   const ownNumber = own !== null && /^\d+$/.test(String(own)) ? Number(own) : null, sceneNumber = io.state().scenes?.[scene]?.window?.number ?? null;
-  const of = f.number !== null && f.number === ownNumber ? 'own' : f.number !== null && f.number === sceneNumber ? 'scene'
-    : ['run', 'sheet'].includes(reading.focusedWindow) ? (reading.own ? 'own' : 'scene') : 'neither';
+  // Only from a window positively resolved: the sheet's parent, the window itself, or (when its frame joined none) the
+  // window read when Accessibility named that one focused.
+  const n = f.role === 'AXSheet' ? (Number.isSafeInteger(f.parent) ? f.parent : null) : f.number ?? (reading.focusedWindow === 'run' ? reading.number : null);
+  const of = n !== null && n === ownNumber ? 'own' : n !== null && n === sceneNumber ? 'scene' : 'neither';
   return {...reading, focused: {...f, of}};
 }
 function sceneKeyWindowReading(scene, io, own) {
@@ -267,7 +269,7 @@ function sceneKeyWindowReading(scene, io, own) {
     return {...ownKeyWindow(windows, {scene, pid: record.pid, number: ownNumber}, io.axState), own: true};
   }
   const number = SCENES[scene]?.process === 'run' ? null : record.window.number;
-  return {...ownKeyWindow(windows, {scene, pid: record.pid, number}, io.axState), ...(own !== null ? {ownGone: ownNumber ?? String(own)} : {})};
+  return {...ownKeyWindow(windows, {scene, pid: record.pid, number, expect: record.window.number}, io.axState), ...(own !== null ? {ownGone: ownNumber ?? String(own)} : {})};
 }
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, moved by the frame probe and read

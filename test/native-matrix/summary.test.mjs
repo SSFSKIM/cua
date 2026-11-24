@@ -1242,6 +1242,17 @@ test('the cells of a known defect are named with their ticket', () => {
     const background = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(id, {ok: false, outcome: {threw: 'x', errorName: 'typeUnconfirmed'}})}});
     assert.ok(background.blocking.includes(`method: ${id} is worse on cua (known defect #587)`), background.blocking.join('\n'));
   }
+  // #590 (ruling 1223, R5 ii): TextEdit's Latin typeText, and any cell whose cua row answered typeUnconfirmed after its
+  // text landed in a text field (the check read the effect); not one whose field is no text field (#587's).
+  const LATIN = 'textedit/latin/typeText.latin';
+  const landed = {ok: false, outcome: {exact: true, effect: true, threw: 'Computer Use server error -10005: The text was typed, but the field\'s text could not be read back, so it is not confirmed', errorName: 'typeUnconfirmed'}};
+  const latin = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(LATIN, landed)}});
+  assert.ok(latin.blocking.includes(`unicode: ${LATIN} failed on cua (known defect #590)`), latin.blocking.join('\n'));
+  const REPLACE = 'textedit/frontmost/typeText.replace';
+  const field = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(REPLACE, landed)}});
+  assert.ok(field.blocking.includes(`method: ${REPLACE} is worse on cua (known defect #590)`), field.blocking.join('\n'));
+  const unlanded = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(REPLACE, {...landed, outcome: {...landed.outcome, effect: false}})}});
+  assert.ok(unlanded.blocking.includes(`method: ${REPLACE} is worse on cua`), unlanded.blocking.join('\n'));
   // #588's Open panel search row is not judged since ruling 1222 (its own test below).
 });
 

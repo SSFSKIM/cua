@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, documentState, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, documentState, executablePaths, focusedText, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 // A GitHub-hosted runner's environment, where the input source may be written (ruling 1188); the owner's Mac's.
 const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
@@ -591,4 +591,19 @@ test('document: the window the run opened read by Accessibility at its bounds, b
   assert.deepEqual(documentState({scene: 'textedit', window: '70'}, twin), {ok: false, number: 70, found: true, document: null, edited: null, editedFrom: null,
     reason: 'Accessibility lists 2 windows at its bounds: which one is the run\'s cannot be told'});
   assert.throws(() => documentState({scene: 'textedit', window: 'x'}, io), /--window/);
+});
+
+// #590 (ruling 1223, R5 ii): right after a typeUnconfirmed the harness reads the scene's focused text element itself
+// (ax-state text), outside either engine: its role, character count and selected range, each read that
+// failed named with its AXError. Numbers and a role only.
+test('focused-text: the scene\'s focused text element read by the harness, each failed read with its AXError', () => {
+  const asked = [];
+  const io = {state: () => state, axText: pid => { asked.push(pid); return {trusted: true, ok: true, failed: [], errors: {}, role: 'AXTextArea', frame: null, characters: 44, selected: {location: 44, length: 0}, bounds: []}; }};
+  assert.deepEqual(focusedText({scene: 'textedit'}, io), {ok: true, role: 'AXTextArea', characters: 44, selected: {location: 44, length: 0}, failed: [], errors: {}});
+  assert.deepEqual(asked, [11]);
+  const failed = {...io, axText: () => ({trusted: true, ok: false, failed: ['selected'], errors: {selected: -25212}, role: 'AXTextArea', characters: 44, selected: null})};
+  assert.deepEqual(focusedText({scene: 'textedit'}, failed), {ok: false, role: 'AXTextArea', characters: 44, selected: null, failed: ['selected'], errors: {selected: -25212}});
+  assert.deepEqual(focusedText({scene: 'textedit'}, {...io, axText: () => ({trusted: false})}), {ok: false, reason: 'the reader is not trusted for Accessibility'});
+  assert.deepEqual(focusedText({scene: 'textedit'}, {...io, axText: () => { throw new Error('the reader did not run'); }}), {ok: false, reason: 'the reader did not run'});
+  assert.deepEqual(focusedText({scene: 'finder'}, {...io, state: () => ({scenes: {}})}), {ok: false, reason: 'the scene is not up in this run'});
 });

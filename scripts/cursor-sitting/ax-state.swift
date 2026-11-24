@@ -14,9 +14,11 @@
 //       the proof that a window-list window Accessibility lists no window for is that window's sheet (null when the
 //       window was not matched or its children could not be read, `failed` then naming "sheet").
 //   ax-state text <pid> <offset>...
-//       The geometry of the app's focused text element: {"trusted", "ok", "failed", "role", "frame", "characters",
-//       "selected", "bounds"}: its role, frame, character count, selected range, and for each offset the frame of the
-//       one character there (AXBoundsForRange), null where it could not be read. Numbers and a role only: no text.
+//       The geometry of the app's focused text element: {"trusted", "ok", "failed", "errors", "role", "frame",
+//       "characters", "selected", "bounds"}: its role, frame, character count, selected range, and for each offset the
+//       frame of the one character there (AXBoundsForRange), null where it could not be read; `errors` the AXError of
+//       each read that failed, by its name in `failed` (#590, ruling 1223). Numbers and a role only: no text, so its
+//       value is never read (its length is the character count).
 //   ax-state actions <pid> <x,y,w,h> <role>
 //       The actions the first element of <role> under the window at those bounds advertises (#187's premise: whether
 //       Chrome's textarea offers AXPress yet): {"trusted", "ok", "failed", "found", "count", "walked", "actions"}: the
@@ -225,18 +227,28 @@ if args[1] == "window" {
 // text
 let offsets = args.dropFirst(3).compactMap { Int($0) }
 let focusedRead = read(app, kAXFocusedUIElementAttribute)
+var errors: [String: Any] = [:]
 guard let focused = element(focusedRead.value) else {
-  emit(["trusted": true, "ok": false, "failed": ["focused"], "role": NSNull(), "frame": NSNull(), "characters": NSNull(), "selected": NSNull(), "bounds": offsets.map { _ in NSNull() }])
+  emit(["trusted": true, "ok": false, "failed": ["focused"], "errors": ["focused": Int(focusedRead.status.rawValue)], "role": NSNull(), "frame": NSNull(), "characters": NSNull(),
+        "selected": NSNull(), "bounds": offsets.map { _ in NSNull() }])
   exit(0)
 }
-let role = read(focused, kAXRoleAttribute).value as? String
-if role == nil { failed.append("role") }
+/// A read that failed, named in `failed` and its AXError kept (success with no usable value as kAXErrorNoValue's).
+func failedRead(_ name: String, _ status: AXError) {
+  failed.append(name)
+  errors[name] = Int(status == .success ? AXError.noValue.rawValue : status.rawValue)
+}
+let roleRead = read(focused, kAXRoleAttribute)
+let role = roleRead.value as? String
+if role == nil { failedRead("role", roleRead.status) }
 let box = frame(focused)
 if box == nil { failed.append("frame") }
-let characters = read(focused, kAXNumberOfCharactersAttribute).value as? Int
-if characters == nil { failed.append("characters") }
-let selected = axValue(read(focused, kAXSelectedTextRangeAttribute).value, .cfRange, CFRange(location: 0, length: 0))
-if selected == nil { failed.append("selected") }
+let charactersRead = read(focused, kAXNumberOfCharactersAttribute)
+let characters = charactersRead.value as? Int
+if characters == nil { failedRead("characters", charactersRead.status) }
+let selectedRead = read(focused, kAXSelectedTextRangeAttribute)
+let selected = axValue(selectedRead.value, .cfRange, CFRange(location: 0, length: 0))
+if selected == nil { failedRead("selected", selectedRead.status) }
 var bounds: [Any] = []
 for offset in offsets {
   var range = CFRange(location: offset, length: 1)
@@ -249,5 +261,5 @@ for offset in offsets {
   if rect == nil { failed.append("bounds:\(offset)") }
   bounds.append(rectWire(rect))
 }
-emit(["trusted": true, "ok": failed.isEmpty, "failed": failed, "role": role ?? NSNull(), "frame": rectWire(box), "characters": characters ?? NSNull(),
+emit(["trusted": true, "ok": failed.isEmpty, "failed": failed, "errors": errors, "role": role ?? NSNull(), "frame": rectWire(box), "characters": characters ?? NSNull(),
       "selected": selected.map { ["location": $0.location, "length": $0.length] } ?? NSNull(), "bounds": bounds])

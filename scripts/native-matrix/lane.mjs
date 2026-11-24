@@ -83,12 +83,15 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // is the engine's own name for the error a failed call threw (backgroundClickRefused, typeUnconfirmed, …), which the REPL's
 // boundary drops from the error a cell catches (the trusted worker returns a rejection's message alone, and the kernel
 // rejects with a plain Error): the rows record it as `outcome.errorName` where it is present (./steps.mjs errorNameOf).
+// A type_text's read-back record (`cua/typeReadback`, #354: confirmed or why not, the reads and their time, both
+// lengths on a mismatch) and a cut-off key target walk's pid (`cua/keyTargetCutOff`, #582) ride on its error too, which
+// a typeUnconfirmed row keeps (#590, ./steps.mjs readbackOf).
 // -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick, paste, elementClick,
-// coordinateClick, interruption, errorName}, each null when absent.
+// coordinateClick, interruption, errorName, typeReadback, keyTargetCutOff}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
   ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
   ['activationClick', 'cua/activationClick'], ['paste', 'cua/paste'], ['elementClick', 'cua/elementClick'], ['coordinateClick', 'cua/coordinateClick'], ['interruption', 'cua/interruption'],
-  ['errorName', 'cua/errorName']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['errorName', 'cua/errorName'], ['typeReadback', 'cua/typeReadback'], ['keyTargetCutOff', 'cua/keyTargetCutOff']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
@@ -222,6 +225,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
         case 'load': return {answer: {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10}, at};
         case 'document': return {answer: {ok: true, number: Number(args[args.indexOf('--window') + 1]), found: true, document: false, edited: true, editedFrom: 'window'}, at};
+        case 'focused-text': return {answer: {ok: true, role: 'AXTextArea', characters: 0, selected: {location: 0, length: 0}, failed: [], errors: {}}, at};
         default: return {};
       }
     }),

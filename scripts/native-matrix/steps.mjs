@@ -560,6 +560,7 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   keep('act', act);
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
   if (!act.ok) return finish({invalid: 'the act cell failed', error: act.error});
+  if (errorNameOf(act) === 'typeUnconfirmed') row.readback = readbackOf(ctx, scene, act, span);
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
   const caretAfter = c.caret ? await settledRange() : null;
   if (c.caret) row.caret = {before: caretBefore, after: caretAfter.reading};
@@ -588,6 +589,19 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
       userWindow: {pid: userWindow.pid, number: before.reading?.topWindow?.number ?? null}} : null});
   if (speed) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs, frontKey: pushed.frontKey});
   return pushed;
+}
+
+// A typeUnconfirmed act's read-back, kept on its row (#590; ruling 1223, R5 ii): what the engine put on the error (cua's
+// typeReadback record: its reason, which names the read that failed, the snapshot's and the poll's time, the poll's
+// reads, the checkpoints and keys unconfirmed, both lengths on a mismatch; the key target's pid when its walk was cut
+// off), and the harness's own read of the scene's focused text element right after the call (./matrix-device.mjs
+// focusedText) with its time after the call's end, on the device clock. `mark` takes the read into the row's window.
+// -> {engine, keyTargetCutOff?, harness, msAfterCall}.
+export function readbackOf(ctx, scene, act, mark) {
+  const read = mark(ctx.ops.matrix(['focused-text', '--scene', scene, '--run', ctx.run])) ?? {};
+  const end = act.value?.at?.[1] ?? act.at?.[1];
+  return {engine: act.engine?.typeReadback ?? null, ...(act.engine?.keyTargetCutOff ? {keyTargetCutOff: act.engine.keyTargetCutOff} : {}), harness: read.answer ?? null,
+    msAfterCall: Array.isArray(read.at) && Number.isFinite(read.at[0]) && Number.isFinite(end) ? read.at[0] - end : null};
 }
 
 // Acceptance 3's keystroke witness (S L238; ./probe-plan.mjs WITNESS_PREPARE_CELL), after TextEdit's background click

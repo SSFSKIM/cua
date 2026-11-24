@@ -53,6 +53,10 @@
 //       whether the scene's window numbered <n> has a document on disk behind it and unsaved edits, read by Accessibility
 //       at its bounds (documentState; #212's unsaved proof, ruling 1221), no folder read
 //       -> {answer: {dirs}, at}
+//   focused-text --run <dir> --scene <id>
+//       the scene's focused text element right after a typeUnconfirmed (#590, ruling 1223), by the harness's own reader
+//       (../cursor-sitting/ax-state.swift text), outside either engine -> {answer: {ok, role, characters, selected,
+//       failed, errors} | {ok: false, reason}, at}: a role, numbers and AXErrors only
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -468,6 +472,19 @@ function engineOwns(pid, roots, io) {
   return typeof path === 'string' ? underRoots(path, prefixes) : null;
 }
 
+// The scene's focused text element as a type_text's read-back would find it, read right after a typeUnconfirmed (#590;
+// ruling 1223, R5 ii) by the harness's own reader, outside either engine: its role, character count (its value's length;
+// the reader never reads a value) and selected range, each read that failed named with its AXError.
+// -> {ok, role, characters, selected, failed, errors} | {ok: false, reason}.
+export function focusedText({scene}, io) {
+  const pid = io.state().scenes?.[scene]?.pid;
+  if (!Number.isSafeInteger(pid)) return {ok: false, reason: 'the scene is not up in this run'};
+  let a;
+  try { a = io.axText(pid); } catch (error) { return {ok: false, reason: String(error.message).slice(0, 160)}; }
+  if (a?.trusted !== true) return {ok: false, reason: 'the reader is not trusted for Accessibility'};
+  return {ok: a.ok === true, role: a.role ?? null, characters: a.characters ?? null, selected: a.selected ?? null, failed: a.failed ?? [], errors: a.errors ?? {}};
+}
+
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
 export const isWatcher = (table, pid) => table.some(p => p.pid === pid && /\/cua-engine --probe watch-activations\b/.test(p.command));
 
@@ -768,7 +785,7 @@ function parse(argv) {
 export const axStateOf = (dir, {exec = run, compile = compiled} = {}) => axStateReader(args => exec(compile(AX_STATE_SCRIPT, dir), args));
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
-const USAGE = 'usage: matrix-device.mjs compile|read|text-range|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|focused-text|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -785,6 +802,7 @@ export async function main(argv, {io: given = {}} = {}) {
     screen: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])),
     axState: axStateOf(dir),
     axDocument: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['document', String(pid), bounds])),
+    axText: pid => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['text', String(pid)])),
     panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
     // A background row's user window raised to the top when its activation's wait missed (ruling 1221, H2), hosted only.
     raiseWindow: (pid, bounds) => {
@@ -815,6 +833,7 @@ export async function main(argv, {io: given = {}} = {}) {
     }
     case 'electron-mode': return electronModeRecord(io);
     case 'text-range': return timed(() => textRange(flags.scene, io));
+    case 'focused-text': return timed(() => focusedText({scene: flags.scene}, io));
     case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame, window: flags.window ?? null}, io));
     case 'panel':
       if (positional[0] === 'cancel') return timed(() => cancelPanel({window: flags.window}, io));

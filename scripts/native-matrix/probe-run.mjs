@@ -29,7 +29,7 @@ import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInp
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {activate, activateToTop, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
-  ownWindowClosed, ownWindowOpened, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet, frontSeen, userWindowSeen} from './steps.mjs';
+  ownWindowClosed, ownWindowOpened, readbackOf, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet, frontSeen, userWindowSeen} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -265,6 +265,7 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   if (!act) return span.end({invalid: 'the key guard did not send the action'});
   alertCheck(ctx, `after ${id}`);
   if (!act.ok) return span.end({invalid: 'the act cell failed', error: act.error});
+  const readback = errorNameOf(act) === 'typeUnconfirmed' ? readbackOf(ctx, driven, act, span.add) : null;
   const after = read(ctx, focusOf(userWindow), {windowOrder: true});
   const check = span.add(await ctx.lane.js(concurrentCheckCell(driven)));
   const frontKey = {apps, activate: activationOf(ctx, userApp), before: keyReading(before), after: readKey(ctx)};
@@ -274,7 +275,7 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   const drivenLanded = check.ok && check.value?.ok === true;
   const row = {ok: drivenLanded && userLanded && !act.value.threw, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey,
     outcome: {drivenLanded, userLanded, threw: act.value.threw, errorName: errorNameOf(act), ...timing(interval, postedAt, act), ...(check.value?.outcome ?? {})},
-    ...(check.ok ? {} : {error: check.error})};
+    ...(check.ok ? {} : {error: check.error}), ...(readback ? {readback} : {})};
   const why = probeProblem(probe.answer) ?? postValidity(postedAt, interval);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});

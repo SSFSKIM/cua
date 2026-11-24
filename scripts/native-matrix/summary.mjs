@@ -478,11 +478,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   ];
   const blocking = [
     ...departureFailures,
-    ...methods.filter(m => m.verdict === 'worse').map(m => `method: ${m.id} is worse on cua${knownDefect('method', m.id)}`),
+    ...methods.filter(m => m.verdict === 'worse').map(m => `method: ${m.id} is worse on cua${knownDefect('method', m.id, rows)}`),
     ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
     ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
     ...[...new Set(cuaFailed.map(f => f.id))].map(id => `not interfering: ${id} failed on cua`),
-    ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => (r.differs ? `${r.section}: ${r.id} composes otherwise on the vendor: the engines differ (ruling 1119)` : `${r.section}: ${r.id} failed on cua`)),
+    ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => (r.differs ? `${r.section}: ${r.id} composes otherwise on the vendor: the engines differ (ruling 1119)` : `${r.section}: ${r.id} failed on cua${knownDefect(r.section, r.id, rows)}`)),
     ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
   ];
   // A judged cell with no counted cua sample is named; every cell that does not qualify is counted once and listed
@@ -498,7 +498,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     return `${SECTION_NAMES[c.section]}: ${c.id} ${only('vendorStopped') ? `has no cua sample with a vendor sample to compare: the vendor's run stopped before it (${stops})`
       : unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
       : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
-      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}${knownDefect(c.section, c.id)}`;
+      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}${knownDefect(c.section, c.id, rows)}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [
@@ -798,10 +798,20 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
 // Main's tickets for known defects (#587, #588), cited wherever the judge names their cells; the same field a shared
 // not-interfering defect's ticket fills once main registers it (sharedInterferenceOf's `ticket`).
 // #588's Open panel search row is not judged (ruling 1222, ./not-judged.mjs), so it is no longer named here.
-// Ruling 1223 (R5 i): cua's background type-select cells are #587's as the frontmost one is.
+// Ruling 1223 (R5 i): cua's background type-select cells are #587's as the frontmost one is; (R5 ii) TextEdit's Latin
+// typeText #590's.
 export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587', 'method finder/background/typeText.typeSelect@textedit': '#587',
-  'method finder/background/typeText.typeSelect@electron': '#587'});
-const knownDefect = (section, id) => (KNOWN_DEFECTS[`${section} ${id}`] ? ` (known defect ${KNOWN_DEFECTS[`${section} ${id}`]})` : '');
+  'method finder/background/typeText.typeSelect@electron': '#587', 'unicode textedit/latin/typeText.latin': '#590'});
+// #590 (ruling 1223, R5 ii): a cua row that answered typeUnconfirmed after its text landed in a text field (its check read
+// the effect, the field no "not a text field", which is #587's), the read-back failing.
+export const READBACK_DEFECT = '#590';
+const readbackFailedAfterLanding = r => r.engine === 'cua' && r.outcome?.errorName === 'typeUnconfirmed' && r.outcome.effect === true
+  && !/not a text field/.test(String(r.outcome.threw ?? '')) && r.readback?.engine?.reason !== 'notTextField';
+// The ticket a judged cell cites (`rows`: the judged rows), or ''.
+const knownDefect = (section, id, rows = []) => {
+  const ticket = KNOWN_DEFECTS[`${section} ${id}`] ?? (rows.some(r => r.section === section && r.id === id && readbackFailedAfterLanding(r)) ? READBACK_DEFECT : null);
+  return ticket ? ` (known defect ${ticket})` : '';
+};
 
 // Ruling 1219 (h5): the not-interfering cells cua failed whose vendor rows failed too (undeclared on both). Each is judged
 // from what moved, read on both engines' failing records: the person's front app, focus, an activation, the user's own

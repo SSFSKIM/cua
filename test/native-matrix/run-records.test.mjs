@@ -312,3 +312,27 @@ test('the probe cells and the Unicode rows of a full plan carry their readings t
     before: {front: TEXTEDIT, key: TEXTEDIT}, after: {front: TEXTEDIT, key: TEXTEDIT}});
   assert.deepEqual(concurrent.interference.windowOrder, {before: false, after: false});
 });
+
+// #590 (ruling 1223, R5 ii): a typeUnconfirmed row records its read-back in detail: what cua's engine put on the error
+// (its typeReadback record, the key target's pid on a cut-off walk) and the harness's own read of the focused text
+// element right after the call, with its time after the call's end.
+test('a typeUnconfirmed row records the engine\'s read-back record and the harness\'s read of the focused field right after the call', async () => {
+  const {act, check} = cellsOf('textedit', 'typeText', 'replace');
+  const record = {confirmed: false, snapshotMs: 1.2, reason: 'valueUnreadable', pollMs: 0, reads: 0};
+  const reads = [];
+  const ops = steer((a, answer) => {
+    if (a[0] !== 'focused-text') return answer;
+    reads.push(a);
+    return {answer: {ok: false, role: 'AXTextArea', characters: 44, selected: null, failed: ['selected'], errors: {selected: -25212}}, at: [7_010, 7_020]};
+  });
+  const {result} = await runWith({ops, cell: code => (code.includes(act) ? {actMs: 1, at: [6_990, 7_000], threw: true, _meta: {'cua/errorName': 'typeUnconfirmed', 'cua/typeReadback': record, 'cua/keyTargetCutOff': {pid: 11}}}
+    : code.includes(check) ? {ok: false, outcome: {effect: true, threw: 'Computer Use server error -10005: The text was typed, but the field\'s text could not be read back', errorName: 'Error'}} : null)});
+  const row = result.rows.find(r => r.section === 'method' && r.method === 'typeText' && r.case === 'replace');
+  assert.equal(row.outcome.errorName, 'typeUnconfirmed');
+  assert.deepEqual(row.readback, {engine: record, keyTargetCutOff: {pid: 11},
+    harness: {ok: false, role: 'AXTextArea', characters: 44, selected: null, failed: ['selected'], errors: {selected: -25212}}, msAfterCall: 10});
+  assert.ok(reads.every(a => a[a.indexOf('--scene') + 1] === 'textedit'));
+  // Any other answer reads nothing more.
+  const plain = await runWith({ops, cell: code => (code.includes(check) ? {ok: false, outcome: {threw: 'x', errorName: 'Error'}} : null)});
+  assert.equal(plain.result.rows.find(r => r.section === 'method' && r.method === 'typeText' && r.case === 'replace').readback, undefined);
+});

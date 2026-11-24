@@ -40,6 +40,8 @@
 // vendor keeps (the engine leaves out the Apple menu and any titled `Debug`); the vendor prints that element after the
 // window's tree, numbered like any other, with its items' actions cleared (`addMenuBarWithImmediateItems` 0x1007569b8).
 
+import {escapeLineBreaks} from '../../cua-api/line-breaks.mjs';
+
 // The vendor's selection note [E §5.1], the first of its two variants (they print identically).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
 
@@ -473,15 +475,12 @@ function lineText(node, urls) {
 
 // cua's departure from the vendor (#526, ruling 1175; the spec's Decision Log, 2026-11-23): the vendor prints an
 // attribute's line breaks raw, so a page or a document could put a line into the tree that reads as an element
-// (`[99] button Delete`, or `\t\t99 button Delete`). cua prints each break escaped, so nothing an element says starts a
-// line: LF and CR as `\n` and `\r`, as the vendor's own Linux rendering escapes them (src/cua-api/
-// linux-accessibility-tree.mjs), and every other character a reader may break a line at (VT, FF, the three information
-// separators, NEL, LS, PS) as `\uXXXX`. A backslash stays as it is, as the Linux rendering leaves it. Applied to the
-// whole element text after its parts are ordered, so the vendor's long-part rule still reads the raw text [F §2.4], and
-// to the header's window title and app name. The selected text stays raw inside a fence it cannot close (trailer,
-// ruling 1177).
-const LINE_BREAKS = /[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/g;
-export const escapeLineBreaks = text => text.replace(LINE_BREAKS, c => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
+// (`[99] button Delete`, or `\t\t99 button Delete`). cua prints each break escaped (`escapeLineBreaks`, the rule the
+// Linux facade's renderer shares since #558, src/cua-api/line-breaks.mjs), so nothing an element says starts a line.
+// Applied to the whole element text after its parts are ordered, so the vendor's long-part rule still reads the raw
+// text [F §2.4], and to the header's window title and app name. The selected text stays raw inside a fence it cannot
+// close (trailer, ruling 1177).
+export {escapeLineBreaks};
 
 // The width rule's partial children [B §6]: `(showing <lo-hi>, … of <count> items)`, present only with ranges.
 function detailText(node) {

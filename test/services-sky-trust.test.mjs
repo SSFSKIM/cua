@@ -10,7 +10,7 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {registerHooks} from 'node:module';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, ENGINE_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {writeVendorRecord} from './fixtures/route-records.mjs';
@@ -44,6 +44,11 @@ const out = [];
 if (process.env.TRUST_TEST_NODE_REPL === '1') globalThis.nodeRepl = {env: process.env, requestMeta: {}, addTurnEndedHandler: () => () => {},
   createElicitation: async () => ({action: 'accept', content: {}})};
 const [name, setup, reference] = JSON.parse(process.env.TRUST_TEST_REQUESTS);
+if (process.env.TRUST_TEST_IMPORT_ONLY) {
+  try { await import(pathToFileURL(process.env.TRUST_TEST_IMPORT_ONLY).href); out.push({loaded: true}); } catch (error) { out.push({loadError: error.message}); }
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+}
 try {
   const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES)[name]).href);
   out.push(await service.handleRpc(setup));
@@ -113,6 +118,17 @@ test('the hook copy is effective: without the owned secrets modules trusted, the
   const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => !SERVICE_SUPPORT_DIRS.includes(dir)).join(':');
   const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed});
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
+});
+
+// cua's own macOS engine service, which CUA_SKY_SERVICE names with cua's engine on either host: its renderer shares the
+// line-break rule with the Linux facade from src/cua-api (#558), so the vendor host must trust that directory too.
+test('cua\'s macOS engine service and its renderer load under exactly a vendor-host launch\'s trusted paths (#558)', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {secretsUnavailable: 'secrets_disabled'});
+  const [result] = await runWorker({...env, TRUST_TEST_IMPORT_ONLY: ENGINE_SERVICE});
+  assert.deepEqual(result, {loaded: true});
+  const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => dir !== CUA_API_DIR).join(':');
+  const [refused] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed, TRUST_TEST_IMPORT_ONLY: ENGINE_SERVICE});
+  assert.match(refused.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/, 'the hook copy is effective: without src/cua-api it cannot load');
 });
 
 // cua's own browser service, the only one the wrapper delegates to (#79): the wrapper imports it from src/browser-service,

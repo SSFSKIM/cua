@@ -32,7 +32,8 @@
 //                                            executable, which run outside every sandbox) and, with services registered, each service's
 //                                            directory and the owned modules services import (src/secrets), on macOS
 //                                            with the sky wrapper src/services/engine, cua's own native engine service,
-//                                            which CUA_SKY_SERVICE may name (#117; it may not exist yet), and with the
+//                                            which CUA_SKY_SERVICE may name (#117; it may not exist yet), and src/cua-api,
+//                                            whose line-break rule its renderer shares (#558), and with the
 //                                            browser surface src/browser-service, cua's own browser service, which the
 //                                            trusted browser wrapper (src/services/browser.mjs) delegates to (the
 //                                            vendor's @oai/browser-desktop service is never selected: #79). Never
@@ -304,7 +305,9 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[names.services] = JSON.stringify(registered);
     if (own) env.CUA_REPL_TRUSTED_RPC_ENABLED = '1';
     for (const dir of [...Object.values(registered).map(module => dirname(module)), ...SERVICE_SUPPORT_DIRS]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
-    if (registered.sky && !linux) trustedCodePaths.push(ENGINE_SERVICE_DIR);
+    // On macOS the engine service, and the facade's directory it shares the tree's line-break rule from (#558,
+    // src/cua-api/line-breaks.mjs), which cua's own host trusts already.
+    if (registered.sky && !linux) for (const dir of [ENGINE_SERVICE_DIR, CUA_API_DIR]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
   }
   if (enabled.includes('browser') && !trustedCodePaths.includes(BROWSER_SERVICE_IMPL_DIR)) trustedCodePaths.push(BROWSER_SERVICE_IMPL_DIR);
   Object.assign(env, {

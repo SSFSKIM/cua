@@ -288,6 +288,53 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1197 (the design session, after pilot C-2): the pressKey row (`r k`) reads its field until it
+  holds the expected text, has read the same for 500 ms, or 2 s have passed since the first read, 100 ms apart, in the
+  same cell on both lanes (`scripts/native-matrix/unicode-plan.mjs` `settledFieldCheck`). The row's outcome adds
+  `reads` and `settleMs` (the last read's time after the first). The expectation (rk under Latin, 가 under Korean),
+  `judgePressKey` and every other Unicode row's single read (`fieldCheck`, which the probe cells' checks share) are
+  unchanged; the judge compares fixed-string rows by hash only, so the new fields never decide a pair. C-2's vendor
+  read ㄱ for Chrome's and Electron's Korean row and 가 for TextEdit's; the next run's `reads` and `settleMs` say
+  whether the value was trailing or the keys composed otherwise.
+- 2026-11-23, ruling 1196 (the design session, after pilot C-2), A: four judged frontmost cells on both lanes, each its
+  own case on its own panel opening, placed by ruling 1195: `openPanel/frontmost/pressKey.escape` (the panel gone) and
+  `typeText.search` (`CUAMATRIXPANEL` read back from the panel's search field), `savePanel/frontmost/pressKey.escape`
+  (the sheet gone) and `typeText.name` (`CUAMATRIXNAME` read back from the name field, emptied by setValue first,
+  never Return). The Save scene is a new target, `savePanel` on TextEdit: one untitled document (⌘N) for the run's
+  savePanel cases, ⌘S opening the sheet per case, the document closed unsaved after them. It is in the inventory, the
+  plan, the summary, the judge, the manifest and the venue's grounding; the engine is unchanged. B: the sheet
+  variant's and #212's typing (`SHEET_TYPE_CELL`) goes into TextEdit's own untitled document before any ⌘S, its front
+  window checked as that document first, so no panel exists when it fails: it is not the panel service's field. The
+  cell now returns the read-back's length and hash and how it differs, its front window and a reason, and the row adds
+  the device's front, key and top-window owner; the typed text is a capitalised dictionary sentence, since TextEdit's
+  autocorrection rewrites a lower-case non-dictionary first word on a fresh image (already met in `scripts/accept`).
+  Unproven offline; the next run's `outcome.typing` decides.
+- 2026-11-23, ruling 1195 (the design session, after pilot C-2): the system centres the Open panel (520,162 880x448
+  on the runner, over replayd's centred capture alerts) and ignores the frame setup writes to the autosave defaults,
+  so every `openPanel/*/click.cancel` was refused by the alert guard and `meta.placement.panel` stayed empty: macOS 27
+  lists the panel under TextEdit's pid, never the service's bundle the old placement looked for. Now, on a
+  GitHub-hosted runner only, each opening's window (a TextEdit window new since before its key, or the service's) is
+  moved into the strip (x 0-822, below the menu bar) by the harness's device side, `scripts/native-matrix/panel-ax.swift`
+  (AXSize to the venue's panel frame, since 880 wide never fits the strip, then AXPosition), and read back from the
+  window list into `meta.placement.panel`. A read-back outside the strip makes that opening's case NO VERDICT `venue`.
+  Off hosted the helper refuses before any AX call and nothing moves. Each case has its own opening, so a case never
+  inherits another's panel. The close, one rule on both lanes (`scripts/native-matrix/panels.mjs`): Escape, then the
+  Cancel click, then the device's AX cancel (the Cancel button, else the window's AXCancel action; hosted only). When
+  neither engine step closed it, that opening's rows lacking an invalid reason are NO VERDICT by the refusal's cause
+  (else `invalid`), and the run goes on; only a panel still up after the device's cancel stops it (`PanelStuck`, every
+  later sample recorded unrun). Each step and outcome is in `meta.panelCloses`. Off hosted the device cannot close it,
+  so a panel neither engine step closed stops the run, as before. In C-2 cua's Escape ran unrefused and did not close
+  the panel; its Cancel click was refused (beforeRow 74 and 76) and the run stopped at 518 of 571 rows.
+- 2026-11-23, pilot C-2's other harness failures (the design session's item 3): every frontmost case now writes its
+  timing row whatever its sample's fate (vendor `chrome/method.drag.select#1` was missing because an unprepared drag
+  skipped it). The intervention rows read the window order up to 4 times, 250 ms apart, before saying TextEdit's
+  window was not in front, and name the front app and the top window's owner. The per-context rows whose driven
+  context read ABC after its reactivation are NO VERDICT `venue`: the preference read on and Korean was established,
+  and the mini's holds read the same, so it is no engine's sample (they are out of every verdict anyway). The
+  composition rows keep `invalid` (the condition held for the Electron field's group in C-2 and on the mini) and now
+  name what the user's field read (`raw key`, `empty`, `other`, `unread`), also in the reading. Before each run step
+  the sitting projects its finish from the measured runs (each family's mean, else all runs'); past 300 of the job's
+  360 min the step's note, the log and sitting.md say so. Nothing is split.
 - 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.
   alone, so every Latin and Korean selection in pilot C read the US layout back. All 230 input rows (the 5 probe-cell
   rows and the 225 unicode rows) were invalid. Setup gains an `input sources` step, after `textedit defaults`

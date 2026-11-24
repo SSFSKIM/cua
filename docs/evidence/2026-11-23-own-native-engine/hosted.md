@@ -1719,6 +1719,9 @@ opens. If it does not, the panel stands where the system puts it. The alert guar
 alert (NO VERDICT `alert`), and the read-back says where the panel stood. The probe was not extended, as the brief
 asked.
 
+Pilot C-2 answered it: the panel ignores the written frame. "Pilot C-2: the panels, the typing and the time" below
+has what replaced it (ruling 1195).
+
 ### Re-grounding
 
 Every layout that depends on a window's size is derived from the frame the run launched at, never from the mini's
@@ -2162,3 +2165,67 @@ Pilot C's matrix-vendor-1 took 1408 s with those rows invalid. From the measured
 of wall each, speed rows about 0.44 s) and the probes' launches (about 1 to 2 s each), expect roughly 3 to 6 minutes
 more per run, so a full C sitting grows by about 20 to 35 minutes. That is an estimate until the next pilot measures it.
 
+
+## Pilot C-2: the panels, the typing and the time (rulings 1195, 1196, 1197)
+
+### The Open panel
+
+**What C-2 showed.** The system centred the Open panel at 520,162 880x448, over both of replayd's capture alerts
+(893,244 260x364 and 830,188 260x348). The frame setup wrote to TextEdit's autosave defaults (80,80 720x440) was
+ignored. The alert guard refused every `openPanel/*/click.cancel` on both lanes. `meta.placement.panel` stayed empty:
+macOS 27 lists the panel window under TextEdit's pid (the guard's detail named "the textedit window 994"), and the
+placement looked only for the panel service's bundle.
+
+**The fix (ruling 1195).** On a GitHub-hosted runner each opening's window is told from TextEdit's windows read
+before its key, moved into the strip (x 0-822, below the menu bar) by `scripts/native-matrix/panel-ax.swift` (AXSize
+to the venue's panel frame, then AXPosition), and read back from the window list. The harness's device side does it,
+never the engine under test. Each opening is in `meta.placement.panel` with its frame before, the frame asked, the
+read-back and whether it stands in the strip. A read-back outside the strip makes that opening's case NO VERDICT
+`venue`. Off a hosted runner the helper refuses before any Accessibility call.
+
+**Escape on cua's lane.** In C-2 cua's Escape ran unrefused and did not close the Open panel. Its Cancel click was
+then refused by the alert guard (beforeRow 74 and 76) and the run stopped at 518 of 571 rows; the vendor's Escape
+closed it every time. The close is now one rule on both lanes: Escape, the Cancel click, then the device's
+Accessibility cancel. The rows of an opening that neither engine step closed are NO VERDICT, and only a panel still up
+after the device's cancel stops the run. The next run's `meta.panelCloses` records every step and its outcome, so it
+says whether cua's Escape closes the panel once it stands in the strip. The new judged cell
+`openPanel/frontmost/pressKey.escape` (ruling 1196) puts the same question to the judge on both lanes.
+
+### The untitled document's typing (ruling 1196 B)
+
+Both lanes failed the sheet variant's and #212's typing alike, and in the background sheet variant too. The typing
+goes into TextEdit's own untitled document after ⌘N and before any ⌘S: `NEW_DOCUMENT_CELL` checks that the front window
+is a new document, neither the scene's nor a panel, and `SHEET_TYPE_CELL` checks its title before typing. No panel
+exists when it fails, so the keys are not missing the panel service's field. The likeliest cause is TextEdit's
+autocorrection rewriting the old text's lower-case first word, which is not in the dictionary, on a fresh image
+(`scripts/accept/textedit.mjs` met the same). It is unproven offline. The text is now a capitalised dictionary
+sentence. The cell returns the read-back's length and hash and whether it equals the text ignoring case, its front
+window and a reason. The row adds the device's front, key and top-window owner (`outcome.typing`). Whether the panel
+service's field takes keys is answered by `savePanel/frontmost/typeText.name`.
+
+### The other rows
+
+- **Intervention fires and pre-action.** The vendor's "textedit's window was not in front" came after the sheet
+  variant: the top layer-0 window was not TextEdit's. The candidates offline are a transient window above it (the
+  input-source caret indicator, a completion bubble, a cursor overlay). The vendor's concurrent rows also read
+  `topWindow: false` 3 times in 135. The row now reads the window order up to 4 times, 250 ms apart, and names the
+  front app and the top window's owner. The next run says which window it is.
+- **Per-context (54 rows a side in C-2).** The preference read on and the driven scene's Korean held after its refocus,
+  but its context read ABC after the reactivation. The mini's holds 3 and 10 read the same, so this is not the hosted
+  image. A likely cause is that apps launched before the preference was written do not take it up; this is unverified.
+  These rows are now NO VERDICT `venue`, naming the read-back. They were already out of every verdict.
+- **Composition with TextEdit as the user window (18 rows).** The field read no ㄱ after the probe's r (`composed:
+  false`, 4 reads), while the Electron field's group with TextEdit as user composed in C-2 and on the mini. The rows
+  stay invalid and now name what the field read (`raw key`, `empty`, `other`, `unread`; `read` in the reading). The
+  next run tells an uncomposed key from one that never arrived.
+- **Vendor `speed chrome/method.drag.select#1`.** An unprepared drag ("a point of the drag is not in the field")
+  skipped its timing row. Every frontmost case now writes one, its sample invalid when it was not timed.
+- **The pressKey row (ruling 1197).** The vendor read ㄱ for `r k` in Chrome and Electron, 가 in TextEdit. The row now
+  reads its field until it settles (500 ms unchanged or 2 s), with `reads` and `settleMs` on the row.
+
+### The time
+
+C-2's vendor matrix run took 2206 s. Before each run step the sitting projects its finish: the time so far, plus
+every run step left at its family's measured mean, or the mean of every measured run when its family has none
+(`projected` on the step). Past 300 of the job's 360 minutes, the step's note, the log and sitting.md say so. Nothing
+is split or skipped.

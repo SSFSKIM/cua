@@ -191,6 +191,13 @@ export function callKind(name, call) {
   return name;
 }
 
+// The executable an exec call ran, resolved: execve's path, execveat's path against its descriptor or, with an empty
+// path and AT_EMPTY_PATH, the descriptor itself; a relative path against `cwd`. Null when none can be read.
+function execProgram(name, call, cwd) {
+  const {paths, unresolved} = callPaths(name, call, cwd);
+  return unresolved ? null : paths[0] ?? null;
+}
+
 // An exec call's argument vector, each string as strace printed it (execve's second argument, execveat's third), or
 // null when strace did not print it whole.
 export function execArgv(call) {
@@ -211,6 +218,9 @@ export function execArgv(call) {
 export function traceReader({helper, home, cwd = null, watch = null}) {
   const watched = watch ? new Set(watch) : null;
   const procs = new Map();
+  // Every nonblank line is accounted for (#171 M6b, T6 fix wave 1): a line that is no `<pid> <call>`, a call whose form
+  // is not read, or a resumption with no start is counted, and the whole trace is then not complete.
+  const unread = {lines: 0, orphans: 0};
   const pending = new Map();
   const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
   const inRuntimes = path => roots.some(root => path === root || path.startsWith(`${root}/`));
@@ -250,8 +260,10 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       if (value === 0) { p.execs.push(program(call)); p.argv.push(call); p.calls = 0; p.opened = new Set(); }
       // An exec of a program under runtimes/ that failed is still an attempt to launch it.
       else if (paths.some(inRuntimes)) (p.attempts ??= []).push(paths.find(inRuntimes));
-      // Every exec, done or attempted (a lookup along PATH attempts each directory's), with its argument vector.
-      p.execList.push({program: program(call), argv: execArgv(call), ok: value === 0});
+      // Every exec, done or attempted (a lookup along PATH attempts each directory's), with its argument vector and the
+      // executable it named, resolved as the kernel resolves it (execveat's descriptor, a relative path against the
+      // working directory); null when that cannot be read.
+      p.execList.push({program: execProgram(name, call, p.cwd.path), argv: execArgv(call), ok: value === 0});
       return;
     }
     // exit ends this thread alone; exit_group ends its whole thread group.
@@ -262,7 +274,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
   return {
     line(text) {
       const m = LINE.exec(text);
-      if (!m) return;
+      if (!m) { if (text.trim()) unread.lines += 1; return; }
       const pid = Number(m[1]);
       let call = m[2];
       const p = proc(pid);
@@ -277,7 +289,8 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       if (resumed) {
         const start = pending.get(pid);
         pending.delete(pid);
-        if (!start) return;
+        // exit and exit_group were never kept pending (they end the thread), but strace may still print their end.
+        if (!start) { if (!(/^exit(?:_group)?$/.test(resumed[1]) && p.ended)) unread.orphans += 1; return; }
         return finish(pid, resumed[1], `${start}${call.slice(resumed[0].length)}`);
       }
       if (call.endsWith('<unfinished ...>')) {
@@ -291,6 +304,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       }
       const name = /^(\w+)\(/.exec(call)?.[1];
       if (name) finish(pid, name, call);
+      else unread.lines += 1;
     },
     summary() {
       const up = pid => { const chain = []; for (let p = procs.get(pid)?.parent; p !== null && p !== undefined && !chain.includes(p); p = procs.get(p)?.parent) chain.push(p); return chain; };
@@ -339,7 +353,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         }
         q.pendingFile = (q.pendingFile ?? 0) + 1;
         // An unfinished exec is an attempt.
-        if (EXEC.test(`${name}(`)) q.execList.push({program: program(start), argv: execArgv(`${start})`), ok: null});
+        if (EXEC.test(`${name}(`)) q.execList.push({program: execProgram(name, `${start})`, q.cwd.path), argv: execArgv(`${start})`), ok: null});
       }
       pending.clear();
       const servedPids = [...procs.keys()].filter(inServe);
@@ -358,8 +372,13 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       const unended = unendedOf(servedPids);
       // The whole trace's, for a traced command with no serve in it (an install, a doctor run).
       const all = [...procs.values()];
-      const whole = {unresolved: all.reduce((n, p) => n + p.unresolved, 0), pending: all.reduce((n, p) => n + (p.pendingFile ?? 0), 0), unended: unendedOf([...procs.keys()])};
-      whole.complete = whole.unresolved === 0 && whole.pending === 0 && whole.unended === 0;
+      // A trace with no process, a line it could not read, or a resumption of no call is never complete.
+      const whole = {processes: procs.size, unresolved: all.reduce((n, p) => n + p.unresolved, 0), pending: all.reduce((n, p) => n + (p.pendingFile ?? 0), 0),
+        unended: unendedOf([...procs.keys()]), unreadLines: unread.lines, orphans: unread.orphans};
+      whole.complete = whole.processes > 0 && whole.unresolved === 0 && whole.pending === 0 && whole.unended === 0 && whole.unreadLines === 0 && whole.orphans === 0;
+      // The trace's root: the first process's first successful exec, the command the trace was taken of.
+      const first = procs.keys().next().value;
+      const rootExec = first === undefined ? null : procs.get(first).execList.find(e => e.ok) ?? null;
       // Every exec in the trace, and the process-path witness: each program a successful exec ran, by path, with its count.
       const execs = [...procs].flatMap(([pid, q]) => q.execList.map(e => ({pid, ...e, underServe: inServe(pid)})));
       const counts = new Map();
@@ -391,6 +410,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         runtimes: {calls: served.reduce((n, p) => n + p.runtimesCalls, 0), unresolved, pending: pendingFile, unended, complete: unresolved === 0 && pendingFile === 0 && unended === 0},
         launched,
         whole,
+        root: rootExec && {program: rootExec.program, argv: rootExec.argv},
         execs,
         programs,
         files,

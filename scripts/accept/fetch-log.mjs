@@ -13,6 +13,7 @@
 //   {event: 'failed', id, url, error}                                            when the fetch itself rejected.
 // A fetch asked and never ended (the process exited first) has its `asked` line alone.
 //
+// Its first line is READY, written once fetch is wrapped: a log without it, or empty, witnesses nothing (fix wave 1).
 // Imported for its reader (readFetchLog) it changes nothing: the wrapper is installed only when FETCH_LOG is set, which
 // only the driver's child processes have.
 import {appendFileSync, readFileSync} from 'node:fs';
@@ -64,23 +65,36 @@ export function loggedFetch(fetchImpl, log) {
   };
 }
 
+// The preload's first line, written once fetch is wrapped: a log without it was never armed, so it witnesses nothing.
+export const READY = Object.freeze({event: 'ready'});
+
 /**
  * The log at `file` as one entry per fetch, in the order asked: {url, answered, status, bytes, complete, error}, each of
- * the last five null until its line came. A missing file is null, never an empty log: no log is no witness.
+ * the last five null until its line came. The log must open with READY and every later record must follow from what was
+ * asked: an `asked` of a new id, then at most one `answered` or `failed` of that id and URL. Anything else, an unknown
+ * event, a torn line, a missing or empty file included, is null: no witness, never "nothing fetched".
  */
 export function readFetchLog(file) {
   let text;
   try { text = readFileSync(file, 'utf8'); } catch { return null; }
-  const fetches = new Map();
+  const records = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    let record;
-    try { record = JSON.parse(line); } catch { return null; }
-    if (record.event === 'asked') fetches.set(record.id, {url: record.url, answered: null, status: null, bytes: null, complete: null, error: null});
-    const entry = fetches.get(record.id);
-    if (!entry) continue;
+    try { records.push(JSON.parse(line)); } catch { return null; }
+  }
+  if (records[0]?.event !== READY.event) return null;
+  const fetches = new Map();
+  for (const record of records.slice(1)) {
+    if (record?.event === 'asked') {
+      if (fetches.has(record.id) || typeof record.url !== 'string') return null;
+      fetches.set(record.id, {url: record.url, answered: null, status: null, bytes: null, complete: null, error: null});
+      continue;
+    }
+    const entry = fetches.get(record?.id);
+    if (!entry || record.url !== entry.url || entry.status !== null || entry.error !== null) return null;
     if (record.event === 'answered') Object.assign(entry, {answered: record.answered, status: record.status, bytes: record.bytes, complete: record.complete});
-    if (record.event === 'failed') entry.error = record.error;
+    else if (record.event === 'failed') entry.error = record.error ?? 'failed';
+    else return null;
   }
   return [...fetches.values()];
 }
@@ -89,4 +103,5 @@ const file = process.env[FETCH_LOG];
 if (file && typeof globalThis.fetch === 'function') {
   const original = globalThis.fetch;
   globalThis.fetch = loggedFetch(original, record => appendFileSync(file, `${JSON.stringify(record)}\n`));
+  appendFileSync(file, `${JSON.stringify(READY)}\n`);
 }

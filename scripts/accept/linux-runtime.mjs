@@ -67,6 +67,9 @@ const FIXTURE_ID = {smoke: 'linux-native', witness: 'linux-text', browser: 'linu
 const MINUTES = {plain: 12, traced: 25};
 // The two entries U2 adds to runtimes/, which nothing may name.
 const ADDED = {dir: 'm6b-t6-added-dir', file: 'm6b-t6-added-file'};
+// Doctor's sandbox.userns probe as it executes (src/runtime/linux-desktop.mjs bwrapUserns): the one bubblewrap a doctor
+// run may start.
+const USERNS_PROBE = Object.freeze({role: 'bwrap', argvTail: ['--ro-bind', '/', '/', 'true']});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const readJson = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
 const readText = file => { try { return readFileSync(file, 'utf8'); } catch { return null; } };
@@ -121,9 +124,29 @@ export function findBytes(dir) {
   return [...seen.values()].reduce((n, size) => n + size, 0);
 }
 
-// The managed parts of a home whose snapshots say an install changed nothing (U2): each directory by treeSnapshot.
+// The managed parts of a home whose snapshots say an install changed nothing (U2, U3): each by treeSnapshot. A part
+// that cannot be read makes no snapshot at all (null), which never compares equal (fix wave 1).
 const PART_DIRS = ['modules', 'sandbox', 'node', 'engine', 'current.json'];
-const partsSnapshot = home => ({entries: PART_DIRS.flatMap(part => (treeSnapshot(join(home, part))?.entries ?? [{path: '.', kind: 'absent'}]).map(e => ({...e, path: `${part}/${e.path}`})))});
+export function partsSnapshot(home) {
+  const entries = [];
+  for (const part of PART_DIRS) {
+    const snapshot = treeSnapshot(join(home, part));
+    if (!snapshot) return null;
+    entries.push(...snapshot.entries.map(e => ({...e, path: `${part}/${e.path}`})));
+  }
+  return {entries};
+}
+
+/**
+ * Whether the driver may write and remove `<home>/.config/cua/engine.json` (E3): only in a user `home` (its real path)
+ * inside the run directory `runDir` (its real path), which linux-runtime-env.sh made fresh, and only when no engine.json
+ * is there yet. Anywhere else the file is someone else's, and the driver never touches it (fix wave 1, Critical).
+ */
+export function settingsHomeProblems({home, runDir, settingsExists}) {
+  if (!home) return ['HOME is unset: E3 writes engine.json only in the run\'s own user home'];
+  if (!home.startsWith(`${runDir}/`)) return [`HOME ${home} is not inside the run ${runDir}: E3 writes engine.json only in the run's own user home`];
+  return settingsExists ? [`${join(home, '.config', 'cua', 'engine.json')} exists: the run's user home holds no engine.json until E3 writes one`] : [];
+}
 
 // ---- what this checkout pins, for E0's fetch log ---------------------------------------------------------------------
 
@@ -161,7 +184,6 @@ function createRun({out, scratch}) {
     const files = {out: join(scratch, `${id}.out`), err: join(scratch, `${id}.err`), trace: join(scratch, `${id}.strace`), log: join(scratch, `${id}.fetch.jsonl`)};
     let [cmd, argv, childEnv] = [command, args, env];
     if (logged) {
-      writeFileSync(files.log, '');
       argv = ['--import', PRELOAD, ...argv];
       childEnv = {...env, [FETCH_LOG]: files.log};
     }
@@ -323,7 +345,16 @@ async function main() {
   // provenance record is read for it.
   const vendorName = vendorReleaseFor(arch);
   const releases = Object.values(VENDOR_RELEASES);
+  // engine.json of the run's user home, which E3 writes and removes once the preconditions verified the home is the
+  // run's own (settingsHomeProblems); until then, and in any other home, it is never touched.
   const settingsPath = join(process.env.HOME ?? '', '.config', 'cua', 'engine.json');
+  let settingsOwned = false;
+  const writeSettings = engine => {
+    if (!settingsOwned) throw new Error(`${settingsPath} is not the run's own: it is never written`);
+    mkdirSync(dirname(settingsPath), {recursive: true});
+    writeFileSync(settingsPath, `${JSON.stringify({engine})}\n`);
+  };
+  const clearSettings = () => { if (settingsOwned) rmSync(settingsPath, {force: true}); };
   const report = {driver: 'm6b-acceptance-13', leg: option('--leg') ?? null, arch, node: process.version, head: gitHead(REPO), release, installer, vendorRelease: vendorName,
     older: {path: older, commit: gitHead(older)}, phases, out: resolve(out), scratch, startedAt: new Date().toISOString(), cells: [], measured: {}};
   const say = line => process.stderr.write(`linux-runtime: ${line}\n`);
@@ -410,13 +441,14 @@ async function main() {
     cell.runs.push(projectAttempt(`open under ${what}`, open));
     check(cell, `under ${what}, the open is refused ${expected.code} with the literal sentence and the hint`, refusedAsProblems(open, expected));
     check(cell, `under ${what}, the open executed ${allowed.length ? 'nothing of an engine, a worker, a helper or a host but the override\'s --version, once' : 'nothing of an engine, a worker, a helper or a host'}; nothing under runtimes/`,
-      [...execRoleProblems(open.trace, {helper: facts.helper, allowed}), ...(open.trace?.runtimes?.calls ? [`${open.trace.runtimes.calls} calls named a path under runtimes/`] : [])]);
+      [...execRoleProblems(open.trace, {helper: facts.helper, command: 'serve', allowed}), ...(open.trace?.runtimes?.calls ? [`${open.trace.runtimes.calls} calls named a path under runtimes/`] : [])]);
     const doctor = await tracedDoctor(`doctor-${what}`, env, facts);
     cell.runs.push({what: `doctor under ${what}`, ...projectExec(doctor)});
     check(cell, `under ${what}, doctor's engine and repl.host rows fail with the sentence and the hint`, doctorRefusalProblems(doctor.report, expected));
-    // Doctor's sandbox.userns probe runs bubblewrap (on `true`); no engine, helper, worker or host is started.
+    // Doctor's sandbox.userns probe runs bubblewrap on `true`, exactly so, once; no engine, helper, worker or host is
+    // started, and no other bubblewrap.
     check(cell, `under ${what}, doctor executed ${allowed.length ? 'no engine, helper, worker or host but the override\'s --version, once' : 'no engine, helper, worker or host'}`,
-      execRoleProblems(doctor.summary, {helper: facts.helper, allowed, allowRoles: ['bwrap']}));
+      execRoleProblems(doctor.summary, {helper: facts.helper, command: 'doctor', allowed: [...allowed, USERNS_PROBE]}));
   }
 
   try {
@@ -432,7 +464,7 @@ async function main() {
     if (process.env.CUA_NATIVE_ENGINE !== undefined) problems.push('CUA_NATIVE_ENGINE is set: the cells set it where they need it');
     if (process.env[FETCH_LOG] !== undefined) problems.push(`${FETCH_LOG} is set: the driver sets it for the installs it logs`);
     if (!process.env.CUA_HOME) problems.push('CUA_HOME is unset: the empty home is the one linux-runtime-env.sh makes');
-    if (!process.env.HOME || existsSync(settingsPath)) problems.push(`${settingsPath} exists: the run's user home holds no engine.json until E3 writes one`);
+    problems.push(...settingsHomeProblems({home: process.env.HOME && real(process.env.HOME), runDir: real(runDir), settingsExists: existsSync(settingsPath)}));
     for (const tool of ['strace', 'find', 'file']) if (spawnSync(tool, ['--version'], {encoding: 'utf8'}).error) problems.push(`${tool} is not installed`);
     const olderClean = spawnSync('git', ['-C', older, 'status', '--porcelain'], {encoding: 'utf8'});
     report.older.clean = olderClean.status === 0 && olderClean.stdout.trim() === '';
@@ -440,6 +472,7 @@ async function main() {
     if (!report.older.clean) problems.push(`the older checkout ${older} has local changes`);
     report.preconditions.problems = problems;
     if (problems.length) throw new Error(`preconditions: ${problems.join('; ')}`);
+    settingsOwned = true;
     const environment = environmentVerdict(readDoctor({cli: CLI, env: process.env}).report);
     report.environment = environment;
     if (!environment.pass) throw new Error(`doctor's environment rows: ${environment.problems.join('; ')}`);
@@ -490,8 +523,8 @@ async function main() {
       check(cell, 'no ar and no xz was executed or looked up, by the install\'s whole trace', toolProblems(install.summary));
       check(cell, 'the home has no runtimes/, no line names a vendor release, doctor\'s retired is empty with no runtime.retired row',
         emptyHomeProblems({runtimes: lstatKind(join(home, 'runtimes')), out: [readText(install.out), readText(install.err)].every(t => t !== null) ? `${readText(install.out)}\n${readText(install.err)}` : null, doctor: doctor.report}));
-      const file = spawnSync('file', ['-L', linuxEnginePath(home)], {encoding: 'utf8'});
-      check(cell, 'file says the engine is statically linked (item 9)', staticEngineProblems(file.stdout), {file: file.stdout?.trim() ?? null});
+      const file = spawnSync('file', ['-bL', linuxEnginePath(home)], {encoding: 'utf8'});
+      check(cell, 'file -bL exits 0 and its linkage field says the engine is statically linked (item 9)', staticEngineProblems(file.error ? null : file), {file: file.stdout?.trim() ?? null});
       report.measured.E0 = {installSeconds: install.seconds, bytesFetched: fetchedBytes(install.log), urls: install.log?.length ?? null, doctorSeconds: doctor.seconds};
       const launcher = doctor.report?.checks?.find(c => c.name === 'sandbox.launcher')?.status === 'pass';
       finish(cell);
@@ -538,18 +571,18 @@ async function main() {
               allowed: [{program: outdatedReal, argv: [outdatedReal, '--version']}]}]),
           ];
           for (const row of rows) {
-            rmSync(settingsPath, {force: true});
-            if (row.file) { mkdirSync(dirname(settingsPath), {recursive: true}); writeFileSync(settingsPath, `${JSON.stringify({engine: 'vendor'})}\n`); }
+            clearSettings();
+            if (row.file) writeSettings('vendor');
             await refusedRow(cell, {what: row.what, env: {...env, ...row.env}, home, expected: row.expected, allowed: row.allowed});
           }
-          rmSync(settingsPath, {force: true});
+          clearSettings();
           await browserRuns(cell, {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}, home, traced: false, label: 'the browser-only session with CUA_NATIVE_ENGINE=vendor'});
           const installed = await r.cua('install-vendor', ['install', '--json'], {env: {...env, CUA_NATIVE_ENGINE: 'vendor'}, minutes: 10});
           cell.runs.push({what: 'cua install --json under CUA_NATIVE_ENGINE=vendor', ...projectExec(installed)});
           check(cell, 'cua install under the variable exits nonzero with §2.2\'s sentence, no hint, every part placed',
             retiredInstallProblems({exit: installed.code, report: readJson(installed.out)}, {message: retiredMessage({sources: ['variable'], settings: settingsPath, installer, after: 'install'}), release}));
           await computerRuns(cell, {env, home, kinds: ['smoke']});
-        } finally { rmSync(settingsPath, {force: true}); }
+        } finally { clearSettings(); }
         finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerHere = await r.firstAnswers(CLI, {env, n: sampleCount});
       }
@@ -588,7 +621,7 @@ async function main() {
         cell.runs.push({what: 'cua doctor --json, traced', ...projectExec(traced1)});
         check(cell, 'traced, doctor exits 0 with the same rows', [...(traced1.code === 0 ? [] : [`doctor exited ${traced1.code}`]), ...doctorRowsProblems(traced1.report, {retired: expectedTree, reference: referenceDoctor})]);
         check(cell, 'under runtimes/ the trace shows lstat, directory reads and one open of install.json, inside the two release names; nothing executed or written there',
-          runtimesCallProblems(traced1.summary, {home: facts.homes, releases}));
+          runtimesCallProblems(traced1.summary, {home: facts.homes, releases, command: 'doctor'}));
         report.measured.U1 = {doctorSeconds: doctor1.seconds, E0DoctorSeconds: report.measured.E0?.doctorSeconds ?? null};
         finish(cell);
         if (sampleCount > 0) report.measured.firstAnswerOlder = await r.firstAnswers(olderCli, {env, n: sampleCount});
@@ -599,6 +632,8 @@ async function main() {
         writeFileSync(join(runtimesDir, ADDED.file), 'added by the acceptance driver\n');
         const before2 = treeSnapshot(runtimesDir);
         const parts2 = partsSnapshot(home);
+        // Both of install's modes from the same state: the plain run (its line), then `--json` (its exact fields), each
+        // judged against the snapshots taken before either, so the second starts where the first did (fix wave 1).
         const install2 = await r.cua('install-U2', ['install'], {env, minutes: 15, logged: true, traced: true, helper: facts.helper, homes: facts.homes});
         cell.runs.push({what: 'cua install, logged and traced', ...projectExec(install2)});
         check(cell, 'cua install exits 0', install2.code === 0 ? [] : [`it exited ${install2.code ?? install2.signal}`]);
@@ -606,8 +641,13 @@ async function main() {
           retiredLineProblems({out: readText(install2.out), err: readText(install2.err)}, {sentence: retiredSentence(expectedTree), unnamed: [ADDED.dir, ADDED.file]}));
         check(cell, 'nothing under runtimes/ changed: the listing, every file\'s hash and every mtime as before', snapshotProblems(before2, treeSnapshot(runtimesDir)));
         check(cell, 'the trace shows no unlink, rename, write or exec under runtimes/: lstat, directory reads and one open of install.json',
-          runtimesCallProblems(install2.summary, {home: facts.homes, releases}));
-        check(cell, 'nothing was fetched, and every part is as it was', [...noFetchProblems(install2.log), ...snapshotProblems(parts2, partsSnapshot(home)).map(p => `a part: ${p}`)]);
+          runtimesCallProblems(install2.summary, {home: facts.homes, releases, command: 'install'}));
+        check(cell, 'nothing was fetched, and every part is as it was on disk', [...noFetchProblems(install2.log), ...snapshotProblems(parts2, partsSnapshot(home)).map(p => `a part: ${p}`)]);
+        const json2 = await r.cua('install-U2-json', ['install', '--json'], {env, minutes: 15, logged: true});
+        cell.runs.push({what: 'cua install --json from the same state, logged', ...projectExec(json2)});
+        check(cell, 'from the same state, --json: every part changed: false, retired the one release with U1\'s exact bytes, nothing fetched',
+          [...reinstallProblems({exit: json2.code, report: readJson(json2.out)}, {retired: [expectedTree]}), ...noFetchProblems(json2.log)]);
+        check(cell, 'and on disk after it: runtimes/ and every part as before U2', [...snapshotProblems(before2, treeSnapshot(runtimesDir)), ...snapshotProblems(parts2, partsSnapshot(home)).map(p => `a part: ${p}`)]);
         finish(cell);
 
         cell = cellOf('U3');
@@ -618,11 +658,12 @@ async function main() {
         await browserRuns(cell, {env, home, traced: false});
         await loaderRun(cell, {env, home});
         const before3 = treeSnapshot(runtimesDir);
+        const parts3 = partsSnapshot(home);
         const install3 = await r.cua('install-U3', ['install', '--json'], {env, minutes: 15, logged: true});
         cell.runs.push({what: 'cua install --json again, logged', ...projectExec(install3)});
         check(cell, 'the second install reports the same and changes nothing: every part changed: false, retired the one release with U1\'s bytes, nothing fetched',
           [...reinstallProblems({exit: install3.code, report: readJson(install3.out)}, {retired: [expectedTree]}), ...noFetchProblems(install3.log)]);
-        check(cell, 'runtimes/ as before the second install', snapshotProblems(before3, treeSnapshot(runtimesDir)));
+        check(cell, 'and on disk: runtimes/ and every part as before the second install', [...snapshotProblems(before3, treeSnapshot(runtimesDir)), ...snapshotProblems(parts3, partsSnapshot(home)).map(p => `a part: ${p}`)]);
         boundary(cell, home, 'present', 'end');
         finish(cell);
 
@@ -649,7 +690,10 @@ async function main() {
           const installed = await r.cua(`install-${id}`, ['install', '--json'], {env: copyEnv, minutes: 25});
           const doctor = await doctorRun(`doctor-${id}`, copyEnv);
           cell.runs.push({what: 'cua install --json', ...projectExec(installed)}, {what: 'cua doctor --json', ...projectExec(doctor)});
-          check(cell, 'neither names it: install exits 0 with retired empty, doctor has no runtime.retired row and retired empty', notNamedProblems({exit: installed.code, report: readJson(installed.out), doctor: doctor.report}));
+          const textOf = run => { const [out, err] = [readText(run.out), readText(run.err)]; return out === null || err === null ? null : `${out}\n${err}`; };
+          check(cell, 'neither names it: both exit 0, install\'s retired empty, doctor with no runtime.retired row and retired empty, and neither output naming the release or the copy',
+            notNamedProblems({install: {exit: installed.code, report: readJson(installed.out), text: textOf(installed)}, doctor: {exit: doctor.code, report: doctor.report, text: textOf(doctor)}},
+              {names: [...new Set([vendorName, copy, real(copy)])]}));
           check(cell, 'the copy\'s listing and every file\'s hash as before', snapshotProblems(before, treeSnapshot(join(copyHome, 'runtimes'))));
           finish(cell);
         }
@@ -659,7 +703,7 @@ async function main() {
     report.error = error.message;
     say(`stopped: ${error.message}`);
   } finally {
-    rmSync(settingsPath, {force: true});
+    clearSettings();
     report.finishedAt = new Date().toISOString();
     report.verdict = runVerdict({phases, cells: report.cells, error: report.error});
     writeFileSync(join(out, 'runtime.json'), `${JSON.stringify(report, null, 1)}\n`);

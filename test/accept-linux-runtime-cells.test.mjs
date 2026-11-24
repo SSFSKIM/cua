@@ -6,16 +6,17 @@
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {APPROVED_OLDER, CELLS, ENGINE_HINT_LITERAL, FIXTURE_STEPS, FORBIDDEN_ROWS, OUTDATED_ENGINE, VENDOR_RELEASES, boundaryProblems, controlProblems, doctorRefusalProblems, doctorRowsProblems,
   emptyHomeProblems, engineRowProblems, execRoleProblems, fetchLogProblems, fixtureProblems, inheritedOverrides, initializeAnswered, installProblems, launchedProblems, noFetchProblems,
   notNamedProblems, olderProblems, outdatedOverrideMessage, parsePhases, parseRefusal, refusedAsProblems, reinstallProblems, retiredInstallProblems, retiredLineProblems,
-  retiredMessage, retiredReportProblems, retiredSentence, runVerdict, runtimesCallProblems, snapshotProblems, staticEngineProblems, toolProblems, traceProblems, treeSnapshot,
+  retiredMessage, retiredReportProblems, retiredSentence, rootProblems, runVerdict, runtimesCallProblems, snapshotProblems, staticEngineProblems, toolProblems, traceProblems, treeSnapshot,
   vendorReleaseFor, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
 import {RETIRED_RELEASES} from '../src/runtime/retired-tree.mjs';
-import {loggedFetch, readFetchLog} from '../scripts/accept/fetch-log.mjs';
+import {loggedFetch, readFetchLog, READY} from '../scripts/accept/fetch-log.mjs';
+import {partsSnapshot, settingsHomeProblems} from '../scripts/accept/linux-runtime.mjs';
 import {summarizeTrace} from '../scripts/accept/linux-trace.mjs';
 import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
@@ -128,7 +129,8 @@ test('no cell runs the vendor\'s engine, and the driver reads no Linux pin and n
 test('the driver starts and stops at its preconditions, having named the release and the vendor\'s release without a pin', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cua-driver-start-'));
   try {
-    const env = {...process.env, DISPLAY: '', CUA_HOME: join(dir, 'cua')};
+    // A home of the test's own: the driver must never touch the caller's (fix wave 1, Critical).
+    const env = {...process.env, DISPLAY: '', HOME: join(dir, 'user'), CUA_HOME: join(dir, 'cua')};
     delete env.CUA_NATIVE_ENGINE;
     const run = spawnSync(process.execPath, [new URL('../scripts/accept/linux-runtime.mjs', import.meta.url).pathname, '--out', join(dir, 'run', 'artifact'), '--older', dir, '--phases', 'E'],
       {env, encoding: 'utf8', timeout: 60_000});
@@ -140,6 +142,36 @@ test('the driver starts and stops at its preconditions, having named the release
     assert.match(report.release, /^cua-linux-/);
     assert.equal(report.verdict.pass, false);
   } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+// Fix wave 1, Critical: a driver that stops at its preconditions leaves an engine.json it did not write as it was, and
+// one in a home outside the run is never the driver's to write or remove.
+test('negative control: the driver refusing to start leaves the caller\'s engine.json untouched', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-driver-sentinel-'));
+  try {
+    const settings = join(dir, 'user', '.config', 'cua', 'engine.json');
+    mkdirSync(dirname(settings), {recursive: true});
+    writeFileSync(settings, '{"engine": "cua", "sentinel": true}\n');
+    const stamp = new Date('2026-01-02T03:04:05Z');
+    utimesSync(settings, stamp, stamp);
+    const env = {...process.env, DISPLAY: '', HOME: join(dir, 'user'), CUA_HOME: join(dir, 'cua')};
+    delete env.CUA_NATIVE_ENGINE;
+    const run = spawnSync(process.execPath, [new URL('../scripts/accept/linux-runtime.mjs', import.meta.url).pathname, '--out', join(dir, 'run', 'artifact'), '--older', dir, '--phases', 'E'],
+      {env, encoding: 'utf8', timeout: 60_000});
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(readFileSync(settings, 'utf8'), '{"engine": "cua", "sentinel": true}\n');
+    assert.equal(statSync(settings).mtimeMs, stamp.getTime());
+    const report = JSON.parse(readFileSync(join(dir, 'run', 'artifact', 'runtime.json'), 'utf8'));
+    assert.match(report.error, /HOME .* is not inside the run/);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('the driver writes engine.json only in a user home inside its own run directory', () => {
+  assert.deepEqual(settingsHomeProblems({home: '/r/run/user', runDir: '/r/run', settingsExists: false}), []);
+  assert.match(settingsHomeProblems({home: '/home/owner', runDir: '/r/run', settingsExists: false}).join('; '), /HOME \/home\/owner is not inside the run \/r\/run/);
+  assert.match(settingsHomeProblems({home: '/r/run-other/user', runDir: '/r/run', settingsExists: false}).join('; '), /is not inside the run/);
+  assert.match(settingsHomeProblems({home: undefined, runDir: '/r/run', settingsExists: false}).join('; '), /HOME is unset/);
+  assert.match(settingsHomeProblems({home: '/r/run/user', runDir: '/r/run', settingsExists: true}).join('; '), /engine\.json exists/);
 });
 
 const passed = fixture => ({fixture, status: 'PASS', steps: FIXTURE_STEPS[fixture].map(name => ({name, status: 'PASS'}))});
@@ -421,7 +453,7 @@ test('the preload logs every fetch: the URL asked, where it answered (no query k
   await assert.rejects(fetch('https://nowhere.example/z'), /fetch failed/);
   const dir = mkdtempSync(join(tmpdir(), 'cua-fetch-log-'));
   try {
-    writeFileSync(join(dir, 'log'), `${lines.join('\n')}\n`);
+    writeFileSync(join(dir, 'log'), `${[JSON.stringify(READY), ...lines].join('\n')}\n`);
     assert.deepEqual(readFetchLog(join(dir, 'log')), [
       {url: 'https://a.example/x.tgz', answered: 'https://a.example/x.tgz', status: 200, bytes: 6, complete: true, error: null},
       {url: 'https://a.example/y', answered: 'https://a.example/y', status: 200, bytes: 0, complete: true, error: null},
@@ -429,8 +461,24 @@ test('the preload logs every fetch: the URL asked, where it answered (no query k
     assert.doesNotMatch(lines.join('\n'), /secret|jwt/);
     // No file is no log, never an empty one; an unreadable line is no log either.
     assert.equal(readFetchLog(join(dir, 'absent')), null);
-    writeFileSync(join(dir, 'torn'), '{"event":"asked","id":1,"url":"u"}\n{"event":');
+    writeFileSync(join(dir, 'torn'), `${JSON.stringify(READY)}\n{"event":"asked","id":1,"url":"u"}\n{"event":`);
     assert.equal(readFetchLog(join(dir, 'torn')), null);
+    // Fix wave 1, Important 3: an empty log, or one the preload never marked ready, is no witness: it can never mean
+    // "nothing fetched". Nor can one whose events do not follow from what was asked.
+    const logOf = (...records) => { writeFileSync(join(dir, 'seq'), records.map(r => `${typeof r === 'string' ? r : JSON.stringify(r)}\n`).join('')); return readFetchLog(join(dir, 'seq')); };
+    assert.equal(logOf(), null);
+    assert.deepEqual(logOf(READY), []);
+    assert.equal(logOf({event: 'answered', id: 1, url: 'u', answered: 'u', status: 200, bytes: 1, complete: true}), null);
+    for (const bad of [
+      [READY, {event: 'answered', id: 1, url: 'u', answered: 'u', status: 200, bytes: 1, complete: true}],
+      [READY, {event: 'failed', id: 3, url: 'u', error: 'x'}],
+      [READY, {event: 'mystery', id: 1}],
+      [READY, READY],
+      [READY, {event: 'asked', id: 1, url: 'u'}, {event: 'asked', id: 1, url: 'u'}],
+      [READY, {event: 'asked', id: 1, url: 'u'}, {event: 'answered', id: 1, url: 'v', answered: 'v', status: 200, bytes: 1, complete: true}],
+      [READY, {event: 'asked', id: 1, url: 'u'}, {event: 'answered', id: 1, url: 'u', answered: 'u', status: 200, bytes: 1, complete: true}, {event: 'failed', id: 1, url: 'u', error: 'x'}],
+      [{event: 'asked', id: 1, url: 'u'}, READY],
+    ]) assert.equal(logOf(...bad), null, JSON.stringify(bad));
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
@@ -482,7 +530,7 @@ test('negative control: a control log without the deb, with a short deb, or no l
   assert.match(controlProblems(fetched(), {deb: null}).join('; '), /the deb's URL is unknown/);
 });
 
-test('nothing fetched: an existing log with no URL asked; any URL, or no log, fails', () => {
+test('nothing fetched: a log the preload marked ready with no URL asked; any URL, or no log, fails', () => {
   assert.deepEqual(noFetchProblems([]), []);
   assert.match(noFetchProblems(fetched().slice(0, 1)).join('; '), /asked for https:\/\/registry\.npmjs\.org\/pngjs/);
   assert.match(noFetchProblems(null).join('; '), /no fetch log/);
@@ -497,6 +545,7 @@ const installTrace = (lines, {pids = [500]} = {}) => summarizeTrace([`500   exec
 test('the install ran no ar and no xz: a trace whole, with every exec listed, gzip and tar allowed', () => {
   const summary = installTrace(['500   clone(child_stack=NULL, flags=SIGCHLD) = 501', '501   execve("/usr/bin/tar", ["tar", "-xzf", "a.tgz"], 0x7ffd /* 9 vars */) = 0'], {pids: [500, 501]});
   assert.deepEqual(toolProblems(summary), []);
+  assert.deepEqual(rootProblems(summary, {command: 'install'}), []);
   assert.deepEqual(summary.programs, [{path: '/usr/bin/node', count: 1}, {path: '/usr/bin/tar', count: 1}]);
 });
 
@@ -525,11 +574,11 @@ const readsOfTree = [
 const RELEASES = Object.values(VENDOR_RELEASES);
 
 test('the traced calls under runtimes/ are lstat, directory reads and one open of install.json, inside the two release names', () => {
-  assert.deepEqual(runtimesCallProblems(installTrace(readsOfTree), {home: H, releases: RELEASES}), []);
+  assert.deepEqual(runtimesCallProblems(installTrace(readsOfTree), {home: H, releases: RELEASES, command: 'install'}), []);
 });
 
 test('negative control: a trace with an unlink, a write, a rename, an exec, a following stat, a second open, a path outside the two names, or no trace fails', () => {
-  const judged = (...extra) => runtimesCallProblems(installTrace([...readsOfTree, ...extra]), {home: H, releases: RELEASES}).join('; ');
+  const judged = (...extra) => runtimesCallProblems(installTrace([...readsOfTree, ...extra]), {home: H, releases: RELEASES, command: 'install'}).join('; ');
   assert.match(judged(`500   unlinkat(AT_FDCWD</repo>, "${R6}/cua_node/x", 0) = 0`), /unlink of .*cua_node\/x/);
   assert.match(judged(`500   openat(AT_FDCWD</repo>, "${R6}/added", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = 23<${R6}/added>`), /write of .*\/added/);
   assert.match(judged(`500   mkdir("${R6}/tmp-x", 0700) = 0`), /write of .*tmp-x/);
@@ -539,8 +588,47 @@ test('negative control: a trace with an unlink, a write, a rename, an exec, a fo
   assert.match(judged(`500   openat(AT_FDCWD</repo>, "${R6}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = 23<${R6}/install.json>`), /install\.json was opened 2 times, not once/);
   assert.match(judged(`500   openat(AT_FDCWD</repo>, "${R6}/cua_node/package.json", O_RDONLY|O_CLOEXEC) = 24<${R6}/cua_node/package.json>`), /open of .*package\.json/);
   assert.match(judged(`500   statx(AT_FDCWD</repo>, "${H}/runtimes/m6b-added", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = 0`), /outside the two release names: .*m6b-added/);
-  assert.match(runtimesCallProblems(installTrace(readsOfTree.filter(l => !/install\.json", O_RDONLY/.test(l))), {home: H, releases: RELEASES}).join('; '), /install\.json was opened 0 times/);
-  assert.match(runtimesCallProblems(null, {home: H, releases: RELEASES}).join('; '), /no trace/);
+  assert.match(runtimesCallProblems(installTrace(readsOfTree.filter(l => !/install\.json", O_RDONLY/.test(l))), {home: H, releases: RELEASES, command: 'install'}).join('; '), /install\.json was opened 0 times/);
+  assert.match(runtimesCallProblems(null, {home: H, releases: RELEASES, command: 'install'}).join('; '), /no trace/);
+  // The one record open must have succeeded: a failed open is not the read.
+  const failed = readsOfTree.map(l => (/install\.json", O_RDONLY/.test(l) ? `500   openat(AT_FDCWD</repo>, "${R6}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = -1 ELOOP (Too many levels of symbolic links)` : l))
+    .filter(l => !/statx\(21</.test(l));
+  assert.match(runtimesCallProblems(installTrace(failed), {home: H, releases: RELEASES, command: 'install'}).join('; '), /an open of .*install\.json that failed.*opened 0 times/);
+});
+
+// Fix wave 1, Important 1: a trace that is empty, holds no root command, holds lines the reader could not read or a
+// resumption of no call, or a summary missing its records, never passes a whole-trace judge.
+test('negative control: an empty trace, another root command, an unread line, an orphan resumption or missing records fail every whole-trace judge', () => {
+  const traceOf = lines => summarizeTrace(lines.join('\n'), {helper: '/h/helper', home: H, cwd: '/repo'});
+  const judges = summary => ({tools: toolProblems(summary).join('; '), calls: runtimesCallProblems(summary, {home: H, releases: RELEASES, command: 'install'}).join('; '),
+    execs: execRoleProblems(summary, {helper: '/h/helper', command: 'install'}).join('; ')});
+  for (const [what, lines, pattern] of [
+    ['empty', [], /names no root command.*holds no process/],
+    ['whitespace only', ['', '   '], /names no root command.*holds no process/],
+    ['another command', ['500   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "doctor"], 0x7ffd /* 9 vars */) = 0', '500   exit_group(0) = ?'], /root is node \/repo\/bin\/cua\.mjs doctor, not cua install/],
+    ['an unread line', [`500   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0`, 'strace: Process 500 detached', '500   exit_group(0) = ?'], /1 line it could not read/],
+    ['a call of no form', [`500   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0`, '500   ???', '500   exit_group(0) = ?'], /1 line it could not read/],
+    ['an orphan resumption', [`500   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0`, `500   <... unlinkat resumed>) = 0`, '500   exit_group(0) = ?'], /1 resumption of no call/],
+  ]) {
+    const j = judges(traceOf(lines));
+    for (const [name, text] of Object.entries(j)) assert.match(text, pattern, `${what}: ${name}`);
+  }
+  // An exit's own resumption, printed after its unfinished line, is accounted for.
+  const exited = traceOf([`500   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0`, '500   exit_group(0 <unfinished ...>', '500   <... exit_group resumed>) = ?']);
+  assert.equal(exited.whole.complete, true);
+  // A summary missing its exec or call records is not an empty one.
+  const good = installTrace([]);
+  for (const missing of ['execs', 'files']) {
+    const {[missing]: _, ...rest} = good;
+    assert.match(toolProblems(rest).join('; '), new RegExp(`lists no ${missing === 'execs' ? 'execs' : 'calls'}`));
+    assert.match(execRoleProblems(rest, {helper: '/h/helper', command: 'install'}).join('; '), new RegExp(`lists no ${missing === 'execs' ? 'execs' : 'calls'}`));
+  }
+  // A refused open's trace that holds no serve fails its exec judge.
+  assert.match(execRoleProblems(installTrace([]), {helper: '/h/helper', command: 'serve'}).join('; '), /not cua serve/);
+  // The fixtures' judge: an unread line could have been a call under runtimes/.
+  const NODE_ = '/n/node';
+  assert.match(traceProblems({serve: 1, workers: [{pid: 2, underServe: true, exe: NODE_}], helpers: [3], kernels: [{pid: 4, underHelper: true, underServe: true, callsAfterExec: 9, exe: NODE_}],
+    runtimes: {calls: 0, unresolved: 0, pending: 0, unended: 0, complete: true}, whole: {processes: 4, unreadLines: 2, orphans: 0, complete: false}}).join('; '), /2 lines it could not read/);
 });
 
 const INSTALLER_13 = 'node /repo/bin/cua.mjs install';
@@ -586,12 +674,12 @@ const openTrace = (extra = [], pids = [600]) => summarizeTrace([`600   execve("/
 const probe = (argv = `["${OVERRIDE}", "--version"]`) => ['600   clone(child_stack=NULL, flags=SIGCHLD) = 601', `601   execve("${OVERRIDE}", ${argv}, 0x7ffd /* 1 var */) = 0`];
 
 test('what a refused open executed: nothing of an engine, a worker, a helper or a host; under the override exactly its --version', () => {
-  assert.deepEqual(execRoleProblems(openTrace(), {helper: '/h/helper', allowed: []}), []);
-  assert.deepEqual(execRoleProblems(openTrace(probe(), [600, 601]), {helper: '/h/helper', allowed: [{program: OVERRIDE, argv: [OVERRIDE, '--version']}]}), []);
+  assert.deepEqual(execRoleProblems(openTrace(), {helper: '/h/helper', command: 'serve', allowed: []}), []);
+  assert.deepEqual(execRoleProblems(openTrace(probe(), [600, 601]), {helper: '/h/helper', command: 'serve', allowed: [{program: OVERRIDE, argv: [OVERRIDE, '--version']}]}), []);
 });
 
 test('negative control: a worker, a helper, an engine server, a second probe, a probe with other arguments, a missing probe or no trace fails', () => {
-  const judged = (extra, pids, allowed = []) => execRoleProblems(openTrace(extra, pids), {helper: '/h/helper', allowed}).join('; ');
+  const judged = (extra, pids, allowed = []) => execRoleProblems(openTrace(extra, pids), {helper: '/h/helper', command: 'serve', allowed}).join('; ');
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 602', '602   execve("/n/bin/node", ["node", "/repo/src/repl-host/trusted-worker.mjs"], 0x7ffd /* 9 vars */) = 0'], [600, 602]), /trusted-worker 602 ran \/n\/bin\/node/);
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 603', '603   execve("/h/helper", ["/h/helper", "--", "true"], 0x7ffd /* 9 vars */) = 0'], [600, 603]), /helper 603 ran \/h\/helper/);
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 604', `604   execve("${H}/engine/linux/cua-engine", ["cua-engine", "server"], 0x7ffd /* 9 vars */) = 0`], [600, 604]), /engine 604 ran .*cua-engine server/);
@@ -599,7 +687,19 @@ test('negative control: a worker, a helper, an engine server, a second probe, a 
   assert.match(judged([...probe(), '600   clone(child_stack=NULL, flags=SIGCHLD) = 605', `605   execve("${OVERRIDE}", ["${OVERRIDE}", "--version"], 0x7ffd /* 1 var */) = 0`], [600, 601, 605], allowed), /ran 2 times, not once/);
   assert.match(judged(probe(`["${OVERRIDE}", "server"]`), [600, 601], allowed), /engine 601 ran .*cua-engine server/);
   assert.match(judged([], [600], allowed), /\/r\/outdated\/cua-engine --version ran 0 times, not once/);
-  assert.match(execRoleProblems(null, {helper: '/h/helper', allowed: []}).join('; '), /no trace/);
+  assert.match(execRoleProblems(null, {helper: '/h/helper', command: 'serve', allowed: []}).join('; '), /no trace/);
+  // Fix wave 1, Important 2: an engine run by execveat through its descriptor, a worker run as a relative script, and
+  // an executable the trace cannot name are each caught.
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 607', `607   execveat(5<${H}/engine/linux/cua-engine>, "", ["x", "server"], 0x7ffd /* 0 vars */, AT_EMPTY_PATH) = 0`], [600, 607]), /engine 607 ran .*cua-engine server/);
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 608', '608   execve("/n/bin/node", ["node", "src/repl-host/trusted-worker.mjs"], 0x7ffd /* 9 vars */) = 0'], [600, 608]), /trusted-worker 608 ran/);
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 609', '609   execve("cua-engine", ["cua-engine", "server"], 0x7ffd /* 9 vars */) = 0'], [600, 609]), /engine 609 ran .*\/repo\/cua-engine server/);
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 610', '610   execveat(7, "", ["x"], 0x7ffd /* 0 vars */, AT_EMPTY_PATH) = 0'], [600, 610]), /an unnamed executable 610 ran x/);
+  // Doctor's bubblewrap is allowed only as its sandbox.userns probe, once, exactly.
+  const BWRAP = ['600   clone(child_stack=NULL, flags=SIGCHLD) = 611', '611   execve("/usr/bin/bwrap", ["/usr/bin/bwrap", "--ro-bind", "/", "/", "true"], 0x7ffd /* 1 var */) = 0'];
+  const probeOnly = [{role: 'bwrap', argvTail: ['--ro-bind', '/', '/', 'true']}];
+  assert.equal(judged(BWRAP, [600, 611], probeOnly), '');
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 611', '611   execve("/usr/bin/bwrap", ["/usr/bin/bwrap", "--ro-bind", "/", "/", "/h/helper"], 0x7ffd /* 1 var */) = 0'], [600, 611], probeOnly), /bwrap 611 ran .*\/h\/helper.*bwrap --ro-bind \/ \/ true ran 0 times/);
+  assert.match(judged([...BWRAP, '600   clone(child_stack=NULL, flags=SIGCHLD) = 612', '612   execve("/usr/bin/bwrap", ["/usr/bin/bwrap", "--ro-bind", "/", "/", "true"], 0x7ffd /* 1 var */) = 0'], [600, 611, 612], probeOnly), /ran 2 times, not once/);
   // A Node whose argument vector strace abbreviated could be the REPL host: it fails rather than passing unread.
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 606', '606   execve("/n/bin/node", ["node", ...], 0x7ffd /* 9 vars */) = 0'], [600, 606]), /node with unread arguments 606/);
 });
@@ -708,6 +808,26 @@ test('a tree\'s snapshot: every entry\'s kind, mode, size, mtime, link target an
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
+test('negative control: a managed part that cannot be read is no snapshot, never an absent value that compares equal', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-parts-'));
+  try {
+    for (const part of ['modules', 'sandbox', 'node', 'engine']) mkdirSync(join(dir, part));
+    writeFileSync(join(dir, 'current.json'), '{}');
+    const before = partsSnapshot(dir);
+    assert.ok(before);
+    assert.deepEqual(snapshotProblems(before, partsSnapshot(dir)), []);
+    rmSync(join(dir, 'engine'), {recursive: true});
+    assert.equal(partsSnapshot(dir), null);
+    assert.match(snapshotProblems(partsSnapshot(dir), partsSnapshot(dir)).join('; '), /no snapshot/);
+    mkdirSync(join(dir, 'engine'));
+    if (process.getuid?.() !== 0) {
+      mkdirSync(join(dir, 'engine', 'linux'));
+      chmodSync(join(dir, 'engine', 'linux'), 0o000);
+      try { assert.equal(partsSnapshot(dir), null); } finally { chmodSync(join(dir, 'engine', 'linux'), 0o755); }
+    }
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
 test('the second install changes nothing: every part changed: false, the pointer kept, the same retired list', () => {
   const report = installedReport({ok: true, error: undefined, retired: [TREE]});
   assert.deepEqual(reinstallProblems({exit: 0, report}, {retired: [TREE]}), []);
@@ -725,18 +845,29 @@ test('negative control: a part changed, an absent changed, a failed part, anothe
   assert.match(judged(null), /printed no report/);
 });
 
-test('a copy that fails its record is named by neither: retired empty and no runtime.retired row', () => {
-  assert.deepEqual(notNamedProblems({exit: 0, report: {ok: true, retired: []}, doctor: {ok: true, retired: [], checks: [row('display')]}}), []);
+const COPY = '/r/copies/U4/cua/runtimes/26.928.40906-linux-x64';
+const notNamed = (o = {}) => ({install: {exit: 0, report: {ok: true, retired: []}, text: '{"ok":true}', ...o.install},
+  doctor: {exit: 0, report: {ok: true, retired: [], checks: [row('display')]}, text: '{"ok":true}', ...o.doctor}});
+const COPY_NAMES = {names: ['26.928.40906-linux-x64', COPY]};
+
+test('a copy that fails its record is named by neither: both exit 0, retired empty, no runtime.retired row, and the name nowhere in either output', () => {
+  assert.deepEqual(notNamedProblems(notNamed(), COPY_NAMES), []);
 });
 
-test('negative control: a copy named by install or by doctor, a failed install, or a missing report fails', () => {
+test('negative control: a copy named by install or by doctor, in a field or anywhere else, a failed command, or a missing report fails', () => {
   const doc = {ok: true, retired: [], checks: [row('display')]};
-  assert.match(notNamedProblems({exit: 0, report: {ok: true, retired: [TREE]}, doctor: doc}).join('; '), /install named 26\.928\.40906-linux-x64/);
-  assert.match(notNamedProblems({exit: 0, report: {ok: true, retired: []}, doctor: {...doc, checks: [row('runtime.retired', 'skip', 'x')]}}).join('; '), /a runtime\.retired row/);
-  assert.match(notNamedProblems({exit: 0, report: {ok: true, retired: []}, doctor: {...doc, retired: [TREE]}}).join('; '), /doctor named 26\.928/);
-  assert.match(notNamedProblems({exit: 1, report: {ok: false, retired: []}, doctor: doc}).join('; '), /install exited 1/);
-  assert.match(notNamedProblems({exit: 0, report: null, doctor: doc}).join('; '), /printed no report/);
-  assert.match(notNamedProblems({exit: 0, report: {ok: true, retired: []}, doctor: null}).join('; '), /no doctor report/);
+  const judged = o => notNamedProblems(notNamed(o), COPY_NAMES).join('; ');
+  assert.match(judged({install: {report: {ok: true, retired: [TREE]}}}), /install named 26\.928\.40906-linux-x64/);
+  assert.match(judged({doctor: {report: {...doc, checks: [row('runtime.retired', 'skip', 'x')]}}}), /a runtime\.retired row/);
+  assert.match(judged({doctor: {report: {...doc, retired: [TREE]}}}), /doctor named 26\.928/);
+  // Fix wave 1, Important 5: a name leaked outside `retired`, in another row or a diagnostic, fails too.
+  assert.match(judged({doctor: {text: `{"checks":[{"name":"runtime.leftovers","detail":"${COPY}/cua_node holds x"}]}`}}), /doctor's output names .*copies\/U4/);
+  assert.match(judged({install: {text: 'warning: 26.928.40906-linux-x64 has no record'}}), /install's output names 26\.928\.40906-linux-x64/);
+  assert.match(judged({install: {exit: 1, report: {ok: false, retired: []}}}), /install exited 1/);
+  assert.match(judged({doctor: {exit: 1}}), /doctor exited 1/);
+  assert.match(judged({install: {report: null}}), /install printed no report/);
+  assert.match(judged({doctor: {report: null}}), /no doctor report/);
+  assert.match(judged({doctor: {text: null}}), /doctor printed no output/);
 });
 
 test('E0\'s home: no runtimes/, no line naming a vendor release, doctor\'s retired empty with no runtime.retired row', () => {
@@ -753,9 +884,14 @@ test('negative control: a runtimes/ made, a line naming the vendor\'s release, a
   assert.match(judged({out: null}), /no output/);
 });
 
-test('item 9: file says the engine is statically linked; anything else, or nothing, fails', () => {
-  assert.deepEqual(staticEngineProblems('/h/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, stripped'), []);
-  assert.deepEqual(staticEngineProblems('/h/cua-engine: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped'), []);
-  assert.match(staticEngineProblems('/h/cua-engine: ELF 64-bit LSB pie executable, x86-64, dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2').join('; '), /not statically linked/);
-  assert.match(staticEngineProblems('').join('; '), /file said nothing/);
+test('item 9: `file -bL` exits 0 and its linkage field says static; anything else, or nothing, fails', () => {
+  assert.deepEqual(staticEngineProblems({status: 0, stdout: 'ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, stripped\n'}), []);
+  assert.deepEqual(staticEngineProblems({status: 0, stdout: 'ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped\n'}), []);
+  assert.match(staticEngineProblems({status: 0, stdout: 'ELF 64-bit LSB pie executable, x86-64, dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2'}).join('; '), /not statically linked/);
+  // Fix wave 1, Minor: the words elsewhere in the output (a file name, a note) are not the linkage field.
+  assert.match(staticEngineProblems({status: 0, stdout: 'ELF 64-bit LSB pie executable, x86-64, dynamically linked, for GNU/Linux, BuildID[sha1]=statically linked'}).join('; '), /not statically linked/);
+  assert.match(staticEngineProblems({status: 0, stdout: 'cannot open `/x/statically linked\' (No such file or directory)'}).join('; '), /not statically linked/);
+  assert.match(staticEngineProblems({status: 1, stdout: 'ELF 64-bit LSB executable, statically linked'}).join('; '), /file exited 1/);
+  assert.match(staticEngineProblems({status: 0, stdout: ''}).join('; '), /file said nothing/);
+  assert.match(staticEngineProblems(null).join('; '), /file did not run/);
 });

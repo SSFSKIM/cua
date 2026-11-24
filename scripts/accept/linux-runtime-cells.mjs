@@ -217,10 +217,14 @@ export function emptyHomeProblems({runtimes, out, doctor}) {
   return problems;
 }
 
-/** Item 9: what `file` said of the installed engine names it statically linked. */
-export function staticEngineProblems(text) {
-  if (!text?.trim()) return ['file said nothing of the engine'];
-  return /statically linked|static-pie linked/.test(text) ? [] : [`the engine is not statically linked: ${text.trim()}`];
+/** Item 9: `file -bL` of the installed engine (`run` {status, stdout}) exits 0 and its linkage field is static. */
+export function staticEngineProblems(run) {
+  if (!run) return ['file did not run'];
+  if (run.status !== 0) return [`file exited ${run.status}`];
+  const text = String(run.stdout ?? '').trim();
+  if (!text) return ['file said nothing of the engine'];
+  // `file -b`'s description is comma-separated fields; the linkage is one of them, whole.
+  return text.split(/,\s*/).some(field => field === 'statically linked' || field === 'static-pie linked') ? [] : [`the engine is not statically linked: ${text}`];
 }
 
 // ---- the fetch log (./fetch-log.mjs) ----
@@ -289,34 +293,61 @@ const calls = n => `${n} ${n === 1 ? 'call' : 'calls'}`;
 // Why the whole trace is not complete by the reader's rule.
 function wholeProblems(whole) {
   if (whole?.complete === true) return [];
-  const why = [whole?.unresolved ? `${calls(whole.unresolved)} left a path unresolved` : null, whole?.pending ? `${calls(whole.pending)} unfinished at its end` : null,
+  const why = [!whole?.processes ? 'it holds no process' : null, whole?.unreadLines ? `${whole.unreadLines} ${whole.unreadLines === 1 ? 'line' : 'lines'} it could not read` : null,
+    whole?.orphans ? `${whole.orphans} ${whole.orphans === 1 ? 'resumption' : 'resumptions'} of no call` : null,
+    whole?.unresolved ? `${calls(whole.unresolved)} left a path unresolved` : null, whole?.pending ? `${calls(whole.pending)} unfinished at its end` : null,
     whole?.unended ? `${processes(whole.unended)} with no end` : null].filter(Boolean);
   return [`the trace is incomplete: ${why.length ? why.join(', ') : 'the reader did not call it complete'}`];
+}
+
+/**
+ * Whether the trace is of `cua <command>`: its root, the first process's first exec, runs this cua's bin/cua.mjs with
+ * `command` right after it. A trace of anything else, or of nothing, judges nothing.
+ */
+export function rootProblems(summary, {command}) {
+  const argv = summary?.root?.argv;
+  if (!Array.isArray(argv)) return ['the trace names no root command'];
+  const at = argv.findIndex(arg => /(^|\/)bin\/cua\.mjs$/.test(arg));
+  return at >= 0 && argv[at + 1] === command ? [] : [`the trace's root is ${argv.join(' ')}, not cua ${command}`];
+}
+
+// The checks every whole-trace judge starts with: a trace, of `cua <command>`, complete, with its execs and its calls.
+function tracedCommand(summary, {command}) {
+  if (!summary) return ['no trace'];
+  const problems = [...rootProblems(summary, {command}), ...wholeProblems(summary.whole)];
+  if (!Array.isArray(summary.execs)) problems.push('the trace lists no execs');
+  if (!Array.isArray(summary.files)) problems.push('the trace lists no calls under runtimes/');
+  return problems;
 }
 
 // The deb's tools: an install that runs, or looks for, any of them is unpacking a deb.
 const DEB_TOOLS = new Set(['ar', 'xz', 'unxz', 'xzcat', 'xzdec', 'lzma', 'unlzma', 'dpkg', 'dpkg-deb']);
 
-/** E0: the install's trace is whole and holds no exec, done or looked up along PATH, of a deb's tool (DEB_TOOLS). */
-export function toolProblems(summary) {
-  if (!summary) return ['no trace of the install'];
-  const problems = wholeProblems(summary.whole);
-  for (const e of summary.execs ?? []) if (DEB_TOOLS.has(basename(e.program ?? ''))) problems.push(`${e.program} was ${e.ok ? 'executed' : 'looked up'}`);
+/**
+ * E0: the trace is of `cua install`, whole, and holds no exec, done or looked up along PATH, of a deb's tool
+ * (DEB_TOOLS); an exec whose executable is unread fails, as it could be one.
+ */
+export function toolProblems(summary, {command = 'install'} = {}) {
+  const problems = tracedCommand(summary, {command});
+  for (const e of Array.isArray(summary?.execs) ? summary.execs : []) {
+    if (!e.program) problems.push(`process ${e.pid} ran an executable the trace does not name`);
+    else if (DEB_TOOLS.has(basename(e.program))) problems.push(`${e.program} was ${e.ok ? 'executed' : 'looked up'}`);
+  }
   return problems;
 }
 
 /**
- * The traced calls an install or doctor run made under `<home>/runtimes/` (U1, U2): the trace is whole; every call there
- * names runtimes/ itself or a path under one of `releases`; each is an lstat (runtimes/ itself takes nothing else), a
- * read-only open of a directory, a stat of a descriptor so opened, or the one open of a release's install.json, which happens exactly `recordOpens`
- * times; nothing is executed, written, renamed or removed there.
+ * The traced calls `cua <command>` made under `<home>/runtimes/` (U1 doctor, U2 install): the trace is of that command
+ * and whole; every call there names runtimes/ itself or a path under one of `releases`; each is an lstat (runtimes/
+ * itself takes nothing else), a read-only open of a directory, a stat of a descriptor so opened, or the one successful
+ * open of a release's install.json, which happens exactly `recordOpens` times; nothing is executed, written, renamed or
+ * removed there, and no other open is made, failed or not.
  */
-export function runtimesCallProblems(summary, {home, releases, recordOpens = 1}) {
-  if (!summary) return ['no trace'];
-  const problems = wholeProblems(summary.whole);
+export function runtimesCallProblems(summary, {home, releases, command, recordOpens = 1}) {
+  const problems = tracedCommand(summary, {command});
   const roots = [home].flat().map(h => `${h.replace(/\/$/, '')}/runtimes`);
   let opens = 0;
-  for (const call of summary.files ?? []) {
+  for (const call of Array.isArray(summary?.files) ? summary.files : []) {
     // A call names a path once, though strace shows it twice: as its argument and as the descriptor it returned.
     for (const path of new Set(call.paths)) {
       const root = roots.find(r => path === r || path.startsWith(`${r}/`));
@@ -327,7 +358,12 @@ export function runtimesCallProblems(summary, {home, releases, recordOpens = 1})
       const record = releases.some(release => rel === `${release}/install.json`);
       // A stat of a descriptor already opened (fstat) looks nothing up: the open was judged.
       if (call.kind === 'lstat' || (rel && (call.kind === 'opendir' || call.kind === 'fstat'))) continue;
-      if (call.kind === 'open' && record) { opens += 1; continue; }
+      if (call.kind === 'open' && record) {
+        // Only an open that returned a descriptor is the record's read; a failed one is not.
+        if (call.ok === true) opens += 1;
+        else problems.push(`an open of ${path} that ${call.ok === false ? 'failed' : 'did not finish'}`);
+        continue;
+      }
       problems.push(`${call.kind} of ${path}`);
     }
   }
@@ -336,11 +372,12 @@ export function runtimesCallProblems(summary, {home, releases, recordOpens = 1})
 }
 
 // What a program an exec ran is, by role: an engine, the sandbox helper, bubblewrap, a REPL host process (by the
-// script Node runs; a Node whose arguments are unread counts too), or anything under a runtimes/; null for anything
-// else (a shell, gzip, a probe).
-const ROLE_SCRIPT = /\/src\/repl-host\/([\w-]+)\.mjs$/;
+// script Node runs, its path absolute or relative; a Node whose arguments are unread counts too), anything under a
+// runtimes/, or an executable the trace does not name; null for anything else (a shell, gzip, a probe).
+const ROLE_SCRIPT = /(^|\/)src\/repl-host\/([\w-]+)\.mjs$/;
 function roleOf(e, {helper}) {
-  const program = e.program ?? '';
+  if (!e.program) return 'an unnamed executable';
+  const program = e.program;
   if (/\/runtimes\//.test(program)) return 'runtimes';
   if (basename(program) === 'cua-engine' || /^sky_linux/.test(basename(program))) return 'engine';
   if (helper && program === helper) return 'helper';
@@ -348,31 +385,36 @@ function roleOf(e, {helper}) {
   if (/^node/.test(basename(program))) {
     // A Node whose arguments the trace did not print whole may be running the REPL host: it is never passed unread.
     if (!Array.isArray(e.argv)) return 'node with unread arguments';
-    for (const arg of e.argv) { const role = ROLE_SCRIPT.exec(arg)?.[1]; if (role) return role; }
+    for (const arg of e.argv) { const role = ROLE_SCRIPT.exec(arg)?.[2]; if (role) return role; }
   }
   return null;
 }
 const sameArgv = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
-const words = e => [e.program, ...(e.argv ?? []).slice(1)].join(' ');
+const words = e => (e.program ? [e.program, ...(e.argv ?? []).slice(1)] : (e.argv ?? ['?'])).join(' ');
+// An allowed exec: {program, argv} exactly, or {role, argvTail}: an exec of that role whose argv[0] is its executable
+// and whose other arguments are exactly the tail (doctor's sandbox.userns probe, `bwrap --ro-bind / / true`, wherever
+// bubblewrap is).
+const allows = (a, e, role) => (a.role ? a.role === role && Array.isArray(e.argv) && e.argv[0] === e.program && sameArgv(a.argvTail, e.argv.slice(1))
+  : a.program === e.program && sameArgv(a.argv, e.argv));
+const allowedWords = a => (a.role ? `${a.role} ${a.argvTail.join(' ')}` : words(a));
 
 /**
- * What a refused open or a doctor run executed (E3, U0): the trace is whole; no exec, done or attempted, of an engine,
- * the sandbox helper (`helper`), bubblewrap, a REPL host process or anything under runtimes/, but `allowed` [{program,
- * argv}], each of which ran exactly once with exactly that argument vector (the override's `--version`). `allowRoles`
- * names roles a run may exec on its own account (doctor's sandbox.userns probe runs bubblewrap).
+ * What a refused open (`command` serve) or a doctor run (`command` doctor) executed (E3, U0): the trace is of that
+ * command and whole; no exec, done or attempted, of an engine, the sandbox helper (`helper`), bubblewrap, a REPL host
+ * process, anything under runtimes/ or an executable the trace does not name, but `allowed`, each of which ran exactly
+ * once (the override's `--version`; doctor's bubblewrap probe).
  */
-export function execRoleProblems(summary, {helper, allowed = [], allowRoles = []}) {
-  if (!summary) return ['no trace'];
-  const problems = wholeProblems(summary.whole);
+export function execRoleProblems(summary, {helper, command, allowed = []}) {
+  const problems = tracedCommand(summary, {command});
   const counts = allowed.map(() => 0);
-  for (const e of summary.execs ?? []) {
+  for (const e of Array.isArray(summary?.execs) ? summary.execs : []) {
     const role = roleOf(e, {helper});
-    if (!role || allowRoles.includes(role)) continue;
-    const match = allowed.findIndex(a => a.program === e.program && sameArgv(a.argv, e.argv));
-    if (match >= 0 && e.ok) { counts[match] += 1; continue; }
+    if (!role) continue;
+    const match = e.ok ? allowed.findIndex(a => allows(a, e, role)) : -1;
+    if (match >= 0) { counts[match] += 1; continue; }
     problems.push(`${role} ${e.pid} ${e.ok ? 'ran' : 'was attempted:'} ${words(e)}`);
   }
-  allowed.forEach((a, i) => { if (counts[i] !== 1) problems.push(`${words(a)} ran ${counts[i]} times, not once`); });
+  allowed.forEach((a, i) => { if (counts[i] !== 1) problems.push(`${allowedWords(a)} ran ${counts[i]} times, not once`); });
   return problems;
 }
 
@@ -537,16 +579,31 @@ export function reinstallProblems({exit, report}, {retired}) {
   return problems;
 }
 
-/** U4, U5: a copy whose record fails is named by neither: the install (`--json`) exits 0 naming nothing, doctor neither. */
-export function notNamedProblems({exit, report, doctor}) {
-  if (!report) return ['the install printed no report'];
-  const problems = exit === 0 ? [] : [`the install exited ${exit}`];
-  if (!Array.isArray(report.retired)) problems.push('the install\'s report has no retired list');
-  else if (report.retired.length) problems.push(`the install named ${report.retired.map(t => t.release).join(', ')}`);
-  if (!doctor) return [...problems, 'no doctor report'];
-  if (rowOf(doctor, 'runtime.retired')) problems.push('doctor has a runtime.retired row');
-  if (!Array.isArray(doctor.retired)) problems.push('doctor\'s report has no retired list');
-  else if (doctor.retired.length) problems.push(`doctor named ${doctor.retired.map(t => t.release).join(', ')}`);
+/**
+ * U4, U5: a copy whose record fails is named by neither command. `install` and `doctor` are each {exit, report, text}
+ * (`--json`, `text` the whole of its standard output and error): both exit 0; neither report lists a retired release,
+ * doctor has no runtime.retired row; and no `names` (the release's name, the copy's path) appear anywhere in either text.
+ */
+export function notNamedProblems({install, doctor}, {names}) {
+  const problems = [];
+  if (!install?.report) problems.push('the install printed no report');
+  else {
+    if (install.exit !== 0) problems.push(`the install exited ${install.exit}`);
+    if (!Array.isArray(install.report.retired)) problems.push('the install\'s report has no retired list');
+    else if (install.report.retired.length) problems.push(`the install named ${install.report.retired.map(t => t.release).join(', ')}`);
+  }
+  if (!doctor?.report) problems.push('no doctor report');
+  else {
+    if (doctor.exit !== 0) problems.push(`doctor exited ${doctor.exit}`);
+    if (rowOf(doctor.report, 'runtime.retired')) problems.push('doctor has a runtime.retired row');
+    if (!Array.isArray(doctor.report.retired)) problems.push('doctor\'s report has no retired list');
+    else if (doctor.report.retired.length) problems.push(`doctor named ${doctor.report.retired.map(t => t.release).join(', ')}`);
+  }
+  // Anywhere else in either command's output, a row's detail or a diagnostic, the copy is named too (fix wave 1).
+  for (const [what, run] of [['install', install], ['doctor', doctor]]) {
+    if (typeof run?.text !== 'string') { problems.push(`${what} printed no output`); continue; }
+    for (const name of names) if (run.text.includes(name)) problems.push(`${what}'s output names ${name}`);
+  }
   return problems;
 }
 
@@ -611,6 +668,8 @@ function incompleteness(runtimes) {
  */
 export function traceProblems(summary, {opened, node} = {}) {
   const problems = [...traceVerdict(summary).problems];
+  // A line the reader could not read, or a resumption of no call, could have been a call under runtimes/.
+  if (summary.whole?.unreadLines || summary.whole?.orphans) problems.push(...wholeProblems({...summary.whole, complete: false}));
   const {calls: n} = summary.runtimes ?? {};
   if (n) problems.push(`${n} calls of the serve's process tree named a path under runtimes/`);
   problems.push(...incompleteness(summary.runtimes));

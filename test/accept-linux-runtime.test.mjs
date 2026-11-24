@@ -453,7 +453,8 @@ test('every exec is kept with its argument vector, done or looked up, and the pr
     {pid: 701, program: '/usr/bin/gzip', argv: ['gzip', '-d'], ok: true},
     {pid: 702, program: '/r/out dated/cua-engine', argv: ['/r/out dated/cua-engine', '--version', 'a "quoted" word'], ok: true}]);
   assert.deepEqual(s.programs, [{path: '/r/out dated/cua-engine', count: 1}, {path: '/usr/bin/gzip', count: 1}, {path: '/usr/bin/node', count: 1}]);
-  assert.deepEqual(s.whole, {unresolved: 0, pending: 0, unended: 0, complete: true});
+  assert.deepEqual(s.whole, {processes: 3, unresolved: 0, pending: 0, unended: 0, unreadLines: 0, orphans: 0, complete: true});
+  assert.deepEqual(s.root, {program: '/usr/bin/node', argv: ['node', '/repo/bin/cua.mjs', 'doctor', '--json']});
 });
 
 test('each call under runtimes/ of the whole trace is kept with its kind: lstat, stat, opendir, open, write, unlink, rename, exec', () => {
@@ -482,7 +483,7 @@ test('each call under runtimes/ of the whole trace is kept with its kind: lstat,
 test('negative control: a process of a traced install with no end, or an unresolved path, leaves the whole trace incomplete', () => {
   const s = summarizeTrace(['900   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0', '900   clone(child_stack=NULL, flags=SIGCHLD) = 901',
     '901   openat(AT_FDCWD, "relative", O_RDONLY) = 3', '900   exit_group(0) = ?'].join('\n'), {helper: HELPER, home: HOME});
-  assert.deepEqual(s.whole, {unresolved: 1, pending: 0, unended: 1, complete: false});
+  assert.deepEqual(s.whole, {processes: 2, unresolved: 1, pending: 0, unended: 1, unreadLines: 0, orphans: 0, complete: false});
 });
 
 test('callKind and execArgv read a call\'s own text', () => {

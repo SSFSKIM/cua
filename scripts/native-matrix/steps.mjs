@@ -202,7 +202,7 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
     if (Array.isArray(r?.at)) mark(ctx, kind === 'row' ? 'row' : 'setup', key, [ends.length ? Math.max(...ends) : r.at[0], r.at[1]]);
     throw new AlertHeld(keys, {front: seen.bundleId, key: keyReading(r).key});
   }
-  if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${keys.join(', ')} not sent: ${seen === 'unreadable' ? 'the front was unread' : 'the front is not one of the run\'s windows'} (#162); the run stopped`, seen === 'unreadable' ? 'unread' : 'invalid');
+  if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${keys.join(', ')} not sent: the front is not one of the run\'s windows${seen === 'unreadable' ? ': it was unread' : ''} (#162); the run stopped`, seen === 'unreadable' ? 'unread' : 'invalid');
   return null;
 }
 

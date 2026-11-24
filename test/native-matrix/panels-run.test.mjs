@@ -195,7 +195,7 @@ test('a device that cannot read the window list after its cancel stops the run a
 test('a key guard stop at the close, both lanes, the front unread or another app\'s, the device\'s cancel closing it or not: both outcomes kept, every planned sample after it recorded by the guard\'s cause', async () => {
   const plan = {id: 'test', frontmost: ['openPanel', 'electron'], speed: true, finding: false, background: [], launch: []};
   for (const engine of ['vendor', 'cua']) {
-    for (const [front, cause, said] of [['foreign', 'invalid', /Escape not sent: the front is not one of the run's windows \(#162\)/], ['unread', 'unread', /Escape not sent: the front was unread \(#162\)/]]) {
+    for (const [front, cause, said] of [['foreign', 'invalid', /Escape not sent: the front is not one of the run's windows \(#162\)/], ['unread', 'unread', /Escape not sent: the front is not one of the run's windows: it was unread \(#162\)/]]) {
       for (const ax of [true, false]) {
         const what = `${engine}, front ${front}, cancel ${ax ? 'closing' : 'failing'}`;
         const calls = [];

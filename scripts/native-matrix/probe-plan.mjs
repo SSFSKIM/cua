@@ -290,9 +290,10 @@ export const STOPPED_PART_WAY = 'The action was stopped part-way.';
 export const MAY_HAVE_TAKEN_EFFECT = 'may have taken effect';
 // #212's findings on a row that reached the act (its outcome as ./probe-run.mjs saveSheetAttempt records it): the one
 // rule its `ok` is, and what a step reading the row names when it failed (../hosted-sittings/checks.mjs). The sheet
-// still open after the settle; the run's folder read and empty; no document on disk behind TextEdit's window and its
-// edits unsaved; on cua's lane the sentence and the account agreeing, and the answer naming what may have taken effect.
-// -> the findings, none when the row passes.
+// still open after the settle; nothing saved (ruling 1223, R1): the run's folder read and empty after the act and empty
+// at the cancel, and no file behind TextEdit's window (AXDocument); on cua's lane the sentence and the account agreeing,
+// and the answer naming what may have taken effect. AXEdited is a diagnostic only, never a finding: C-6's vendor row
+// read it false from the close button with nothing saved. -> the findings, none when the row passes.
 export function saveSheetFindings(outcome, engine) {
   const o = outcome ?? {}, findings = [];
   if (o.sheetOpen !== true) findings.push('the Save sheet was gone after the act');
@@ -300,7 +301,7 @@ export function saveSheetFindings(outcome, engine) {
   else if (o.destinationFiles.length) findings.push(`the run's folder held ${o.destinationFiles.join(', ')}`);
   if (o.unsaved?.document === true) findings.push('a document on disk behind TextEdit\'s window (AXDocument names a file)');
   else if (o.unsaved?.document !== false) findings.push('nothing saved was not proved (AXDocument unread)');
-  if (o.unsaved?.document === false && o.unsaved.edited !== true) findings.push(`the edits read saved: AXEdited ${o.unsaved.edited}, from the ${o.unsaved.editedFrom ?? 'unnamed'}`);
+  if (o.cancel?.destinationFiles?.length) findings.push(`the run's folder held ${o.cancel.destinationFiles.join(', ')} at the cancel`);
   if (engine === 'cua' && o.agree !== true) findings.push('the sentence and the structured account disagree on a stop part-way');
   if (engine === 'cua' && o.effectsNamed !== true) findings.push('the answer did not name what may have taken effect');
   return findings;

@@ -602,7 +602,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const sheetOpen = check.value?.sheetOpen === true;
   const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
   const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
-  const savedSeen = unsaved.document === true || unsaved.edited === false;
+  const savedSeen = unsaved.document === true || unsaved.cancel?.destinationFiles?.length > 0;
   const outcome = {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
       initialWhere, ...kept, ...unsavedOutcome(unsaved),
       threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
@@ -625,10 +625,11 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   return span.end(row, {cleanup});
 }
 // Nothing saved, proved on TextEdit's own window once the sheet is cancelled (ruling 1221, F2; ruling 1220's third
-// condition): the debounce out, the sheet cancelled as the cleanup cancels it (which then finds none), and the untitled
-// window the run opened read by Accessibility (./matrix-device.mjs documentState): no document on disk behind it and its
-// edits still unsaved. No folder but the run's own is read, so a hosted run asks for no protected folder. The initial
-// "Where" is a display name and stays recorded only. A cancel the guard held or refused, or a reading not taken, leaves
+// condition; ruling 1223, R1): the debounce out, the sheet cancelled as the cleanup cancels it (which then finds none),
+// the run's folder as the cancel found it, and the untitled window the run opened read by Accessibility
+// (./matrix-device.mjs documentState): no document on disk behind it. Its AXEdited is kept as a diagnostic only. No
+// folder but the run's own is read, so a hosted run asks for no protected folder. The initial "Where" is a display name
+// and stays recorded only. A cancel the guard held or refused, or a reading not taken, leaves
 // the proof unread (`unread`, why): a refusal that persists is the cleanup's to raise, once the row is recorded. The
 // cancel's own answer is kept (`cancel`: {cancelled, destinationRemoved, destinationFiles}, the run's folder as the
 // cancel found it), null when it gave none. -> {document, edited, reading, cancel, unread?}.

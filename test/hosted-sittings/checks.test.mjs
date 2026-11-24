@@ -134,13 +134,15 @@ const C6_CUA = Object.freeze({section: 'intervention', id: 'textedit/interventio
   engine: 'cua', sample: 1, ok: false, invalid: 'the Save sheet\'s destination was not set to the run\'s folder (the Go To dialog and its focused path field were not identified)',
   outcome: {goTo: {closed: true, sheetUp: true, escapes: 1, closeClicked: false}}, attempts: 1});
 
-test('#212\'s save-sheet step judges the real path\'s rows: C-6\'s vendor row fails naming its finding, cua\'s is NO VERDICT naming why', () => {
+test('#212\'s save-sheet step judges the real path\'s rows: C-6\'s vendor row fails as recorded, cua\'s is NO VERDICT naming why', () => {
   const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)}, vendor = {engine: 'vendor', version: null, build: 'r'};
   const sheetStep = engine => ({row: 'textedit/intervention.saveSheet', engine, records: [`/o/save-sheet/${engine}/run-1/result.json`]});
   const recorded = (engine, rows) => ({[`/o/save-sheet/${engine}/run-1/result.json`]: {complete: true, meta: {hosted: true, nativeEngine: {requested: engine, attested: [engine === 'cua' ? cua : vendor], unattested: 0}}, rows}});
   const [vendorStatus, vendorReason] = check('saveSheet', sheetStep('vendor'), 1, recorded('vendor', [C6_VENDOR]));
   assert.equal(vendorStatus, 'FAIL');
-  assert.equal(vendorReason, '1 sample over 1 run: vendor run-1 sample 1 FAIL (the edits read saved: AXEdited false, from the closeButton); the run\'s folder empty; AXDocument none, AXEdited false (closeButton); Go To not recorded');
+  // Recorded before ruling 1223 (R1) made AXEdited a diagnostic: its ok stays as recorded, and today's rule names no
+  // finding on it, which the reason says, the AXEdited reading shown.
+  assert.equal(vendorReason, '1 sample over 1 run: vendor run-1 sample 1 FAIL (ok false, no finding named); the run\'s folder empty; AXDocument none, AXEdited false (closeButton); Go To not recorded');
   const [cuaStatus, cuaReason] = check('saveSheet', sheetStep('cua'), 1, recorded('cua', [C6_CUA]));
   assert.equal(cuaStatus, 'NO VERDICT');
   assert.equal(cuaReason, `1 sample over 1 run: cua run-1 sample 1 NO VERDICT (${C6_CUA.invalid}); Go To closed (Escape 1x)`);

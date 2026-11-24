@@ -793,6 +793,17 @@ test('#212\'s row proves nothing saved on TextEdit\'s own window after the cance
   assert.equal(saved.invalid, undefined, 'a save is a finding, not a missing proof');
   assert.deepEqual(saved.outcome.unsaved, {document: true, edited: false, editedFrom: 'window'});
   assert.ok(saved.outcome.findings.includes('a document on disk behind TextEdit\'s window (AXDocument names a file)'), JSON.stringify(saved.outcome.findings));
+  // Ruling 1223 (R1): AXEdited is a diagnostic only. C-6's vendor row read it false from the close button with no file
+  // behind the window and the run's folder empty; that alone passes, the reading kept.
+  order.length = 0;
+  const editedOnly = rowOf((await run({ok: true, number: 1, found: true, document: false, edited: false, editedFrom: 'closeButton'})).result, SAVE_SHEET);
+  assert.equal(editedOnly.ok, true, JSON.stringify(editedOnly));
+  assert.deepEqual([editedOnly.outcome.unsaved, editedOnly.outcome.findings], [{document: false, edited: false, editedFrom: 'closeButton'}, []]);
+  // A file the cancel found in the run's folder is a save, though the act's check read it empty.
+  const late = rowOf((await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet',
+    cell: saveCells({cancel: {cancelled: true, destinationRemoved: false, destinationFiles: ['cua-212-intended.rtf']}})})).result, SAVE_SHEET);
+  assert.deepEqual([late.ok, late.invalid, late.attempts], [false, undefined, 1]);
+  assert.ok(late.outcome.findings.includes('the run\'s folder held cua-212-intended.rtf at the cancel'), JSON.stringify(late.outcome.findings));
   order.length = 0;
   const unread = rowOf((await run({ok: false, number: 1, reason: 'the reader is not trusted for Accessibility'})).result, SAVE_SHEET);
   assert.equal(unread.ok, false);

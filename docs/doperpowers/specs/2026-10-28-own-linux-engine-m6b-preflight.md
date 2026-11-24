@@ -1,4 +1,4 @@
-# #171 M6b pre-flight (revision 1)
+# #171 M6b pre-flight (revision 2)
 
 - Spec: `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`, cited as `L<n>` (the spec at 8f4df73a4).
   M6a's pre-flight, `…-m6a-preflight.md`, is cited as `M6a §<n>`. Code is cited as `file L<n>`, at 84216c0fe: the
@@ -11,8 +11,15 @@
   - the vendor's tree is reported and never removed (1216 (b′), which supersedes 1193 (b));
   - every engine refusal is source-aware, with one install command;
   - forks F1, F2 and F5 to F11 are ruled, and F3 and F4 fell away with the removal (§7.1);
-  - the review's seven other findings are fixed in the sections they belong to;
-  - what this revision had to choose while folding them is listed for confirmation (§7.2).
+  - the review's seven other findings are fixed in the sections they belong to.
+- **Revision 2** folds the bounded re-review of 0c6c5b455 (one P1, five P2s) and ruling 1217, which confirms
+  revision 1's nine choices (§7.2). 1217 is cited from the revision's brief; T9 puts it in the Decision Log.
+  - A linked `staging/` is refused before any acquiring lane writes (§3.4).
+  - The report's sentence claims only what cua knows (§3.3).
+  - The second selector's read is bounded, and install's sentence promises no readiness (§2.1, §2.2).
+  - The bootstrap binds the script, the conf and the checkout to one commit (§3.6).
+  - Each fixture is compared once with its authenticated deb before its manifest is pinned (§4.4).
+  - E3's version probe and the fixture cell's bindings are stated as they can pass (§5.2).
 - **An opt-in removal is deferred to #586,** which carries the review's three removal P1s as its requirements
   (L2954–2956, L2963). Nothing here plans it.
 - **Ruled, and folded in as constraints:** 1193 (a) and (c) (L2899, L2903), 1212 and #570 (L2947–2948), 1211:
@@ -24,8 +31,10 @@
 - Dispositions in §1: **D** deleted, **M** moved to cua's own parts, **K** kept.
 - This pre-flight ran no cua code, wrote to no cua home and touched no ticket. It read the code, the specs, M5's and
   M6a's evidence, this VM's default home (the listing of its `runtimes/`, the release's `install.json`, its files'
-  sizes and one file's hash) and the two preserved vendor fixtures (their listings and hashes).
-- Loop tasks continue from task 165. "T" numbers are this document's rows. The build's branch is `feat/171-m6b`.
+  sizes and one file's hash), the two preserved vendor fixtures (their listings and hashes) and the two pinned debs
+  (their lengths and hashes).
+- Task 165 is arm64's FB (N9). Loop tasks continue from task 166. "T" numbers are this document's rows. The build's
+  branch is `feat/171-m6b`.
 
 ## 0. What the reading found
 
@@ -49,7 +58,12 @@
    (`src/runtime/node-install.mjs` L69) and doctor's `nodeBlockers` (doctor-linux-runtime.mjs L136) hand
    `node/<version>` to `readNodeRecord`, which opens its `install.json` with `readFileSync`
    (`src/runtime/managed-node.mjs` L108–110). Launch keeps that path out of the tree before it reads it (launch.mjs
-   L743–753). These two do not, and doctor reaches its read after the guarded lookup has refused (§3.4).
+   L743–753). These two do not, and doctor reaches its read after the guarded lookup has refused. Install's writes
+   have the same gap. Every lane that acquires a part makes its scratch under `<home>/staging`: the helper
+   (`src/runtime/install.mjs` L345–347), Node (node-install.mjs L61–64, L85) and the engine (install.mjs L396–398;
+   a local build's placing, `src/runtime/linux-engine.mjs` L240–242). Only the module tree refuses a linked
+   `staging/` (`src/runtime/module-tree.mjs` L445). The helper's lane also reads its installed file through a link
+   (install.mjs L334) (§3.4).
 6. **A cloud VM runs the provisioner it was created with.** cloud-init writes `cua-provision.sh` to
    `/usr/local/sbin` once (`deploy/cloud-vm/cloud-init.yaml` L10–13). A re-run moves the checkout and not the script
    (`cua-provision.sh` L354–356). The scripts in the field ask the checkout for a Linux pin (L83–88 at main, L288–291
@@ -80,7 +94,7 @@
 13. **The gates L218 names have moved.** `test` is `test-1` and `test-2` since #578 (`.github/ci-kit.yml` L25, L30).
     `engine-linux` runs only for paths this plan leaves alone (L152–154), so a default run skips it (§5.2).
 14. **The arm64 VM ends on 2026-11-26T01:00Z.** M6b's acceptance does not need it: arm64 runs on the hosted runner,
-    and the arm64 fixture is already on the x64 VM. One five-minute step would be worth running there first (N9).
+    and the arm64 fixture is already on the x64 VM. One five-minute step runs there first: arm64's FB, task 165 (N9).
 
 ## 1. The inventory
 
@@ -113,6 +127,8 @@
 | `launch.mjs` L490–493: the defaults and `['vendor', 'cua']` | the setting's values, for both platforms | **K** | macOS's default is `vendor`; on Linux `vendor` stays a known value, so that it is refused by name |
 | `runtime/vendor-tree.mjs`, whole; its callers `launch.mjs` L564, L585, L728, L744, `runtime/sandbox.mjs` L267–313, `runtime/linux-engine.mjs` L145, `secrets/project.mjs` L37, `runtime/doctor-engine.mjs` L77 | keeps every own lookup out of `<home>/runtimes/` (M6a's F2a) | **K**; install's and doctor's Node reads join its callers (§3.4) | A home keeps its tree until a person deletes it (1216) |
 | `runtime/node-install.mjs` L69; `runtime/doctor-linux-runtime.mjs` L131–138 `nodeBlockers`: `readNodeRecord` on `node/<version>` (`runtime/managed-node.mjs` L108–110) | follows a linked `install.json` into the tree | guarded as launch guards it (§3.4) | finding 5 |
+| `runtime/install.mjs` L345–347 (the helper), L396–398 (the engine); `runtime/node-install.mjs` L61–64, L85; `runtime/linux-engine.mjs` L240–242 (a local build): each lane's scratch under `<home>/staging`. `install.mjs` L334: the helper's installed file, read by `readFileSync` | writes, and cleans up, through a linked `staging/`; reads through a linked helper | each refused before the lane's first access (§3.4) | finding 5 |
+| `runtime/engine-sign.mjs` L45–57 `readEngineSettings` | reads `engine.json` whole, following a link | **K**. The refusal's look for a second selector uses a bounded reader of its own (§2.1) | the re-review |
 | `runtime/install.mjs` L69–70 `DEB_TOOLS`, `DEB_PAYLOAD`; L84; the deb halves of `withStage` (L129–130, L141) and `snapshotArchive` (L259); `extractDeb` L155–160; the `activate` option (L79), which only Linux passed; header L18–24 | acquires and unpacks the deb | **D** | L164 |
 | `install.mjs` L184–187, `release_refused` and its hint naming `CUA_NATIVE_ENGINE=vendor` | `cua runtime use <vendor release>` | **D**; the name is `unknown_release` like any other | no pin recognises it |
 | `install.mjs` `installRuntime`'s zip path, `download`, `verifyArchive`, `installSandboxHelper`, `installLinuxEngine`, `installMacosEngine` | macOS's install; cua's own parts | **K** | – |
@@ -179,7 +195,7 @@
 | Place | Says today | After |
 |---|---|---|
 | `README.md` L33, L68 (Install) | OpenAI's Linux package "only for `CUA_NATIVE_ENGINE=vendor`"; install tries it | no OpenAI package on Linux |
-| `README.md` L125–144, "Updating on Linux" | one install per home since M6a | adds 0.30.0: sessions need no install; a home that selects `vendor` is refused; install and doctor name OpenAI's package where an install recorded it, with its size, and leave it for the person to delete; an older cua sharing the home still reads it |
+| `README.md` L125–144, "Updating on Linux" | one install per home since M6a | adds 0.30.0: sessions need no install; a home that selects `vendor` is refused; install and doctor name OpenAI's package where an install recorded it, with its size, leave it in place, and say what to check before deleting it by hand; an older cua sharing the home may still run from it |
 | `README.md` L1275–1287 | the vendor engine as the second of two, "the rollback" | one engine; a sentence that the vendor's was removed in 0.30.0, with M5's and M6a's evidence cited for what it was measured against |
 | `README.md` L1301–1308 (the cloud template), L1330 (`ar`, `tar`, `xz`), L1342, L1347–1352 ("OpenAI's deb, for the vendor engine only") | the deb, its tools, a mirror, `--archive` | **D** |
 | `README.md` L1373, L1436–1442 | `sky_linux`'s `list_apps`; the vendor engine's typing caveats | the engine's inventory; the caveats **D** |
@@ -276,9 +292,20 @@ The installed engine below the minimum (1212):
 
 - **Raised first.** `linuxEngineFor` refuses `vendor` as its first act. It looks for no tree and reads no pin, so
   the sentence is the same with the tree present, absent or damaged.
-- **Both sources.** Today `engineSetting` stops at the variable (L666–669). To name both, the Linux refusal also
-  reads `engine.json` when the variable chose `vendor`. A file that cannot be read or parsed there is not named, and
-  the refusal stays the variable's.
+- **Both sources, by a bounded read.** Today `engineSetting` stops at the variable (L666–669), and `engine.json` is
+  not opened. To name both, the Linux refusal looks at `<engine.json>` once more. It does so through a reader of its
+  own, not `readEngineSettings`, which follows a link and would wait on a FIFO (`src/runtime/engine-sign.mjs`
+  L45–48):
+  - the path passes `outsideVendorTree` first, and one that leads into the tree is not opened;
+  - it must be a regular file by `lstat`, of at most 64 KiB, opened without following a link and without blocking,
+    and still a regular file by `fstat`;
+  - on any failure there is no second source: absent, a link, a FIFO, a directory, too large, unreadable, or not a
+    JSON object. The read never throws and never waits, and the sentence names the variable alone.
+- **Its tests,** each with `CUA_NATIVE_ENGINE=vendor` set: an `engine.json` that is a link into the recorded
+  release, and one that is a FIFO. Each is refused at once with the variable's sentence. The recorder shows no path
+  under `runtimes/` and no open of the FIFO.
+- **The first read is today's.** With no variable set, `engine.json` is read by `readEngineSettings` as on main,
+  link-following included. M6b leaves that read as it is, and T9 records it in `tech-debt-tracker.md`.
 - **The sentence names `CUA_NATIVE_ENGINE=cua`,** as L164 asks, as what the default is. Its instruction is 1216's:
   unset (N1).
 - **The release** is one exported constant, `'0.30.0'`, beside the selection. A test holds it no later than the
@@ -304,11 +331,13 @@ command it would name is the one that just ran:
 
 > `CUA_NATIVE_ENGINE=vendor` selects the vendor's engine, which cua 0.30.0 removed from Linux, where cua's own engine
 > (`CUA_NATIVE_ENGINE=cua`, the default) is the only one: unset `CUA_NATIVE_ENGINE`; the install otherwise
-> completed, and sessions open once it is unset
+> completed
 
 - The other two sources end the same way, each with its own prerequisite.
 - "Otherwise completed" is said only when it is true. When a step failed, that step's error is the install's, as
   today, and the last line names the setting.
+- **It promises nothing about the next open.** A malformed `engine.json`, or an outdated override that is still
+  set, can refuse it, each with its own sentence. 1216 asks for "the install otherwise completed" and no more.
 
 ### 2.3 Doctor on Linux
 
@@ -390,40 +419,67 @@ size.
 
 Install prints it after the engine's line, and doctor's `runtime.retired` carries it:
 
-> nothing reads the vendor's release at `<home>/runtimes/26.928.40906-linux-x64` since cua 0.30.0: 211.1 MB, which
-> `cua install` recorded placing there on 2026-10-28; cua leaves it in place, and it can be deleted by hand
+> cua 0.30.0 no longer uses the vendor's release at `<home>/runtimes/26.928.40906-linux-x64` for sessions: 211.1 MB
+> as it is now, where a `cua install` recorded placing it on 2026-10-28. cua leaves it in place and has not checked
+> what it holds. Before deleting it by hand, check that no older cua (another checkout on this home) still runs
+> from it, and for files added to it
 
-- It gives the three things 1216 asks for: the path, the size, and that nothing reads it since this release. The
-  path is what to delete by hand. No command is printed, and cua runs none.
+- **What it says:** the path and the size, as ruled, and the one thing cua knows, that this version does not use
+  the tree for sessions.
+- **What it does not say:** that nothing reads the tree, or what the tree holds. The record is an old receipt for
+  an archive (§3.1). It tells nothing of today's contents, and nothing of another checkout that shares the home. So
+  the sentence hands the person both checks, for older consumers and for added files. The size is of whatever is
+  there now, added files included.
+- No command is printed, and cua runs none.
 - Nothing is printed for a home with no recorded release.
 - In `--json`, install's `vendor` gives way to `retired`, which doctor's report carries too:
   `[{release, path, bytes, installedAt, source}]`, with `bytes` null where the walk stopped. It never sets
   `changed`.
-- "Nothing" is this cua's and every later one's. An older cua sharing the home still reads the tree: one from before
-  M6a for every session, one from M6a on under a vendor selection. The README says so beside the sentence (§1.5).
+- The README says who an older consumer can be: a cua from before M6a runs every session from the tree, and one
+  from M6a on reads it under a vendor selection (§1.5).
 
-### 3.4 The boundary on install's and doctor's own reads
+### 3.4 The boundary on install's and doctor's own reads and writes
 
-M6a kept every path a session reads out of the tree (`outsideVendorTree`). Install and doctor read the same managed
-parts, and finding 5 shows two reads without that boundary.
+M6a kept every path a session reads out of the tree (`outsideVendorTree`). Install and doctor touch the same managed
+parts, and finding 5 shows reads and writes without that boundary.
 
-- **The fix.** On Linux, `installNode` and `nodeBlockers` pass each path they are about to read through
+- **Node's reads.** On Linux, `installNode` and `nodeBlockers` pass each path they are about to read through
   `outsideVendorTree` first, as `linuxHostNode` does (launch.mjs L743–753): the pointer, `node/<version>`, its
   `install.json` and `bin/node`. One helper serves the three callers. A path that leads into the tree is not read.
   Install refuses it, naming the first link to move aside, and doctor's `runtime.node` names that link as what
   blocks the installer.
-- **The proof** replays the linked fixtures of `test/runtime-linux-no-vendor-read.test.mjs` through the whole of
+- **`staging/`, before any lane writes.** A `staging` that links into a recorded release would take a lane's
+  `mkdtemp`, its download, its unpacking and its cleanup's recursive delete inside the tree. So one helper refuses a
+  `staging` that is a link, or that `outsideVendorTree` shows leading into the tree: `target_occupied`, naming the
+  link to move aside, with nothing created. Every acquiring lane calls it before its first access to `staging`,
+  which means before its `mkdir`, its `mkdtemp` or any read: the module tree (in place of its own `lstat` check,
+  module-tree.mjs L445), the helper, Node, the engine, and a local build's placing.
+- **The helper's installed file** (install.mjs L334) passes the same guard before it is read.
+- **The replay** runs the linked fixtures of `test/runtime-linux-no-vendor-read.test.mjs` through the whole of
   `inspectRuntime` and of `installLinux`, under M6a's recorder: the Node's pointer and record (L165), the engine, its
   record and its directory (L182), the helper (L241), `current.json` (L315) and each home directory (L366). It adds
-  a `node/` and a `modules/` that are themselves links.
-- **Telling the accesses apart.** Each replay runs twice. With §3's module replaced by a stub through its seam, no
-  recorded path lies under `<home>/runtimes/`, as spelled or by its physical path. With the real module, the
-  recorded paths there are exactly its own: `lstat` of `runtimes/` and of the two names, one open of
-  `install.json`, and the walk's `lstat` and `readdir`. There is no other kind of call, nothing is executed and
+  a `node/` and a `modules/` that are themselves links. Its home already holds every part (its L37–45), so it
+  shows reinstalls that acquire nothing.
+- **A full install with the link present and the parts missing.** Each home holds a recorded release, and its
+  `staging` is a link to a directory inside that release. One home has every part missing. Four more have exactly
+  one part missing, a different one each (the module tree, the helper, Node, the engine), so that each lane's own
+  guard is the one that meets the link. A sixth places a local build. Each runs the whole of `installLinux`, or the
+  build's placing, with fixture archives served, under the recorder. Passing means:
+  - the lane refuses with the link named, before it creates anything;
+  - with §3's module stubbed, no path under `runtimes/` is recorded, as spelled or physical;
+  - the release's listing, every file's hash and every mtime are as before, and no temp directory was made there;
+  - **the negative control:** with the guard switched off through its seam, the same homes record the `mkdtemp`
+    inside the release. A recorder that saw nothing would otherwise pass;
+  - a `staging` that is absent, and one that is a real directory, install as today.
+- **Telling the accesses apart.** Each replay and each full install runs twice. With §3's module replaced by a stub
+  through its seam, no recorded path lies under `<home>/runtimes/`, as spelled or by its physical path. With the
+  real module, the recorded paths there are exactly its own: `lstat` of `runtimes/` and of the two names, one open
+  of `install.json`, and the walk's `lstat` and `readdir`. There is no other kind of call, nothing is executed and
   nothing is written.
-- Whatever else the replay shows is fixed the same way in the same task. From reading, the Node's record is the one
-  known read. The pointer is `lstat`-ed first (node-install.mjs L162), the module tree refuses a linked directory by
-  `lstat` (`src/runtime/module-tree.mjs` L430), and the engine's paths are guarded (install.mjs L385).
+- Whatever else these show is fixed the same way in the same task. From reading, three gaps are known: Node's
+  record, the helper's file and `staging`. The pointer is `lstat`-ed first (node-install.mjs L162), the module tree
+  refuses a linked directory by `lstat` (module-tree.mjs L430, L445), and the engine's own paths are guarded
+  (install.mjs L385), though its staging is not.
 
 ### 3.5 The rest of `cua install` on Linux
 
@@ -453,14 +509,29 @@ parts, and finding 5 shows two reads without that boundary.
 | M6a's (cb9973e82) | `CUA_DEB=none`, the default | Runs to the end. Its plain `cua install` is M6b's |
 | M6a's | `pin`, a mirror or `upload` | Installs and registers, then stops at the deb step with exit 0 and the old script's own checklist line: the failed lookup is lost in a here-string (L94), and no `.vendor.release` is found (L50). `upload` first waits out `CUA_DEB_WAIT`. Step 10 is skipped: no relay move, and the agent is not restarted on the new code |
 
-**The bootstrap: `deploy/cloud-vm/update.sh <ssh target> [--ref <ref>]`** (new), run from the operator's checkout.
+**The bootstrap: `deploy/cloud-vm/update.sh <ssh target> [--ref <ref>] [--bundle]`** (new), run from the operator's
+checkout. It binds three things to one commit: the script that runs, the conf, and the checkout that results. The
+script's bytes alone do not bind the checkout: the VM fetches `CUA_REF` from its own origin (`cua-provision.sh`
+L353–356), which may be another remote or an uploaded bundle, and two commits can carry the same script.
 
-1. It checks that its own `cua-provision.sh` is byte for byte the one at `<ref>` (HEAD by default), so the
-   provisioner that will run is that ref's.
-2. It copies the script to the VM as root, to a new name in `/usr/local/sbin`, checks its SHA-256 there, and
+1. It resolves `<ref>` (HEAD by default) once, to a full commit ID, C. Every later step uses C and never the name.
+2. It checks that its own `cua-provision.sh` is byte for byte the one at C.
+3. Only with `--bundle`, the recovery for a stale bundle: it makes a bundle whose tip is C from the operator's
+   checkout, copies it beside the VM's, checks there that its heads name C, and only then renames it over
+   `cua.bundle`.
+4. **Before it changes the VM's script or conf,** it checks that the VM's configured source can give exactly C. It
+   reads `CUA_REPO` from the VM's conf:
+   - for a repository URL, a fetch into a scratch repository on the VM, as the desktop user, must end holding the
+     commit C: a fetch of C by its ID, or of the source's refs where it refuses one by ID;
+   - for `upload`, `git bundle list-heads /var/cache/cua/cua.bundle` on the VM must name C as a tip.
+
+   If the source cannot, it stops with the VM's script and conf untouched and says what the source lacks: for a
+   URL, "push C there"; for a bundle, "run again with `--bundle`".
+5. It copies the script to the VM as root, to a new name in `/usr/local/sbin`, checks its SHA-256 there, and
    renames it over `cua-provision.sh`.
-3. It sets `CUA_REF` in `/etc/cua-provision.conf` to `<ref>`.
-4. It runs the script.
+6. It sets `CUA_REF` in `/etc/cua-provision.conf` to C, the commit ID. A ref that moves afterwards changes nothing.
+7. It runs the script.
+8. It reads the checkout's `HEAD` on the VM, and exits nonzero unless it is C, saying what it is.
 
 - **Why this path is trusted.** It is the path the first script took: from the operator's checkout to the VM's
   root, over the operator's SSH. Nothing the desktop user can write is run as root. A script that replaced itself
@@ -480,6 +551,14 @@ parts, and finding 5 shows two reads without that boundary.
   template provisions cua 0.30.0 or later; `CUA_REF` `<ref>` is older: use that ref's own `deploy/cloud-vm`". So
   `binutils` and `xz-utils` leave its package list (L174, L181), and its promise of refs older than M6a goes (L15–16,
   L128–130; `deploy/cloud-vm/README.md` L145–148) (N6).
+- **A commit ID as `CUA_REF` is checked out exactly.** The checkout step fetches it from origin, by its ID or with
+  origin's refs, requires that commit to be present, checks it out, and exits 1 before `cua install` unless `HEAD`
+  is that ID. A name is fetched and
+  checked out as today, which is how a first boot runs, and the log names the commit it resolved to.
+- **It runs only as the checkout's own provisioner** (N6). After the checkout step, and before `cua install`, it
+  exits 1 when it is not byte for byte the checkout's `deploy/cloud-vm/cua-provision.sh`, naming `update.sh`. It
+  compares the file and never runs it. So the next change of this kind cannot run an old script, and a template is
+  rendered from the ref it provisions, or from one with the same script.
 - `render.sh` and `create-hetzner.sh` lose `--deb`: given, it is refused with one sentence.
 
 **What the checkout says to an old script.** The two failures an old script meets are worded for it, and both land
@@ -497,9 +576,18 @@ each held to its commit's blob hash):
 - then the new script on the state each one left completes through step 10;
 - the new script with each old conf (`pin`, `upload`, a mirror URL) logs one line, fetches nothing, waits for
   nothing and completes;
-- the new script on a checkout older than 0.30.0 exits 1 before `cua install`;
-- `update.sh` with stub `ssh` and `scp`: its order, its hash check, and its refusal when its script is not the
-  ref's;
+- the new script on a checkout older than 0.30.0, and on one whose own provisioner differs from it, exits 1 before
+  `cua install`;
+- `update.sh`, with `ssh` and `scp` stubbed to act on a scratch directory, and real temporary repositories and a
+  real bundle standing for the VM's source:
+  - its order, its hash check, and its refusal when its script is not the one at C;
+  - **a moving ref:** after it resolved `<ref>` to C, the origin's ref moves to C′, whose provisioner is byte for
+    byte the same. The conf holds C, the checkout ends at C, and it exits 0;
+  - **a source without C:** it stops at step 4, and the VM's script and conf are byte for byte as before;
+  - **a stale uploaded bundle,** its tip an older commit: it stops at step 4 with the script, the conf and the
+    bundle as before, naming `--bundle`. Run again with `--bundle`, it replaces the bundle and ends with `HEAD` at
+    C. A new bundle whose heads do not name C is never renamed over the old one;
+  - **a checkout that ends elsewhere** (stubbed): it exits nonzero at step 8, naming the commit it found;
 - `render.sh --deb` is refused.
 
 ### 3.7 What a user meets
@@ -559,7 +647,7 @@ Three layers, in `test/runtime-linux-provenance-unreachable.test.mjs` and the re
 (`test/runtime-linux-no-vendor-read.test.mjs`):
 
 1. **Static.** No file under `src/`, `bin/` or `cua-shim.mjs` contains `runtime/provenance`, `chatgpt_` or
-   `/linux/deb/`, and none imports the comparator fixture's module or names its directory (§4.4). `package.json`'s
+   `/linux/deb/`, and none imports the comparator fixture's modules or names its directory (§4.4). `package.json`'s
    `files` does not list `runtime/provenance/`. Under `scripts/`, only `modules-pin.mjs` names that directory, and
    nothing reads a record's `url`: the directory is never a place to fetch from.
 2. **No pin, and no parser for one.** `loadPins()` holds no Linux pin. `selectPin` for linux-x64 and linux-arm64 is
@@ -582,12 +670,37 @@ A development-only exception. The differential harness and the gate still compar
 builds, given by path.
 
 - **What it is.** For each architecture, a directory holding `26.928.40906-linux-<arch>.tar` (the release tree as
-  an install placed it, 2,345 files), `SHA256SUMS` (the tar's hash) and `tree-sha256.txt` (every file's hash).
+  taken from an installed home, 2,345 files), `SHA256SUMS` (the tar's hash) and `tree-sha256.txt` (every file's
+  hash).
 - **Where it lives.** On dc-linux171-1e68, both: `~/.local/share/cua-171/vendor-x64-pinned/` and
   `~/.local/share/cua-171/vendor-arm64-pinned/`. `sha256sum -c` passed on both here: the tars are `2e620986…5914`
   and `fab95971…0d69`. No hosted runner holds one or needs one, since the vendor comparisons never ran there
-  (`.github/ci-kit.yml` L98). An arm64 desktop machine, when there is one again, gets its directory by copy from
-  the x64 VM.
+  (`.github/ci-kit.yml` L98). An arm64 desktop machine, when there is one again, gets its directory by copy.
+- **The second copy** (1217, N7) is on the owner's MacBook, at `~/.local/share/cua-171/vendor-fixtures/{x64,arm64}/`.
+  The coordinator checked its tars there: x64 `2e620986…5914`, 214,425,600 bytes; arm64 `fab95971…0d69`,
+  208,496,640 bytes; each `tree-sha256.txt` 2,345 lines. It is off every repository and reachable only from the
+  owner's machines.
+- **Never in the repository** (1217). The fixtures go into no branch of this repository and none of its releases,
+  drafts included. `vendor-fixture.json` holds hashes only.
+- **What the checksums prove, and the one comparison that proves the rest.** They prove that a tar is the one
+  preserved. They do not prove that its tree is the vendor's: each tar was made from an installed home, which could
+  have been changed after its install. Both authenticated debs are on this VM, and their lengths and SHA-256 equal
+  the records' (checked here). So once, in T3, before the manifest is pinned,
+  `scripts/linux-engine-gate/vendor-fixture-pin.mjs <deb> <fixture>` (new, a development tool):
+  1. matches the deb to its record by length and SHA-256, through `modules-pin.mjs`'s own matcher (its L54–62): over
+     the Linux pins when T3 runs, and over the provenance records once T4 has moved them;
+  2. unpacks the deb's payload under `usr/lib/chatgpt/resources/cua_node/` to scratch and compares it with the
+     fixture's `cua_node/`: the same names, the same types, the same link targets, and the same bytes for every
+     regular file. `install.json`, cua's own receipt, is the one entry set aside. Nothing else may be extra or
+     missing on either side;
+  3. only then writes that architecture's entry of `vendor-fixture.json`, with the deb's SHA-256 beside the tar's.
+
+  The commands and their output go to `m6b/fixture-identity.txt`. A difference stops T3: it is reported, and the
+  fixture is rebuilt from the deb. The tool fetches nothing.
+- **A cross-check that already exists.** The arm64 fixture lists `sky_linux_arm64` as `a2ee3b61…2193`. That is the
+  pinned arm64 build's digest in the counted evidence table `DECLARED_VENDOR_ENDS`
+  (`scripts/linux-engine-diff/scene-ended.mjs` L80–81), which was written from M5's runs and not from this fixture.
+  x64's `sky_linux_x64` is `7ac3c2ae…f1cd`, R/A L224's. A test holds the manifest's arm64 binary to that table.
 - **How the harness takes it.** `scripts/linux-engine-diff/vendor-fixture.mjs` (new) becomes the only way
   `gate.mjs` finds the pinned build and the vendor's client. It takes the directory from `--vendor-fixture`, else
   the path above for the host's architecture. It checks the tar against hashes recorded in the repository
@@ -595,11 +708,13 @@ builds, given by path.
   `tree-sha256.txt` and the file count), extracts it beside the tar on first use, and checks every extracted file
   against the list before each gate run. A mismatch refuses the step: it is never a skip and never a fetch.
   `defaultsFor` loses its cua-home argument (gate.mjs L84), so no step can be pointed at a home.
-- **Who restores it.** Whoever runs the gate, from the x64 VM's copy, checked by the same hashes. If that VM is
-  lost, a person rebuilds the fixture from the pinned deb, whose record says where it was published and what it
-  hashes to. No script does that. A second copy off that VM is the controller's to place (N7).
-- **Out of the product.** Nothing that serve, install or doctor reaches imports the module or names the fixture, and
-  §4.3's first layer holds that. The module never reads `runtime/provenance/`: the fixture's hashes are its own.
+- **Who restores it.** Whoever runs the gate, from the x64 VM's copy or the MacBook's, checked by the same hashes.
+  If both are lost, a person rebuilds the fixture from the pinned deb, whose record says where it was published and
+  what it hashes to. No script does that.
+- **Out of the product.** Nothing that serve, install or doctor reaches imports either module or names the fixture,
+  and §4.3's first layer holds that. The gate-time module never reads `runtime/provenance/`: the manifest's hashes
+  are its own. The one-time pin tool asks `modules-pin.mjs`'s matcher one thing, whether the deb it was handed is
+  the authenticated one.
 
 ## 5. Tests and acceptance 13
 
@@ -612,7 +727,7 @@ They run in the `test-1` and `test-2` gates on hosted macOS with a Linux host in
 | `engine_retired` by the variable, by `engine.json` and by both: one test each | the complete message and hint against a literal; the same with the tree present, absent and damaged; nothing under `runtimes/` recorded | `test/runtime-linux-engine-selection.test.mjs` |
 | An override naming an engine below the minimum | the complete message and hint against a literal: the unset, then the one command, and no build | same |
 | The override's other refusals; the installed engine's three | each ends as its row of §2.1's table says. None holds `cua engine build`, `cargo`, the vendor engine as a way out, or a second command. Every hint holds no command | same |
-| The variable `vendor` beside an `engine.json` that cannot be read | the variable's sentence alone | same |
+| The variable `vendor` beside an `engine.json` that is absent, malformed, over 64 KiB, a link into the recorded release, or a FIFO (§2.1) | the variable's sentence alone, at once. Nothing under `runtimes/` is recorded, and the FIFO is never opened | same |
 | The release's constant | `0.30.0`, and no later than the plugin's version | same |
 | The service's sentence | the literal of `client.mjs` L71, and its installer the selection's (M6a's drift test) | `test/services-engine-linux/client.test.mjs` |
 | A value that is no engine, on Linux and on macOS | Linux names `cua`; macOS is unchanged | `test/runtime-linux-engine-selection.test.mjs` |
@@ -621,25 +736,27 @@ They run in the `test-1` and `test-2` gates on hosted macOS with a Linux host in
 | The `js` rules for a Linux computer session, whatever `engine` is passed | cua's | `test/mcp-browser-surface.test.mjs` |
 | The oracle's Linux table | `vendor` is `engine_retired` in every row | `test/repl-parity/selection-oracle.test.mjs` |
 | Doctor, the home selecting `vendor`, by each source | `repl.host` and `engine` fail with that source's sentence and the hint | `test/doctor-engine-linux.test.mjs` |
-| **A recorded release** (1216), x64 and arm64 | named by install and by doctor: the path, the fixture's bytes, the record's date. Doctor's row is `skip` and `report.ok` is true. The tree is byte for byte as before | `test/runtime-linux-retired-tree.test.mjs` (new) |
+| **A recorded release** (1216), x64 and arm64 | named by install and by doctor: the path, the fixture's bytes, the record's date. The sentence is §3.3's against a literal: it does not say that nothing reads the tree, and it names both checks. Doctor's row is `skip` and `report.ok` is true. The tree is byte for byte as before | `test/runtime-linux-retired-tree.test.mjs` (new) |
 | No record; a record with a wrong hash, length, release or `schema`, an extra key, not JSON, over 64 KiB, a link, a directory | not named by either: no line, no row, `retired` empty | same |
 | A directory of another name, a file, a darwin release; `runtimes/` or the release a link; `runtimes/` absent | not named; no link followed; `runtimes/` never listed | same |
 | The size (§3.2) | the fixture's known sum: a hard-linked pair once, a link by its own length, directories and a fifo nothing. A walk past its bound, or one that fails, says "could not be measured" and still names the release | same |
 | What the module does | under the recorder: `lstat` of `runtimes/` and of the two names; inside a release, `lstat`, `readdir` and one open of `install.json`. No write, rename, unlink or exec anywhere | same |
 | The module's two constants | equal the provenance records' and `provenance.json`'s | same |
 | The linked managed parts, through the whole of doctor and of install (§3.4) | with the module stubbed, no path under `runtimes/` is recorded, as spelled or physical; with it real, only its own. The refusal and the row name the link | `test/runtime-linux-no-vendor-read.test.mjs` |
+| **A full install with `staging` linked into a recorded release** (§3.4): every part missing; each acquiring lane's part alone missing (the module tree, the helper, Node, the engine); a local build's placing | the lane refuses, naming the link, before it creates anything. No path under `runtimes/` is recorded. The release's listing, hashes and mtimes are as before. With the guard off through its seam, the `mkdtemp` is recorded inside the release | same |
+| The helper's installed file a link into the tree, through the whole of install | refused before it is read; nothing under `runtimes/` recorded | same |
 | `cua install` in an empty home | no `runtimes/` made; the `fetch` log is this arch's pinned assets and no other URL; no `ar` or `xz` looked up; `retired` empty | `test/cli-linux-install.test.mjs` |
 | `cua install` over a recorded release, twice | the line and `retired` both times; every part `changed: false`; the tree unchanged | same |
 | `--archive`, `--release` on Linux | usage error, exit 2, nothing installed | same |
-| `cua install` under each vendor source (F10) | every part placed; exit nonzero with `engine_retired`; the message names what to unset and that the install otherwise completed; with the setting gone a session opens with no further install | same |
+| `cua install` under each vendor source (F10) | every part placed; exit nonzero with `engine_retired`; the message is §2.2's against a literal: what to unset, that the install otherwise completed, and no word about the next open. In this clean home, with the setting gone, a session opens with no further install | same |
 | `cua runtime use` with a vendor release's name | `unknown_release`; its hint names no engine | same |
 | macOS: `cua install`, `cua doctor`, the selection | unchanged; the report is never called | `test/runtime-install.test.mjs`, `test/cli.test.mjs`, `test/runtime-doctor.test.mjs` |
 | §4.3's three layers | pass | `test/runtime-linux-provenance-unreachable.test.mjs` (new) |
 | `modules-pin.mjs` through its reader (§4.2) | fixture debs and new-shape records give today's output; a bad `lockfile` and a missing member are refused; `pinModules` takes no `pins` | `test/modules-pin.test.mjs` |
-| The provisioner (§3.6) | its six tests | `test/deploy-cloud-vm.test.mjs` |
+| The provisioner and its bootstrap (§3.6) | every test of §3.6's list | `test/deploy-cloud-vm.test.mjs` |
 | R1's verdict (§1.3) | red: a failed cua lane with a clean cleanup; 33 cases; a text case that is not positive; another engine under the worker; a clean lane with a failed cleanup. Green only with all five right | `test/linux-engine-diff/gate-runner.test.mjs` |
 | `checkEnginePair` (§1.3) | M6a's stored vendor and cua lanes pass with their 3 declarations. A new cua and cua pair passes. A cua pair of two runtimes, commits or case sets fails. A vendor pair with no vendor release fails as today | `test/repl-parity/native-linux-expected.test.mjs` |
-| The comparator fixture (§4.4) | a good fixture gives the two paths. One changed byte in the tar, in an extracted file or in the list refuses. No network call | `test/linux-engine-diff/vendor-fixture.test.mjs` (new) |
+| The comparator fixture (§4.4) | a good fixture gives the two paths. One changed byte in the tar, in an extracted file or in the list refuses. No network call. The manifest's arm64 binary is `DECLARED_VENDOR_ENDS`' pinned digest. The pin tool, on a fixture deb: an equal payload writes the entry; one changed byte, an added file, a changed link target or a changed type writes nothing; `install.json` alone is set aside | `test/linux-engine-diff/vendor-fixture.test.mjs` (new) |
 | The harness rows of §1.3 | each by its own test | §1.4 |
 
 ### 5.2 Acceptance 13, live
@@ -664,7 +781,7 @@ release, as every home updated from main holds them (F11).
 | E0 | empty | `cua install` at the head, under the fetch log and the trace | Exit 0. The module tree, helper, Node and engine placed; the pointer the derived name. The URLs the log shows asked for are exactly this architecture's pinned assets (23 tarballs, the helper, Node, the engine); none asked for, and none that answered, is OpenAI's. No `ar` and no `xz` was executed. The home has no `runtimes/`, `retired` is empty and no line names a vendor release. Doctor is ok, with no row named `runtime.retired`, `runtime.vendor`, `runtime.files`, `runtime.vendor-manifest`, `runtime.ipc` or `runtime.signatures`; its `engine` row shows the pinned version and hash behind service `cua`. `file` says the engine is statically linked (item 9) |
 | E1 | E | the item 1 smoke and the item 6 witness, plain and traced | As M6a's E1: every step passes; no `sky_linux` at any sample; the engine child is the home's `cua-engine` under the trusted worker; no traced call names a path under `runtimes/` |
 | E2 | E | the browser-only session, plain and traced; the profile map's loader | As M6a's E2 |
-| E3 | E | a computer session under each source: the variable, `engine.json`, both, and an override naming a 0.4.4 engine; doctor under each; a browser-only session with the variable; `cua install` under the variable, then a session with it unset | Each open is refused with §2.1's sentence for its source, equal to a literal built from this head's installer, and with the hint. Nothing is launched. Doctor's `engine` and `repl.host` rows fail with it. The browser-only session passes. The install exits nonzero with §2.2's sentence, every part placed. With the variable unset the session opens with no further install |
+| E3 | E | a computer session under each source: the variable, `engine.json`, both, and an override naming a 0.4.4 engine; doctor under each; a browser-only session with the variable; `cua install` under the variable, then a session with it unset | Each open is refused with §2.1's sentence for its source, equal to a literal built from this head's installer, and with the hint. **Under the three vendor sources the trace shows no `execve` of an engine, a worker, a helper or a host.** Under the override it shows exactly one more, per open and per doctor run: the override's path with the single argument `--version`, which is how the selection learns it is outdated (launch.mjs L572, L632–634). No engine `server`, worker, helper or host is started on any row. Doctor's `engine` and `repl.host` rows fail with the sentence. The browser-only session passes. The install exits nonzero with §2.2's sentence, every part placed. In this home, with the variable unset, the session opens with no further install |
 | U0 | upgraded: installed by the older cua, whose doctor passes its `runtime.vendor` | at the head, before any install: the item 1 smoke, traced; then the vendor selection | The default session passes with the tree present and whole, and no traced call names a path under `runtimes/`. The vendor selection is refused as in E3, though its tree is there |
 | U1 | U | `cua doctor --json`, plain and traced | Exit 0. The rows are E0's and `runtime.retired`, `skip`: its path the release's, its `bytes` the driver's own count (taken with `find`, not with cua's code), its date the record's. The traced calls under `runtimes/` are `lstat`, directory reads and one open of `install.json`, none outside the two release names. Nothing there is executed or written |
 | U2 | U, with a directory and a file of the run's added to `runtimes/` | `cua install` at the head, under the fetch log and the trace | Exit 0. `retired` is the one release with U1's bytes, and the line is §3.3's. The two added entries are named nowhere. Nothing under `runtimes/` changed: the listing, every file's hash and every mtime are as before, and the trace shows no unlink, rename or write there. Nothing was fetched: every part is `changed: false` |
@@ -706,16 +823,28 @@ now come from the fixture: the events step (the gate's own `E1`: `--vendor` and 
   holds no `runtimes/`, the fixture and the newest build named by path (`--vendor-fixture`, `--newest`), and a file
   trace of each step shows no path under any `runtimes/`. This machine's default home still holds its tree (1216),
   so the trace is what shows it unread.
-- The cell passes when both steps ran complete with the vendor lanes answered by the fixture's binaries, their paths
-  and hashes the recorded ones. FB's own verdict counts for item 4 (§5.3). The events step's speed verdict is
-  reported: M6b changes no engine byte, so a bar it misses is an engine finding with its own ticket.
+- **The events step is bound to two vendor binaries.** `--vendor` is `sky_linux_<arch>` inside the extracted
+  fixture, and its SHA-256 is the list's (`7ac3c2ae…f1cd` on x64). `--newest` is the newest build, named by its own
+  path outside the fixture, with its SHA-256 recorded. Every vendor lane's process in the step's record ran one of
+  those two files. The step ran complete.
+- **FB is bound to the fixture's JavaScript, and to no vendor binary.** It gives both services the same cua engine
+  on purpose (`scripts/linux-engine-diff/services.mjs` L65, L68). So: `--vendor-js` is the `@oai/sky` directory
+  inside the extracted fixture, and the `service.js` it loads has the list's hash; `--engine` is the pinned
+  `cua-engine`, by `runtime/engine/linux-engine.json`'s hash, on both sides; every step is equal across the two
+  lanes; and the truncation line is judged in each lane on the over-budget scene. That verdict is item 4's (§5.3).
+- The events step's speed verdict is reported and not judged here: M6b changes no engine byte, so a bar it misses
+  is an engine finding with its own ticket.
 
 **Gates,** on the frozen head:
 
 - `ci-gate` by its own selection: GREEN, with `test-1`, `test-2` and `sandbox-live` among the gates that ran. L218
   says `test`, which #578 split in two (C8).
 - `ci-gate --gates engine-linux`: PASS. Its paths (`.github/ci-kit.yml` L152–154) are none M6b changes, so the
-  default run skips it, and a SKIP never counts as item 10 (N8).
+  default run skips it, and a SKIP never counts as item 10.
+- **If that named run skips the gate too** (1217, N8), #585's pass is cited, and `credit.txt` records that
+  `git diff 854103aa5..H -- native/linux-engine runtime/releases/node/24.22.0-linux-x64.json .github/ci-kit.yml`
+  prints nothing: those are the gate's three paths, its own file among them. If anything there changed, the gate
+  runs by its own selection, and that run is what counts.
 
 **0.30.0 before the freeze.** T1 lands the constant, the literals, the bump of `.claude-plugin/plugin.json` and
 `marketplace.json`, and their tests on `feat/171-m6b`, so the frozen head holds the release's real name. If main
@@ -740,7 +869,7 @@ events step" is the gate's `E1`:
 |---|---|---|---|
 | 2, the same answers | V1–V4 on 0.4.1 at H⁗; V5 on 0.4.3 at H8, 52 of 52; the events step on 0.4.1 | V1–V4 on 0.4.1 at H⁵; V5 on 0.4.3 at H8; the events step on 0.4.0 at H‴ | cited |
 | 3, at or below the bar | the seven operations on 0.4.1 (V2, V3); Chrome's canvas and thumb, D1 on 0.4.3 at H8; Electron's thumb, D2 on 0.4.2 at H6; Firefox's canvas, D3 on 0.4.0 at H; desktop moves, the events step on 0.4.1 | the same steps: 0.4.1 at H⁵, D1 at H8, D2 at H6, D3 and the events step on 0.4.0 at H‴ | cited |
-| 4, same elements | V2 on 0.4.1; the truncation line through the facade, FB on 0.4.0 at H | V2 on 0.4.1; FB on 0.4.0 at H‴ | V2 cited. **FB reruns on x64:** it has no bridge (below). arm64's is N9 |
+| 4, same elements | V2 on 0.4.1; the truncation line through the facade, FB on 0.4.0 at H | V2 on 0.4.1; FB on 0.4.0 at H‴ | V2 cited. **FB reruns on x64:** it has no bridge (below). arm64's FB is task 165's run (below) |
 | 5, background left alone | V1–V5 and Z0 on 0.4.1; V5 on 0.4.2 at H6 and on 0.4.3 at H8 | V1–V4, Z0 and V5 on 0.4.1; V5 on 0.4.2 and on 0.4.3 | cited |
 | 6, text arrives once | V1 and V4 on 0.4.1 | V1 and V4 on 0.4.1 | cited through M6a's F10 credit, which covers this item and no other; its witness reruns on both arches (cells E1, U3), and R4's case on x64 |
 | 7, identity and minimized | V3 on 0.4.1; V5 on 0.4.3; R1's case on 0.4.0 | the same | cited; R1's minimized case reruns on x64 |
@@ -767,6 +896,14 @@ events step" is the gate's `E1`:
 | 0.4.5, #572 | `wire.rs`: every line the engine writes carries U+2028 and U+2029 as escapes, the same JSON value | every answer of items 2 to 8 | The engine's own tests, required in `engine-linux`: wire's round trip, a request's stats line, and `tests/live.rs`'s window titled with U+2028, read through Node 24's readline (red at 3 lines, green at 1). H10's reach parsed every line of both arches' runs | cited; `engine-linux` runs at H (§5.2) |
 | M6b | the selection, install, doctor, the harness | items 1, 9 and 10 | – | rerun (§5.2) |
 
+**arm64's FB** (1217, N9) is task 165: the gate's FB on the arm VM at main 854103aa5, before that VM's lease ends,
+with its evidence on branch `m6b-fb-arm64`. It is cited as arm64's witness for item 4's facade half, and its result
+is filled in at close-out. The credit check's third line ties main's facade and host to H.
+
+**A failure in #558's or #565's first counted runs is a defect on main** (1217): FB, R1's cua lane, R3, R4 or a
+cell that fails on their code. It gets its own ticket and its own pull request from main, and M6b's evidence waits
+for that fix. The one exception is a one-line fix, named to the design session first.
+
 **Item 10** in full. Rerun at H on x64: R1's cua lane by its own verdict, R3 and R4; `test-1`, `test-2` and
 `engine-linux` by `ci-gate`. Cited, for the diff against the vendor lane: R1 counted on 0.4.0 at H and H‴
 (m5/README.md L224); T10's flip checks on 0.4.3 at 51f6b281, both arches (`m5/t10/README.md` L97); M6a's on 0.4.4 at
@@ -790,8 +927,8 @@ it reaches, and their steps then run on x64 from the fixture (§4.4).
 **What could cut it,** most likely first:
 
 1. A harness or test path that still reaches a Linux pin or the vendor tree (§1.3, §1.4). The recorder and R1 find it.
-2. FB or R1's cua lane failing on #558's or #565's code, which no counted facade run has exercised. That would be a
-   defect on main, found here.
+2. FB or R1's cua lane failing on #558's or #565's code, which no counted facade run has exercised. That is a defect
+   on main, and M6b's evidence waits for its fix (above).
 3. The fetch log seeing less than the install fetched. Its control, the older cua's log, shows the deb or the witness
    does not count.
 4. The hosted leg's time: the older cua's install fetches about 450 MB on arm64, as it did in M6a.
@@ -804,15 +941,15 @@ harnesses' readers next, and the pins and their parser last.
 
 | T | Scope | Touches | Consumes | Produces, and its proof |
 |---|---|---|---|---|
-| T1 | **Nothing offers the vendor's engine, and 0.30.0 has its name** (§2; §3.5's flags, last line and exit status). The selection and its source-aware sentences; the override's refusals; the engine hint; launch's vendor branch; doctor's `engine` and `repl.host` rows; the `js` rules; install's vendor lane and its "other engine"; the usage text; the oracle; the constant and the plugin's version. The Linux test fixtures move to cua's own parts | `src/runtime/{launch,installer,doctor,doctor-linux-runtime,doctor-engine,linux-install}.mjs`, `src/runtime/install.mjs` (`useOwnLinuxRuntime`), `src/cli.mjs`, `src/mcp/{surface,connection}.mjs`, `.claude-plugin/{plugin,marketplace}.json`, `scripts/repl-parity/selection.mjs`, `test/fixtures/{installed-home,linux-native-runtime}.mjs`, `test/runtime-linux-{launch,engine-selection,doctor}.test.mjs`, `test/doctor-engine-linux.test.mjs`, `test/cli-linux-install.test.mjs`, `test/serve-lazy.test.mjs`, `test/mcp-browser-surface.test.mjs`, `test/repl-host/linux-native*.test.mjs`, `test/linux-{secrets,sandbox-refusal}.test.mjs`, `test/repl-parity/selection-oracle.test.mjs` | – | `engine_retired`. One test per source (the variable, `engine.json`, both) and one for an outdated override, each pinning the whole message and the hint. 1212's literals for the installed engine. Install's exit under each source. Every darwin row unchanged. `vendorLinuxRuntime`, `vendorPinsOf` and the pins stay: scripts still read them |
-| T2 | **The report, and the boundary** (§3.1–3.5): `retired-tree.mjs`, install's line and JSON, doctor's `runtime.retired`; the guard on install's and doctor's reads, with the replay; the deb's code out of `install.mjs`; Linux's leftovers scan | `src/runtime/{retired-tree,linux-install,install,node-install,managed-node,vendor-tree,doctor,doctor-linux-runtime,codex-leftovers}.mjs`, `test/runtime-linux-retired-tree.test.mjs`, `test/runtime-linux-no-vendor-read.test.mjs`, `test/cli-linux-install.test.mjs`, `test/runtime-linux-doctor.test.mjs`, `test/runtime-codex-leftovers.test.mjs`, `test/runtime-linux-install.test.mjs` (deleted) | T1 | §5.1's rows for the report, the size and the replay. The recorder shows that nothing under `runtimes/` is written, renamed or removed. macOS's install unchanged |
-| T3 | **The harnesses** (§1.3, §4.4): the Linux vendor lanes out, the judges kept; R1's own verdict; `checkEnginePair`'s two kinds; `engine-answered`; the parity cache and provenance; the four install sites; native-baseline's helper listing; `probe/lib.mjs`; R2 out of the gate; the comparator fixture's module and its recorded hashes; the `fallback` part's sentences; acceptance 12's vendor cells out of the driver; #570. Then, with no reader left, `vendorLinuxRuntime`, `vendorPinsOf`, `RESTORE_PINS` and `installHint`'s Linux half | `scripts/repl-parity.mjs`, `scripts/repl-parity/*`, `scripts/native-baseline.mjs`, `scripts/native-baseline/*`, `scripts/browser-parity/capability-home.mjs`, `scripts/linux-engine-gate/{gate,steps}.mjs`, `suites.sh`, `vendor-fixture.json`, `scripts/linux-engine-diff/vendor-fixture.mjs`, `scripts/accept/{linux-fallback,linux-selection,linux-runtime,linux-runtime-cells,linux-runtime-watch,linux-text}.mjs`, `scripts/probe/lib.mjs`, `scripts/sandbox-probe/linux-probes.mjs` (deleted), `src/runtime/manifest.mjs`, `test/runtime-manifest.test.mjs`, their tests (§1.4) | T1 | Each by its test, negative controls included: a failed cua lane with a clean cleanup is red; a fixture with one changed byte refuses the step; one pair of each kind. R1's cua lane and the `fallback` part run once on x64 as development runs. Reviewed for false greens first, as every harness change since M4 |
+| T1 | **Nothing offers the vendor's engine, and 0.30.0 has its name** (§2; §3.5's flags, last line and exit status). The selection and its source-aware sentences; the bounded look at `engine.json` for a second selector; the override's refusals; the engine hint; launch's vendor branch; doctor's `engine` and `repl.host` rows; the `js` rules; install's vendor lane and its "other engine"; the usage text; the oracle; the constant and the plugin's version. The Linux test fixtures move to cua's own parts | `src/runtime/{launch,installer,doctor,doctor-linux-runtime,doctor-engine,linux-install}.mjs`, `src/runtime/install.mjs` (`useOwnLinuxRuntime`), `src/cli.mjs`, `src/mcp/{surface,connection}.mjs`, `.claude-plugin/{plugin,marketplace}.json`, `scripts/repl-parity/selection.mjs`, `test/fixtures/{installed-home,linux-native-runtime}.mjs`, `test/runtime-linux-{launch,engine-selection,doctor}.test.mjs`, `test/doctor-engine-linux.test.mjs`, `test/cli-linux-install.test.mjs`, `test/serve-lazy.test.mjs`, `test/mcp-browser-surface.test.mjs`, `test/repl-host/linux-native*.test.mjs`, `test/linux-{secrets,sandbox-refusal}.test.mjs`, `test/repl-parity/selection-oracle.test.mjs` | – | `engine_retired`. One test per source (the variable, `engine.json`, both) and one for an outdated override, each pinning the whole message and the hint. The second selector's read with a link into the tree and with a FIFO. 1212's literals for the installed engine. Install's exit under each source, its sentence with no word on the next open. Every darwin row unchanged. `vendorLinuxRuntime`, `vendorPinsOf` and the pins stay: scripts still read them |
+| T2 | **The report, and the boundary** (§3.1–3.5): `retired-tree.mjs`, install's line and JSON, doctor's `runtime.retired`; the guard on install's and doctor's reads, on the helper's file and on every acquiring lane's `staging`, with the replay and the full installs under a linked `staging`; the deb's code out of `install.mjs`; Linux's leftovers scan | `src/runtime/{retired-tree,linux-install,install,node-install,managed-node,module-tree,linux-engine,vendor-tree,doctor,doctor-linux-runtime,codex-leftovers}.mjs`, `test/runtime-linux-retired-tree.test.mjs`, `test/runtime-linux-no-vendor-read.test.mjs`, `test/cli-linux-install.test.mjs`, `test/runtime-linux-doctor.test.mjs`, `test/runtime-codex-leftovers.test.mjs`, `test/runtime-linux-install.test.mjs` (deleted) | T1 | §5.1's rows for the report, the size, the replay and the full installs under a linked `staging`, each lane's guard shown by its own case and by the negative control. The recorder shows that nothing under `runtimes/` is created, written, renamed or removed. macOS's install unchanged |
+| T3 | **The harnesses** (§1.3, §4.4): the Linux vendor lanes out, the judges kept; R1's own verdict; `checkEnginePair`'s two kinds; `engine-answered`; the parity cache and provenance; the four install sites; native-baseline's helper listing; `probe/lib.mjs`; R2 out of the gate; the comparator fixture's module; each fixture's one comparison with its authenticated deb, and only then its manifest (§4.4); the `fallback` part's sentences; acceptance 12's vendor cells out of the driver; #570. Then, with no reader left, `vendorLinuxRuntime`, `vendorPinsOf`, `RESTORE_PINS` and `installHint`'s Linux half | `scripts/repl-parity.mjs`, `scripts/repl-parity/*`, `scripts/native-baseline.mjs`, `scripts/native-baseline/*`, `scripts/browser-parity/capability-home.mjs`, `scripts/linux-engine-gate/{gate,steps}.mjs`, `suites.sh`, `vendor-fixture.json`, `vendor-fixture-pin.mjs`, `scripts/linux-engine-diff/vendor-fixture.mjs`, `scripts/modules-pin.mjs` (its matcher exported), `scripts/accept/{linux-fallback,linux-selection,linux-runtime,linux-runtime-cells,linux-runtime-watch,linux-text}.mjs`, `scripts/probe/lib.mjs`, `scripts/sandbox-probe/linux-probes.mjs` (deleted), `src/runtime/manifest.mjs`, `test/runtime-manifest.test.mjs`, their tests (§1.4) | T1 | Each by its test, negative controls included: a failed cua lane with a clean cleanup is red; a fixture with one changed byte refuses the step; one pair of each kind. Both fixtures equal their debs' payloads (`m6b/fixture-identity.txt`), or the task stops. R1's cua lane and the `fallback` part run once on x64 as development runs. Reviewed for false greens first, as every harness change since M4 |
 | T4 | **The provenance move, and the parser's end** (§4.1–4.3): the two records moved and trimmed, with `lockfile`; the script's reader; `parsePin`'s Linux branch and `LINUX_LAYOUT_KEYS`; the dead branches of `checks.mjs` and `doctor.mjs`; the fixtures' Linux pin helpers; §4.3's three layers | `runtime/provenance/` (new), `scripts/modules-pin.mjs`, `src/runtime/{manifest,checks,doctor}.mjs`, `test/fixtures/runtime-fixture.mjs`, `test/runtime-manifest.test.mjs`, `test/modules-pin.test.mjs`, `test/runtime-linux-provenance-unreachable.test.mjs` | T2, T3 | Both real debs give today's `provenance.json` bytes through the new reader (`m6b/provenance.txt`). `loadPins()` holds no Linux pin, and no parser reads one. §4.3 passes, its negative control included |
-| T5 | **The cloud provisioner** (§3.6): `update.sh`; the script without the deb; the checkout's two sentences for an old script; the frozen old scripts and their tests | `deploy/cloud-vm/{update.sh,cua-provision.sh,render.sh,create-hetzner.sh}`, `src/runtime/manifest.mjs` (`selectPin`'s Linux sentence), `src/cli.mjs` (the usage error's clause), `test/deploy-cloud-vm.test.mjs`, `test/fixtures/cloud-vm/` | T4 | §3.6's tests. Run on no VM: the template's VMs are the owner's (§9) |
+| T5 | **The cloud provisioner** (§3.6): `update.sh`, binding the script, the conf and the checkout to one commit, with its bundle recovery; the script without the deb, with its commit-ID checkout and its own-provisioner check; the checkout's two sentences for an old script; the frozen old scripts and their tests | `deploy/cloud-vm/{update.sh,cua-provision.sh,render.sh,create-hetzner.sh}`, `src/runtime/manifest.mjs` (`selectPin`'s Linux sentence), `src/cli.mjs` (the usage error's clause), `test/deploy-cloud-vm.test.mjs`, `test/fixtures/cloud-vm/` | T4 | §3.6's tests. Run on no VM: the template's VMs are the owner's (§9) |
 | T6 | **Acceptance 13's driver** (§5.2): the new cells and their judges, the fetch log's preload, the traced install and doctor, the older cua, the workflow | `scripts/accept/{linux-runtime,linux-runtime-cells}.mjs`, `scripts/accept/fetch-log.mjs` (new), `.github/workflows/linux-runtime.yml`, `test/accept-linux-{runtime,runtime-cells}.test.mjs` | T2, T3 | Each judge's negative control by test: a log with the deb's URL, a trace with `ar`, a trace with an unlink under `runtimes/`, a report whose bytes are off by one, a tree with one file changed, a sentence one word off. A pilot of every cell on both venues, at the tip that holds T4. Reviewed for false greens first |
 | T7 | **Docs** (§1.5): the README, `deploy/cloud-vm/README.md`, the skill, `CLAUDE.md`, `package.json`'s description, the plugin's description | those files | T1; final after T5 | Each sentence checked against the code at the head |
 | T8 | **Acceptance 13, counted** (§5.2, §5.3), at the frozen head on both venues, with the x64 regression, the fixture's steps, the credit check and both `ci-gate` runs | evidence `m6b/` | the frozen head: T1–T7 | Every cell passes by the driver's own judge. `m6b/README.md` with the cell table, the head, the hosted run's id, §5.3's tables with each citation resolved to a path, `credit.txt` and `provenance.txt` |
-| T9 | **Close-out.** The spec folded: Progress, a Decision Log entry for each choice of §7.2 as confirmed, Outcomes, "Retirement (M6b)" as built, and acceptance 13's wording (C5). The tracker's #570 line. The whole-branch review by `doperpowers:reviewer-high` (L217). The pull request, its body listing every macOS-visible change, the homes that selected `vendor`, what install and doctor now report, and the cloud template's upgrade command | the spec, the report, `tech-debt-tracker.md` | T8 | The review clean. Both `ci-gate` runs still stand for the merged head, or run again. `MERGEABLE` |
+| T9 | **Close-out.** The spec folded: Progress, a Decision Log entry for ruling 1217 and §7.2's choices, Outcomes, "Retirement (M6b)" as built, and acceptance 13's wording (C5). arm64's FB result filled in from `m6b-fb-arm64` (§5.3). The tracker's #570 line, and a line for the first `engine.json` read (§2.1). The whole-branch review by `doperpowers:reviewer-high` (L217). The pull request, its body listing every macOS-visible change, the homes that selected `vendor`, what install and doctor now report, and the cloud template's upgrade command | the spec, the report, `tech-debt-tracker.md` | T8 | The review clean. Both `ci-gate` runs still stand for the merged head, or run again. `MERGEABLE` |
 
 **Order.** Each task is reviewed clean before what consumes it runs.
 
@@ -830,10 +967,10 @@ harnesses' readers next, and the pins and their parser last.
 | Task | Hours |
 |---|---|
 | T1 | 14–18 |
-| T2 | 6–9 |
-| T3 | 12–16 |
+| T2 | 8–11 |
+| T3 | 13–17 |
 | T4 | 5–7 |
-| T5 | 5–7 |
+| T5 | 7–9 |
 | T6 | 8–12, with the pilots |
 | T7 | 4–6 |
 | T8 | about 2.5 of machine time on x64 (the cells about 30 minutes; R1, R3, R4, FB and the events step planned at 40, 5, 3, 5 and 8); about 45 minutes for the dispatched run |
@@ -841,12 +978,13 @@ harnesses' readers next, and the pins and their parser last.
 
 About three days to the pull request with no cut, as the draft had it. The removal's leaving takes about five hours
 and the plan's riskiest review out of T2. The bootstrap, the fixture, the sentences' sources and the credit's
-reruns put about as many hours back. Plan for one fix round from the pilots: three and a half. Not counted: usage
-stops, and the hosted macOS queue for `ci-gate`.
+reruns put about as many hours back. Revision 2's fixes add about five more, in T2, T3 and T5, and the estimate
+holds. Plan for one fix round from the pilots: three and a half. Not counted: usage stops, the hosted macOS queue
+for `ci-gate`, and a wait for a fix on main if #558's or #565's first counted runs fail (§5.3).
 
-## 7. Rulings folded, and what is left to confirm
+## 7. Rulings folded
 
-### 7.1 Ruled
+### 7.1 The forks
 
 | F | The ruling | Folded in |
 |---|---|---|
@@ -861,22 +999,22 @@ stops, and the hosted macOS queue for `ci-gate`.
 | F10 | every step, then nonzero `engine_retired` | §2.2 |
 | F11 | the hosted leg's upgraded home made by the older cua's real install | §5.2 |
 
-### 7.2 To confirm
+### 7.2 Revision 1's choices, as ruling 1217 settled them
 
-What this revision chose while folding the rulings. Each is built as recommended unless the design session says
-otherwise. N1 is needed before wave 0, N9 before the arm VM's lease ends, and the rest before wave 1.
-
-| N | The choice | Recommendation | The other way |
+| N | The choice | As ruled (1217) | Folded in |
 |---|---|---|---|
-| N1 | The sentence names `CUA_NATIVE_ENGINE=cua` (L164) and tells the reader to unset the variable (1216) | Both: the name describes the default, the unset is the instruction (§2.1) | Drop the parenthesis, and amend L164 |
-| N2 | Doctor's informational row | `runtime.retired`, status `skip`, present only when a recorded release is found. Acceptance 13's "no vendor runtime rows" is reworded at T9 to "no row checks a vendor runtime" (C5) | `pass`, which reads as a health verdict; or the old name `runtime.vendor`, which scripts read as one |
-| N3 | A `runtimes/` or a release that is a link | Not followed, and nothing named | Follow a link at `runtimes/`, as the guard's `vendorTreeRoots` does: a moved tree is then reported, and the walk leaves the home |
-| N4 | `runtime.leftovers` and `--prune-leftovers` on Linux | `state/codex` only. Nothing of cua's reads or deletes inside the tree, an old release's `codex` file included | Keep the scan inside a release: doctor then reads there and the prune deletes there |
-| N5 | The service's own outdated sentence (`client.mjs` L71) | Unchanged. It knows a path and not a source, and the next open gives the override's prerequisite | Hand the source to the trusted worker: `client.mjs` changes, and §5.3's credit check has to read it |
-| N6 | The provisioner (§3.6) | `update.sh` as the bootstrap, and a template that provisions 0.30.0 or later. Further: from 0.30.0 on, the deployed script stops before `cua install` when it is not byte for byte the checkout's own, naming `update.sh`, so the next change of this kind cannot run an old script | Keep `ar`, `xz` and the promise of older refs; leave later scripts to drift as these did |
-| N7 | The fixtures' second copy | One copy off dc-linux171-1e68, placed by the controller | The x64 VM's alone; if it is lost, a person rebuilds them from the debs |
-| N8 | `engine-linux` for item 10 | `ci-gate --gates engine-linux` at H | Cite #585's pass on the same inputs, which needs the design session's word |
-| N9 | arm64's FB (item 4's facade half; §5.3) | Run the gate's FB on the arm VM at main 854103aa5 before 2026-11-26T01:00Z: five minutes, on the code H will hold for the facade and the host, which the credit check then ties to H | Argue it from x64's rerun: one renderer serves both architectures, and no arm64 desktop holds the fixture after that date |
+| N1 | The sentence names `CUA_NATIVE_ENGINE=cua` (L164) and tells the reader to unset the variable (1216) | Both: the name describes the default, the unset is the instruction | §2.1 |
+| N2 | Doctor's informational row | `runtime.retired`, an informational `skip`, present only for a recorded release. Acceptance 13's wording changes at close-out | §2.3, T9 (C5) |
+| N3 | A `runtimes/` or a release that is a link | Not followed, and nothing named | §3.1 |
+| N4 | `runtime.leftovers` and `--prune-leftovers` on Linux | `state/codex` only. Nothing of cua's reads or deletes inside the tree | §2.3, §3.5 |
+| N5 | The service's own outdated sentence (`client.mjs` L71) | Unchanged: it knows a path and not a source | §2.1 |
+| N6 | The provisioner | `update.sh` as the bootstrap; a template that provisions 0.30.0 or later; a script that runs only as the checkout's own provisioner | §3.6 |
+| N7 | The fixtures' second copy | On the owner's MacBook. The fixtures go into no branch, release or draft of the repository | §4.4 |
+| N8 | `engine-linux` for item 10 | `ci-gate --gates engine-linux` at H. If it skips, #585's pass is cited with the empty diff of the gate's paths recorded; if those paths changed, the gate runs | §5.2 |
+| N9 | arm64's FB | Task 165, on the arm VM at main 854103aa5, evidence on `m6b-fb-arm64`; its result filled in at close-out | §5.3, T9 |
+| – | #558's and #565's first counted runs | A failure is a defect on main, with its own ticket and pull request; M6b's evidence waits, unless the fix is one line named to the design session first | §5.3 |
+
+Nothing is left for the design session to rule.
 
 ## 8. Conflicts and ambiguities
 
@@ -893,7 +1031,8 @@ otherwise. N1 is needed before wave 0, N9 before the arm VM's lease ends, and th
 | C9 | M6a's README text says a later update "asks for the install again" only when a part moves; M6b moves none and still changes what install says | README L132–134 | The update step says what install and doctor now report, and that sessions do not wait for an install (§1.5) |
 | C10 | The acceptance says `cua install` "downloads no ChatGPT package"; an older cua sharing the home still does | L206; §3.7 | The claim is this cua's. The README says what an older one does |
 | C11 | "Its sentence naming … `CUA_NATIVE_ENGINE=cua`", and 1216's "unset CUA_NATIVE_ENGINE" | L164 against L2966 | Both, in one sentence (N1) |
-| C12 | "Nothing reads it since this release", and an older cua sharing the home reads it | L2959; §3.3 | The sentence is this cua's and later ones'. The README says the rest |
+| C12 | 1216's "nothing reads it since this release", and what the report can know: an older cua sharing the home may read the tree, and the record does not show its contents | L2959; the re-review | The sentence keeps the path and the size and says only that this version no longer uses the tree for sessions. It hands the person the check for older consumers and for added files (§3.3). T9's Decision Log entry records the narrowing |
+| C13 | Ruling 1217 is not in the Decision Log yet | the revision-2 brief | Cited from the brief here; T9 adds its entry |
 
 ## 9. Sources, and what was not verified
 
@@ -910,8 +1049,12 @@ otherwise. N1 is needed before wave 0, N9 before the arm VM's lease ends, and th
   which is R/A L224's).
 - The two fixtures: their listings, `sha256sum -c` on both tars, the tars' member lists, and the hashes of their
   `tree-sha256.txt` (x64 `7886c5dc…b54f`, arm64 `24340a6e…af45`).
-- The two pinned debs' presence on this VM, by listing.
+- The two pinned debs on this VM: their lengths and SHA-256, which equal the pins' (474,898,954 bytes and
+  `8094004f…8ad30`; 453,477,698 bytes and `ab3eea13…0f5cd`).
+- `scripts/linux-engine-diff/scene-ended.mjs` L76–81, whose pinned arm64 digest equals the arm64 fixture's entry for
+  `sky_linux_arm64`.
 - `ci-gate --help`, for what `--gates` selects.
+- Ruling 1217, and the MacBook copy's hashes and sizes, from the coordinator's revision-2 brief.
 
 **Not verified.**
 
@@ -920,8 +1063,16 @@ otherwise. N1 is needed before wave 0, N9 before the arm VM's lease ends, and th
 - §3.6's table: what each deployed script does against M6b's checkout is read from the two scripts, not run. T5's
   tests are the check. How many VMs the template has made, and what their confs hold, is not known here.
 - That `ci-gate --gates engine-linux` runs a gate whose paths did not change. Its help says "exactly these gates".
-- The fixtures were not extracted or compared file by file here. x64's list names the pinned build's hash for
-  `sky_linux_x64`. For arm64's `sky_linux_arm64` (`a2ee3b61…2193`) no independent record was found.
+  §5.2 says what counts if it skips.
+- That each fixture's payload equals its deb's. The fixtures were not extracted or compared here; only the two
+  binaries' digests were matched to independent records (§4.4). T3's comparison is the check, and it comes before
+  the manifest is pinned.
+- That the install left the deb's `cua_node` payload as it was, with nothing stripped or re-moded. If it did not,
+  T3's comparison shows the difference, and the fixture is rebuilt from the deb.
+- That the VM's origin answers a fetch by commit ID. Where it does not, `update.sh`'s step 4 and the script fetch
+  the source's refs and require the commit to be present.
+- The MacBook's copy of the fixtures: its hashes and sizes are the coordinator's reading, not mine.
+- Task 165's result. The plan cites the run and leaves the result for close-out.
 - That the events step and FB run from the fixture with no change to the harness but where the paths come from.
 - Whether the facade's vendor differential (`test/cua-api/facade-vendor.test.mjs`, which runs only with
   `CUA_VENDOR_CUA`) was ever run on #558's scenarios. The repository holds no record of one.

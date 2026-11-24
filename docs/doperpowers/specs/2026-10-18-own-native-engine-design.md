@@ -9038,6 +9038,49 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     and `savePanel/frontmost/typeText.name` pass on cua as on the vendor, and the key-route diagnostic shows cua posting
     to the panel service. Other remote-view UI (share sheets, print panels) is unverified either way.
   Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1206, 2026-11-23, the review of 0d4c5990..4b489551; amends the entry above): **the keys'
+  process is read again after any activation, just before the first key; the walk has a 250 ms time budget; keys past
+  the request's deadline are refused, never posted late.**
+  - (P1) The entry above read the target once, before press_key's focus hold or forced route 3, before type_text's forced
+    route 3 and before the paste's lock and activation. On main the public owner was the app wherever focus sat, so the
+    early read never mattered; now an activation that moves focus between a document and its Open or Save panel would
+    send the keys to the process focused before it. Each route now reads twice. The early read
+    (`refuseForbiddenKeyTarget`) only refuses a forbidden process, before anything is touched. The final read
+    (`finalKeyTarget`), once the activation has run and as the last step before the poster, names the process the keys
+    go to, is refused when forbidden and is driven by the intervention detector. press_key and keyed type_text make it
+    after their activation; paste and type_text's paste route make it inside the paste lock, after the paste's
+    activation and the read-back's snapshot, before the pasteboard is written (`PasteTarget.reread`); the 3a
+    predicate's key-focus reading takes the final pid. The activation stays the app's.
+  - The vendor's order, read from the pinned helper's `performKeyboardAction` (0x100076f80, its async partials): when
+    the app does not believe it has focus it awaits the enforcer's activation (the tail call at 0x100077274, resuming at
+    0x100077654 → 0x1000778b0) and only then calls `targetForKeyboardEvent` (0x100077934); when it does, it calls
+    `targetForKeyboardEvent` at once (0x1000772ac). Either way the vendor reads the target once, after any activation
+    and right before `SynthesizedEvent.pressKeys` (F §6.1 and §7.3 say the same for typing and the paste's ⌘V). cua's
+    final read is at the vendor's place; its early read is cua's own, for the forbidden list.
+  - (P2) The walk was bounded by depth alone: up to 301 parent reads at a 1 s messaging timeout each, the last one never
+    inspected. It now stops before a parent read once its time is spent, gives each parent read the time left as its
+    messaging timeout (`boundedMessagingTimeout`, 50 ms floor), and never reads the parent of the last element it may
+    inspect. The budget is `keyTargetWalkBudgetMs` = 250 ms, and the request's deadline when sooner: a real chain from a
+    focused element to its application is a few dozen sub-millisecond reads and the walk usually ends at the focused
+    element itself (C-3's Open panel did), so 250 ms leaves ample room for a deep or slow chain, while a hung app
+    delays keys by at most a quarter of a second plus one read's floor rather than minutes. A walk the budget stops
+    makes no switch (main's target). Every key route refuses a request past its deadline just before its first key
+    (`refuseLateKeys`, `timeoutReached`, "the request's deadline passed before its keys were sent. Nothing was sent."):
+    press_key before its first press, keyed type_text before its first event, paste and type_text's paste route after
+    the final read, before the pasteboard.
+  - (P3) The tests no longer require the symbol: resolution is tested through an injected function (found, failing,
+    missing); the live reads are checked to agree with what dlsym finds, present or absent; the presence canary runs
+    only on GitHub's hosted runner (`GITHUB_ACTIONS`), skipped elsewhere.
+  - The proof: `KeyTargetTests` grows to 16 (the depth bound with no unread parent; the budget stopping the walk at
+    250, 150 and 50 ms; the engine's walk bounded by the budget and by a past deadline; keys past the deadline refused;
+    the final read following focus across the activation both ways; a forbidden process on either read refusing; the
+    injected resolution; live agreement; the hosted canary). `PasteActivationTests` adds the paste's keys going to the
+    process read after its activation, both ways, on paste and type_text's paste route (the read made after subtype 1,
+    the activation's events the app's); a forbidden process on that read refusing before the pasteboard and any key;
+    and a deadline passed during the activation refusing likewise. press_key and keyed type_text still cannot be
+    driven in a unit test; their final read and deadline check sit after their activation in the source. 1791 swift
+    tests (2 skipped: main's one, and the canary off the hosted runner), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
 
 ## Outcomes & Retrospective
 

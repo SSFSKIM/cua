@@ -42,6 +42,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assertGithubHosted, isGithubHosted} from '../hosted-sittings/runner.mjs';
 import {compiled} from './matrix-device.mjs';
+import {journalProcess} from './live-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const KEY_ROUTE_SCRIPT = fileURLToPath(new URL('./key-route.swift', import.meta.url));
@@ -93,7 +94,7 @@ const linesOf = text => String(text ?? '').split('\n').filter(Boolean).flatMap(l
 const stateFile = (run, mode = 'escape') => join(run, TAP_MODES[mode], 'tap.json');
 
 // The tap launched (see the header). io: {env, platform, now, nonce, exists, mkdir, remove, open(args), readText,
-// writeText, sleep}.
+// writeText, sleep, journal(entry) (the events mode's)}.
 export async function startTap({run, targets, mode = 'escape'}, io) {
   if (!isGithubHosted(io.env, io.platform)) return {launched: false, refused: `the key-route tap: refused: ${REFUSED}`};
   if (!TAP_MODES[mode]) throw new Error('tap start takes --mode events, or no mode (the key-route diagnostic\'s)');
@@ -117,6 +118,9 @@ export async function startTap({run, targets, mode = 'escape'}, io) {
   }
   // Kept whatever happened, so `tap stop` tells a tap that is still starting to stop too.
   io.writeText(stateFile(run, mode), JSON.stringify({log, stop, pid: Number.isSafeInteger(ready?.pid) ? ready.pid : null}));
+  // The witness runs the length of a run: journaled with the run's launches (./live-device.mjs journalProcess) once it
+  // said its pid, so the run's recover stops it if the run never reaches its own stop.
+  if (events && Number.isSafeInteger(ready?.pid)) io.journal({kind: 'cli', pid: ready.pid, label: 'key-route tap (witness)'});
   if (!ready) return {launched: true, ready: false, reason: `the tap reported no readiness within ${(TAP_READS * TAP_READ_MS) / 1000} s`};
   return {launched: true, ready: true, pid: ready.pid, listenAccess: ready.listenAccess === true, ...(events ? {startedAt: Number.isFinite(ready.at) ? ready.at : null} : {}),
     taps: Array.isArray(ready.taps) ? ready.taps : []};
@@ -175,6 +179,7 @@ export function defaultIo(run) {
     env: process.env, platform: process.platform, sleep, now: Date.now, nonce: () => randomBytes(16).toString('hex'),
     helper: args => JSON.parse(execFileSync(compiled(KEY_ROUTE_SCRIPT, run), args, {encoding: 'utf8', timeout: 60_000})),
     control: pid => JSON.parse(execFileSync(compiled(CONTROL_SCRIPT, run), [String(pid)], {encoding: 'utf8', timeout: 60_000})),
+    journal: entry => journalProcess(run, entry),
     exists: path => fs.existsSync(path), mkdir: path => fs.mkdirSync(path, {recursive: true, mode: 0o700}), remove: path => fs.rmSync(path, {force: true}),
     readText: path => { try { return fs.readFileSync(path, 'utf8'); } catch { return null; } }, writeText: (path, text) => fs.writeFileSync(path, text, {mode: 0o600}),
     open: args => execFileSync('/usr/bin/open', args, {stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000}),

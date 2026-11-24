@@ -18,6 +18,7 @@ function deviceIo({env = {RUNNER_ENVIRONMENT: 'github-hosted'}, files = {}} = {}
     open: a => { calls.push(['open', ...a]); files[a[a.indexOf('--out') + 1]] = `${JSON.stringify({ready: true, pid: 41, listenAccess: true, at: 900, taps: [{label: 'textedit', pid: 5, created: true}]})}\n`; },
     alive: () => false, kill: pid => calls.push(['kill', pid]), isTap: () => true,
     control: pid => { calls.push(['control', pid]); return {posted: true, pid: 77, at: 1_100, kind: 'flagsChanged'}; },
+    journal: entry => calls.push(['journal', entry]),
   }};
 }
 
@@ -30,10 +31,17 @@ test('the witness tap starts in its own directory in events mode, bounded for a 
   assert.deepEqual(open.slice(open.indexOf('--mode'), open.indexOf('--mode') + 2), ['--mode', 'events']);
   assert.equal(open[open.indexOf('--max-seconds') + 1], String(WITNESS_MAX_SECONDS));
   assert.deepEqual(open.slice(open.indexOf('--pid')), ['--pid', 'textedit:5', '--pid', 'finder:6']);
+  // Fix wave M6: the witness tap is journaled with the run's launches once it is up, so the run's recover stops it.
+  assert.deepEqual(calls.filter(c => c[0] === 'journal'), [['journal', {kind: 'cli', pid: 41, label: 'key-route tap (witness)'}]]);
+  const never = deviceIo();
+  never.io.open = a => never.calls.push(['open', ...a]);
+  assert.equal((await startTap({run: '/r', targets: ['textedit:5'], mode: 'events'}, never.io)).ready, false);
+  assert.deepEqual(never.calls.filter(c => c[0] === 'journal'), [], 'a tap that never said its pid is not journaled');
   // The key-route diagnostic's tap is left as it was: its own directory, no mode flag.
   const keyRoute = deviceIo();
   await startTap({run: '/r', targets: ['textedit:5']}, keyRoute.io);
   const plain = keyRoute.calls.find(c => c[0] === 'open');
+  assert.deepEqual(keyRoute.calls.filter(c => c[0] === 'journal'), []);
   assert.equal(plain.includes('--mode'), false);
   assert.equal(plain[plain.indexOf('--out') + 1], join('/r', 'key-route', 'tap.jsonl'));
 });

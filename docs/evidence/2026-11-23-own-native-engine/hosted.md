@@ -2257,6 +2257,18 @@ service's field takes keys is answered by `savePanel/frontmost/typeText.name`.
   A test runs every panel cell on both lanes, with alerts and without, and finds no Return or Enter, no typed line
   break, and no Save or OK press.
 
+### The Save sheet's name, written (ruling 1204)
+
+Pilot C-3's vendor `savePanel/frontmost/typeText.name` was not prepared: its `setValue("")` on the name field returned
+without throwing, and the next observation still read the old value. The typing case now writes nothing (it selects
+the name whole and types over it), and `savePanel/frontmost/setValue.name` asks the question directly on both lanes:
+the fixed string `CUAMATRIXVALUE` written through the facade, read back by the pressKey row's settle (500 ms unchanged
+or 2 s). It passes when the field reads the string, whether or not setValue threw. One that returned while the field
+kept its value fails as "setValue returned ok, the field did not change". Two lanes that fail alike are equal, as every
+frontmost method row's failures are. The evidence for the final value is its length, its SHA-256 and its first 16
+characters, never the whole value. Each read's time and the settle's length are kept apart as diagnostics
+(`outcome.trace`) and never compared.
+
 ### The time
 
 C-2's vendor matrix run took 2206 s. Before each run step the sitting projects its finish: the time so far, plus

@@ -214,6 +214,17 @@ function linuxHeld(facts, say) {
     : say('fail', `the file at ${path} (SHA-256 ${facts.sha256}) is neither this cua's pinned engine nor a build cua recorded: ${install} replaces it`);
   return facts.executable ? words : `${words}; ${say('fail', `it is not executable, so no session runs it: ${install} places it again`)}`;
 }
+// What the cua home holds, as facts alone, for a row whose one remedy is another sentence's (a vendor selection's,
+// #171 M6b's §2.3): never a command.
+function linuxHeldFacts(facts) {
+  const {path, pinned} = facts;
+  if (!facts.exists) return `no engine is installed in this cua home (${path})`;
+  const words = facts.build === 'pinned' && facts.current ? `the pinned cua-engine ${facts.version} (${facts.release}) at ${path}, SHA-256 ${facts.sha256}`
+    : facts.build === 'pinned' ? `cua-engine ${facts.version} from ${facts.release} at ${path} (SHA-256 ${facts.sha256})${pinned ? `, which is not this cua's pinned ${pinned.version}` : ''}`
+    : facts.build === 'local' ? `a local build of cua-engine ${facts.version} at ${path}, SHA-256 ${facts.sha256}, not the pinned engine`
+    : `the file at ${path} (SHA-256 ${facts.sha256}), neither this cua's pinned engine nor a build cua recorded`;
+  return facts.executable ? words : `${words}, not executable`;
+}
 
 // The correction of a Linux setting no installer can fix: where it is set, what it may name (cua alone there since
 // 0.30.0, which retired the vendor's engine).
@@ -238,10 +249,11 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   if (selection.preferred.engine === 'vendor') {
     // The vendor's engine, retired on Linux by cua 0.30.0 (#171 M6b): every computer session is refused at the open
     // (launch.mjs linuxEngineFor), in the selection's own words. A session refused before its engine is asked for is
-    // repl.host's to fail.
+    // repl.host's to fail. What the home holds is said as facts: the selection's sentence is the row's one remedy.
     const selected = `the vendor's engine is selected (${source('vendor')})`;
     if (refused?.code !== 'engine_retired') return {row: result('engine', 'skip', `${selected}; sessions here are refused (${refused?.code}; see repl.host)`), report};
-    return {row: result('engine', 'fail', `${selected}, and every Linux computer session is refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint}; in this home: ${held}`), report};
+    return {row: result('engine', 'fail', `${selected}, and every Linux computer session is refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint}; `
+      + `in this home: ${linuxHeldFacts(facts)}`), report};
   }
   // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
   // in for it.
@@ -283,9 +295,10 @@ async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
     report = await readCapabilities({path: bin.path, desktop, env: {...desktopSessionEnv(env), ...(env.HOME ? {HOME: env.HOME} : {})}});
   } catch (error) {
     if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
-    // The remedy: an engine CUA_LINUX_ENGINE_BIN names is the harness's to drop; an installed one may be placed again, and
-    // the session's environment (display, bus, sandbox) is what doctor's other rows describe.
-    const remedy = bin.source === 'override' ? 'unset CUA_LINUX_ENGINE_BIN to run the installed engine instead'
+    // The remedy, in the selection's form (#171 M6b, §2.1): for an engine CUA_LINUX_ENGINE_BIN names, its unset as the
+    // prerequisite, then the one command, since the home may hold no engine to fall back to; an installed one may be
+    // placed again, and the session's environment (display, bus, sandbox) is what doctor's other rows describe.
+    const remedy = bin.source === 'override' ? `unset CUA_LINUX_ENGINE_BIN, then run ${engineInstall()}`
       : `if the engine is at fault, ${engineInstall()} places the pinned one again; the display, accessibility and sandbox rows describe the session's environment`;
     return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
   }

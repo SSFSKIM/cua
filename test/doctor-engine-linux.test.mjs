@@ -126,7 +126,7 @@ test('an engine sessions would refuse, or one that fails its report, fails the r
   assert.equal(crashed.row.status, 'fail');
 });
 
-test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names says to unset it, not to reinstall', async t => {
+test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names gives the override\'s prerequisite, then the one command', async t => {
   const s = scratch();
   t.after(s.cleanup);
   const built = join(realpathSync(s.dir), 'cua-engine');
@@ -134,8 +134,12 @@ test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names says to unse
   writeFileSync(built, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fixture0)"\n`, {mode: 0o755});
   const check = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, {capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
   assert.equal(check.row.status, 'fail');
-  assert.ok(check.row.detail.endsWith('cua-engine stopped (signal=SIGSEGV); unset CUA_LINUX_ENGINE_BIN to run the installed engine instead'), check.row.detail);
-  assert.doesNotMatch(check.row.detail, /install --engine` places/);
+  // §2.1's form (fix wave 1): unsetting the override is a prerequisite, never a fix on its own, since the home may hold no
+  // engine; the service's own sentence (N5) stays as it is.
+  assert.ok(check.row.detail.endsWith(`cua-engine stopped (signal=SIGSEGV); unset CUA_LINUX_ENGINE_BIN, then run ${ENGINE_INSTALL}`), check.row.detail);
+  assert.equal(check.row.detail.split(ownInstaller().command).length, 2, 'one command');
+  const bare = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, {read: NONE, capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
+  assert.ok(bare.row.detail.endsWith(`; unset CUA_LINUX_ENGINE_BIN, then run ${ENGINE_INSTALL}`), bare.row.detail);
 });
 
 test('what doctor does not start: a file it does not recognize, an invalid device mode, the vendor engine', async () => {
@@ -200,10 +204,29 @@ test('the vendor engine selected, by the variable or engine.json: fail, with the
   for (const [env, config, source, file] of [[{CUA_NATIVE_ENGINE: 'vendor'}, {}, 'CUA_NATIVE_ENGINE=vendor', false], [{}, {engine: 'vendor'}, `"engine": "vendor" in ~/.config/cua/engine.json`, true]]) {
     const {row: check, report, started} = await row(env, {read: NONE, config});
     assert.equal(check.status, 'fail');
+    // what the home holds is a fact; the one remedy is the selection's (fix wave 1)
     assert.equal(check.detail, `the vendor's engine is selected (${source}), and every Linux computer session is refused (engine_retired; see repl.host): `
-      + `${retired(settings, {env: !file, file})}; ${ENGINE_HINT}; in this home: no engine is installed in this cua home (${PATH}): ${ENGINE_INSTALL} installs the pinned cua-engine ${PIN} (linux-engine-v${PIN})`);
+      + `${retired(settings, {env: !file, file})}; ${ENGINE_HINT}; in this home: no engine is installed in this cua home (${PATH})`);
     assert.deepEqual([report.selected, report.refused.code, report.preferred, report.service, report.runs], [null, 'engine_retired', {engine: 'vendor', reason: file ? 'settings' : 'explicit'}, null, null]);
     assert.equal(started.length, 0);
+  }
+  // Whatever the home holds, its facts are said and the remedy is the selection's alone: one command, no build.
+  const held = {
+    pinned: [facts(), `the pinned cua-engine ${PIN} (linux-engine-v${PIN}) at ${PATH}, SHA-256 ${SHA}`],
+    behind: [facts({version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`, current: false}),
+      `cua-engine ${MIN_ENGINE_VERSION} from linux-engine-v${MIN_ENGINE_VERSION} at ${PATH} (SHA-256 ${SHA}), which is not this cua's pinned ${PIN}`],
+    local: [facts({build: 'local', release: null, current: false}), `a local build of cua-engine ${PIN} at ${PATH}, SHA-256 ${SHA}, not the pinned engine`],
+    unknown: [facts({build: 'unknown', version: null, release: null, current: false}), `the file at ${PATH} (SHA-256 ${SHA}), neither this cua's pinned engine nor a build cua recorded`],
+    'not executable': [facts({executable: false}), `the pinned cua-engine ${PIN} (linux-engine-v${PIN}) at ${PATH}, SHA-256 ${SHA}, not executable`],
+    'none, no pin': [{...NONE, pinned: null}, `no engine is installed in this cua home (${PATH})`],
+    'none, no readable pin': [{...NONE, pinned: null, pinProblem: 'x.json: broken'}, `no engine is installed in this cua home (${PATH})`],
+  };
+  for (const [label, [read, words]] of Object.entries(held)) {
+    const {row: check} = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read});
+    assert.equal(check.status, 'fail', label);
+    assert.ok(check.detail.endsWith(`; ${ENGINE_HINT}; in this home: ${words}`), `${label}: ${check.detail}`);
+    assert.equal(check.detail.split(ownInstaller().command).length, 2, `${label}: one command`);
+    assert.doesNotMatch(check.detail, /cua engine build|cargo/, label);
   }
   // A refusal of every session for another reason is repl.host's to fail; the engine row only says so.
   const other = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'runtime_not_installed', message: 'cua\'s Linux runtime is not installed'}});

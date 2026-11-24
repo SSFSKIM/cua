@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
-import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, chromeDragFromField, focusVerdict, framedCells, groundCase, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, CHROME_FIELD_ROWS, FIELD_LINES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, chromeDragFromField, focusVerdict, framedCells, groundCase, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
+import {PAGE_HTML} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
 import {NOTE} from '../../src/services/engine/render.mjs';
@@ -744,14 +745,15 @@ test('Chrome\'s Tab row: a name an earlier row left in the target field is empti
 // Ruling 1226: the fixed points ([24,192] to [200,237]) never landed in the notes field on the hosted 800x760 Chrome for
 // Testing window, C-2 to C-7, either lane, either regime. The drag is grounded on the field's own frame as read (its
 // window points): from just inside its left edge on its second line to its right part on its fourth.
-test('Chrome\'s drag points come from the notes field\'s own frame, inside it, on its second and fourth lines', async () => {
-  const {chromeDragFromField, FIELD_LINES} = await import('../../scripts/native-matrix/plan.mjs');
+test('Chrome\'s drag points come from the notes field\'s own frame, inside it, on its second and fourth lines', () => {
+  // The line height divides by the field's rows, the fixture's own (review minor M2), not by the lines it is given.
+  assert.equal(Number(/<textarea id="notes"[^>]* rows="(\d+)"/.exec(PAGE_HTML)?.[1]), CHROME_FIELD_ROWS);
   const window = {width: 800, height: 760}, field = {x: 16, y: 187, width: 444, height: 126};
   const layout = chromeDragFromField({window, field});
   assert.deepEqual(layout.window, [800, 760]);
   const inside = ([x, y]) => x > field.x && x < field.x + field.width && y > field.y && y < field.y + field.height;
   assert.ok(inside(layout.from) && inside(layout.to), JSON.stringify(layout));
-  const line = (field.height - 6) / 8, lineOf = y => Math.floor((y - field.y - 3) / line);
+  const line = (field.height - 6) / CHROME_FIELD_ROWS, lineOf = y => Math.floor((y - field.y - 3) / line);
   assert.deepEqual([lineOf(layout.from[1]), lineOf(layout.to[1])], [1, 3], 'the second line to the fourth: a drag across lines');
   assert.ok(layout.from[0] - field.x <= 10, 'just inside the left edge, before the line\'s first character');
   assert.ok(layout.to[0] > field.x + field.width / 2, 'in the field\'s right part');

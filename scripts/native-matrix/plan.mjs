@@ -547,15 +547,16 @@ return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(
 // element of the role in the scene's window; ./matrix-device.mjs fieldFrame, ./steps.mjs caseRow), and a frame not read
 // leaves the row invalid. From it: the drag starts just inside the field's left edge on its second line and ends in its
 // right part on its fourth (past "delta four"'s end), the line height taken as the field's height (less the user agent's
-// 1 pt border and 2 pt padding each side) over its 8 rows. That is an estimate; the prepare's harness click at each end
+// 1 pt border and 2 pt padding each side) over its rows (CHROME_FIELD_ROWS, the fixture's rows="8"). That is an estimate; the prepare's harness click at each end
 // still proves the points land in the field before anything is dragged. Behind a user window those clicks would be
 // background clicks on a web page, which cua refuses by design (backgroundClickRefused, C-7, ruling 1226): the prepare
 // runs with Chrome in front (`prepareInFront`, ./steps.mjs caseRow), the user window brought back before the drag, which
 // is sent behind it as before. `reading`: field-frame's answer, {window: {width, height}, field: {x, y, width, height}}
 // in window points. -> the dragSelect layout.
 const CHROME_FIELD_INSET = 3;
+export const CHROME_FIELD_ROWS = 8;
 export const chromeDragFromField = ({window, field}) => {
-  const line = (field.height - 2 * CHROME_FIELD_INSET) / FIELD_LINES.length, onLine = n => Math.round(field.y + CHROME_FIELD_INSET + line * (n + 0.5));
+  const line = (field.height - 2 * CHROME_FIELD_INSET) / CHROME_FIELD_ROWS, onLine = n => Math.round(field.y + CHROME_FIELD_INSET + line * (n + 0.5));
   return {window: [window.width, window.height], from: [Math.round(field.x + 8), onLine(1)], to: [Math.round(field.x + field.width * 0.6), onLine(3)]};
 };
 const chromeDrag = reading => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: reading ? chromeDragFromField(reading) : null}), framed: 'window points',

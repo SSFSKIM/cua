@@ -73,6 +73,8 @@ final class Engine: @unchecked Sendable {
   /// ChromiumReadiness.swift), and the sleeper that wait runs on: the system's, replaced in the unit tests.
   let monotonicClock: () -> Double
   let pause: (Double) -> Void
+  /// The reads that place keyboard events (KeyTarget.swift, #582): the live ones, replaced in the unit tests.
+  let keyTargetReads: KeyTargetReads
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
@@ -80,8 +82,10 @@ final class Engine: @unchecked Sendable {
        pasteActivation: ActivationSystem = ActivationSystem(), pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
        cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
        cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil,
-       clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
+       clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) },
+       keyTargetReads: KeyTargetReads = .live()) {
     self.paths = paths
+    self.keyTargetReads = keyTargetReads
     self.monotonicClock = clock
     self.pause = sleep
     self.webAccessibility = WebAccessibility(record: enablementRecord, now: clock)
@@ -167,6 +171,9 @@ final class Engine: @unchecked Sendable {
       // The agent cursor's device switch as read at launch (`cursor` in engine.json).
       "cursor": cursorEnabled ? "on" : "off",
       "cursorDebug": cursorDebug?.rawValue ?? NSNull(),
+      // #582: whether `_AXUIElementGetActualPid` resolved, so keys reach a remote-view panel's service (an Open or Save
+      // panel); false, they go to the app as before, and doctor says so.
+      "actualPid": keyTargetReads.actualPid != nil,
     ]
   }
 

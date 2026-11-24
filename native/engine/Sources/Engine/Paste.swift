@@ -529,7 +529,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
               deliver: (() -> Void) throws -> DeliveryGuardOutcome? = { $0(); return nil },
               beforePart: ((Int) throws -> Void)? = nil,
-              checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
+              checkInFlight: () throws -> Void, beforeFirstKey: () throws -> Void = {}, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
   let state = pasteboard.snapshot()
   let snapshot = state.items
@@ -570,8 +570,15 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     meta.paste = record
   }
   /// One ⌘V or Return posted through `deliver`; the action interval is the events' own, never the guard's samples.
+  /// `beforeFirstKey` runs just before the first of them (ruling 1207: the deadline, after the snapshot, the baseline,
+  /// the write and the key-focus read), inside the restore's reach.
+  var keyed = false
   func posting(_ events: () -> Bool) throws -> Bool {
-    try withoutActuallyEscaping(events) { events in
+    if !keyed {
+      try beforeFirstKey()
+      keyed = true
+    }
+    return try withoutActuallyEscaping(events) { events in
       var posted = false
       if let outcome = try deliver({ posted = meta.posting(events) }) { meta.delivery = outcome }
       return posted
@@ -709,14 +716,6 @@ func pasteUnconfirmedNote(_ outcome: PasteOutcome) -> String? {
   return "\(outcome.pastedLines) lines pasted, \(outcome.unconfirmedLines) unconfirmed: the app read each after ⌘V, " + tail
 }
 
-/// A paste-route result: the input meta, and the note when there is one (the result's `note`, which the service adds to
-/// the tool result's content, since the facade returns nothing of an input's result to model code).
-func pasteResult(_ meta: InputMeta, note: String?) -> [String: Any] {
-  var result: [String: Any] = ["meta": meta.wire]
-  if let note { result["note"] = note }
-  return result
-}
-
 /// The restore (F §7.6): only after a write, and only while the pasteboard still holds what the engine wrote, which the
 /// restore itself checks at its clear.
 private func restore(_ snapshot: PasteboardSnapshot?, own: Int?, on pasteboard: PasteboardAccess) -> RestoreOutcome {
@@ -749,8 +748,12 @@ struct PasteTarget {
   let app: ResolvedApp
   let pid: pid_t
   let application: AXUIElement
+  /// The keys' process as read before anything was touched (the forbidden list's early check).
   let keyboard: pid_t
   let guarding: InterventionGuard
+  /// The keys' process read again once the paste's activation has run, checked and driven (`Engine.finalKeyTarget`,
+  /// ruling 1206); nil keeps `keyboard` (the unit tests' fixed target).
+  var reread: (() throws -> KeyTarget)? = nil
 }
 
 extension Engine {
@@ -775,18 +778,19 @@ extension Engine {
       meta.apply(guarding)
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let keyboard = keyboardTarget(application, fallback: pid)
-      try refuseForbiddenOwner(keyboard)
-      actionTargets(keyboard, app: app, connection: context.connection)
+      // The forbidden list on the keys' process before anything is touched, which is driven from now on; read again
+      // after the paste's activation.
+      let keyboard = try earlyKeyTarget(application, pid: pid, app: app, context: context)
       // A minimized window takes no ⌘V (Minimized.swift): refused before the pasteboard is snapshotted or written.
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       // Converted before the app or the pasteboard is touched, so a conversion that fails changes nothing.
       let representations = try pasteRepresentations(text, format: format)
       var entered = 0
       let outcome = try pasteOperation([.content(representations, units: text.utf16.count)],
-                                       PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding),
+                                       PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding,
+                                                   reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, entered: &entered, meta: &meta)
-      return pasteResult(meta, note: pasteUnconfirmedNote(outcome))
+      return keyInputResult(meta, note: pasteUnconfirmedNote(outcome), app: app.displayName)
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -916,16 +920,23 @@ extension Engine {
       defer { observer?.invalidate() }
       effect.observed(pasteNotificationSource(registered: observer != nil, app: target.app, pid: target.pid))
       let window = primaryWindow(of: application)
+      // #582 (ruling 1206): the keys' process read again now that the activation has run, the last step before the
+      // pasteboard and the first event; past the request's deadline nothing is sent.
+      let keys = try target.reread?() ?? KeyTarget(pid: target.keyboard)
+      meta.keyTargetCutOff = keys.walkCutOff
+      let keyboard = keys.pid
+      try refuseLateKeys(deadline: context.deadline)
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
       // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
-      let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, target.keyboard) }
+      let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, keyboard) }
       func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
       let outcome = try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
-                   keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
+                   keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: keyboard, application: application, window: window, system: system) },
                    focusEnforcement: enforcement, activationNow: system.now, deliver: deliver,
                    beforePart: typing?.beforePart,
                    checkInFlight: target.guarding.checkInFlight,
+                   beforeFirstKey: { try refuseLateKeys(deadline: context.deadline) },
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
                    entered: &entered, meta: &meta)
       // #361: the final poll (a field the snapshot could not read answers its reason here) once the pasteboard is

@@ -144,6 +144,8 @@ struct InputMeta {
   var fieldFocus: TextEntryFocusRecord?
   /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
   var note: String? = nil
+  /// #582 (ruling 1207): the keys' final read was cut off at the walk's time budget; their result carries the notice.
+  var keyTargetCutOff = false
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
   var coordinateClick: CoordinateClickRecord?
   /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
@@ -892,9 +894,8 @@ extension Engine {
       meta.apply(guarding)
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let target = signposted("pressKey.keyboardTarget") { keyboardTarget(application, fallback: pid) }
-      try refuseForbiddenOwner(target)
-      actionTargets(target, app: app, connection: context.connection)
+      // The forbidden list on the keys' process before anything is touched; read again after any activation (below).
+      try signposted("pressKey.keyboardTarget") { try earlyKeyTarget(application, pid: pid, app: app, context: context) }
       try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
         try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       }
@@ -905,11 +906,15 @@ extension Engine {
       }
       let release = try forcedActivation(forced, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
-      let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
+      // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
+      let keys = try signposted("pressKey.finalKeyTarget") { try finalKeyTarget(application, pid: pid, app: app, context: context) }
+      meta.keyTargetCutOff = keys.walkCutOff
+      let poster = EventPoster.toProcess(keys.pid, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
       defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
+      try refuseLateKeys(deadline: context.deadline)  // past the deadline nothing is posted late
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
-      return ["meta": meta.wire]
+      return keyInputResult(meta, note: nil, app: app.displayName)
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -941,9 +946,7 @@ extension Engine {
       try guarding.checkBeforePosting()
       // The forbidden list on the process the keys would reach comes before anything else is decided.
       let application = prepare(AXUIElementCreateApplication(pid))
-      let target = keyboardTarget(application, fallback: pid)
-      try refuseForbiddenOwner(target)
-      actionTargets(target, app: app, connection: context.connection)
+      let early = try earlyKeyTarget(application, pid: pid, app: app, context: context)
       // Neither route reaches a minimized window (Minimized.swift); a concealed request is refused the same way.
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
 
@@ -957,13 +960,15 @@ extension Engine {
                                 chromiumFamily: webAccessibility.isChromiumFamily(app.appPath), spikeKeyed: spikeKeyed, meta: &meta) {
       case .paste:
         // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
-        let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
+        // The paste reads the keys' process again once its activation has run (`PasteTarget.reread`).
+        let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: early, guarding: guarding,
+                                                         reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, selection: selection, settle: { self.recentKeys.settles(pid: pid) },
-                                       pointerPending: { self.clickOrdering.pointerPending(pids: [pid, target]) },
+                                       pointerPending: { self.clickOrdering.pointerPending(pids: [pid, early]) },
                                        reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
                                          bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
                                        meta: &meta)
-        return pasteResult(meta, note: note)
+        return keyInputResult(meta, note: note, app: app.displayName)
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {
@@ -972,7 +977,12 @@ extension Engine {
       meta.inputRoute = keyRoute(forced: forced)
       let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
+      // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
+      let keys = try finalKeyTarget(application, pid: pid, app: app, context: context)
+      meta.keyTargetCutOff = keys.walkCutOff
+      let target = keys.pid
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
+      var posted = false
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
       // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last;
@@ -985,14 +995,15 @@ extension Engine {
                           baseline: baselineWait(selection: selection, pointerPending: clickOrdering.pointerPending(pids: [pid, target])),
                           reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
                             bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
-                          checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
-                          checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
+                          checkSource: { entered, total in
+                            if !posted { try refuseLateKeys(deadline: context.deadline) }  // before the first event, not late
+                            try self.checkInputSource(initialSource, entered: entered, total: total)
+                          },
+                          checkIntervention: guarding.checkInFlight, post: { posted = true; return poster.post($0) },
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
                           meta: &meta)
       // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
-      var result: [String: Any] = ["meta": meta.wire]
-      if let note = meta.note { result["note"] = note }
-      return result
+      return keyInputResult(meta, note: meta.note, app: app.displayName)
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -1007,13 +1018,6 @@ extension Engine {
                                        beforeActivating: guarding.checkInFlight, make: {
       FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
     }, meta: &meta)
-  }
-
-  /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
-  /// not the app (F §5.7's targetForKeyboardEvent), else the app.
-  func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
-    guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return pid }
-    return ownerPid(of: focused, fallback: pid)
   }
 
   /// The source check before every event and after the last (the spec's Design, "Text"): a switch mid-request stops it

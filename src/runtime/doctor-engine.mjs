@@ -11,7 +11,7 @@
 // When cua's engine is preferred, the row reads the approved location through engine.mjs inspectEngine: the bundle and
 // its records, the signature as a match and a kind (never the identity), and an engine's `status`, which gives the
 // three grants (Input Monitoring the intervention tap's), whether the socket's owner is the approved bundle, the probe
-// mode's ability, the route-4 overrides the engine read at launch, the apps `routeAdvice` names and the agent cursor's
+// mode's ability, whether keys reach remote-view panels (`actualPid`, #582), the route-4 overrides the engine read at launch, the apps `routeAdvice` names and the agent cursor's
 // device switch (`cursor: on`, or `cursor: off (engine.json)`; #235), the running engine's, else engine.json's, and the
 // device mode sessions here run it in (#282: launch.mjs desktopModeFor, as on Linux; an invalid one fails the row). An
 // engine already running is read and left alone. Only when sessions do drive cua's engine does inspectEngine launch the approved bundle
@@ -23,7 +23,8 @@
 // unknown setting, an engine.json the engine refuses to start with, a bundle that is not cua's engine, the engine
 // unreadable or unlaunchable, another engine at the socket, Accessibility or Screen Recording not granted); `warn`
 // where sessions run with less than the design means (the default's fallback to the vendor engine, Input Monitoring
-// missing so intervention detection is off, the signature not the configured identity's, route 3 advising an override,
+// missing so intervention detection is off, `_AXUIElementGetActualPid` unavailable so keys never reach a remote-view
+// panel, the signature not the configured identity's, route 3 advising an override,
 // an engine doctor launched and could not stop, the approved build not this plugin's engine source); `skip` where cua's
 // engine is not preferred; else `pass`. The probe's ability is reported, not judged.
 // The service's minimum (#117 M5, R4; src/services/engine/client.mjs MIN_ENGINE_VERSION): an approved engine older
@@ -179,7 +180,7 @@ const SOURCE_WORDS = {
 
 function notApplicable(reason) {
   return {selected: null, reason, refused: null, preferred: null, bundle: null, exists: null, version: null, build: null, approved: null, approvedBuild: null, approvedAt: null,
-    pending: null, signature: null, running: null, launched: null, statusError: null, socket: null, permissions: UNREAD, probe: {canPostHid: null}, routes: null, routeAdvice: null};
+    pending: null, signature: null, running: null, launched: null, statusError: null, socket: null, permissions: UNREAD, probe: {canPostHid: null}, actualPid: null, routes: null, routeAdvice: null};
 }
 
 // ---- the vendor's engine preferred ----
@@ -335,6 +336,9 @@ function factsReport(selection, facts, settings) {
     signature: facts.signature, running: facts.running, launched: facts.launch, statusError: facts.statusError,
     socket: {path: status?.socket ?? null, ownerIsApproved: status ? ownsSocket(facts) : null},
     permissions, probe: {canPostHid: owned ? status.canPostHid === true : null},
+    // #582: whether the engine resolved _AXUIElementGetActualPid (keys reach a remote-view panel's service); null when
+    // unread, or for an engine older than the field.
+    actualPid: owned && typeof status.actualPid === 'boolean' ? status.actualPid : null,
     routes: status ? status.routes ?? {} : settings.routes, routeAdvice: status ? status.routeAdvice ?? [] : null,
     // The agent cursor's device switch: the running engine's ('on' | 'off'; null for one with no cursor), else engine.json's.
     cursor: status ? (status.cursor === 'on' || status.cursor === 'off' ? status.cursor : null) : settings.cursor === false ? 'off' : 'on',
@@ -391,6 +395,9 @@ function installedRow(selection, facts, settings, device, builds) {
   if (report.socket.ownerIsApproved) {
     parts.push(...grantWords(facts.status, facts.bundlePath, say));
     parts.push(facts.status.canPostHid === true ? 'the probe mode can post HID events (cua-engine --probe keystroke)' : 'the probe mode cannot post HID events, so the harnesses\' keystroke cells refuse');
+    if (report.actualPid === true) parts.push('keys reach remote-view panels such as Open and Save (_AXUIElementGetActualPid)');
+    if (report.actualPid === false)
+      parts.push(say('warn', '_AXUIElementGetActualPid is unavailable on this macOS, so keys for a remote-view panel (an Open or Save panel) go to its app, which never passes them on: pressKey and typeText there do nothing'));
   }
   parts.push(...routeWords(report, settings, facts.status, say));
   parts.push(...cursorWords(report, settings, facts.status));

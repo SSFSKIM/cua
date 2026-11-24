@@ -1216,3 +1216,14 @@ field's text in `agent-cursor.md` (the rules a first action acts on) and closes 
 
 The Linux tree text is the vendor's own (`src/cua-api/linux-accessibility-tree.mjs`), which escapes `\r`, `\n` and
 `\t` itself; neither `core.md` nor `linux-engine.md` says so, and this amendment leaves them as they are.
+
+### Table 3 amendment (2026-11-23, #558, ruling 1178)
+
+#558 (the Linux engine spec's Decision Log, the #558 entry) makes the Linux facade's renderer
+(`src/cua-api/linux-accessibility-tree.mjs`) escape every line break inside an element's text with macOS's rule, where
+the vendor's escapes only `\r`, `\n` and `\t`, and keeps the tab as `\t`. #526's amendment above left the Linux
+documents silent; `linux-engine.md`, which every Linux computer surface reads after `core.md` (there are no lookups on
+Linux), now ends with #526's sentence, naming the tab and the Linux calls that take text (`setValue` is unavailable
+on Linux, `paste` types its text):
+
+> In the accessibility tree, a line break inside an element's text shows as `\n` or `\r` (any other line break as `\uXXXX`) and a tab as `\t`, so each element keeps one line; `typeText` and `paste` take real line breaks and tabs, not the escape.

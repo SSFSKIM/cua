@@ -50,7 +50,7 @@ import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
 import {configuredIdentity, readSignature} from '../../src/runtime/engine-sign.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID} from './fixtures/chrome-for-testing.mjs';
 import {FIXTURE_BUNDLE_ID} from './fixtures/electron-fixture.mjs';
-import {FINDER_BUNDLE_ID, SCENE_BUNDLE_IDS, TEXTEDIT_BUNDLE_ID, activateScene, main as scenesMain, preflight as scenesPreflight, reactivateApp, readState} from '../repl-parity/scenes-mac.mjs';
+import {FINDER_BUNDLE_ID, RESTORE_ROUNDS, RESTORE_SETTLE_MS, SCENE_BUNDLE_IDS, TEXTEDIT_BUNDLE_ID, activateScene, main as scenesMain, preflight as scenesPreflight, reactivateApp, readState} from '../repl-parity/scenes-mac.mjs';
 import {appWindows, frontWindow, frontmostProcess, readFinderPreferences, runningApps} from '../repl-parity/scenes-mac-device.mjs';
 import {FINDER_KEYS, readSavedPreferences} from '../repl-parity/scenes-mac-finder.mjs';
 import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProblems} from './goldens-device.mjs';
@@ -58,9 +58,11 @@ import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
   FIRST_LINE, KOREAN_2SET, alertWatch, bundlePids, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
-  menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
+  menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, pasteVerdict, putBackPlan, restoreTarget, textArea,
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, pendingLaunches, recoveryPlan,
 } from './live-checks.mjs';
+import {PER_CONTEXT_NAME, assertInputWrite, inputWriteRefusal, ownerValueName, perContextCommand, readPerContextState, selectsSource, unsetPerContext, writePerContext} from './hitoolbox.mjs';
+import {ownerInputCause} from './owner-input.mjs';
 import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -338,7 +340,7 @@ export async function pasteCheck({record, user, client, io, screenshots}) {
   } catch (error) {
     problem = error instanceof PasteAbort ? error.message : `the paste check stopped: ${String(error.message).slice(0, 300)}`;
   } finally {
-    if (steps.inputSource) {
+    if (steps.inputSource?.written) {
       const restored = await restoreInputSource({io, keep: true});
       steps.inputSource.restored = restored.sourceRestored === true && restored.perContextRestored === true;
       steps.inputSource.perContext.restored = io.readPerContext();
@@ -398,16 +400,30 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
     area => ({lands: landed(area, bold, markdownLine), bold: typeof area?.valueMarkdown === 'string' && area.valueMarkdown.includes(PASTE.markdown)}));
 
   // The Korean window: the preference off while it is open (on, the probe's selection would stay in the probe's own
-  // input context and the engine would read the owner's source), Korean 2-Set selected, both read back.
-  saveInputSource({io});
-  const read = io.readPerContext();
-  steps.inputSource = {perContext: {read, setOff: read === true, restored: null}};
-  if (read === true) io.writePerContext(false);
-  const selected = io.probe(['input-source', KOREAN_2SET])?.selected === true;
-  const readBack = io.probe(['input-source', 'current'])?.id ?? null;
-  const perContextOff = io.readPerContext() === false;
-  steps.precondition = {selected, readBack, perContextOff, met: selected && readBack === KOREAN_2SET && perContextOff};
+  // input context and the engine would read the owner's source), Korean 2-Set selected, both read back. Off a hosted
+  // runner nothing is written (ruling 1188): the owner's values are read, and type_text is measured only when they are
+  // already the window's; otherwise it is NO VERDICT, the cause naming what it needed.
+  if (inputRefusal(io)) {
+    const owner = ownerInput(io), cause = ownerInputCause(owner, {source: KOREAN_2SET, perContext: false});
+    steps.inputSource = {written: false, owner};
+    steps.precondition = {selected: false, readBack: owner.source, perContextOff: owner.perContext === false, met: cause === null};
+    if (cause) {
+      steps.typeText = {measured: false, ownerInput: cause, reason: cause};
+      steps.hidComposition = {skipped: cause};
+      return null;
+    }
+  } else {
+    saveInputSource({io});
+    const read = io.readPerContext();
+    steps.inputSource = {written: true, perContext: {read, setOff: read === true, restored: null}};
+    if (read === true) io.writePerContext(false);
+    const selected = io.probe(['input-source', KOREAN_2SET])?.selected === true;
+    const readBack = io.probe(['input-source', 'current'])?.id ?? null;
+    const perContextOff = io.readPerContext() === false;
+    steps.precondition = {selected, readBack, perContextOff, met: selected && readBack === KOREAN_2SET && perContextOff};
+  }
   if (!steps.precondition.met) {
+    const {selected, readBack, perContextOff} = steps.precondition;
     const why = [!selected && 'Korean 2-Set was not selected', readBack !== KOREAN_2SET && `the source reads back ${readBack ?? 'nothing'}`,
       !perContextOff && 'the per-context preference still reads on'].filter(Boolean).join('; ');
     steps.typeText = {measured: false, reason: `precondition unmet: ${why}`};
@@ -526,19 +542,33 @@ async function alertText(client, readable, screenshots) {
 
 const readSaved = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
 
-// The owner's source and per-context preference, saved before the first switch; a record a run that died left is kept.
+// Why this device may not select an input source or write com.apple.HIToolbox (ruling 1188, ./hitoolbox.mjs): null on
+// a GitHub-hosted runner. `io.env` and `io.platform` are the device's, the process's when not given.
+const inputRefusal = io => inputWriteRefusal({env: io.env ?? process.env, platform: io.platform ?? process.platform});
+// The owner's source and per-context preference as they are now, read only. -> {source, perContext}.
+export const ownerInput = io => ({source: io.probe(['input-source', 'current'])?.id ?? null, perContext: io.readPerContext()});
+
+// The owner's source and per-context preference, saved before the first switch, with whether the preference's
+// dictionary existed (so a restore of "unset" leaves the domain as it was); a record a run that died left is kept.
+// Hosted only: off a hosted runner nothing is switched, so nothing is saved (ruling 1188).
 export function saveInputSource({io}) {
+  assertInputWrite('saving the owner\'s input source for a switch', {env: io.env, platform: io.platform});
   const file = io.savedInputSource, existing = readSaved(file);
   if (existing) return {kept: true, saved: existing};
-  const saved = {savedAt: new Date().toISOString(), source: {id: io.probe(['input-source', 'current']).id}, perContext: io.readPerContext()};
+  const saved = {savedAt: new Date().toISOString(), source: {id: io.probe(['input-source', 'current']).id}, perContext: io.readPerContext(), perContextDict: io.readPerContextDict()};
   fs.mkdirSync(dirname(file), {recursive: true});
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`, {mode: 0o600});
   return {kept: false, saved};
 }
 
 // The pre-flight entry's item 4: Korean 2-Set selected through the approved bundle's probe and read back by a second
-// probe, the owner's source and per-context preference restored whatever happened.
+// probe, the owner's source and per-context preference restored whatever happened. Off a hosted runner the selection
+// is never made: NO VERDICT, the owner's values read and named (ruling 1188).
 export async function inputSourceCheck({io}) {
+  if (inputRefusal(io)) {
+    const owner = ownerInput(io), cause = ownerInputCause(owner, {switch: `${KOREAN_2SET} selected through the probe and read back`});
+    return {owner, ownerInput: cause, verdict: {pass: false, failed: [], noVerdict: cause}};
+  }
   const save = saveInputSource({io});
   let selected = null, readBack = null, error = null;
   try {
@@ -551,27 +581,53 @@ export async function inputSourceCheck({io}) {
   return {saved, selected, readBack, restored, ...(error ? {error} : {}), verdict: inputSourceVerdict({saved, selected, readBack, restored})};
 }
 
-// The saved source selected again (when it is not the current one) and read back, the per-context preference written
-// back where it differs; the record removed only once both hold.
+// The saved source selected again and the per-context preference written back where either differs ("unset" by
+// removing just its key, ./hitoolbox.mjs unsetPerContext), both read back after a settle (RESTORE_SETTLE_MS) and
+// written again where they differ, until one settled reading needs no write, for at most RESTORE_ROUNDS rounds, as
+// Finder's keys are (scenes-mac restoreFinder): the text input system can write after the restore's write landed. The
+// record is removed only once both hold. One that does not read back names the preference, the owner's value and how
+// to set it back. Off a hosted runner nothing is written (ruling 1188): a record there (one left before that ruling)
+// is removed once the owner's values read back as saved, and named otherwise.
 export async function restoreInputSource({io, keep = false}) {
   const saved = readSaved(io.savedInputSource);
   if (!saved) return {saved: false};
-  const source = restoreTarget(saved);
-  // A probe that would not exit may still switch the source: nothing is restored behind it (the record stays).
-  const stuck = io.probeStuck?.();
-  if (stuck) return {source, sourceRestored: false, perContextRestored: false, perContextWritten: false, skipped: `not restored: ${stuck}`};
-  if (io.probe(['input-source', 'current'])?.id !== source) io.probe(['input-source', source]);
-  const sourceRestored = io.probe(['input-source', 'current'])?.id === source;
-  const plan = perContextRestore(saved.perContext ?? null, io.readPerContext());
-  if (plan.write) io.writePerContext(plan.value);
-  const perContextRestored = io.readPerContext() === (saved.perContext ?? null);
-  if (sourceRestored && perContextRestored && !keep) fs.rmSync(io.savedInputSource, {force: true});
-  // A restore that did not read back names each preference and the owner's value, so a person can set it.
-  const owner = saved.perContext === true ? 'on' : saved.perContext === false ? 'off' : 'unset';
-  const reasons = [...(sourceRestored ? [] : [`the input source did not read back as the owner's, ${source} (select it in the menu bar's input menu)`]),
-    ...(perContextRestored ? [] : [`the per-context input preference (${PER_CONTEXT.join(' ')} TextInputGlobalPropertyPerContextInput) did not read back as the owner's value, ${owner} ("Automatically switch to a document's input source" in System Settings → Keyboard → Input Sources)`])];
-  return {source, sourceRestored, perContextRestored, perContextWritten: plan.write === true, ...(plan.unrestorable ? {unrestorable: plan.unrestorable} : {}),
-    ...(reasons.length ? {reason: reasons.join('; ')} : {})};
+  const source = restoreTarget(saved), owner = saved.perContext ?? null, dictBefore = saved.perContextDict;
+  const refused = inputRefusal(io);
+  let out;
+  if (refused) {
+    const now = ownerInput(io);
+    out = {source, sourceRestored: now.source === source, perContextRestored: now.perContext === owner, perContextWritten: false, rounds: 0, read: now};
+    if (!out.sourceRestored || !out.perContextRestored) out.skipped = `not restored: ${refused}`;
+  } else {
+    // A probe that would not exit may still switch the source: nothing is restored behind it (the record stays).
+    const stuck = io.probeStuck?.();
+    if (stuck) return {source, sourceRestored: false, perContextRestored: false, perContextWritten: false, skipped: `not restored: ${stuck}`};
+    out = await settleInput({io, source, owner, dictBefore});
+  }
+  if (out.sourceRestored && out.perContextRestored && !keep) fs.rmSync(io.savedInputSource, {force: true});
+  const after = refused ? 'reads' : `reads after ${out.rounds} round${out.rounds === 1 ? '' : 's'}`;
+  const reasons = [...(out.sourceRestored ? [] : [`the input source did not read back as the owner's, ${source} (it ${after} ${out.read.source ?? 'nothing'}): select it in the menu bar's input menu`]),
+    ...(out.perContextRestored ? [] : [`${PER_CONTEXT_NAME} did not read back as the owner's value, ${ownerValueName(owner)} (it ${after} ${ownerValueName(out.read.perContext)}): set it back with ${perContextCommand(owner, {dictBefore})}`])];
+  return {...out, ...(reasons.length ? {reason: reasons.join('; ')} : {})};
+}
+// The rounds: each selects the source and writes the preference where they differ, waits the settle and reads both
+// again; it ends at the first round that wrote nothing and read both as the owner's, or after RESTORE_ROUNDS rounds,
+// whatever the last reading says. -> {source, sourceRestored, perContextRestored, perContextWritten, rounds, read}.
+async function settleInput({io, source, owner, dictBefore}) {
+  let read = ownerInput(io), perContextWritten = false, rounds = 0;
+  for (;;) {
+    rounds += 1;
+    const selectSource = read.source !== source, writePreference = read.perContext !== owner;
+    if (selectSource) io.probe(['input-source', source]);
+    if (writePreference) {
+      if (owner === null) io.unsetPerContext({dictBefore}); else io.writePerContext(owner);
+      perContextWritten = true;
+    }
+    await io.sleep(RESTORE_SETTLE_MS);
+    read = ownerInput(io);
+    if ((!selectSource && !writePreference && read.source === source && read.perContext === owner) || rounds === RESTORE_ROUNDS) break;
+  }
+  return {source, sourceRestored: read.source === source, perContextRestored: read.perContext === owner, perContextWritten, rounds, read};
 }
 
 // ---- Begin and put back ----------------------------------------------------------------------------------------------
@@ -588,6 +644,14 @@ export function saveFrontmost(run, front) {
 
 const recoveryRefusal = (run, file) => `unresolved recovery record ${file} in the run directory; before begin, run on the device: node scripts/native-matrix/live-device.mjs recover --run '${run.replaceAll("'", "'\\''")}'. If recovery remains incomplete, resolve it by hand; do not discard the record to start a new run`;
 
+const inputRecordRefusal = file => {
+  let saved = null;
+  try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* named as unreadable */ }
+  const owner = saved ? `: the owner's input source ${saved.source?.id ?? 'unrecorded'} and ${PER_CONTEXT_NAME} ${ownerValueName(saved.perContext ?? null)}` : ' (unreadable)';
+  const byHand = saved ? `select ${restoreTarget(saved)} in the menu bar's input menu and set the preference with ${perContextCommand(saved.perContext ?? null, {dictBefore: saved.perContextDict})}, then remove the record` : 'set the input source and the per-context preference as the owner had them, then remove the record';
+  return `an input-source record a run left unrestored, ${file}${owner}; before begin, run on the device: node scripts/native-matrix/live-device.mjs input-source-restore (it reads both back and removes the record once they hold), or ${byHand}; do not begin over it`;
+};
+
 export async function begin({run, commit, io}) {
   const preflight = io.preflight(run), checkout = io.gitState(), engine = io.engineCheck();
   const refusals = liveRefusals({preflight, checkout, engine, state: readState(run)}, {controllerCommit: commit});
@@ -598,6 +662,9 @@ export async function begin({run, commit, io}) {
     try { absent = !fs.lstatSync(join(run, file), {throwIfNoEntry: false}); } catch { /* cannot establish absence */ }
     if (!absent) refusals.push(recoveryRefusal(run, file));
   }
+  // The owner's input source and preference a run saved and did not put back (its restore never read back): the next
+  // run would keep that record and select behind it, so it refuses, naming the record and how to resolve it.
+  if (io.savedInputSource && fs.lstatSync(io.savedInputSource, {throwIfNoEntry: false})) refusals.push(inputRecordRefusal(io.savedInputSource));
   if (refusals.length) return {refusals, ...facts};
   let front;
   try { front = io.frontmost(); } catch { /* an unreadable front cannot be restored */ }
@@ -939,7 +1006,9 @@ export const runProbe = (bundle, args, options = {}) => awaitProbe(launchProbe(b
 // An argument is a name, a key spec, a number list, an input-source id or a Return. `+` is admitted for press_key's
 // chords (`alt+Return`, the keystroke probe's `--keys`), so the probe takes press_key's key string verbatim through its
 // own parser; it is inert here, since the arguments reach `open --args` by execFile, never through a shell.
-export function launchProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), sleep = syncSleep, now = Date.now} = {}) {
+export function launchProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), sleep = syncSleep, now = Date.now, env, platform} = {}) {
+  // A selection changes the owner's input source: hosted only (ruling 1188, ./hitoolbox.mjs); a reading is not one.
+  if (selectsSource(args)) assertInputWrite('selecting an input source through the probe', {env, platform});
   if (!args.every(a => /^[A-Za-z0-9._,+-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a key spec, a number list, an input-source id or a Return');
   const uid = process.getuid(), label = `${args[0]}#${randomBytes(4).toString('hex')}`;
   const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle));
@@ -1019,20 +1088,9 @@ export function stopWatch(watch, {exec = execFileSync} = {}) {
 
 // ---- The live device --------------------------------------------------------------------------------------------------
 
-const PER_CONTEXT = ['com.apple.HIToolbox', 'AppleGlobalTextInputProperties'];
 // The bound on every device read and write the hold makes outside the engine (preferences, the pasteboard's types, ps);
 // the Swift readers get SWIFT_READ_MS, since a first run compiles the script.
 const DEVICE_READ_MS = 15_000, SWIFT_READ_MS = 90_000;
-function readPerContextLive() {
-  try { return parsePerContext(execFileSync('/usr/bin/defaults', ['read', ...PER_CONTEXT], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: DEVICE_READ_MS})); } catch (error) {
-    if (error.status === 1 && /does not exist|Could not find/.test(String(error.stderr ?? ''))) return null;
-    throw new Error(`could not read the per-context input preference: ${String(error.stderr || error.message).trim().slice(0, 200)}`);
-  }
-}
-function writePerContextLive(value) {
-  execFileSync('/usr/bin/defaults', ['write', ...PER_CONTEXT, '-dict-add', 'TextInputGlobalPropertyPerContextInput', '-bool', value ? 'true' : 'false'], {stdio: 'ignore', timeout: DEVICE_READ_MS});
-}
-
 // The general pasteboard's items and their types (osascript's JavaScript over AppKit), digested here. Types only, never
 // the data: reading a type list raises no pasteboard-privacy alert where reading data may, and the owner's content
 // never enters the harness. An item the engine's paste left behind carries M2a.3's concealed and transient markers, so
@@ -1104,7 +1162,9 @@ export const defaultIo = run => {
   probeAwait: handle => {
     try { return awaitProbe(handle); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
   },
-  readPerContext: readPerContextLive,
+  // The per-context preference (./hitoolbox.mjs): read anywhere, written and unset only on a hosted runner.
+  readPerContext: () => readPerContextState().value,
+  readPerContextDict: () => readPerContextState().dict,
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
   keyboardLayout: () => keyboardLayout(),
@@ -1125,7 +1185,8 @@ export const defaultIo = run => {
   },
   processRuns,
   signal: (pid, signal) => { try { process.kill(pid, signal); } catch {} },
-  writePerContext: writePerContextLive,
+  writePerContext: value => writePerContext(value),
+  unsetPerContext: ({dictBefore}) => unsetPerContext({dictBefore}),
   savedInputSource: SAVED_INPUT_SOURCE,
   preflight: dir => scenesPreflight({run: dir}),
   gitState: () => controllerCheckout(REPO_ROOT),

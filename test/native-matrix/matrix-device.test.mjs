@@ -8,6 +8,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {alerts, compiled, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
+// A GitHub-hosted runner's environment, where the input source may be written (ruling 1188); the owner's Mac's.
+const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
+
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
 const tmp = () => fs.mkdtempSync(join(tmpdir(), 'matrix-device-'));
@@ -313,7 +316,7 @@ test('probe start and finish: a scheduled keystroke or switch launched on the ru
   const dir = tmp();
   try {
     const launched = [], awaited = [];
-    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000,
+    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000, ...HOSTED,
       probeLaunch: args => { launched.push(args); return {command: args[0], label: 'x', pid: 901, start: 'T', scratch: '/tmp/s', out: '/tmp/s/out.json', launchedAt: 1_000_000}; },
       probeAwait: handle => { awaited.push(handle.pid); return {pid: 901, postedAt: 1_003_001, units: 2, chars: 2, mode: 'typed', layout: 'com.apple.keylayout.ABC', presses: []}; }};
     const started = probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, io);
@@ -353,8 +356,9 @@ test('source: the owner\'s source and preference saved before the first switch (
   let perContext = false, current = 'com.apple.keylayout.ABC';
   const layout = 'com.apple.keylayout.ABC';
   const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current, layout}; current = args[1]; return {selected: true, current: {id: current, layout}}; },
-    readPerContext: () => perContext, writePerContext: value => { perContext = value; },
+    readPerContext: () => perContext, writePerContext: value => { perContext = value; }, ...HOSTED,
     saveInput: () => ({kept: false, saved: {source: {id: 'com.apple.keylayout.ABC'}, perContext: false}}), restoreInput: async ({keep}) => ({keep, sourceRestored: true, perContextRestored: true})};
+  assert.deepEqual(await source('state', {}, io), {writable: true, current: 'com.apple.keylayout.ABC', layout: 'com.apple.keylayout.ABC', perContext: false});
   assert.deepEqual(await source('save', {}, io), {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}});
   assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io),
     {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'}, 'the layout read beside the source');
@@ -367,12 +371,34 @@ test('source: the owner\'s source and preference saved before the first switch (
   await assert.rejects(() => source('select', {id: 'com.apple.keylayout.ABC'}, {...io, probeStuck: () => 'the probe input-source#a is still running'}), /may still act: the probe input-source#a/);
 });
 
+// Ruling 1188: off a GitHub-hosted runner the device says so and reads the owner's values; every write is refused
+// before the probe, defaults or the record is touched.
+test('source and probe off a hosted runner: state reads the owner\'s values and says no write; save, select, per-context and a scheduled switch are refused untouched', async () => {
+  const dir = tmp();
+  try {
+    const touched = [];
+    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000, ...OWNERS_MAC,
+      probe: args => { if (args[1] !== 'current') touched.push(args.join(' ')); return {id: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US'}; },
+      readPerContext: () => null, writePerContext: value => touched.push(`write ${value}`), saveInput: () => touched.push('save'),
+      restoreInput: async () => ({sourceRestored: true, perContextRestored: true}), probeLaunch: args => touched.push(args.join(' '))};
+    const read = await source('state', {}, io);
+    assert.deepEqual({...read, refused: undefined}, {writable: false, refused: undefined, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext: null});
+    assert.match(read.refused, /ruling 1188/);
+    await assert.rejects(() => source('save', {}, io), /source save: refused: .*ruling 1188/);
+    await assert.rejects(() => source('select', {id: 'com.apple.keylayout.ABC'}, io), /source select: refused/);
+    await assert.rejects(() => source('per-context', {value: 'off'}, io), /source per-context: refused/);
+    assert.throws(() => probeStart({kind: 'input-source', id: 'com.apple.inputmethod.Korean.2SetKorean', lead: 1500}, io), /probe input-source: refused/);
+    assert.deepEqual(touched, []);
+    assert.equal(fs.existsSync(join(dir, PROBE_FILE)), false);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
 test('a probe whose await is stuck keeps its handle, marked; nothing starts while the journal shows it running, and it is dropped once it has exited', () => {
   const dir = tmp();
   try {
     let running = 'the probe input-source#a is still running';
     const launched = [];
-    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000, probeStuck: () => running,
+    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000, probeStuck: () => running, ...HOSTED,
       probeLaunch: args => { launched.push(args); return {command: args[0], label: 'input-source#a', pid: 901, start: 'T', scratch: '/tmp/s', out: '/tmp/s/out.json', launchedAt: 1_000_000}; },
       probeAwait: () => { throw Object.assign(new Error('the input-source probe (pid 901) did not exit after SIGKILL'), {stuck: true}); }};
     running = null;

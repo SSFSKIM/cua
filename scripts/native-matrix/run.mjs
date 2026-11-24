@@ -228,10 +228,11 @@ async function runOnce(options, io) {
   // activated: the last activate step and its own check (./steps.mjs step), the activate step a row's readings name.
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
+  // ownerInput: off a hosted runner, the owner's {source, perContext}, which nothing changes (ruling 1188); null on one.
   // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
   // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, out: dryRun ? null : dir, electronExported: false};
+    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -352,9 +353,21 @@ async function runOnce(options, io) {
 // The sections that switch the input source or post a probe's keys: the probe cells under the Latin source with the
 // per-context preference off, then the Korean and Unicode matrix. The owner's source and preference are saved on the
 // device before the first switch (the live harness's record, ./matrix-device.mjs source save) and restored after,
-// whatever happened; the record stays for the put-back, which verifies them again.
+// whatever happened; the record stays for the put-back, which verifies them again. Only a GitHub-hosted runner's
+// device switches anything (ruling 1188, ./hitoolbox.mjs): off one the owner's values are read and kept as they are
+// (`ctx.ownerInput`), and a row they do not allow is NO VERDICT, its cause naming what it needed (./owner-input.mjs).
 async function inputSections(ctx, plan) {
   if (!(plan.concurrent?.length || plan.sheet || plan.intervention?.length || plan.unicode?.fields.length)) return;
+  const state = device(ctx, ['source', 'state']);
+  if (state?.writable !== true) {
+    ctx.ownerInput = {source: state?.current ?? null, perContext: state?.perContext ?? null};
+    ctx.perContextOff = ctx.ownerInput.perContext === false;
+    ctx.latin = ctx.perContextOff && ctx.ownerInput.source === ABC;
+    ctx.meta.inputSource = {written: false, refused: state?.refused ?? 'the device did not say it may write the input source', owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
+    await probeCells(ctx, plan);
+    if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
+    return;
+  }
   const saved = device(ctx, ['source', 'save']);
   ctx.meta.inputSource = {savedNow: saved?.kept === false};
   try {

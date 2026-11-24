@@ -6,10 +6,14 @@
 // (./input-source.swift, compiled once like the target guard's, ./target-guard.mjs). A selection counts only when the
 // source read back is the one selected; otherwise the series stops before any session opens. With no yes recorded
 // nothing is switched, and the series' own check of the source (./timing.mjs latinSourceProblem) decides as before.
+// Every selection is hosted only (ruling 1188, ../native-matrix/hitoolbox.mjs): the input sources are how the owner
+// types every day, so off a GitHub-hosted runner the kit never selects one, consent or not; the series' own check
+// decides, as with no yes recorded.
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {assertInputWrite, inputWriteRefusal} from '../native-matrix/hitoolbox.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {PROBE_CACHE} from './target-guard.mjs';
 
@@ -49,14 +53,15 @@ export function selectionProblem(answer, requested) {
   return null;
 }
 
-// The live probe, compiled once. -> {current(), select(id)}: its answers.
-export function liveSourceSwitch({cache = PROBE_CACHE} = {}) {
+// The live probe, compiled once. -> {current(), select(id)}: its answers; `select` refuses off a hosted runner before
+// the probe is compiled or run (ruling 1188). `at`: the device's {env, platform}, the process's by default.
+export function liveSourceSwitch({cache = PROBE_CACHE, exec = execFileSync, compile = compiled, at = {}} = {}) {
   let bin = null;
   const run = args => {
-    bin ??= compiled(SOURCE_SCRIPT, cache);
-    return JSON.parse(execFileSync(bin, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim().split('\n').at(-1));
+    bin ??= compile(SOURCE_SCRIPT, cache);
+    return JSON.parse(exec(bin, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim().split('\n').at(-1));
   };
-  return {current: () => run(['current']).current, select: id => run(['select', id])};
+  return {current: () => run(['current']).current, select: id => { assertInputWrite('selecting an input source', at); return run(['select', id]); }};
 }
 
 // Why the source must not be selected now, or null: with per-document input sources a selection changes the source of
@@ -74,8 +79,10 @@ export function sourceTargetProblem({record, problem, frontmost}) {
 // selected, when `targetProblem` names one. `beforeSelect` runs right before the TIS call, after the consent and the
 // target are checked, so a caller learns of every attempt (a failed read-back included) and of nothing else.
 // -> the task's result.
-export function switchSource({out, which, id: named = null, sources, targetProblem = null, beforeSelect = () => {}}) {
+export function switchSource({out, which, id: named = null, sources, targetProblem = null, beforeSelect = () => {}, at = {}}) {
   const consent = readConsent(out), id = sourceToSelect(consent, which, named);
+  const refused = id ? inputWriteRefusal(at) : null;
+  if (refused) return {ok: true, which, switched: false, requested: id, reason: `${refused}: the series' own check of the source decides`};
   if (!id) return {ok: true, which, switched: false, reason: consent ? 'the owner said no: they switch by hand' : 'no answer recorded (source consent): nothing is switched'};
   if (targetProblem) return {ok: false, which, switched: false, requested: id, problem: `${id} not selected: ${targetProblem}`};
   beforeSelect();
@@ -89,11 +96,11 @@ export function switchSource({out, which, id: named = null, sources, targetProbl
 // scene's window no longer on top) nothing is selected, since it would change another window's source: the result says
 // the source was left as it is, and `source restore` puts it back. A run that ended well keeps its source for the next
 // series; `source restore` ends the sitting.
-export function restoreAfterFailure({ctx, out, sources, targetProblem = null}) {
+export function restoreAfterFailure({ctx, out, sources, targetProblem = null, at = {}}) {
   if (!ctx.sourceChanged || !(ctx.error || ctx.failed > 0)) return null;
   if (targetProblem) {
     return {ok: false, which: 'owner', switched: false, left: true,
       problem: `the input source was left as it is: ${targetProblem}; put the owner's back with \`cursor-sitting.mjs source restore --out ${out}\` once the scene is back on top (or the scenes are down)`};
   }
-  return switchSource({out, which: 'owner', sources});
+  return switchSource({out, which: 'owner', sources, at});
 }

@@ -21,6 +21,9 @@ const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-live-device-'))); scratches.push(dir); return dir; };
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
 
+// A GitHub-hosted runner's environment, where the harness may write the input source (ruling 1188); the owner's Mac's.
+const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'};
+const OWNERS_MAC = {env: {}, platform: 'darwin'};
 const TEXTEDIT = {scene: 'textedit', app: '/System/Applications/TextEdit.app', pid: 600, window: {number: 41, bounds: {x: 0, y: 0, width: 610, height: 860}}};
 const FINDER = {scene: 'finder', app: '/System/Library/CoreServices/Finder.app', pid: 700, window: {number: 42, bounds: {x: 0, y: 0, width: 900, height: 600}}};
 const engineError = (errorName, reason, meta = {inputRoute: null, startedAt: null, endedAt: null}) => new SkyComputerUseError({code: -10005, reason, errorName, meta});
@@ -297,11 +300,16 @@ test('menuCheck: refuses to send anything unless the user window is in front', a
   assert.deepEqual(client.calls, []);
 });
 
-// A fake probe and HIToolbox: the source the probe selects is the current one until another is selected.
-function fakeInput({current = ABC, perContext = false, select = id => id, saved} = {}) {
-  const state = {current, perContext, probes: [], writes: []};
+// A fake probe and HIToolbox on a hosted runner (`at`): the source the probe selects is the current one until another
+// is selected; the per-context preference in its dictionary (`dict`: whether the dictionary exists), unset by
+// removing its key. `settle(state)` runs at each restore settle: a late writer.
+function fakeInput({current = ABC, perContext = false, dict = true, select = id => id, saved, at = HOSTED, settle = () => {}} = {}) {
+  const state = {current, perContext, dict, probes: [], writes: [], sleeps: 0};
   return {state, io: {
-    savedInputSource: saved,
+    savedInputSource: saved, ...at,
+    sleep: async () => { state.sleeps += 1; settle(state); },
+    readPerContextDict: () => state.dict,
+    unsetPerContext: ({dictBefore}) => { state.writes.push(`unset (dictBefore ${dictBefore})`); state.perContext = null; if (dictBefore === false) state.dict = false; },
     probe: args => {
       state.probes.push(args.join(' '));
       if (args[1] === 'current') return {id: state.current, perContextInput: state.perContext};
@@ -310,7 +318,7 @@ function fakeInput({current = ABC, perContext = false, select = id => id, saved}
       return {previous: {id: previous}, current: {id: state.current}, selected: state.current === args[1]};
     },
     readPerContext: () => state.perContext,
-    writePerContext: value => { state.writes.push(value); state.perContext = value; },
+    writePerContext: value => { state.writes.push(value); state.perContext = value; state.dict = true; },
   }};
 }
 
@@ -320,7 +328,8 @@ test('inputSourceCheck: the owner\'s source and preference saved first, Korean 2
   io.savedInputSource = file;
   const out = await inputSourceCheck({io});
   assert.equal(out.verdict.pass, true, JSON.stringify(out));
-  assert.deepEqual(state.probes, ['input-source current', `input-source ${KOREAN_2SET}`, 'input-source current', 'input-source current', `input-source ${ABC}`, 'input-source current']);
+  // The restore's rounds: ABC selected, read after the settle, then one more settled reading that needs no write.
+  assert.deepEqual(state.probes, ['input-source current', `input-source ${KOREAN_2SET}`, 'input-source current', 'input-source current', `input-source ${ABC}`, 'input-source current', 'input-source current']);
   assert.equal(state.current, ABC);
   assert.equal(fs.existsSync(file), true, 'the put-back verifies the restore and removes the record');
   assert.deepEqual(state.writes, [], 'an unchanged preference is never written');
@@ -384,6 +393,146 @@ test('saveInputSource: the record is written owner-only and first wins', async (
   const again = saveInputSource({io: {...io, probe: () => ({id: KOREAN_2SET})}});
   assert.equal(again.kept, true);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).source.id, 'com.apple.keylayout.US');
+});
+
+// Ruling 1181: "unset" is the owner's value too. Removing just the nested key puts it back (./hitoolbox.mjs
+// unsetPerContext), with the dictionary deleted only when the run created it; read back after a settle.
+test('restoreInputSource: an owner\'s unset preference is restored by removing its key and read back; the dictionary goes only when the run created it', async () => {
+  for (const dictBefore of [true, false]) {
+    const file = join(scratch(), 'input-source.json');
+    const {state, io} = fakeInput({perContext: false});
+    io.savedInputSource = file;
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: null, perContextDict: dictBefore}));
+    const out = await restoreInputSource({io});
+    assert.deepEqual([out.perContextRestored, out.perContextWritten, out.reason, out.unrestorable], [true, true, undefined, undefined], JSON.stringify(out));
+    assert.deepEqual(state.writes, [`unset (dictBefore ${dictBefore})`]);
+    assert.deepEqual([state.perContext, state.dict], [null, dictBefore]);
+    assert.equal(fs.existsSync(file), false, 'restored and read back: the record is cleared');
+  }
+});
+
+// The text input system can write after the restore's write landed: the reading after a settle decides, and a value
+// that came back is written again (as Finder's keys, scenes-mac restoreFinder).
+test('restoreInputSource: a late writer after the restore\'s write is caught by the settled reading and written again', async () => {
+  for (const owner of [true, false, null]) {
+    const file = join(scratch(), 'input-source.json');
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: owner, perContextDict: true}));
+    const run = owner === false;
+    const {state, io} = fakeInput({perContext: run});
+    io.savedInputSource = file;
+    // The system writes the run's value back once, just after the first read that follows the restore's write.
+    let lateDone = false;
+    const read = io.readPerContext;
+    io.readPerContext = () => { const value = read(); if (state.writes.length === 1 && !lateDone) { lateDone = true; state.perContext = run; } return value; };
+    const out = await restoreInputSource({io});
+    assert.equal(state.perContext, owner, `the owner's value (${owner}) holds after the restore`);
+    assert.deepEqual([out.perContextRestored, out.reason], [true, undefined], JSON.stringify(out));
+    assert.equal(state.writes.length, 2, 'written again after the late writer');
+    assert.equal(fs.existsSync(file), false);
+  }
+});
+
+test('restoreInputSource: a value that will not stay fails after the bounded rounds, naming the preference, the owner\'s value and the command that sets it', async () => {
+  const commands = {
+    on: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true',
+    off: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool false',
+    unset: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties "$(defaults export com.apple.HIToolbox - | plutil -extract AppleGlobalTextInputProperties xml1 -o - - | plutil -remove TextInputGlobalPropertyPerContextInput -o - -)"',
+  };
+  for (const [name, owner] of [['on', true], ['off', false], ['unset', null]]) {
+    const file = join(scratch(), 'input-source.json');
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: owner, perContextDict: true}));
+    const stuck = owner !== true;
+    const {state, io} = fakeInput({perContext: stuck});
+    io.writePerContext = value => { state.writes.push(value); };
+    io.unsetPerContext = () => { state.writes.push('unset'); };
+    io.savedInputSource = file;
+    const out = await restoreInputSource({io});
+    assert.deepEqual([out.perContextRestored, out.rounds, state.writes.length], [false, 3, 3]);
+    assert.ok(out.reason.includes(`the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) did not read back as the owner's value, ${name} (it reads after 3 rounds ${stuck ? 'on' : 'off'}): set it back with ${commands[name]}`), out.reason);
+    assert.doesNotMatch(out.reason, /System Settings/);
+    assert.equal(fs.existsSync(file), true, 'the record stays, so the next run refuses naming it');
+  }
+});
+
+test('saveInputSource: the record keeps whether the preference\'s dictionary existed; off a hosted runner nothing is saved', async () => {
+  for (const dict of [true, false]) {
+    const file = join(scratch(), 'input-source.json');
+    const {io} = fakeInput({perContext: dict ? false : null, dict});
+    io.savedInputSource = file;
+    saveInputSource({io});
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).perContextDict, dict);
+  }
+  const file = join(scratch(), 'input-source.json');
+  const {io} = fakeInput({at: OWNERS_MAC});
+  io.savedInputSource = file;
+  assert.throws(() => saveInputSource({io}), /GitHub-hosted runner/);
+  assert.equal(fs.existsSync(file), false);
+});
+
+// Ruling 1188: on the owner's Mac nothing is selected or written; what needs another value is NO VERDICT, named.
+test('off a hosted runner: the input-source check selects nothing and is NO VERDICT; a restore only reads, clearing a record that reads back and naming one that does not', async () => {
+  const {state, io} = fakeInput({at: OWNERS_MAC, current: 'com.apple.keylayout.US', perContext: true});
+  io.savedInputSource = join(scratch(), 'input-source.json');
+  const check = await inputSourceCheck({io});
+  assert.equal(check.verdict.pass, false);
+  assert.match(check.verdict.noVerdict, /ruling 1188.*the row needs com\.apple\.inputmethod\.Korean\.2SetKorean selected through the probe/);
+  assert.deepEqual(check.owner, {source: 'com.apple.keylayout.US', perContext: true});
+  assert.deepEqual([state.probes, state.writes, fs.existsSync(io.savedInputSource)], [['input-source current'], [], false]);
+  // A record there (one a run left before the ruling): read only.
+  fs.writeFileSync(io.savedInputSource, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: null}));
+  const differs = await restoreInputSource({io});
+  assert.deepEqual([differs.sourceRestored, differs.perContextRestored, differs.perContextWritten], [false, false, false]);
+  assert.match(differs.skipped, /ruling 1188/);
+  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with defaults write com\.apple\.HIToolbox AppleGlobalTextInputProperties "\$\(defaults export/);
+  assert.equal(fs.existsSync(io.savedInputSource), true);
+  Object.assign(state, {current: ABC, perContext: null});
+  const holds = await restoreInputSource({io});
+  assert.deepEqual([holds.sourceRestored, holds.perContextRestored, holds.reason], [true, true, undefined]);
+  assert.equal(fs.existsSync(io.savedInputSource), false);
+  assert.deepEqual([state.probes.filter(p => p !== 'input-source current'), state.writes], [[], []], 'never a selection or a write');
+});
+
+test('pasteCheck off a hosted runner: the Korean window reads the owner\'s values and writes nothing; type_text runs only when they are the window\'s', async () => {
+  const unmet = pasteDevice({at: OWNERS_MAC, current: ABC, perContext: true});
+  const out = await pasteRun(unmet);
+  assert.equal(out.verdict.pass, false);
+  assert.deepEqual(out.verdict.failed, []);
+  assert.match(out.verdict.noVerdict, /ruling 1188.*per-context input preference .* off, the owner's is on, and the input source com\.apple\.inputmethod\.Korean\.2SetKorean, the owner's is com\.apple\.keylayout\.ABC/);
+  assert.deepEqual(out.steps.inputSource, {written: false, owner: {source: ABC, perContext: true}});
+  assert.equal(unmet.client.calls.some(c => c.method === 'type_text'), false);
+  assert.deepEqual([unmet.input.probes.filter(p => p !== 'input-source current'), unmet.input.writes, fs.existsSync(unmet.file)], [[], [], false]);
+  const met = pasteDevice({at: OWNERS_MAC, current: KOREAN_2SET, perContext: false});
+  const measured = await pasteRun(met);
+  assert.equal(measured.verdict.pass, true, JSON.stringify(measured.verdict));
+  assert.equal(measured.verdict.typeText, 'measured');
+  assert.deepEqual([met.input.probes.filter(p => p !== 'input-source current'), met.input.writes, met.input.current], [[], [], KOREAN_2SET]);
+});
+
+test('launchProbe: an input-source selection off a hosted runner is refused before anything is launched; a reading is not a selection', () => {
+  const run = scratch(), device = probeDevice();
+  for (const args of [['input-source', ABC], ['input-source', KOREAN_2SET, '--at', '1700000000000']]) {
+    assert.throws(() => launchProbe(BUNDLE, args, {...device.options, ...OWNERS_MAC, run}), /GitHub-hosted runner/);
+  }
+  assert.deepEqual(device.launched, []);
+  const handle = launchProbe(BUNDLE, ['input-source', 'current'], {...device.options, ...OWNERS_MAC, run});
+  assert.deepEqual(awaitProbe(handle, device.options), {id: 'com.apple.keylayout.ABC'});
+});
+
+test('begin: an input-source record a run left unrestored refuses the next run, naming it, the owner\'s values and how to resolve it', async () => {
+  const run = scratch(), calls = [];
+  const savedInputSource = join(scratch(), 'input-source.json');
+  fs.writeFileSync(savedInputSource, JSON.stringify({savedAt: 't0', source: {id: 'com.apple.keylayout.US'}, perContext: null, perContextDict: false}));
+  const io = {preflight: () => ({refusals: []}), gitState: () => ({commit: 'c1', dirty: false}), engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}),
+    frontmost: () => ({pid: 77, bundleId: 'com.apple.Terminal'}), stop: async () => { calls.push('stop'); return {wasRunning: false}; },
+    finderWindows: () => [], finderPreferences: () => ({ShowSidebar: true}), finderSavedPreferences: () => null, savedInputSource};
+  const out = await begin({run, commit: 'c1', io});
+  assert.equal(out.refusals.length, 1);
+  assert.ok(out.refusals[0].startsWith(`an input-source record a run left unrestored, ${savedInputSource}: the owner's input source com.apple.keylayout.US and the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) unset; before begin, run on the device: node scripts/native-matrix/live-device.mjs input-source-restore`), out.refusals[0]);
+  assert.match(out.refusals[0], /defaults delete com\.apple\.HIToolbox AppleGlobalTextInputProperties when/);
+  assert.deepEqual(calls, [], 'nothing saved, the engine untouched');
+  assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
+  fs.rmSync(savedInputSource);
+  assert.deepEqual((await begin({run, commit: 'c1', io})).refusals, []);
 });
 
 test('begin: refusals stop it before the front app is saved or the engine stopped; otherwise both, the front app\'s pid kept on the device only', async () => {
@@ -583,7 +732,7 @@ function putBackIo(run, extra = {}) {
     watch: {stop: watch => { order.push(`watch-stop ${watch?.pid}`); return []; }}, processRuns: () => false,
     journal: () => [], processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE}), signal: () => {},
     client: () => { throw new Error('the put-back observes nothing through the engine'); },
-    sleep: async () => {}, now: (() => { let t = 0; return () => (t += 100); })(), ...extra};
+    sleep: async () => {}, now: (() => { let t = 0; return () => (t += 100); })(), ...HOSTED, ...extra};
   return io;
 }
 const FINDER_BASELINE = {windows: [], keys: {ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false}};
@@ -865,7 +1014,7 @@ function probeDevice({identified = true, answers = true, exits = true, killable 
     table: () => [older, ...(running && identified ? [probeRow] : []), ...(running ? alongside : [])],
     alive: pid => pid === 900 && running && !(exits && ++polls > 2),
     kill: (pid, signal) => { killed.push(`${signal} ${pid}`); if (killable) running = false; },
-    sleep: () => {}, now: (() => { let t = 0; return () => (t += 1_000); })()}};
+    sleep: () => {}, now: (() => { let t = 0; return () => (t += 1_000); })(), ...HOSTED}};
 }
 
 const journalOf = run => parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8'));
@@ -980,9 +1129,9 @@ const ENGINE_PID = 31;
 const CURSOR_WINDOW = {ownerPid: ENGINE_PID, ownerName: 'cua Engine', ownerBundleId: 'io.github.ssfskim.cua.engine', layer: 0, number: 990, name: 'cua Agent Cursor',
   bounds: {x: 0, y: 0, width: 1512, height: 982}};
 function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0,
-  cursor = false, enginePids = cursor ? [ENGINE_PID] : []} = {}) {
+  cursor = false, enginePids = cursor ? [ENGINE_PID] : [], at = HOSTED, current = ABC} = {}) {
   const file = join(scratch(), 'input-source.json');
-  const {state: input, io: inputIo} = fakeInput({perContext, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
+  const {state: input, io: inputIo} = fakeInput({current, perContext, at, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
   const screen = {windows: [...OWNER_WINDOWS], front: FINDER};
   // Under the per-context preference the probe's selection stays in the probe's own context: the engine still reads ABC.
@@ -1302,7 +1451,7 @@ test('restoreInputSource behind a launch with no outcome in the journal restores
   fs.writeFileSync(saved, JSON.stringify({source: {id: 'com.apple.keylayout.ABC'}, perContext: null}));
   const probes = [];
   const journal = [{kind: 'probe', pid: null, start: null, label: 'input-source#d', pending: true}];
-  const io = {savedInputSource: saved, probe: args => { probes.push(args); return {id: 'com.apple.keylayout.ABC'}; }, readPerContext: () => null, writePerContext: () => assert.fail('nothing is written'),
+  const io = {savedInputSource: saved, ...HOSTED, probe: args => { probes.push(args); return {id: 'com.apple.keylayout.ABC'}; }, readPerContext: () => null, writePerContext: () => assert.fail('nothing is written'),
     probeStuck: () => probeBarrier(run, {journal: () => journal, processes: () => [], identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})})};
   const out = await restoreInputSource({io});
   assert.equal(out.sourceRestored, false);

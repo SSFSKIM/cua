@@ -7,10 +7,28 @@ import {execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CONSENT_FILE, LATIN_SOURCE, readConsent, selectionProblem, SOURCE_SCRIPT, sourceToSelect, switchSource, writeConsent} from '../../scripts/cursor-sitting/input-source.mjs';
+import {CONSENT_FILE, LATIN_SOURCE, liveSourceSwitch, readConsent, selectionProblem, SOURCE_SCRIPT, sourceToSelect, switchSource, writeConsent} from '../../scripts/cursor-sitting/input-source.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-235-src-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
 const KOREAN = {id: 'com.apple.inputmethod.Korean.2SetKorean', name: '2-Set Korean'};
+// A GitHub-hosted runner's environment, the only place a source is selected (ruling 1188); the owner's Mac's.
+const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
+
+// Ruling 1188: the input sources are how the owner types every day, so off a GitHub-hosted runner nothing selects one,
+// the owner's yes recorded or not; the series' own check of the source decides, as with no yes.
+test('off a hosted runner no source is selected, even with the owner\'s yes; the live probe\'s select refuses before it is compiled or run', t => {
+  const out = scratch(t), asked = [];
+  writeConsent(out, {consent: true, reading: KOREAN});
+  const result = switchSource({at: OWNERS_MAC, out, which: 'latin', sources: {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }}, beforeSelect: () => asked.push('marked')});
+  assert.deepEqual([result.ok, result.switched, result.requested], [true, false, LATIN_SOURCE]);
+  assert.match(result.reason, /ruling 1188.*the series' own check of the source decides/);
+  assert.deepEqual(asked, [], 'never selected, never marked as an attempt');
+  const ran = [];
+  const live = liveSourceSwitch({at: OWNERS_MAC, compile: () => { ran.push('compile'); return '/bin/probe'; }, exec: (bin, args) => { ran.push(args.join(' ')); return '{"current":{"id":"com.apple.keylayout.ABC"}}'; }});
+  assert.throws(() => live.select(LATIN_SOURCE), /GitHub-hosted runner/);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(live.current(), {id: 'com.apple.keylayout.ABC'}, 'reading the current source is no selection');
+});
 
 test('the owner\'s answer is kept with the source they were on; one that cannot be read records nothing', t => {
   const out = scratch(t);
@@ -44,11 +62,11 @@ test('a selection holds only when the source read back is the one selected', () 
 test('the switch task: selects from the recorded answer, fails closed on a wrong read-back, skips without a yes', t => {
   const out = scratch(t), asked = [];
   const sources = reads => ({select: id => { asked.push(id); return {requested: id, status: 0, current: {id: reads ?? id}}; }});
-  assert.deepEqual(switchSource({out, which: 'latin', sources: sources()}), {ok: true, which: 'latin', switched: false, reason: 'no answer recorded (source consent): nothing is switched'});
+  assert.deepEqual(switchSource({at: HOSTED, out, which: 'latin', sources: sources()}), {ok: true, which: 'latin', switched: false, reason: 'no answer recorded (source consent): nothing is switched'});
   writeConsent(out, {consent: true, reading: KOREAN});
-  assert.equal(switchSource({out, which: 'latin', sources: sources()}).ok, true);
-  assert.equal(switchSource({out, which: 'owner', sources: sources()}).requested, KOREAN.id);
-  const wrong = switchSource({out, which: 'latin', sources: sources(KOREAN.id)});
+  assert.equal(switchSource({at: HOSTED, out, which: 'latin', sources: sources()}).ok, true);
+  assert.equal(switchSource({at: HOSTED, out, which: 'owner', sources: sources()}).requested, KOREAN.id);
+  const wrong = switchSource({at: HOSTED, out, which: 'latin', sources: sources(KOREAN.id)});
   assert.equal(wrong.ok, false);
   assert.match(wrong.problem, /current source reads/);
   assert.deepEqual(asked, [LATIN_SOURCE, KOREAN.id, LATIN_SOURCE]);
@@ -66,10 +84,10 @@ test('after a failure the owner\'s source is put back, if a selection was tried;
   writeConsent(out, {consent: true, reading: KOREAN});
   const asked = [];
   const sources = {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }};
-  assert.equal(restoreAfterFailure({ctx: {sourceChanged: true}, out, sources}), null, 'a run that ended well keeps its source for the next series');
-  assert.equal(restoreAfterFailure({ctx: {sourceChanged: false, error: new Error('x')}, out, sources}), null);
+  assert.equal(restoreAfterFailure({at: HOSTED, ctx: {sourceChanged: true}, out, sources}), null, 'a run that ended well keeps its source for the next series');
+  assert.equal(restoreAfterFailure({at: HOSTED, ctx: {sourceChanged: false, error: new Error('x')}, out, sources}), null);
   assert.deepEqual(asked, []);
-  const restored = restoreAfterFailure({ctx: {sourceChanged: true, error: new Error('x')}, out, sources});
+  const restored = restoreAfterFailure({at: HOSTED, ctx: {sourceChanged: true, error: new Error('x')}, out, sources});
   assert.equal(restored.ok, true);
   assert.deepEqual(asked, [KOREAN.id]);
   rmSync(out, {recursive: true, force: true});
@@ -86,7 +104,7 @@ test('the source is selected only for the scene\'s own window: its launch, its r
   const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
   writeConsent(out, {consent: true, reading: KOREAN});
   let selected = false;
-  const refused = switchSource({out, which: 'latin', sources: {select: () => { selected = true; }}, targetProblem: 'another TextEdit window is on top'});
+  const refused = switchSource({at: HOSTED, out, which: 'latin', sources: {select: () => { selected = true; }}, targetProblem: 'another TextEdit window is on top'});
   assert.equal(refused.ok, false);
   assert.equal(selected, false, 'nothing selected');
   assert.match(refused.problem, /not selected: another TextEdit window is on top/);
@@ -98,12 +116,12 @@ test('an attempt is marked only right before the TIS call: never for a refused t
   const marks = [];
   const mark = label => () => marks.push(label);
   const select = reads => ({select: id => ({requested: id, status: 0, current: {id: reads ?? id}})});
-  switchSource({out, which: 'latin', sources: select(), beforeSelect: mark('no yes')});
+  switchSource({at: HOSTED, out, which: 'latin', sources: select(), beforeSelect: mark('no yes')});
   writeConsent(out, {consent: true, reading: KOREAN});
-  switchSource({out, which: 'latin', sources: select(), targetProblem: 'an owner window is on top', beforeSelect: mark('refused')});
-  const wrong = switchSource({out, which: 'latin', sources: select(KOREAN.id), beforeSelect: mark('read back wrong')});
+  switchSource({at: HOSTED, out, which: 'latin', sources: select(), targetProblem: 'an owner window is on top', beforeSelect: mark('refused')});
+  const wrong = switchSource({at: HOSTED, out, which: 'latin', sources: select(KOREAN.id), beforeSelect: mark('read back wrong')});
   assert.equal(wrong.ok, false);
-  switchSource({out, which: 'latin', sources: select(), beforeSelect: mark('selected')});
+  switchSource({at: HOSTED, out, which: 'latin', sources: select(), beforeSelect: mark('selected')});
   assert.deepEqual(marks, ['read back wrong', 'selected']);
   rmSync(out, {recursive: true, force: true});
 });
@@ -114,9 +132,9 @@ test('the restore after a failure: also after an ordinary failed result, and nev
   writeConsent(out, {consent: true, reading: KOREAN});
   const asked = [];
   const sources = {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }};
-  assert.equal(restoreAfterFailure({ctx: {sourceChanged: true, failed: 1}, out, sources}).ok, true, 'a cell that answered ok: false');
+  assert.equal(restoreAfterFailure({at: HOSTED, ctx: {sourceChanged: true, failed: 1}, out, sources}).ok, true, 'a cell that answered ok: false');
   assert.deepEqual(asked, [KOREAN.id]);
-  const left = restoreAfterFailure({ctx: {sourceChanged: true, error: new Error('x')}, out, sources, targetProblem: 'an owner window is on top'});
+  const left = restoreAfterFailure({at: HOSTED, ctx: {sourceChanged: true, error: new Error('x')}, out, sources, targetProblem: 'an owner window is on top'});
   assert.equal(left.ok, false);
   assert.equal(left.left, true);
   assert.match(left.problem, /left as it is: an owner window is on top; .*source restore/);
@@ -132,9 +150,9 @@ test('a named source is selected only with the owner\'s yes, and read back like 
   const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
   writeConsent(out, {consent: true, reading: {id: LATIN_SOURCE, name: 'ABC'}});
   const asked = [];
-  const result = switchSource({out, which: 'named', id, sources: {select: s => { asked.push(s); return {requested: s, status: 0, current: {id: s}}; }}});
+  const result = switchSource({at: HOSTED, out, which: 'named', id, sources: {select: s => { asked.push(s); return {requested: s, status: 0, current: {id: s}}; }}});
   assert.equal(result.ok, true);
   assert.deepEqual(asked, [id]);
-  assert.equal(switchSource({out, which: 'named', id, sources: {select: s => ({requested: s, status: 0, current: {id: LATIN_SOURCE}})}}).ok, false, 'a wrong read-back fails closed');
+  assert.equal(switchSource({at: HOSTED, out, which: 'named', id, sources: {select: s => ({requested: s, status: 0, current: {id: LATIN_SOURCE}})}}).ok, false, 'a wrong read-back fails closed');
   rmSync(out, {recursive: true, force: true});
 });

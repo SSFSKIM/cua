@@ -258,7 +258,9 @@ export async function runLive(options, io) {
     write();
   }
   if (result.recovery?.manual) log(`the recovery needs you: ${result.recovery.manual}`);
-  log(`${command} ${result.complete ? (result.pass ? 'PASS' : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
+  // A check the owner's Mac could not make, its input source or preference not the check's (ruling 1188): NO VERDICT.
+  const noVerdict = result.check?.verdict?.noVerdict;
+  log(`${command} ${result.complete ? (result.pass ? 'PASS' : noVerdict ? `complete, NO VERDICT (${noVerdict})` : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
   return exitCode(result.pass ? 0 : 1);
 }
 

@@ -312,9 +312,10 @@ export function pasteVerdict(steps) {
   const expectations = {
     textLands: text?.ok === true && text.route === 'paste' && text.lands === true,
     markdownLands: markdown?.ok === true && markdown.route === 'paste' && markdown.lands === true,
-    ...(measured ? {typeTextPasteRoute: typeText.route === 'paste', typeTextLands: typeText.ok === true && typeText.lands === true} : {typeTextMeasured: false}),
+    ...(measured ? {typeTextPasteRoute: typeText.route === 'paste', typeTextLands: typeText.ok === true && typeText.lands === true} : typeText?.ownerInput ? {} : {typeTextMeasured: false}),
     userStaysInFront: Array.isArray(userInFront) && userInFront.length > 0 && userInFront.every(Boolean),
-    inputSourceRestored: inputSource?.restored === true,
+    // Off a hosted runner nothing was written (ruling 1188), so there is nothing to restore.
+    inputSourceRestored: inputSource?.written === false || inputSource?.restored === true,
     noPasteAlert: pasteAlert === false,
     clipboardTypesUnchanged: clipboard?.typesUnchanged === true,
   };
@@ -322,7 +323,10 @@ export function pasteVerdict(steps) {
   const finding = measured && typeText.ok === true && typeText.route !== 'paste'
     ? `engine finding: type_text keyed (route ${typeText.route}) with Korean 2-Set selected and read back and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
     : null;
-  return {pass: failed.length === 0, failed, typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
+  // type_text unmeasured because the owner's input source or preference is not the window's (ruling 1188): never a
+  // pass, never a failure, NO VERDICT with its cause.
+  const noVerdict = typeText?.ownerInput ?? null;
+  return {pass: failed.length === 0 && !noVerdict, failed, ...(noVerdict ? {noVerdict} : {}), typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
     recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null, perContext: inputSource?.perContext ?? null, sourceAfter: typeText?.sourceAfter ?? null}};
 }
 
@@ -349,20 +353,6 @@ export function inputSourceVerdict({saved, selected, readBack, restored}) {
   return {pass: failed.length === 0, failed};
 }
 
-// `defaults read com.apple.HIToolbox AppleGlobalTextInputProperties` (old-style text): the per-context input preference
-// ("Automatically switch to a document's input source"), true or false, or null when it is not set.
-export function parsePerContext(text) {
-  const match = /TextInputGlobalPropertyPerContextInput\s*=\s*(\d+);/.exec(String(text ?? ''));
-  return match ? match[1] !== '0' : null;
-}
-// What restores the per-context preference to `saved` from `current`: nothing when equal, a write of the saved Boolean,
-// or, for a preference that was unset and is now set, nothing the harness can write back (defaults cannot remove a key
-// inside the dictionary without rewriting the rest), named for the owner.
-export function perContextRestore(saved, current) {
-  if (saved === current) return {write: false};
-  if (saved === null) return {unrestorable: 'the per-context input preference was unset before the run and is set now; set "Automatically switch to a document\'s input source" in System Settings → Keyboard → Input Sources as the owner had it'};
-  return {write: true, value: saved};
-}
 // The source a restore selects: the owner's, saved before the switch; ABC when no record was saved.
 export const restoreTarget = saved => saved?.source?.id || ABC;
 

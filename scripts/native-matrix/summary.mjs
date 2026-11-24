@@ -541,7 +541,10 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   const without = side => j.cells.reduce((n, c) => n + Object.values(c.account[side].noVerdict).reduce((a, b) => a + b, 0), 0);
   // Ruling 1154: the alert's own count per side (by cell below, in NO VERDICT by cell).
   const alerted = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.alert ?? 0), 0);
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1188: the rows the owner's Mac could not judge, its input source or preference not theirs, per side.
+  const ownerInput = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerInput ?? 0), 0);
+  const owned = ownerInput('cua') + ownerInput('vendor');
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {

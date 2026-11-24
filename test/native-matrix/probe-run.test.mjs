@@ -41,7 +41,7 @@ test('concurrent use: the owner\'s source saved and Latin set, the keystroke sch
     {drivenLanded: true, userLanded: true, intervalSource: 'engine', postOffsetMs: PRE_MS.chrome - 50});
   assert.equal(row.interference.ok, true, 'the oracle judged the row');
   // The source: saved before the first switch, the preference off, Latin selected, and restored after.
-  assert.deepEqual(sourceSteps(steps), ['save', 'per-context off', 'select com.apple.keylayout.ABC', 'restore']);
+  assert.deepEqual(sourceSteps(steps), ['state', 'save', 'per-context off', 'select com.apple.keylayout.ABC', 'restore']);
   // The probe: on the user window (the run's TextEdit), started before the act and finished after it.
   const probe = matrixSteps(steps, 'probe')[0];
   assert.deepEqual(probe.slice(0, 2), ['probe', 'keystroke']);
@@ -625,4 +625,23 @@ test('a timed probe\'s key cell reads its key window with the user window, never
     const own = keyed.filter(a => !(a[a.indexOf('--with') + 1] ?? '').includes('window-order') && !(a[a.indexOf('--with') + 1] ?? '').includes('alert-bounds'));
     assert.deepEqual(own, [], `${cellName}: a key-window read of its own`);
   }
+});
+
+// Ruling 1188: off a GitHub-hosted runner the probe cells run only under the owner's own Latin source with the
+// preference off; anything else is NO VERDICT `ownerInput`, and nothing is saved, selected or restored.
+test('probe cells off a hosted runner: run under the owner\'s ABC with the preference off, NO VERDICT ownerInput otherwise; nothing is switched', async () => {
+  const offHosted = owner => ({matrix: (base, a) => (a[0] === 'source' && a[1] === 'state'
+    ? {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', current: owner.source, layout: owner.source, perContext: owner.perContext}} : base(a))});
+  const plan = planOf('concurrent-use', {scene: 'chrome'});
+  const latin = await runWith({plan, cellName: 'concurrent-use', ops: offHosted({source: 'com.apple.keylayout.ABC', perContext: false}), cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+  assert.equal(latin.code, 0, JSON.stringify(latin.result.problems));
+  assert.deepEqual(sourceSteps(latin.steps), ['state']);
+  assert.deepEqual([rowOf(latin.result, 'chrome/concurrent@textedit').ok, latin.result.meta.inputSource.latin], [true, true]);
+  const other = await runWith({plan, cellName: 'concurrent-use', ops: offHosted({source: 'com.apple.keylayout.US', perContext: null}), cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+  assert.deepEqual(sourceSteps(other.steps), ['state']);
+  assert.deepEqual(matrixSteps(other.steps, 'probe'), [], 'nothing posted');
+  const row = rowOf(other.result, 'chrome/concurrent@textedit');
+  assert.equal(sampleCause(row).category, 'ownerInput');
+  assert.match(row.ownerInput, /ruling 1188.*the row needs the per-context input preference \(.*\) off, the owner's is unset, and the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.keylayout\.US$/);
+  assert.deepEqual(validateCellResult(other.result), []);
 });

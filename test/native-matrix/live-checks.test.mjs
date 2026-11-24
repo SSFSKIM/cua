@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, failureOf, finderCheck, firstLineBold,
   bundlePids, compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
-  RECOVERY_BOUNDS, parseJournal, parseProcessTable, pendingLaunches, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  RECOVERY_BOUNDS, parseJournal, parseProcessTable, pendingLaunches, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -334,16 +334,19 @@ test('inputSourceVerdict: selected, read back as Korean 2-Set, and the owner\'s 
   assert.deepEqual(notRestored.failed, ['sourceRestored']);
 });
 
-test('the per-context preference: parsed from defaults, restored only where it differs, never invented', () => {
-  assert.equal(parsePerContext('{\n    TextInputGlobalPropertyPerContextInput = 1;\n}\n'), true);
-  assert.equal(parsePerContext('{\n    TextInputGlobalPropertyPerContextInput = 0;\n}'), false);
-  assert.equal(parsePerContext('{\n    SomethingElse = 1;\n}'), null);
-  assert.equal(parsePerContext(null), null);
-  assert.deepEqual(perContextRestore(true, true), {write: false});
-  assert.deepEqual(perContextRestore(false, true), {write: true, value: false});
-  assert.deepEqual(perContextRestore(true, null), {write: true, value: true});
-  assert.match(perContextRestore(null, true).unrestorable, /System Settings/);
-  assert.deepEqual(perContextRestore(null, null), {write: false});
+// Ruling 1188: off a hosted runner nothing is written, so there is nothing to restore; a type_text the owner's input
+// source or preference did not allow is NO VERDICT with its cause, never a pass and never a failed expectation.
+test('pasteVerdict off a hosted runner: nothing written needs no restore; type_text the owner\'s values did not allow is NO VERDICT', () => {
+  const steps = {
+    userInFront: [true, true], text: {ok: true, route: 'paste', posted: true, lands: true}, markdown: {ok: true, route: 'paste', posted: true, lands: true, bold: true},
+    precondition: {selected: false, readBack: ABC, perContextOff: true, met: false}, inputSource: {written: false, owner: {source: ABC, perContext: false}},
+    typeText: {measured: false, ownerInput: 'off a GitHub-hosted runner …; the row needs the input source Korean', reason: 'off a GitHub-hosted runner …; the row needs the input source Korean'},
+    pasteAlert: false, clipboard: {typesUnchanged: true},
+  };
+  const out = pasteVerdict(steps);
+  assert.deepEqual([out.pass, out.failed, out.noVerdict], [false, [], 'off a GitHub-hosted runner …; the row needs the input source Korean']);
+  const met = pasteVerdict({...steps, precondition: {selected: false, readBack: KOREAN_2SET, perContextOff: true, met: true}, typeText: {measured: true, ok: true, route: 'paste', lands: true}});
+  assert.deepEqual([met.pass, met.failed, met.noVerdict], [true, [], undefined], 'the owner already on the window\'s values: measured, nothing to restore');
 });
 
 test('restoreTarget: the owner\'s saved source, ABC only when nothing was saved', () => {

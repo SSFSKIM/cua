@@ -78,11 +78,14 @@
 //   probe finish --run <dir>
 //       the pending probe awaited (./live-device.mjs awaitProbe: bounded, killed past its bound) -> {answer}: the
 //       keystroke's post time, presses and units, or the switch's time and the sources it read
-//   source save|current|select|per-context|restore --run <dir> [--source <id>] [--value on|off]
-//       the input source for the Unicode matrix (part 6), through the live harness's record and probe: the owner's
-//       source and per-context preference saved before the first switch (./live-device.mjs saveInputSource, first record
-//       wins), a source selected through `--probe input-source` and read back, the preference written and read back, and
-//       the saved ones restored with the record kept, so the put-back's input-source step verifies them again
+//   source state|save|current|select|per-context|restore --run <dir> [--source <id>] [--value on|off]
+//       the input source for the Unicode matrix (part 6), through the live harness's record and probe: whether this
+//       device may write it (`state`: a GitHub-hosted runner, ruling 1188), with the owner's source and per-context
+//       preference as they read now; the owner's saved before the first switch (./live-device.mjs saveInputSource,
+//       first record wins), a source selected through `--probe input-source` and read back, the preference written and
+//       read back, and the saved ones restored with the record kept, so the put-back's input-source step verifies them
+//       again. Off a hosted runner every write (save, select, per-context, a scheduled input-source probe) is refused
+//       before it is made: the run reads the owner's values and leaves the rows they do not allow NO VERDICT
 //   load --run <dir>
 //       the Mac's load averages over 1, 5 and 15 minutes, its uptime and its core count (the run's record of the load it
 //       ran under, before its work and after its put-back) -> {loadavg, uptimeS, cpus}
@@ -102,6 +105,7 @@ import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
 import {moveRefusal} from '../hosted-sittings/runner.mjs';
+import {inputWriteRefusal} from './hitoolbox.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertBoundsOf, isPanelWindow} from './alert-guard.mjs';
@@ -358,6 +362,8 @@ export function probeStart({kind, window, text, mode, id, lead}, io) {
     args = ['keystroke', ...(mode === 'ansiKeys' ? ['--ansi-keys'] : []), '--user-pid', pid, '--user-bounds', bounds.join(',')];
   } else if (kind === 'input-source') {
     if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
+    const refused = inputRefusal(io);
+    if (refused) throw new Error(`probe input-source: refused: ${refused}`);
     args = ['input-source', id];
   } else throw new Error('probe keystroke or input-source');
   const scheduled = io.now() + lead;
@@ -392,10 +398,17 @@ export function probeFinish(io) {
 // ABC, the input method not engaged (MAWS B2).
 const reading = probed => ({current: probed?.id ?? null, layout: probed?.layout ?? null});
 
-// io: {probe(args), probeStuck(), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})} (the restore
-// holds behind a probe that may still act itself: ./live-device.mjs restoreInputSource).
+// Why this device may not write the input source (ruling 1188, ./hitoolbox.mjs), or null on a GitHub-hosted runner.
+// `io.env` and `io.platform` are the device's, the process's when not given.
+const inputRefusal = io => inputWriteRefusal({env: io.env ?? process.env, platform: io.platform ?? process.platform});
+
+// io: {probe(args), probeStuck(), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep}), env?,
+// platform?} (the restore holds behind a probe that may still act itself: ./live-device.mjs restoreInputSource).
 export async function source(action, {id, value} = {}, io) {
+  const refused = inputRefusal(io);
+  if (refused && ['save', 'select', 'per-context'].includes(action)) throw new Error(`source ${action}: refused: ${refused}`);
   switch (action) {
+    case 'state': return {writable: !refused, ...(refused ? {refused} : {}), ...reading(io.probe(['input-source', 'current'])), perContext: io.readPerContext()};
     case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
     case 'current': return reading(io.probe(['input-source', 'current']));
     case 'select': {
@@ -410,7 +423,7 @@ export async function source(action, {id, value} = {}, io) {
       io.writePerContext(value === 'on');
       return {perContext: io.readPerContext()};
     case 'restore': return io.restoreInput({keep: true});
-    default: throw new Error('source save|current|select|per-context|restore');
+    default: throw new Error('source state|save|current|select|per-context|restore');
   }
 }
 

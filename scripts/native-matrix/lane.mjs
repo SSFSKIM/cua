@@ -203,7 +203,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         }
         case 'source':
           if (args[1] === 'select') source = args[args.indexOf('--source') + 1];
-          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source, layout: dryLayout(source)},
+          return {answer: {state: {writable: true, current: source, layout: dryLayout(source), perContext: false},
+            save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source, layout: dryLayout(source)},
             select: {selected: true, current: source, layout: dryLayout(source)},
             'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':

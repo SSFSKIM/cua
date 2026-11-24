@@ -698,6 +698,21 @@ test('ruling 1154: a sample the alert guard refused is NO VERDICT alert on its o
   assert.ok(text.includes(`| method ${CLICK} | **no verdict** |`) && text.includes('| alert 1 | alert 1, unread 1 | no |'), text);
 });
 
+// Ruling 1188: off a GitHub-hosted runner a row needing another input source or preference than the owner's is NO
+// VERDICT `ownerInput`; the report counts them per side, so it shows what the owner's machine could not judge.
+test('ruling 1188: a row the owner\'s input source did not allow is NO VERDICT ownerInput, counted per side and per cell', () => {
+  const cause = 'off a GitHub-hosted runner the harness never selects an input source or writes com.apple.HIToolbox (ruling 1188): they are how the owner types every day; the row needs the input source com.apple.keylayout.ABC, the owner\'s is com.apple.keylayout.US';
+  const owned = (rows, run) => (run === 1 ? set(CLICK, {ok: false, ownerInput: cause, invalid: cause})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: owned}, cua: {axMs: 40, tweak: owned}});
+  const row = j.methods.find(x => x.id === CLICK);
+  assert.equal(row.verdict, 'no-verdict');
+  assert.deepEqual([row.account.vendor.noVerdict, row.account.cua.noVerdict], [{ownerInput: 1}, {ownerInput: 1}]);
+  const text = renderSummary(j);
+  assert.match(text, /^- \*\*NO VERDICT\*\*: 1 cua and 1 vendor sample\(s\) without a verdict; of them `alert` .*: cua 0, vendor 0; `ownerInput` \(the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188\): cua 1, vendor 1;/m);
+  assert.ok(text.includes('| ownerInput 1 | ownerInput 1 | no |'), text);
+  assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /`ownerInput`/, 'named only when a row has it');
+});
+
 test('an activate step that did not take front and key is NO VERDICT, not FAIL; a hosted sample without readings is NO VERDICT', () => {
   const failedActivate = {activate: {app: SCENE_APP, front: false, key: false}, before: {front: ALERT, key: ALERT}};
   const all = [1, 2, 3];

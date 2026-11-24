@@ -14,7 +14,7 @@ export const BUNDLE = '/A/cua Engine.app';
 // and device-clock window; `env` and `platform` are the controller's (platform: process.platform's unless given). The clock moves 2 s a reading,
 // more than the activation margin, so each step's window is its own.
 export async function runWith({engine = 'cua', plan = planOf('background', {scene: 'textedit', user: 'finder'}), ops: over = {}, cell = null, lane = null,
-  checkout = {commit: 'c', dirty: false}, attest = engine, sitting = 's1', calls = [], slept = [], cellName = 'non-interference', runs = 1, runNumber, env = {}, platform} = {}) {
+  checkout = {commit: 'c', dirty: false}, attest = engine, sitting = 's1', calls = [], slept = [], cellName = 'non-interference', runs = 1, runNumber, firstLane, env = {}, platform} = {}) {
   let t = 1_000_000;
   const clock = () => (t += 2_000);
   const steps = [];
@@ -40,7 +40,7 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
   const out = fs.mkdtempSync(join(tmpdir(), 'matrix-run-'));
   try {
     const code = await runMatrix({device: 'mini', host: engine, engine, approvedRuntime: '/H', approvedEngine: BUNDLE, out, runs, samples: 2, plan, cell: cellName, sitting,
-      ...(runNumber === undefined ? {} : {runNumber})}, {ops, connect: steered, controllerCheckout: () => checkout, log: () => {}, sleep: async ms => { slept.push(ms); }, env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'}),
+      ...(runNumber === undefined ? {} : {runNumber}), ...(firstLane === undefined ? {} : {firstLane})}, {ops, connect: steered, controllerCheckout: () => checkout, log: () => {}, sleep: async ms => { slept.push(ms); }, env, vmIdentity: () => ({platformUuid: 'P', bootedAt: 'B'}),
       ...(platform === undefined ? {} : {platform})});
     const file = join(out, `run-${runNumber ?? 1}`, 'result.json');
     const results = Object.fromEntries(fs.readdirSync(out).map(d => [d, JSON.parse(fs.readFileSync(join(out, d, 'result.json'), 'utf8'))]));

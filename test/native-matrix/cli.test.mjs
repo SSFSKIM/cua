@@ -20,3 +20,12 @@ test('hold 3\'s route A/B is gone (ruling 1108, #184): --natural-only is no opti
   assert.throws(() => parseCommand(['cell', 'korean', ...LANE, '--natural-only']), /Unknown option '--natural-only'/);
   assert.doesNotMatch(USAGE, /natural-only|route-ab/);
 });
+
+// Ruling 1226: a sitting tells each run which lane ran first in its run number (--first-lane), which the run records.
+test('--first-lane vendor|cua is the lane that ran first in this run number, on run and cell alike', () => {
+  assert.equal(parseCommand(['run', ...LANE, '--first-lane', 'vendor']).firstLane, 'vendor');
+  assert.equal(parseCommand(['cell', 'intervention-save-sheet', ...LANE, '--first-lane', 'cua']).firstLane, 'cua');
+  assert.equal(parseCommand(['run', ...LANE]).firstLane, undefined);
+  assert.throws(() => parseCommand(['run', ...LANE, '--first-lane', 'both']), /--first-lane takes vendor or cua/);
+  assert.match(USAGE, /--first-lane vendor\|cua/);
+});

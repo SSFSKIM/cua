@@ -139,7 +139,8 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
   const holds = {FAIL: counted.some(s => s.status === 'FAIL'), 'NO VERDICT': counted.some(s => s.status === 'NO VERDICT'),
     INCOMPLETE: plan.form === 'full' && counted.some(s => s.status === 'PENDING'), OWNER: counted.some(s => s.status === 'OWNER')};
   const [verdict, exit] = SITTING_EXITS.find(([name]) => holds[name]) ?? ['PASS', 0];
-  return {sitting: plan.sitting, form: plan.form, title: plan.title, proves: plan.proves, steps, verdict, exit, wall: wall()};
+  // The lane order the plan ran by (C's, ruling 1226), kept in sitting.json.
+  return {sitting: plan.sitting, form: plan.form, title: plan.title, proves: plan.proves, ...(plan.laneOrder ? {laneOrder: plan.laneOrder} : {}), steps, verdict, exit, wall: wall()};
 }
 
 // The job's start as the workflow's first step records it (M5_JOB_STARTED, epoch seconds), or null when unset or

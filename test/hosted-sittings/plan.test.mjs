@@ -45,7 +45,12 @@ test('ruling 1169: each run after the first side names its pair\'s record, so th
   assert.deepEqual(pairs('a', true), [['/w/out/vv/run-1/meta.json', null], ['/w/out/vc/run-1/meta.json', '/w/out/vv/run-1/meta.json'], ['/w/out/cc/run-1/meta.json', '/w/out/vc/run-1/meta.json']]);
   assert.deepEqual(pairs('a').filter(([record]) => record.includes('run-3')).map(([, pair]) => pair), [null, '/w/out/vv/run-3/meta.json', '/w/out/vc/run-3/meta.json']);
   assert.deepEqual(pairs('b'), [['/w/out/vendor/meta.json', null], ['/w/out/cua/meta.json', '/w/out/vendor/meta.json']]);
-  assert.deepEqual(pairs('c').filter(([record]) => record.includes('run-2')), [['/w/out/vendor/run-2/result.json', null], ['/w/out/cua/run-2/result.json', '/w/out/vendor/run-2/result.json']]);
+  // Ruling 1226: run 2 runs cua first, so its vendor run names cua's record of run 2 (the symmetry check needs the first
+  // side's record written; the cua run of runs 1 and 3 still names the vendor run of its number).
+  assert.deepEqual(pairs('c').filter(([record]) => /run-[123]\//.test(record)), [
+    ['/w/out/vendor/run-1/result.json', null], ['/w/out/cua/run-1/result.json', '/w/out/vendor/run-1/result.json'],
+    ['/w/out/cua/run-2/result.json', null], ['/w/out/vendor/run-2/result.json', '/w/out/cua/run-2/result.json'],
+    ['/w/out/vendor/run-3/result.json', null], ['/w/out/cua/run-3/result.json', '/w/out/vendor/run-3/result.json']]);
 });
 
 test('A: three runs of each lane, alternating vendor on vendor, cua on vendor, cua on cua, over the loopback device and the run\'s install; then comparisons A, B and C', () => {
@@ -114,7 +119,11 @@ test('B: the native-mac pair on the run\'s install, its diff against the declare
 test('C: the matrix, three runs a side with vendor and cua alternating per run number in one hold; #212\'s save-sheet cell on both lanes; the summary and the comparison', () => {
   const full = plan('c');
   const runs = full.steps.filter(s => s.id.startsWith('matrix-'));
-  assert.deepEqual(runs.map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1', 'matrix-vendor-2', 'matrix-cua-2', 'matrix-vendor-3', 'matrix-cua-3']);
+  // Ruling 1226: which lane runs first alternates by run (vendor, cua, vendor), so state one lane leaves (C-7: Go To's
+  // remembered path) cannot favour one engine; each run is told its order, and the plan records the schedule.
+  assert.deepEqual(runs.map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1', 'matrix-cua-2', 'matrix-vendor-2', 'matrix-vendor-3', 'matrix-cua-3']);
+  assert.deepEqual(runs.map(s => argOf(s, '--first-lane')), ['vendor', 'vendor', 'cua', 'cua', 'vendor', 'vendor']);
+  assert.deepEqual(full.laneOrder, {runs: [{run: 1, first: 'vendor'}, {run: 2, first: 'cua'}, {run: 3, first: 'vendor'}], keyRoute: ['vendor', 'cua']});
   for (const step of runs) {
     const engine = step.id.split('-')[1];
     assert.deepEqual(step.argv.slice(0, 5), ['node', 'scripts/native-matrix.mjs', 'run', '--device', DEVICE]);
@@ -122,31 +131,37 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
     assert.equal(argOf(step, '--run-number'), step.id.split('-')[2]);
     assert.deepEqual(approved(step), [CTX.approvedRuntime, CTX.approvedEngine]);
   }
+  // #212's cell one step a run, by the same schedule, each told its run number and its order, its check reading its record.
   const sheet = full.steps.filter(s => s.id.startsWith('save-sheet-'));
-  assert.deepEqual(sheet.map(s => [s.argv[2], s.argv[3], argOf(s, '--engine'), argOf(s, '--out')]),
-    [['cell', 'intervention-save-sheet', 'vendor', '/w/out/save-sheet/vendor'], ['cell', 'intervention-save-sheet', 'cua', '/w/out/save-sheet/cua']]);
-  // Each lane's cell asks for its runs, and its check reads every one of their records.
-  assert.deepEqual(sheet.map(s => [argOf(s, '--runs'), s.records]), [['3', [1, 2, 3].map(n => `/w/out/save-sheet/vendor/run-${n}/result.json`)], ['3', [1, 2, 3].map(n => `/w/out/save-sheet/cua/run-${n}/result.json`)]]);
+  assert.deepEqual(sheet.map(s => s.id), ['save-sheet-vendor-1', 'save-sheet-cua-1', 'save-sheet-cua-2', 'save-sheet-vendor-2', 'save-sheet-vendor-3', 'save-sheet-cua-3']);
+  for (const s of sheet) {
+    const [, , engine, n] = s.id.split('-');
+    assert.deepEqual([s.argv[2], s.argv[3], argOf(s, '--engine'), argOf(s, '--out'), argOf(s, '--run-number'), s.argv.includes('--runs'), s.records, s.engine],
+      ['cell', 'intervention-save-sheet', engine, `/w/out/save-sheet/${engine}`, n, false, [`/w/out/save-sheet/${engine}/run-${n}/result.json`], engine], s.id);
+  }
+  assert.deepEqual(sheet.map(s => argOf(s, '--first-lane')), ['vendor', 'vendor', 'cua', 'cua', 'vendor', 'vendor']);
   assert.deepEqual(full.steps.filter(s => s.kind === 'verdict').map(s => s.argv.slice(2)),
     [['summary', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/summary.md'], ['compare', '/w/out/vendor', '/w/out/cua', '--out', '/w/out/comparison.md']]);
   assert.deepEqual(full.counts, ['/w/out/vendor', '/w/out/cua', '/w/out/save-sheet']);
   assert.equal(full.pilotReads, false);
-  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.records?.[0] ?? s.report ?? null, s.row ?? null, s.pilotNoVerdict ?? false]), [
+  assert.deepEqual(['matrix-cua-2', 'save-sheet-vendor-1', 'summary', 'compare'].map(id => full.steps.find(s => s.id === id)).map(s => [s.check, s.record ?? s.records?.[0] ?? s.report ?? null, s.row ?? null, s.pilotNoVerdict ?? false]), [
     ['record', '/w/out/cua/run-2/result.json', null, false],
     ['saveSheet', '/w/out/save-sheet/vendor/run-1/result.json', 'textedit/intervention.saveSheet', false],
     ['report', '/w/out/summary.md', null, false],
     ['verdict', null, null, true]]);
-  // Each run needs the one before it, through the alternation: a run that left a scene up fails, and the next is SKIP
-  // rather than started into what it left (pilot B's Finder window).
-  assert.deepEqual(runs.map(s => s.needs ?? []), [[], ['matrix-vendor-1'], ['matrix-cua-1'], ['matrix-vendor-2'], ['matrix-cua-2'], ['matrix-vendor-3']]);
+  // Each run needs the one before it, through the alternation and across its swap: a run that left a scene up fails, and
+  // the next is SKIP rather than started into what it left (pilot B's Finder window).
+  assert.deepEqual(runs.map(s => s.needs ?? []), [[], ['matrix-vendor-1'], ['matrix-cua-1'], ['matrix-cua-2'], ['matrix-vendor-2'], ['matrix-vendor-3']]);
   // Ruling 1214: on the put-back the run before it holds (its record), not on its PASS.
-  assert.deepEqual(runs.map(s => s.gate?.putBack ?? null), [null, '/w/out/vendor/run-1/result.json', '/w/out/cua/run-1/result.json', '/w/out/vendor/run-2/result.json',
-    '/w/out/cua/run-2/result.json', '/w/out/vendor/run-3/result.json']);
+  assert.deepEqual(runs.map(s => s.gate?.putBack ?? null), [null, '/w/out/vendor/run-1/result.json', '/w/out/cua/run-1/result.json', '/w/out/cua/run-2/result.json',
+    '/w/out/vendor/run-2/result.json', '/w/out/vendor/run-3/result.json']);
   const pilot = plan('c', {pilot: true});
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1'], 'the pilot: one run pair');
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.needs ?? []), [[], ['matrix-vendor-1']], 'the pilot\'s pair chained the same way, after the focus timing it does not need');
-  assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('save-sheet-')).map(s => [argOf(s, '--runs'), s.records]),
-    [['1', ['/w/out/save-sheet/vendor/run-1/result.json']], ['1', ['/w/out/save-sheet/cua/run-1/result.json']]], 'the pilot\'s cell: exactly one run a lane, and that run\'s record checked');
+  assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('save-sheet-')).map(s => [s.id, argOf(s, '--run-number'), argOf(s, '--first-lane'), s.records]),
+    [['save-sheet-vendor-1', '1', 'vendor', ['/w/out/save-sheet/vendor/run-1/result.json']], ['save-sheet-cua-1', '1', 'vendor', ['/w/out/save-sheet/cua/run-1/result.json']]],
+    'the pilot\'s cell: exactly one run a lane, vendor first, and that run\'s record checked');
+  assert.deepEqual(pilot.laneOrder, {runs: [{run: 1, first: 'vendor'}], keyRoute: ['vendor', 'cua']});
   assert.equal(pilot.steps[0].id, 'focus-timing', 'the pilot times the focus probe before anything else runs');
   assert.deepEqual(pilot.steps[0].argv, ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', CTX.approvedEngine, '--out', '/w/out/focus-timing.json']);
   assert.equal(pilot.pilotReads, true);
@@ -203,6 +218,14 @@ test('F: the MAWS sitting waits on T12, a placeholder', () => {
   const p = plan('f');
   assert.deepEqual(p.steps.map(s => [s.id, s.kind]), [['maws', 'pending']]);
   assert.match(p.steps[0].pending, /T12/);
+});
+
+test('ruling 1226: sitting C\'s report (sitting.json) records which lane ran first in each run, and the key-route diagnostic\'s order', async () => {
+  const p = plan('c', {pilot: true});
+  const report = await runSitting(p, {out: '/w/out', exec: async () => ({exit: 0}), keep: () => {}, readText: () => '', readJson: () => null, exists: () => false, remove: () => {},
+    now: () => 0, log: () => {}});
+  assert.deepEqual(report.laneOrder, {runs: [{run: 1, first: 'vendor'}], keyRoute: ['vendor', 'cua']});
+  assert.equal(plan('a').laneOrder, undefined, 'only C alternates its lanes this way');
 });
 
 test('a sitting\'s context: the job\'s run and attempt, and the approved paths the runner\'s record names, which a sitting with setup cannot run without', () => {

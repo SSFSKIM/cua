@@ -509,3 +509,13 @@ test('Chrome\'s background drag prepares with Chrome in front, then the user win
   // The case carries the flag; it takes effect behind a user window only.
   assert.equal(CASES.chrome.find(c => c.method === 'drag' && c.case === 'select').prepareInFront, true);
 });
+
+// Ruling 1226: each run records which lane ran first in its run number and its own position, so a judge can split what
+// failed or went without a verdict by it.
+test('a run records the lane that ran first in its run number and its own position; none when not told', async () => {
+  const second = await runWith({engine: 'cua', firstLane: 'vendor'});
+  assert.deepEqual(second.result.meta.laneOrder, {first: 'vendor', position: 2});
+  const first = await runWith({engine: 'cua', firstLane: 'cua'});
+  assert.deepEqual(first.result.meta.laneOrder, {first: 'cua', position: 1});
+  assert.equal((await runWith({engine: 'cua'})).result.meta.laneOrder, undefined);
+});

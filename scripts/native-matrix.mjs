@@ -8,12 +8,13 @@
 //
 //   node scripts/native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <CUA_HOME>
 //        --approved-engine <the approved cua Engine.app> --sitting <hold id> --out <dir> [--runs 3] [--run-number n] [--samples 10]
-//        [--run <device dir>] [--dry-run]
+//        [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
 //     One lane, --runs runs, each the whole hold (./native-matrix/run.mjs) and one result in <out>/run-<n>/result.json.
 //     The lanes are --host vendor --engine vendor, --host vendor --engine cua and --host cua --engine cua; every lane
 //     of one hold names the same --sitting, the hold's id, recorded in each run's meta. A hold split by run runs exactly
 //     run n with --run-number n (--runs then counts from n, 1 by default; <out>/run-<n>/), so each run's vendor and cua
-//     lanes share one sitting: `summary` pairs them per run number.
+//     lanes share one sitting: `summary` pairs them per run number. --first-lane names the lane that ran first in this
+//     run number (a sitting alternates it, ruling 1226), recorded with this lane's position in meta.laneOrder.
 //   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>]
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
@@ -52,13 +53,13 @@ import {cleanupMatrix, planOf, runMatrix} from './native-matrix/run.mjs';
 import {judge, notJudgedLines, readResults, renderSummary} from './native-matrix/summary.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
-export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--run <device dir>] [--dry-run]
+export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
        native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] | cell --list
        native-matrix.mjs compare <vendor-dir> <cua-dir> [--out <file>]
        native-matrix.mjs summary <dir>... [--out <file>]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
-  out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
+  out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, 'first-lane': {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
   preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
 const absolute = (value, name) => { if (value !== undefined && (!isAbsolute(value) || value.includes('\n'))) fail(`--${name} needs an absolute path`); return value; };
@@ -75,6 +76,8 @@ const count = (value, name, fallback) => {
   return Number(value);
 };
 
+const firstLaneOf = value => (value === undefined || ['vendor', 'cua'].includes(value) ? value : fail('--first-lane takes vendor or cua'));
+
 export function parseCommand(argv) {
   let parsed;
   try { parsed = parseArgs({args: argv, allowPositionals: true, options: OPTIONS}); } catch (error) { fail(error.message); }
@@ -82,7 +85,7 @@ export function parseCommand(argv) {
   const dryRun = values['dry-run'];
   const lane = () => ({device: values.device, host: values.host, engine: values.engine, approvedRuntime: absolute(values['approved-runtime'], 'approved-runtime'),
     approvedEngine: absolute(values['approved-engine'], 'approved-engine'), out: values.out ? resolve(values.out) : undefined, runs: count(values.runs, 'runs', undefined),
-    runNumber: count(values['run-number'], 'run-number', undefined),
+    runNumber: count(values['run-number'], 'run-number', undefined), firstLane: firstLaneOf(values['first-lane']),
     samples: count(values.samples, 'samples', undefined), run: absolute(values.run, 'run'), sitting: sittingOf(values.sitting, dryRun), dryRun});
   switch (command) {
     case 'run':

@@ -162,6 +162,7 @@ export async function runMatrix(options, io) {
   if (!Number.isSafeInteger(first) || first < 1) throw new Error('--run-number needs a positive integer');
   if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('--samples needs a positive integer');
   if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one hold names the same');
+  if (options.firstLane !== undefined && !HOSTS.includes(options.firstLane)) throw new Error('--first-lane takes vendor or cua');
   if (!out) throw new Error('run needs --out <dir>');
   refuseKeyRouteOffRunner(options.plan, io);
   const base = resolve(out);
@@ -178,7 +179,7 @@ export async function runMatrix(options, io) {
 }
 
 async function runOnce(options, io) {
-  const {device, host, engine, approvedRuntime, approvedEngine, n, dir, samples, sitting, plan = FULL_PLAN, cell: cellName = 'matrix'} = options;
+  const {device, host, engine, approvedRuntime, approvedEngine, n, dir, samples, sitting, plan = FULL_PLAN, cell: cellName = 'matrix', firstLane} = options;
   const {ops, log = console.log, dryRun = false} = io;
   const now = io.now ?? Date.now;
   const interrupt = io.interrupt ?? {signal: null};
@@ -192,7 +193,9 @@ async function runOnce(options, io) {
     // The controller's environment until the preflight, then with the device's own record (meta.runner, hostedRunOf).
     // The serve the lane starts runs with a cleared environment (../native-baseline/remote.mjs), so cua's launcher
     // takes its default desktop mode, the shared one.
-    hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared'};
+    hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared',
+    // The lane that ran first in this run number and this lane's place (ruling 1226: a sitting alternates it).
+    ...(firstLane ? {laneOrder: {first: firstLane, position: firstLane === engine ? 1 : 2}} : {})};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
     // A narrowed cell is judged on its own (summary counts only the whole matrix's runs): its verdict judges the oracle.

@@ -23,6 +23,8 @@
 //             cleanup failure (C's key-route diagnostic, ruling 1198); `section`: its Markdown, appended to sitting.md
 // `needs`: the steps that must have passed first (else this one is skipped). `keep`: files a step writes elsewhere,
 // copied into the sitting's output after it. `missing`: why a step cannot run here (a failure, not run).
+import {KEY_ROUTE_ENGINES} from './key-route-report.mjs';
+
 export const DEVICE = 'hosted-macos';
 export const SITTINGS = Object.freeze(['a', 'b', 'c', 'd', 'e', 'f']);
 // accept-native's exact selection for sitting D: every item but 9, the release gates (PF §9: "accept-native item 9" is
@@ -89,8 +91,15 @@ function sittingB(ctx) {
   ];
 }
 
+// Sitting C's lane order (ruling 1226): which lane runs first alternates by run, vendor in odd runs, cua in even ones, so
+// state one lane leaves for the next (C-7: Go To reopened on the vendor's path) cannot systematically favour one engine.
+// Each run is told its order (--first-lane), which it records (meta.laneOrder); the key-route diagnostic runs its two
+// engines once, in its own fixed order, recorded beside the schedule. -> {runs: [{run, first}], keyRoute}.
+export const laneOrderOf = runs => ({runs: Array.from({length: runs}, (_, i) => ({run: i + 1, first: i % 2 === 0 ? 'vendor' : 'cua'})), keyRoute: [...KEY_ROUTE_ENGINES]});
+const ordered = first => (first === 'vendor' ? ['vendor', 'cua'] : ['cua', 'vendor']);
+
 function sittingC(ctx) {
-  const runs = ctx.pilot ? 1 : 3, sitting = `hosted-${ctx.runId}-c`, steps = [];
+  const runs = ctx.pilot ? 1 : 3, sitting = `hosted-${ctx.runId}-c`, steps = [], schedule = laneOrderOf(runs).runs;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args];
   const lane = engine => ['--device', DEVICE, '--host', engine, '--engine', engine, ...approvedArgs(ctx), '--sitting', sitting];
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
@@ -103,23 +112,26 @@ function sittingC(ctx) {
   // stopped run carries over: its fixtures, sheets and panels went with the apps it quit, and the next run puts its
   // scenes up afresh. A run whose put-back did not hold, or that wrote no record, skips the rest, naming why. The next
   // run's own preflight still refuses a screen a run left. A's runs and B's cua lane still chain on PASS. The save-sheet
-  // cells stay unchained: their own preflight refuses a screen a run left.
+  // cells stay unchained: their own preflight refuses a screen a run left. The chain follows the lane order whatever the
+  // engine (ruling 1226); the second run of each number names the first's record as its pair (ruling 1169: the record
+  // check holds both sides to one frame once both are written).
   // R3's witness (ruling 1225): its tap app built and granted Input Monitoring before the first run, so each run's
   // judged cells can be tapped (../native-matrix/witness.mjs). Not ready, the runs still go, their R3 cells NO VERDICT.
   steps.push({id: 'witness-tap', label: 'R3\'s witness tap built and granted Input Monitoring (ruling 1225)', kind: 'diagnostic', check: 'witnessTap',
     report: `${ctx.out}/witness-tap.json`, argv: ['node', 'scripts/hosted-sittings.mjs', 'witness-tap', '--out', `${ctx.out}/witness-tap.json`]});
   const runSteps = [];
-  for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
+  for (const {run: i, first} of schedule) for (const engine of ordered(first)) {
     const before = runSteps.at(-1);
     runSteps.push(`matrix-${engine}-${i}`);
-    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
+    steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i} (${first} first)`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
       ...(before ? {needs: [before], gate: {putBack: `${ctx.out}/${before.replace(/^matrix-(\w+)-(\d+)$/, '$1/run-$2')}/result.json`}} : {}),
-      ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/run-${i}/result.json`} : {}), argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
+      ...(engine !== first ? {pair: `${ctx.out}/${first}/run-${i}/result.json`} : {}),
+      argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i), '--first-lane', first)});
   }
-  // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.
-  for (const engine of ['vendor', 'cua']) steps.push({id: `save-sheet-${engine}`, label: `#212's save-sheet cell on ${engine}`, kind: 'run',
-    check: 'saveSheet', records: Array.from({length: runs}, (_, i) => `${ctx.out}/save-sheet/${engine}/run-${i + 1}/result.json`), row: 'textedit/intervention.saveSheet', engine,
-    argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--runs', String(runs))});
+  // #212's cell one step a run, by the same lane order, each reading its run's record (one run in the pilot).
+  for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `save-sheet-${engine}-${i}`, label: `#212's save-sheet cell on ${engine}, run ${i} (${first} first)`,
+    kind: 'run', check: 'saveSheet', records: [`${ctx.out}/save-sheet/${engine}/run-${i}/result.json`], row: 'textedit/intervention.saveSheet', engine,
+    argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--run-number', String(i), '--first-lane', first)});
   steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
   steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
   // Ruling 1198's diagnostic, last: after the counted lanes and their judges, never among judged cells. It needs none of
@@ -185,6 +197,7 @@ export function sittingPlan(sitting, ctx) {
   const [title, proves] = TITLES[sitting];
   return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
     counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot),
+    ...(sitting === 'c' ? {laneOrder: laneOrderOf(ctx.pilot ? 1 : 3)} : {}),
     scratchDirs: sitting === 'd' ? [acceptConfig(ctx)] : []};
 }
 

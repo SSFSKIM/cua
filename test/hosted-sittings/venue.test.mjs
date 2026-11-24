@@ -426,6 +426,10 @@ test('panel placements pair by opening: a skipped opening shifts nothing, a diff
   const moved = record([open(OPEN, rect(22, 80, 720, 440))]);
   assert.equal(frameAsymmetry(moved, vendor), null, 'a panel difference is not the run\'s');
   assert.deepEqual([...panelFrameSplits(moved, vendor)], [[OPEN, `panel:${OPEN}: 22,80 720x440 on this side, 80,80 720x440 on its pair`]]);
+  // One opening with two placements (two windows read for it): which stood where is not known, so it is not compared.
+  const twice = record([open(OPEN, rect(22, 80, 720, 440)), open(OPEN, rect(300, 300, 500, 300))]);
+  assert.deepEqual(sceneFrames(twice), {});
+  assert.deepEqual([...panelFrameSplits(twice, vendor)], []);
   // A record from before openings were named: not paired at all.
   const legacy = record([{beforeRow: 1, number: 994, from: rect(22, 80, 720, 440), moved: false}]);
   assert.deepEqual([...panelFrameSplits(legacy, vendor)], []);

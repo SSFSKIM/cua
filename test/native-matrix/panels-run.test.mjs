@@ -33,7 +33,7 @@ const sent = (calls, test) => calls.some(c => test(c.code));
 // `afterCase`: what a case's act does to the world (`recentre`: the panel back over the alerts; `foreign`: another
 // app's window in front); `sheet`: the helper answering that it found a Save sheet as an AXSheet child.
 const OTHER_FRONT = {pid: 999, bundleId: 'com.example.other', owned: false};
-function panelDevice({moves = true, escape = true, click = true, ax = true, alerts = ALERTS, savePanel = false, unread = false, listed = true, claims = null,
+function panelDevice({moves = true, escape = true, click = true, ax = true, alerts = ALERTS, savePanel = false, unread = false, listed = true, twin = false, claims = null,
   afterCase = null, sheet = false} = {}) {
   let open = false, at = CENTRED, foreign = false;
   const placed = [], cancelled = [], states = [];
@@ -60,7 +60,7 @@ function panelDevice({moves = true, escape = true, click = true, ax = true, aler
     const out = base(a);
     if (!isGuardRead(a)) return foreign && a[0] === 'read' && out.reading ? {...out, reading: {...out.reading, frontmost: foreign === 'unread' ? null : OTHER_FRONT}} : out;
     return {...out, alertBounds: {...out.alertBounds, alerts: alerts.map((bounds, i) => ({number: 59 + i, layer: 8, bounds})),
-      windows: [...out.alertBounds.windows.map(w => ({...w, bounds: SCENE})), ...(open && listed ? [{scene: 'textedit', number: 994, recorded: false, bounds: at}] : [])]}};
+      windows: [...out.alertBounds.windows.map(w => ({...w, bounds: SCENE})), ...(open && listed ? [{scene: 'textedit', number: 994, recorded: false, bounds: at}, ...(twin ? [{scene: 'textedit', number: 995, recorded: false, bounds: rect(300, 300, 500, 300)}] : [])] : [])]}};
   };
   return {cell, ops: {matrix}, placed, cancelled, states};
 }
@@ -375,4 +375,23 @@ test('no panel cell sends Return or Enter, types a line break, or presses Save, 
       }
     }
   }
+});
+
+// Re-review, finding 4: two windows that both qualify for one opening do not tell which is the panel. On a hosted runner
+// the placement is recorded ambiguous, nothing is moved, and the case and its timing are NO VERDICT venue, unsent; the
+// close still covers both candidates.
+test('an opening with two candidate windows: ambiguous, nothing moved, its case NO VERDICT venue and unsent on a hosted runner', async () => {
+  const calls = [];
+  const dev = panelDevice({twin: true});
+  const {result} = await runWith({plan: {...PANEL_PLAN, background: []}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}, calls, cell: dev.cell, ops: dev.ops});
+  assert.deepEqual(dev.placed, [], 'no candidate moved');
+  for (const p of result.meta.placement.panel) assert.deepEqual([p.ambiguous, p.candidates.map(c => c.number), 'from' in p], [true, [994, 995], false]);
+  for (const row of panelRows(result)) {
+    assert.match(row.venueInput, /^the Open panel's placement is ambiguous: 2 windows qualify \(994, 995\), so its case was not sent/, row.id);
+    assert.equal(sampleCause({...row, hosted: true}).category, 'venue');
+  }
+  const timings = result.rows.filter(r => r.section === 'speed' && r.id.startsWith('textedit/method.panel.'));
+  assert.ok(timings.length && timings.every(t => sampleCause(t).category === 'venue'));
+  assert.ok(!sent(calls, CASE_ESCAPE) && !calls.some(c => c.code.includes(PANEL_SEARCH)), 'no case act was sent');
+  assert.equal(result.complete, true, result.problems.join('; '));
 });

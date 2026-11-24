@@ -309,7 +309,9 @@ export function sceneFrames(record) {
   if (Array.isArray(placement)) for (const step of placement) numbered(`${step.at}/`, step.windows, out);
   else if (placement?.scenes) {
     for (const [scene, entry] of Object.entries(placement.scenes)) { const frame = standing(entry); if (frame) out[scene] = frame; }
-    (placement.panel ?? []).forEach((entry, i) => { const frame = standing(entry); if (frame) out[panelKey(entry, i)] = frame; });
+    // An opening read with more than one window says nothing of where its panel stood: none of them is kept.
+    const panels = placement.panel ?? [], keys = panels.map(panelKey), twice = new Set(keys.filter((k, i) => keys.indexOf(k) !== i));
+    panels.forEach((entry, i) => { const frame = standing(entry); if (frame && !twice.has(keys[i])) out[keys[i]] = frame; });
   } else if (Array.isArray(placement?.windows)) numbered('', placement.windows, out);
   for (const [id, scene] of Object.entries(meta.scenes ?? {})) numbered(`${id}/`, scene?.placement?.windows, out);
   return out;

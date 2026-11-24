@@ -119,6 +119,14 @@ async function placePanel(ctx, target, known, opening) {
     if (!hosted) return null;
     return `the ${PANEL_NAMES[target]}'s placement is unproven: ${known === null ? 'TextEdit\'s windows before its key were unread' : windows === null ? 'the window list was unread' : 'no window of it was found'} after ${reads} ${reads === 1 ? 'read' : 'reads'}, so its case was not sent (ruling 1195)`;
   }
+  // More than one window qualifies: which is the panel is not known, so none is moved or compared (the close still
+  // covers each); on a hosted runner the case is not sent.
+  if (windows.length > 1) {
+    ctx.panelWindows = windows.map(w => w.number);
+    kept.push({beforeRow, target, opening, reads, ambiguous: true, candidates: windows.map(w => ({number: w.number, bounds: w.bounds}))});
+    if (!hosted) return null;
+    return `the ${PANEL_NAMES[target]}'s placement is ambiguous: ${windows.length} windows qualify (${windows.map(w => w.number).join(', ')}), so its case was not sent (ruling 1195)`;
+  }
   const alerts = bounds.alerts.map(a => a.bounds);
   let venue = null;
   for (const w of windows) {

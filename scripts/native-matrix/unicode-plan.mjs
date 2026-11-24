@@ -23,7 +23,8 @@
 import {ABC, KOREAN_2SET} from './live-checks.mjs';
 import {NOT_JUDGED} from './not-judged.mjs';
 import {emptyField, fieldCheck} from './probe-plan.mjs';
-import {TYPED} from './plan.mjs';
+import {sha256Hex} from './matrix-text.mjs';
+import {TEXT_FIELDS, TYPED} from './plan.mjs';
 
 const j = JSON.stringify;
 export {ABC, KOREAN_2SET};
@@ -71,12 +72,37 @@ export const ACCEPTANCE_ROWS = Object.freeze(['latin', 'korean'].map(condition =
 export const isAcceptanceRow = id => ACCEPTANCE_ROWS.includes(id);
 
 // A row's case (./matrix-cells.mjs caseCells): the field emptied and focused, one facade call sent under the key guard,
-// the field read back by hash.
+// the field read back by hash; the pressKey row's once it settles (settledFieldCheck).
 export function unicodeCase({field, method, string}) {
   const act = method === 'pressKey' ? `await __app.pressKey(${j(string.keys)});` : `await __app.${method}(${j(string.text)});`;
   return {method, case: string.id, expect: 'outcome', keys: method === 'pressKey' ? string.keys.split(' ') : [method],
-    prepare: emptyField(field), act, check: fieldCheck(field, string.text)};
+    prepare: emptyField(field), act, check: method === 'pressKey' ? settledFieldCheck(field, string.text) : fieldCheck(field, string.text)};
 }
+
+// The pressKey row's read-back (ruling 1197): a field's accessibility value can trail the input method composing its
+// keys (pilot C-2's vendor read ㄱ for r k in Chrome and Electron, 가 in TextEdit), so the field is read until it holds the
+// expected text or has read the same for SETTLE_STABLE_MS, never past SETTLE_CAP_MS after the first read, SETTLE_POLL_MS
+// apart; the same cell on both lanes. The last reading is judged as ./probe-plan.mjs fieldCheck's one is, and the outcome
+// adds how many reads it took (`reads`) and how long after the first the last was taken (`settleMs`).
+export const SETTLE_STABLE_MS = 500;
+export const SETTLE_CAP_MS = 2_000;
+const SETTLE_POLL_MS = 100;
+const settledFieldCheck = (scene, expected) => `const __want = ${j(sha256Hex(expected))};
+const __from = Date.now();
+let __value = null, __since = __from, __last = __from, __reads = 0;
+for (;;) {
+  const ax = await observe();
+  __last = Date.now(); __reads++;
+  const __index = ${TEXT_FIELDS[scene]};
+  if (__index === null) return {invalid: "the field is not in the text"};
+  const __now = plain(valueOfIndex(ax, __index) ?? "");
+  if (__now !== __value) { __value = __now; __since = __last; }
+  if (sha256Hex(__value) === __want || __last - __since >= ${SETTLE_STABLE_MS} || __last - __from >= ${SETTLE_CAP_MS}) break;
+  await new Promise(done => setTimeout(done, ${SETTLE_POLL_MS}));
+}
+const __hash = sha256Hex(__value);
+const exact = __hash === __want;
+return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: __last - __from}};`;
 
 // Every row of `plan` ({fields, conditions}) in run order. -> [{condition, field, user, regime, method, string, id}].
 export function unicodeRowsOf(plan) {

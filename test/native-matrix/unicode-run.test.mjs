@@ -266,7 +266,8 @@ test('the pressKey row is read back as 가 under engaged Korean and rk under Lat
   const {result} = await runWith({plan, cellName: 'korean', calls});
   const keyed = result.rows.filter(r => r.method === 'pressKey');
   assert.deepEqual(keyed.map(r => [r.id, r.ok, r.invalid ?? null]), [...UNICODE_FIELDS.map(f => [`${f}/latin/pressKey.rk`, true, null]), ...UNICODE_FIELDS.map(f => [`${f}/korean/pressKey.rk`, true, null])]);
-  const checks = text => calls.filter(c => c.code.includes(`const exact = __hash === ${JSON.stringify(sha256Hex(text))}`)).length;
+  // The row's settling read-back (ruling 1197) holds the expected text's hash.
+  const checks = text => calls.filter(c => c.code.includes(`const __want = ${JSON.stringify(sha256Hex(text))}`)).length;
   assert.deepEqual([checks('가'), checks('rk')], [3, 3], 'each field\'s Korean row reads back 가, its Latin row rk');
   // 2-Set selected and read back as the source, its layout still ABC after the refocus: not engaged, so not counted.
   const raw = {matrix: (base, a) => {

@@ -4,7 +4,8 @@
 // the harness, none of which reads the fixture; a check made only when the command was printed would leave every byte
 // between that moment and the launch unchecked. So the command starts here, under the host lock and before the sitting
 // launcher starts any guard or display: the fixture is checked as `gate.mjs run` checks it (vendor-fixture.mjs), the
-// harness's `--vendor` and `--vendor-js` must be the checked fixture's own paths, and only then is the rest of the
+// harness's `--vendor` and `--vendor-js` must be the checked fixture's own paths, each given at most once
+// (the harness takes the last of a repeated flag), and only then is the rest of the
 // command run, its exit status this one's. A fixture that does not check stops the launch with nothing started.
 //
 //   node scripts/linux-engine-gate/fixture-check.mjs --vendor-fixture <dir> --arch <arch> -- <command> [args...]
@@ -28,8 +29,19 @@ export function parseFixtureCheck(argv) {
   return { dir: resolve(dir), arch, command };
 }
 
-/** The value after `name` in `argv`, or undefined. */
-const valueOf = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
+/**
+ * What `command` names for `flag` -> {value} (undefined when it names none), or {problem}. The harness takes the last
+ * of a repeated flag (cli.mjs VALUE_FLAGS; services.mjs's node:util parseArgs, which also reads `--flag=value`), so a
+ * flag given twice, in either form, is refused rather than read first, and the `=` form, which the gate never writes,
+ * is refused too (fix wave 2).
+ */
+export function comparatorFlag(command, flag) {
+  const at = command.flatMap((arg, i) => (arg === flag || arg.startsWith(`${flag}=`) ? [i] : []));
+  if (at.length > 1) return { problem: `the command's ${flag} is given more than once (${at.length} times): the harness would take the last` };
+  if (!at.length) return { value: undefined };
+  if (command[at[0]] !== flag) return { problem: `the command gives ${flag} in the form ${flag}=<path>, which the gate never writes` };
+  return { value: command[at[0] + 1] };
+}
 
 /**
  * The check, then the command -> the exit status: 2 when the fixture does not check or the command names another
@@ -45,7 +57,11 @@ export async function checkThenRun({ dir, arch, command }, { verify = verifyVend
     return 2;
   }
   for (const [flag, path] of [['--vendor', fixture.vendor], ['--vendor-js', fixture.vendorJs]]) {
-    const named = valueOf(command, flag);
+    const { value: named, problem } = comparatorFlag(command, flag);
+    if (problem) {
+      say(`fixture-check: ${problem}; the step does not start`);
+      return 2;
+    }
     if (named !== undefined && named !== path) {
       say(`fixture-check: the command's ${flag} is ${named}, not the checked fixture's ${path}; the step does not start`);
       return 2;

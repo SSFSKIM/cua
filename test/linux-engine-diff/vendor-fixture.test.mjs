@@ -313,6 +313,22 @@ test("the launch path's check starts the command only for a fixture that checks,
   assert.equal(await checkThenRun({ dir: good.dir, arch: ARCH, command: command(['--vendor', '/home/u/.local/share/cua/runtimes/26.928.40906-linux-x64/sky_linux_x64']) }, { verify: goodVerify, say }), 2);
   assert.equal(existsSync(marker), false);
   assert.match(lines.at(-1), /--vendor is \/home\/u\/.local\/share\/cua\/runtimes\/.*, not the checked fixture's/);
+  // fix wave 2: the harness takes the last of a repeated flag (cli.mjs's VALUE_FLAGS; services.mjs's node:util
+  // parseArgs, which also reads `--flag=value`), so a second comparator flag appended to an otherwise valid command
+  // would choose the build. Any repeat, in either form, is refused, and nothing starts
+  const gp = fixturePaths(good.dir, ARCH);
+  const { parseArgs: harnessArgs } = await import('../../scripts/linux-engine-diff/cli.mjs');
+  assert.equal(harnessArgs(['--vendor', gp.vendor, '--newest', '/n', '--cua', '/c', '--scene', 'gedit', '--ops', 'all', '--dev', '--vendor', '/alternate/vendor', '--out', '/o']).vendor, '/alternate/vendor', 'the harness takes the last --vendor');
+  for (const extra of [['--vendor', '/alternate/vendor'], ['--vendor-js', '/alternate/sky'], ['--vendor=/alternate/vendor'], ['--vendor-js=/alternate/sky'], ['--vendor', gp.vendor]]) {
+    const valid = ['--vendor', gp.vendor, '--vendor-js', gp.vendorJs];
+    assert.equal(await checkThenRun({ dir: good.dir, arch: ARCH, command: command([...valid, ...extra]) }, { verify: goodVerify, say }), 2, extra.join(' '));
+    assert.equal(existsSync(marker), false, `${extra.join(' ')}: nothing started`);
+    assert.match(lines.at(-1), /is given more than once|in the form --[a-z-]+=/, extra.join(' '));
+  }
+  // the `=` form alone, naming the checked path, is refused too: the gate never writes it, and the check reads the
+  // separate form only
+  assert.equal(await checkThenRun({ dir: good.dir, arch: ARCH, command: command([`--vendor=${gp.vendor}`]) }, { verify: goodVerify, say }), 2);
+  assert.equal(existsSync(marker), false);
   // the script itself, on a fixture that is not there: exit 2, nothing started
   const { spawnSync } = await import('node:child_process');
   const script = new URL('../../scripts/linux-engine-gate/fixture-check.mjs', import.meta.url).pathname;

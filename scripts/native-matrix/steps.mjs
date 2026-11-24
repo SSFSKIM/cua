@@ -69,13 +69,32 @@ const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--app
 // `windowOrder`: every on-screen window front to back (the window-order oracle, #485); `alertBounds`: the alert guard's
 // reading of the alert windows and the run's own (./alert-guard.mjs); `keyWindow`: a scene, whose app's own key window
 // is read (`ownKey`, ../hosted-sittings/key-window.mjs).
+// Every engine window a read passed over (ruling 1219: the front-window read skips the engine under test's own windows,
+// cua's cursor and the vendor's overlay alike) is counted in meta.frontWindowSkips, keyed by its bundle, number and layer.
 export const read = (ctx, focus = null, {electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null} = {}) => {
   const also = [...(frontKey ? ['front-key'] : []), ...(windowOrder ? ['window-order'] : []), ...(alertBounds ? ['alert-bounds'] : [])];
   const own = keyWindow ? ownKeyWindowNumber(ctx, keyWindow) : null;
-  return ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
+  const r = ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
     ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : []), ...(also.length ? ['--with', also.join(',')] : []),
     ...(keyWindow ? ['--key-window', keyWindow] : []), ...(own !== null ? ['--key-window-number', String(own)] : [])]);
+  for (const w of r?.frontWindow?.skipped ?? []) {
+    const skips = ctx.meta.frontWindowSkips ??= {}, k = `${w.bundleId ?? 'unnamed'}#${w.number ?? '?'}@${w.layer ?? 0}`;
+    skips[k] = (skips[k] ?? 0) + 1;
+  }
+  return r;
 };
+// What a read showed in front, against the pid expected (rulings 1219's h2 and h3): the front app (its bundle; its pid
+// when the run's own), the top window the read named and the engine windows it passed over (./matrix-device.mjs
+// frontWindow), after `reads` reads. Recorded on a row a user or scene window not in front left invalid, never judged.
+export const frontSeen = (r, expectedPid, reads = 1) => ({expectedPid: expectedPid ?? null, reads,
+  front: {bundleId: r?.frontKey?.front ?? r?.reading?.frontmost?.bundleId ?? null, pid: r?.reading?.frontmost?.pid ?? null},
+  top: r?.frontWindow?.top ?? null, skipped: r?.frontWindow?.skipped ?? []});
+// The activate step's own answer (../repl-parity/scenes-mac.mjs activateScene): ok, its reason, the frontmost process it
+// last read and how many reads it took.
+export const activationSeen = answer => ({ok: answer?.ok === true, reason: answer?.reason ?? null,
+  frontmost: answer?.frontmost ? {bundleId: answer.frontmost.bundleId ?? null, pid: answer.frontmost.pid ?? null} : null, reads: Number.isSafeInteger(answer?.reads) ? answer.reads : null});
+// A user window that did not come to the front (h2): what the activation and the read after it saw.
+export const userWindowSeen = (ctx, user, front, r) => ({activate: activationSeen(front), ...(front?.ok ? frontSeen(r, ctx.records[user]?.pid) : {expectedPid: ctx.records[user]?.pid ?? null})});
 
 // The run's own windows as the key window it expects (pilot C-3, ruling 1203): a document the run opened with ⌘N on a
 // scene (the sheet variant's and #212's untitled document, the Save sheet target's) becomes that app's key window

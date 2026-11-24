@@ -1209,7 +1209,8 @@ test('down finder and restore-finder with no Finder record still restore what an
 test('activate brings the run\'s process to the front and checks it by pid; Finder also needs the run\'s window on top', async () => withRun(async run => {
   const io = fakeDevice();
   const chrome = await upScene('chrome', {run, io});
-  assert.deepEqual(await activateScene('chrome', {run, io}), {scene: 'chrome', ok: true, frontmost: {pid: chrome.pid, bundleId: CFT}});
+  // `reads`: the frontmost reads the poll took (ruling 1219, h2: a user window not in front keeps what its activation saw).
+  assert.deepEqual(await activateScene('chrome', {run, io}), {scene: 'chrome', ok: true, frontmost: {pid: chrome.pid, bundleId: CFT}, reads: 1});
   assert.deepEqual(io.calls.filter(c => c[0] === 'activate'), [['activate', chrome.app]]);
   const finder = await upScene('finder', {run, io});
   const front = await activateScene('finder', {run, io});

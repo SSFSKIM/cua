@@ -668,14 +668,15 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
       reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'});
   }
   io.activateApp(record.app);
-  let readBefore = finder;
+  let readBefore = finder, reads = 0;
   for (const t0 = io.now(); ;) {
     frontmost = io.frontmostProcess();
+    reads += 1;
     const fresh = !readBefore;
     if (finder && fresh) order = io.windowOrder({skipPids});
     readBefore = false;
     if (frontmost?.pid === record.pid) {
-      if (!finder) return {scene: id, ok: true, frontmost};
+      if (!finder) return {scene: id, ok: true, frontmost, reads};
       // One CGWindowList snapshot supplies both the top and the run's position. Separate front/per-app reads can
       // disagree; a missing top reading used to be reported as a foreign window without any evidence of one.
       topWindow = order[0] ?? null;
@@ -689,7 +690,7 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     await io.sleep(pollMs);
   }
   if (!finder) order = io.windowOrder({skipPids});
-  if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`});
+  if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reads, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`});
   const place = runWindowPlace(order, record);
   const targetIndex = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
   const foreign = targetIndex < 0 ? null : order.slice(0, targetIndex).find(w => w.ownerPid !== record.pid);

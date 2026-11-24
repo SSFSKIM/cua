@@ -29,7 +29,7 @@ import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInp
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
-  ownWindowClosed, ownWindowOpened, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet} from './steps.mjs';
+  ownWindowClosed, ownWindowOpened, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet, frontSeen, userWindowSeen} from './steps.mjs';
 
 const j = JSON.stringify;
 const USER_HASH = sha256Hex(PROBE_TEXT);
@@ -179,8 +179,10 @@ function spanOf(ctx, key) {
   return span;
 }
 // A precondition that did not hold, as the row: with the focus probe's reading when that was what failed (why it did not
-// name the window, ./matrix-device.mjs ownedFocus), recorded and never judged.
-const precondition = ({invalid, focus}) => (focus === undefined ? {invalid} : {invalid, focus});
+// name the window, ./matrix-device.mjs ownedFocus), and what stood in front when a window was not there (`notInFront`,
+// `userWindowSeen`: ./steps.mjs frontSeen, userWindowSeen), recorded and never judged.
+const precondition = ({invalid, focus, notInFront, userWindowSeen}) => ({invalid, ...(focus === undefined ? {} : {focus}),
+  ...(notInFront ? {notInFront} : {}), ...(userWindowSeen ? {userWindowSeen} : {})});
 const failed = (r, what) => (!r?.ok ? `${what} failed${r?.error ? `: ${String(r.error).slice(0, 200)}` : ''}` : null);
 const detectionOff = act => (act?.engine?.intervention === 'off' ? 'intervention detection is off on the engine (no Input Monitoring grant): the cell cannot be judged' : null);
 
@@ -190,13 +192,13 @@ async function userField(ctx, span, user) {
   const front = activate(ctx, user);
   const skipped = notActivated(ctx, user);
   if (skipped) return {skipped: {frontKey: skipped}};
-  if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
+  if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`, userWindowSeen: userWindowSeen(ctx, user, front, null)};
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(user)));
   const problem = failed(prepared, 'the user window\'s preparation') ?? (prepared.value?.ready ? null : `the user window's field was not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
-  const r0 = read(ctx);
+  const r0 = read(ctx, null, {frontKey: true});
   const userWindow = userWindowOf(r0.reading, ctx.records[user].pid);
-  if (!userWindow) return {invalid: `the user window (${user}) was not in front`};
+  if (!userWindow) return {invalid: `the user window (${user}) was not in front`, userWindowSeen: userWindowSeen(ctx, user, front, r0)};
   const f0 = read(ctx, focusOf(userWindow));
   if (f0.watcher !== true) return {invalid: 'the activation watcher was not running before the action'};
   if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty', focus: f0.focus ?? null};
@@ -394,7 +396,7 @@ async function drivenInFront(ctx, span, scene) {
   const problem = failed(prepared, 'the preparation') ?? (prepared.value?.ready ? null : `not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
   const {window, reads, last} = await sceneWindowInFront(ctx, scene);
-  if (!window) return {invalid: `${scene}'s window was not in front after ${reads} reads: ${frontText(last)}`};
+  if (!window) return {invalid: `${scene}'s window was not in front after ${reads} reads: ${frontText(last)}`, notInFront: frontSeen(last, ctx.records[scene].pid, reads)};
   const f0 = read(ctx, focusOf(window), {frontKey: true});
   if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the document focused and empty', focus: f0.focus ?? null};
   return {window, readings: {apps: [app], activate: activationOf(ctx, app), before: keyReading(f0)}};
@@ -414,12 +416,15 @@ async function sceneWindowInFront(ctx, scene) {
   return {window, reads, last};
 }
 // The top window as the front-window oracle selects it (scripts/accept/front-window.swift: the frontmost visible window
-// at layer 0, the reading's topWindow), its owner's bundle id taken from the window order's matching entry: the run's
-// own window by its number, another app's as the first layer-0 window no run process owns. An overlay above layer 0
-// (a menu-bar extra, a status panel) is never it. -> {owned, pid?, bundleId, layer} | null when unread.
+// at layer 0, the reading's topWindow): the probe's own naming of it (`frontWindow.top`, ruling 1219: its bundle and
+// number), else its owner's bundle id taken from the window order's matching entry: the run's own window by its number,
+// another app's as the first layer-0 window no run process owns. An overlay above layer 0 (a menu-bar extra, a status
+// panel) is never it. -> {owned, pid?, bundleId, layer, number?} | null when unread.
 function oracleTop(r) {
   const top = r?.reading?.topWindow ?? null;
   if (!top) return null;
+  const named = r?.frontWindow?.top;
+  if (named) return {owned: named.owned === true, ...(named.owned ? {pid: named.ownerPid} : {}), bundleId: named.bundleId ?? null, layer: named.layer ?? 0, number: named.number ?? null};
   const order = Array.isArray(r?.windowOrder) ? r.windowOrder : [];
   if (top.owned) return {owned: true, pid: top.ownerPid, bundleId: order.find(w => w.owned && w.number === top.number)?.bundleId ?? null, layer: 0};
   return {owned: false, bundleId: order.find(w => !w.owned && w.layer === 0)?.bundleId ?? null, layer: 0};
@@ -428,7 +433,8 @@ function oracleTop(r) {
 // (the run's own windows as such).
 function frontText(r) {
   const top = oracleTop(r);
-  const owner = !top ? 'unread' : top.owned ? `the run's own (pid ${top.pid})` : `${top.bundleId ?? 'an unnamed app'}'s (layer ${top.layer ?? '?'})`;
+  const which = Number.isSafeInteger(top?.number) ? `, window ${top.number}` : '';
+  const owner = !top ? 'unread' : top.owned ? `the run's own (pid ${top.pid}${which})` : `${top.bundleId ?? 'an unnamed app'}'s (layer ${top.layer ?? '?'}${which})`;
   return `the front app ${r?.frontKey?.front ?? 'unread'}, the top window ${owner}`;
 }
 

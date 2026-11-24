@@ -10,7 +10,7 @@ import {runWith} from './run-doubles.mjs';
 const FOREIGN = 'com.apple.TextInputUI.xpc.CursorUIViewService';
 // The oracle's reads (no --with, or one with window-order) after the fires cell's preparation: the top window someone
 // else's for the first `covered` of them (Infinity: always).
-function coveredTop(covered) {
+function coveredTop(covered, named = null) {
   let prepared = false, n = 0;
   return {
     lane: code => { if (code.includes('cua-matrix-cell: field.empty')) prepared = true; },
@@ -19,7 +19,7 @@ function coveredTop(covered) {
       if (a[0] !== 'read' || !prepared || a.includes('--focus')) return r;
       if (n++ >= covered) return r;
       return {...r, reading: {...r.reading, topWindow: {ownerPid: null, number: null, bounds: null, owned: false}},
-        ...(r.windowOrder ? {windowOrder: [{owned: false, bundleId: FOREIGN, layer: 0}, ...r.windowOrder]} : {})};
+        ...(r.windowOrder ? {windowOrder: [{owned: false, bundleId: FOREIGN, layer: 0}, ...r.windowOrder]} : {}), ...(named ? {frontWindow: named} : {})};
     }},
   };
 }
@@ -48,5 +48,41 @@ test('a window that never leaves: invalid, naming the front app and the top wind
     const {result} = await runWith({plan: planOf(kind), cellName: kind, lane, ops, slept: []});
     const row = result.rows.find(r => r.id === id);
     assert.match(row.invalid, new RegExp(`^textedit's window was not in front after 4 reads: the front app com\\.apple\\.TextEdit, the top window ${FOREIGN.replaceAll('.', '\\.')}'s`), kind);
+  }
+});
+
+// Ruling 1219 (h3): the refusal names the top window the front-window probe itself chose (its `frontWindow.top`), not the
+// first other app's layer-0 window in the window order, and the row records it: the pid expected, the reads, the front
+// app, the top window's bundle, number and owner's pid, and any engine window the read passed over.
+test('the in-front refusal names the probe\'s own top window and records it on the row', async () => {
+  const top = {owned: false, bundleId: 'com.example.real-top', number: 812, ownerPid: 66, layer: 0};
+  const skipped = [{bundleId: 'com.openai.sky.CUAService', number: 77, layer: 0}];
+  const {lane, ops} = coveredTop(Infinity, {top, skipped});
+  const {result} = await runWith({plan: planOf('intervention-fires'), cellName: 'intervention-fires', lane, ops, slept: []});
+  const row = result.rows.find(r => r.id === 'textedit/intervention.fires');
+  assert.match(row.invalid, /^textedit's window was not in front after 4 reads: the front app com\.apple\.TextEdit, the top window com\.example\.real-top's \(layer 0, window 812\)$/);
+  const pid = row.notInFront?.expectedPid;
+  assert.ok(Number.isSafeInteger(pid), 'TextEdit\'s own pid, from the run\'s record');
+  assert.deepEqual(row.notInFront, {expectedPid: pid, reads: 4, front: {bundleId: 'com.apple.TextEdit', pid}, top, skipped});
+});
+
+// h2: a background cell whose user window did not come to the front keeps what the activate step and the read after it
+// saw (the activation's answer, the pid expected, the front app, the top window named, the windows passed over).
+test('a user window not in front: the background cells keep what the activation and the read saw', async () => {
+  const top = {owned: true, bundleId: 'com.apple.finder', number: 70, ownerPid: 7, layer: 0};
+  const ops = {matrix: (base, a) => {
+    const r = base(a);
+    if (a[0] !== 'read' || a.includes('--focus') || !r.frontKey || r.frontKey.front !== 'com.apple.TextEdit') return r;
+    return {...r, reading: {...r.reading, topWindow: {ownerPid: 7, number: 70, bounds: {x: 0, y: 0, width: 10, height: 10}, owned: true}}, frontWindow: {top, skipped: []}};
+  }};
+  const {result} = await runWith({plan: planOf('background', {scene: 'finder', user: 'textedit'}), ops, slept: []});
+  const rows = result.rows.filter(r => r.id.startsWith('finder/background/') && r.id.endsWith('@textedit'));
+  assert.ok(rows.length > 0);
+  for (const row of rows) {
+    assert.equal(row.invalid, 'the user window (textedit) did not come to the front', row.id);
+    const pid = row.userWindowSeen?.expectedPid;
+    assert.ok(Number.isSafeInteger(pid), row.id);
+    assert.deepEqual(row.userWindowSeen, {activate: {ok: true, reason: null, frontmost: null, reads: null},
+      expectedPid: pid, reads: 1, front: {bundleId: 'com.apple.TextEdit', pid}, top, skipped: []}, row.id);
   }
 });

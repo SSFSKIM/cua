@@ -75,7 +75,7 @@ import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from
 import {guardCause, sendsPointer} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKeyAt, skippedReadings, step, Stop,
-  guardLane, guardRow, noteGuard} from './steps.mjs';
+  guardLane, guardRow, noteGuard, userWindowSeen} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {malformedBaseline, ownerInputNow, venueInputMarks} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -718,10 +718,10 @@ async function pairingRows(ctx, {driven, user}, from) {
     }
     const front = activate(ctx, user);
     const skipped = notActivated(ctx, user, appsOf(driven, user));
-    const r0 = front?.ok && !skipped ? read(ctx) : null;
+    const r0 = front?.ok && !skipped ? read(ctx, null, {frontKey: true}) : null;
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
     if (skipped) caseRows(ctx, driven, 'background', {frontKey: skipped}, user);
-    else if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
+    else if (!userWindow) caseRows(ctx, driven, 'background', {invalid: `the user window (${user}) did not come to the front`, userWindowSeen: userWindowSeen(ctx, user, front, r0)}, user);
     else for (const c of casesOf(driven, 'background')) await panelCase(ctx, driven, 'background', c, {user, userWindow});
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
@@ -827,7 +827,7 @@ async function launchRow(ctx, {scene, user}) {
   const front = activate(ctx, user);
   const skipped = notActivated(ctx, user, [SCENES[scene].bundleId, SCENES[user].bundleId]);
   if (skipped) return push(ctx, {...row, frontKey: skipped});
-  if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
+  if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`, userWindowSeen: userWindowSeen(ctx, user, front, null)});
   if (scene === 'electron') exportElectronMode(ctx);
   const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});

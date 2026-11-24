@@ -21,7 +21,7 @@ import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE
 import {exclusionOf} from './not-judged.mjs';
 import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
-import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
+import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop, userWindowSeen} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
@@ -133,7 +133,7 @@ function koreanIn(ctx, target, when) {
 const rowBase = (ctx, r) => ({section: 'unicode', id: r.id, engine: ctx.engine, sample: ctx.n, ok: false, scene: r.field, target: r.field, regime: r.regime, method: r.method,
   case: r.string.id, expect: 'outcome', condition: r.condition, ...(r.user ? {user: r.user} : {})});
 // `focus`, given when the focus probe's reading was the precondition that failed, is recorded and never judged.
-const invalidRow = (ctx, r, reason, focus) => push(ctx, {...rowBase(ctx, r), invalid: reason, ...(focus === undefined ? {} : {focus})});
+const invalidRow = (ctx, r, reason, focus, seen) => push(ctx, {...rowBase(ctx, r), invalid: reason, ...(focus === undefined ? {} : {focus}), ...(seen ? {userWindowSeen: seen} : {})});
 const options = r => ({section: 'unicode', id: r.id, extra: {condition: r.condition}});
 
 // The Latin or Korean source: the field's scene in front reading it, each row a frontmost case.
@@ -183,14 +183,15 @@ async function behindUserPrepared(ctx, field, user) {
   const front = activate(ctx, user);
   const skipped = notActivated(ctx, user, [SCENES[field].bundleId, SCENES[user].bundleId]);
   if (skipped) return {skipped};
-  if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
+  if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`, userWindowSeen: userWindowSeen(ctx, user, front, null)};
   if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const korean = koreanIn(ctx, user, `composing@${user}`);
   if (korean) return {invalid: `no composition in progress: ${korean.why}`};
   const prepared = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user));
   if (!prepared.ok || !prepared.value?.ready) return {invalid: `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
-  const userWindow = userWindowOf(read(ctx).reading, ctx.records[user].pid);
-  if (!userWindow) return {invalid: `the user window (${user}) was not in front`};
+  const r0 = read(ctx, null, {frontKey: true});
+  const userWindow = userWindowOf(r0.reading, ctx.records[user].pid);
+  if (!userWindow) return {invalid: `the user window (${user}) was not in front`, userWindowSeen: userWindowSeen(ctx, user, front, r0)};
   const f0 = read(ctx, focusOf(userWindow));
   if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty', focus: f0.focus ?? null};
   return {userWindow};
@@ -214,7 +215,7 @@ async function composingRows(ctx, field, rows) {
   const setup = await behindUser(ctx, field, user);
   if (setup.skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: setup.skipped}); return; }
   if (setup.held) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...setup.held}); return; }
-  if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus); return; }
+  if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus, setup.userWindowSeen); return; }
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
   const finished = device(ctx, ['probe', 'finish']);

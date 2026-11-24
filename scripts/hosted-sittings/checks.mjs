@@ -92,6 +92,13 @@ const selectionWords = s => `the ${s.selected} engine (${s.reason}) on the ${s.h
 // -> {status, text}.
 function saveSheetRow(row, label) {
   const o = row.outcome ?? {}, shown = saveSheetShown(o), cause = sampleCause(row);
+  // Something saved (a file in the run's folder, after the act or at the cancel, or the document on disk) fails the
+  // sample whatever else it shows: an early exit carries no front/key reading, and a save must never read NO VERDICT.
+  const saved = [o.destinationFiles, o.cancel?.destinationFiles].some(f => Array.isArray(f) && f.length > 0) || o.unsaved?.document === true;
+  if (saved) {
+    const findings = Array.isArray(o.findings) && o.findings.length ? o.findings : saveSheetFindings(o, row.engine);
+    return {status: 'FAIL', text: `${label} FAIL (${findings.length ? findings.join('; ') : 'something was saved'})${shown}`};
+  }
   if (cause && NO_VERDICT_CAUSES.has(cause.category)) return {status: 'NO VERDICT', text: `${label} NO VERDICT (${cause.category}: ${cause.detail ?? 'no detail'})${shown}`};
   if (row.invalid) return {status: 'NO VERDICT', text: `${label} NO VERDICT (${row.invalid})${shown}`};
   if (row.ok === true) return {status: 'PASS', text: `${label} PASS${shown}`};

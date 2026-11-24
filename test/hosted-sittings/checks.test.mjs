@@ -148,6 +148,22 @@ test('#212\'s save-sheet step judges the real path\'s rows: C-6\'s vendor row fa
   assert.equal(cuaReason, `1 sample over 1 run: cua run-1 sample 1 NO VERDICT (${C6_CUA.invalid}); Go To closed (Escape 1x)`);
 });
 
+test('#212\'s save-sheet step: a save found at an early exit fails on a hosted run, though the exit read no front/key', () => {
+  const cua = {engine: 'cua', version: '0.2.0', build: 'a'.repeat(64)};
+  const step = {row: 'textedit/intervention.saveSheet', engine: 'cua', records: ['/o/save-sheet/cua/run-1/result.json']};
+  const record = rows => ({'/o/save-sheet/cua/run-1/result.json': {complete: true, meta: {hosted: true, nativeEngine: {requested: 'cua', attested: [cua], unattested: 0}}, rows}});
+  const early = outcome => ({section: 'intervention', id: step.row, engine: 'cua', sample: 1, ok: false, attempts: 1,
+    outcome: {earlyExit: 'the Go To dialog and its focused path field were not identified', goTo: {closed: true, sheetUp: null, escapes: 1, closeClicked: false}, ...outcome}});
+  const [byDocument, documentReason] = check('saveSheet', step, 1, record([early({unsaved: {document: true, edited: false, editedFrom: 'window'}, cancel: {cancelled: true, destinationFiles: []}})]));
+  assert.equal(byDocument, 'FAIL');
+  assert.match(documentReason, /cua run-1 sample 1 FAIL/);
+  const [byFile] = check('saveSheet', step, 1, record([early({unsaved: {document: false}, cancel: {cancelled: true, destinationFiles: ['x.rtf']}})]));
+  assert.equal(byFile, 'FAIL');
+  // Nothing saved at the same exit keeps its no-verdict: the missing front/key reading is the run's, not a finding.
+  const [clean] = check('saveSheet', step, 1, record([early({unsaved: {document: false}, cancel: {cancelled: true, destinationFiles: []}})]));
+  assert.equal(clean, 'NO VERDICT');
+});
+
 test('#212\'s save-sheet step: a row that passed passes; FAIL outranks NO VERDICT, which outranks PASS; a run\'s record is classed first', () => {
   const records = ['/o/save-sheet/cua/run-1/result.json', '/o/save-sheet/cua/run-2/result.json'];
   const step = {records, row: 'textedit/intervention.saveSheet'};

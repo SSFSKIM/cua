@@ -1337,3 +1337,22 @@ test('ruling 1222: openPanel/frontmost/typeText.search is not judged, naming #58
   assert.deepEqual([entry.section, entry.condition, entry.ticket, entry.cua], ['method', 'openPanelSearch', '#588', {ok: 0, valid: 3, invalid: 0}]);
   assert.match(renderSummary(failing), /### openPanelSearch\n\n.*#588.*\n\nTicket: #588\./);
 });
+
+// Fix wave M4, ruling 1219: the Korean pressKey row judges each engine against 가 on its own. A cua sample that read it
+// passes with no valid vendor pair (not NO VERDICT unpaired); one that read ㄱ fails even when its vendor pair read ㄱ
+// too (not a shared limit). The Latin row keeps ruling 1119's pairing.
+test('the Korean pressKey row: each engine against 가 alone, a cua 가 counted unpaired, a cua ㄱ failing beside the vendor\'s ㄱ', () => {
+  const KEYS = 'textedit/korean/pressKey.rk', LATIN = 'textedit/latin/pressKey.rk';
+  const sample = (id, engine, run, ok, extra = {}) => ({section: 'unicode', id, engine, run, sample: run, ok, threw: false, message: null,
+    outcome: ok ? {exact: true, hash: 'h-ga', length: 1, userKept: true} : {exact: false, hash: 'h-giyeok', length: 1, userKept: true}, ...extra});
+  const alone = judgeCell('pressKey', [sample(KEYS, 'vendor', 1, false, {invalid: 'not engaged'})], [sample(KEYS, 'cua', 1, true)], {expected: '가'});
+  assert.deepEqual(alone.cua, {ok: 1, valid: 1, invalid: 0});
+  assert.equal(alone.account.cua.noVerdict.unpaired, undefined, 'judged on its own, not unpaired');
+  const both = judgeCell('pressKey', [sample(KEYS, 'vendor', 1, false)], [sample(KEYS, 'cua', 1, false)], {expected: '가'});
+  assert.deepEqual([both.verdict, both.shared], ['worse', []]);
+  // The Latin row: a pair that failed alike is still a shared limit, and a cua pass with no vendor pair is unpaired.
+  const latinBoth = judgeCell('pressKey', [sample(LATIN, 'vendor', 1, false)], [sample(LATIN, 'cua', 1, false)]);
+  assert.equal(latinBoth.shared.length, 1);
+  const latinAlone = judgeCell('pressKey', [sample(LATIN, 'vendor', 1, false, {invalid: 'x'})], [sample(LATIN, 'cua', 1, true)]);
+  assert.equal(latinAlone.account.cua.noVerdict.unpaired, 1);
+});

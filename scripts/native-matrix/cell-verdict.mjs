@@ -119,10 +119,15 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   const fixed = mode === 'absolute' || mode === 'pressKey';
   const outcomes = new Map(), notes = new Map(), unreferenced = [];
   const ownAfterStop = c => ownEffect && Boolean(stopFor(vendorRows, c));
+  // Under Korean (`expected`, ruling 1219) a pressKey sample is judged against the oracle on its own engine: a cua sample
+  // that missed it fails whatever its vendor pair read (fix wave M4: no shared limit), one that read it passes without a
+  // pair.
+  const oracleAlone = mode === 'pressKey' && expected !== null;
   const failed = (c, v) => {
     // A proven change of the user's value (the rows behind a user window) fails on its own: no departure, pair or
     // shared failure answers for it.
     if (c.outcome?.userKept === false) return 'worse';
+    if (oracleAlone) return 'worse';
     if (departure && !acceptance) {
       const {answered, effect} = answeredAs(departure, c);
       if (answered && !v) return noPair(vendorRows, c);
@@ -148,7 +153,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (unfit) { outcomes.set(c, 'reference'); unreferenced.push({run: runOf(c), reason: unfit}); continue; }
     // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
     if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
-    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? (ownAfterStop(c) ? 'equal' : noPair(vendorRows, c)) : v && !passes(v) && (mode !== 'pressKey' || expected !== null) ? 'better'
+    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? (ownAfterStop(c) || oracleAlone ? 'equal' : noPair(vendorRows, c)) : v && !passes(v) && (mode !== 'pressKey' || expected !== null) ? 'better'
       : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));
   }

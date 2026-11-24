@@ -5,15 +5,17 @@ import {declaredDevice} from './devices.mjs';
 import {serveCommand} from '../native-baseline/remote.mjs';
 import {assertEngineOptions} from '../native-baseline/engine.mjs';
 import {pinnedApprovals} from '../accept/lib.mjs';
-import {ENGINE_NOTIFICATION,mergeObservations} from './engine-answered.mjs';
+import {ENGINE_NOTIFICATION,LINUX_VENDOR_LANE_RETIRED,mergeObservations} from './engine-answered.mjs';
 // The native lane runs on the declared Linux device it was prepared on (cua-171, cua-gce, or the paused cua-linux VM),
-// on the engine it names (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites):
+// on the engine it names, cua (the vendor lane refused since #171 M6b; the spec at
+// docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites):
 // CUA_NATIVE_ENGINE always explicit, so neither a default nor the device's engine.json moves under the lane, and
-// CUA_LINUX_ENGINE_BIN always set: `engineBin` (--engine-bin, the cua lane only, the engine's absolute path on the
+// CUA_LINUX_ENGINE_BIN always set: `engineBin` (--engine-bin, the engine's absolute path on the
 // device), else empty, so an ambient one never reaches the serve.
 export function nativeCommand({device,checkout,home,host,engine,engineBin,fixtureMode='blank',...facts}){
  if(declaredDevice(device).platform!=='linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires a prepared declared Linux device');
- if(!['vendor','cua'].includes(engine))throw Error('The native lane names its engine: vendor or cua');
+ if(engine==='vendor')throw Error(LINUX_VENDOR_LANE_RETIRED);
+ if(engine!=='cua')throw Error('The native lane names its engine: cua');
  if(engineBin!==undefined&&(engine!=='cua'||!/^\/[^\0\n]*$/.test(engineBin)))throw Error('--engine-bin names an absolute cua-engine path on the device, with --engine cua only');
  if(!['blank','drag','scroll','minimized'].includes(fixtureMode))throw Error('Unknown native fixture mode');
  const expectedFacts={device,checkout,home,...facts},nativeFilename=`cua-m4-${randomUUID()}.txt`;

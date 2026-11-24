@@ -141,26 +141,31 @@ test('a browser-surface serve names the browser surface and cua\'s browser servi
 });
 
 // #171 M6a: on Linux a serve's runtime is cua's own, the release the home resolves (its pointer records and selects
-// nothing), and the vendor's sky_linux runs, on the vendor engine's lane, from the vendor tree, which is the root the
-// helper classification calls the pinned runtime. Elsewhere the pointer's release and its tree, as before.
-test('the runtime a serve uses: on Linux the own release it resolves and the vendor tree\'s root; elsewhere the pointer\'s', async t => {
+// nothing). Since #171 M6b no vendor tree is read: the helper classification lists cua-engine by the run home's engine,
+// which servedRuntime reports by its real path, and a vendor tree an older cua left is nothing of the run's. Elsewhere
+// the pointer's release and its tree, as before.
+test('the runtime a serve uses: on Linux the own release it resolves and the home\'s engine; elsewhere the pointer\'s', async t => {
   const {servedRuntime} = await import('../../scripts/native-baseline/remote.mjs');
   const {fakeInstalledHome} = await import('../fixtures/installed-home.mjs');
   const {fakeModuleTree} = await import('../fixtures/own-linux-runtime.mjs');
   const {homeLayout, writePointer} = await import('../../src/runtime/layout.mjs');
-  const {rmSync} = await import('node:fs');
-  const {join} = await import('node:path');
+  const {linuxEnginePath} = await import('../../src/runtime/linux-engine.mjs');
+  const {mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} = await import('node:fs');
+  const {dirname, join} = await import('node:path');
   const host = {platform: 'linux', arch: 'x64'};
   const home = fakeInstalledHome(t, {host});   // the own module tree
   const {forgeActiveRuntime} = await import('../fixtures/runtime-fixture.mjs');
   forgeActiveRuntime(home, {}, {host, ownRuntime: false});   // the vendor tree an older cua placed, its name in the pointer
-  const vendorRoot = join(homeLayout(home).runtimes, '26.928.40906-linux-x64');
   const {release} = fakeModuleTree(home, host);
-  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: vendorRoot}, 'the vendor\'s name in the pointer selects nothing');
+  const engine = linuxEnginePath(home);
+  rmSync(dirname(engine), {recursive: true, force: true});
+  assert.deepEqual(servedRuntime({home, host}), {release, homeEngine: engine}, 'the vendor\'s name in the pointer selects nothing, and no engine is there yet');
   writePointer(home, release);
-  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: vendorRoot});
-  rmSync(vendorRoot, {recursive: true});
-  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: null}, 'no vendor tree: no sky_linux is the pinned runtime\'s');
+  mkdirSync(join(home, 'elsewhere'));
+  writeFileSync(join(home, 'elsewhere', 'cua-engine'), '');
+  mkdirSync(dirname(engine), {recursive: true});
+  symlinkSync(join(home, 'elsewhere', 'cua-engine'), engine);
+  assert.deepEqual(servedRuntime({home, host}), {release, homeEngine: realpathSync(join(home, 'elsewhere', 'cua-engine'))}, 'by its real path, as the service runs it');
   rmSync(homeLayout(home).modules, {recursive: true});
   const none = servedRuntime({home, host});
   assert.equal(none.release, null);
@@ -169,4 +174,5 @@ test('the runtime a serve uses: on Linux the own release it resolves and the ven
   assert.deepEqual(servedRuntime({home: darwin, host: {platform: 'darwin', arch: 'arm64'}}), {release: '26.928.40906-darwin-arm64', runtimeRoot: join(darwin, 'runtimes', '26.928.40906-darwin-arm64')});
   // the device's preflight reports what servedRuntime says
   assert.match(preflightScript({host: 'cua', display: ':0'}), /servedRuntime\(\{home\}\)/);
+  assert.match(preflightScript({host: 'cua', display: ':0'}), /homeEngine/);
 });

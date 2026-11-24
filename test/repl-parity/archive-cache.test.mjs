@@ -76,8 +76,10 @@ test('fixtures resolve only present, regular, pin-length archives and otherwise 
 
 test('the checked-in pins name exactly the archives preparation fetches',()=>{
  for(const host of [{platform:'linux',arch:'x64'},{platform:'linux',arch:'arm64'},{platform:'darwin',arch:'arm64'}]){
-  const vendor=selectPin(loadPins(),host),node=selectNodePin(loadNodePins(),host),pins=pinnedArchives({host});
-  assert.deepEqual(pins.vendor,{file:`${vendor.release}-${host.platform}-${host.arch}.${host.platform==='linux'?'deb':'zip'}`,archive:vendor.archive});
+  const node=selectNodePin(loadNodePins(),host),pins=pinnedArchives({host});
+  // since #171 M6b no Linux preparation caches the vendor's deb: only macOS installs a vendor archive
+  if(host.platform==='linux')assert.equal(pins.vendor,undefined);
+  else{const vendor=selectPin(loadPins(),host);assert.deepEqual(pins.vendor,{file:`${vendor.release}-${host.platform}-${host.arch}.zip`,archive:vendor.archive});}
   assert.deepEqual(pins.node,{file:`node-v${node.version}-${host.platform}-${host.arch}.tar.gz`,archive:node.archive});
   for(const [role,{archive}] of Object.entries(pins))if(role!=='modules')assert.match(archive.url,/^https:\/\//);
  }
@@ -95,13 +97,14 @@ test('a pinned Linux engine joins the cache: its asset for this arch, by hash un
  assert.deepEqual(pins.engine,{file:'cua-engine-0.1.0-linux-x64',archive:{url:ENGINE_PIN.assets.x64.url,sha256:ENGINE_PIN.assets.x64.sha256,maxLength:64*1024*1024}});
  assert.equal(pinnedArchives({host,enginePin:null}).engine,undefined,'before the first release there is no engine to cache');
  assert.equal(pinnedArchives({host:{platform:'darwin',arch:'arm64'},enginePin:ENGINE_PIN}).engine,undefined);
- const prepared=home(t),all={...PINS,engine:pins.engine};
+ const prepared=home(t),all={node:PINS.node,engine:pins.engine};
  const {calls,fetch}=network(url=>url===ENGINE_PIN.assets.x64.url?ENGINE:served[url]);
  const archives=await fetchArchives(prepared,{pins:all,fetch});
  assert.deepEqual(calls.at(-1),ENGINE_PIN.assets.x64.url);
  assert.deepEqual(readFileSync(archives.engine),ENGINE);
  assert.deepEqual(cachedArchives(prepared,{pins:all}),archives);
- assert.deepEqual(installArgs(archives),['install','--archive',archives.vendor,'--node-archive',archives.node]);
+ assert.deepEqual(installArgs(archives),['install','--node-archive',archives.node],'a Linux cache holds no vendor archive, and install takes no --archive');
+ assert.deepEqual(installArgs({...archives,vendor:'/c/r.zip'}),['install','--archive','/c/r.zip','--node-archive',archives.node],'macOS keeps the vendor archive');
  const other=home(t);
  await assert.rejects(fetchArchives(other,{pins:all,fetch:network(url=>url===ENGINE_PIN.assets.x64.url?Buffer.from('other bytes'):served[url]).fetch}),error=>error.code==='archive_hash_mismatch');
  assert.throws(()=>cachedArchives(other,{pins:all}),/cua-engine-0\.1\.0-linux-x64.*cleanup-prepared/s);
@@ -141,16 +144,16 @@ test('the Linux module tree joins the cache: each tarball of the host\'s closure
  assert.deepEqual(modules.packages,[...new Map(closure.map(p=>[localTarballName(p.name,p.version),{file:localTarballName(p.name,p.version),archive:{url:p.resolved,length:p.length,integrity:p.integrity}}])).values()]);
  assert.deepEqual(modulePins({platform:'linux',arch:'arm64'}).packages.map(p=>p.file).sort(),[...new Set(pinnedClosure(MODULES.lock,MODULES.provenance,LINUX_ARM64).map(p=>localTarballName(p.name,p.version)))].sort());
  assert.equal(pinnedArchives({host:{platform:'darwin',arch:'arm64'}}).modules,undefined,'macOS installs no module tree');
- const prepared=home(t),all={...PINS,modules},{urls,fetch:serve}=MODULES;
+ const prepared=home(t),all={node:PINS.node,modules},{urls,fetch:serve}=MODULES;
  const requests=[];const fetch=async(url,init)=>{requests.push(init?.redirect);return url in served?network().fetch(url):serve(url);};
  const archives=await fetchArchives(prepared,{pins:all,fetch});
  assert.equal(archives.modules,join(archiveCacheDir(prepared),'modules'));
  assert.deepEqual(readdirSync(archives.modules).sort(),modules.packages.map(p=>p.file).sort());
  assert.deepEqual([...urls].sort(),modules.packages.map(p=>p.archive.url).sort(),'each tarball fetched once');
- assert.ok(requests.slice(2).every(r=>r==='error'),'a module tarball is taken from its canonical URL only, as the installer takes it');
+ assert.ok(requests.slice(1).every(r=>r==='error'),'a module tarball is taken from its canonical URL only, as the installer takes it');
  assert.equal(statSync(archives.modules).mode&0o777,0o700);
  assert.deepEqual(cachedArchives(prepared,{pins:all}),archives);
- assert.deepEqual(installArgs(archives),['install','--archive',archives.vendor,'--node-archive',archives.node,'--modules-dir',archives.modules]);
+ assert.deepEqual(installArgs(archives),['install','--node-archive',archives.node,'--modules-dir',archives.modules]);
  // What the cache holds is what the installer reads: a fresh home installs the tree from it, and downloads nothing.
  const fresh=home(t);
  const tree=await installModuleTree({home:fresh,lock:MODULES.lock,provenance:MODULES.provenance,host:LINUX_X64,dir:archives.modules,fetch:async url=>{throw new Error(`downloaded ${url}`);}});

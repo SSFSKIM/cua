@@ -25,7 +25,7 @@ import {engineDirectory, enginePaths, installedEngine} from '../../src/runtime/e
 import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
 import {configuredIdentity, readSignature, signatureReport} from '../../src/runtime/engine-sign.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
-import {engineAnsweredProblem} from '../repl-parity/engine-answered.mjs';
+import {LINUX_VENDOR_BASELINE_RETIRED, engineAnsweredProblem} from '../repl-parity/engine-answered.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
 // The process each engine's helper attestation names, by its origin for the run's own copy.
@@ -39,8 +39,8 @@ export const attestedBuild = build => (typeof build === 'string' && /^[0-9a-f]{6
 
 // The run's options against its platform and surface: --engine and --approved-engine belong to a macOS computer run,
 // which needs both, on one of the three lanes; --engine (and --engine-bin) to a Linux computer run (#171,
-// docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites), which needs --engine, with
-// --engine-bin <the cua-engine on the device> only on the cua lane. Its lanes run on cua's own host (--host cua): the
+// docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites), which needs --engine cua (the vendor lane refused since M6b), with
+// --engine-bin <the cua-engine on the device> optional. Its lane runs on cua's own host (--host cua): the
 // serve itself refuses the vendor host on Linux (#115 M3), so the harness does not repeat that rule. Linux has no
 // approved engine: that is macOS's.
 export function assertEngineOptions({platform, surface, host, engine, approvedEngine, engineBin}) {
@@ -57,8 +57,10 @@ export function assertEngineOptions({platform, surface, host, engine, approvedEn
 }
 function assertLinuxEngineOptions({host, engine, approvedEngine, engineBin}) {
   if (approvedEngine !== undefined) throw new Error('--approved-engine names the approved cua Engine.app of a macOS run; a Linux run serves the installed engine or the one --engine-bin names');
-  if (!ENGINES.includes(engine)) throw new Error('a Linux computer run needs --engine vendor|cua (the native engine, CUA_NATIVE_ENGINE, never left to a default)');
   if (engineBin !== undefined && engine !== 'cua') throw new Error('--engine-bin names the engine of the cua lane: it needs --engine cua');
+  // #171 M6b: the vendor lane is gone with the vendor's engine; its stored runs are still compared (compare --engines)
+  if (engine === 'vendor') throw new Error(LINUX_VENDOR_BASELINE_RETIRED);
+  if (engine !== 'cua') throw new Error('a Linux computer run needs --engine cua (the native engine, CUA_NATIVE_ENGINE, never left to a default)');
   if (engineBin !== undefined && !/^\/[^\0\n]*$/.test(engineBin)) throw new Error('--engine-bin needs an absolute path of a cua-engine on the device');
 }
 

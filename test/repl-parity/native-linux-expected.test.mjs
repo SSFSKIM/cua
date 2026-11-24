@@ -2,6 +2,7 @@
 // engine's exact declared x64 defects. No candidate failure is accepted, and no unrelated difference is projected.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {assessAssertions, vendorDefects} from '../../scripts/repl-parity/vendor-defects.mjs';
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
 import {NATIVE_LINUX_EXPECTED, checkEnginePair, declarationsFor, validateNativeLinuxExpected, vendorReleaseOf} from '../../scripts/repl-parity/native-linux.mjs';
@@ -217,4 +218,37 @@ test('checkEnginePair: an M6a pair serves one own runtime and one vendor release
   assert.throws(() => checkEnginePair(v, m6a('cua', ARM64).meta, {}), /two vendor runtimes/);
   assert.throws(() => checkEnginePair(v, {...c, runtimeRelease: 'cua-linux-x64-other'}, {}), /the second run records no vendor release/, 'its connections name another runtime');
   assert.throws(() => checkEnginePair(v, lane('cua').meta, {}), /two runtimes \(/, 'an M6a run is never paired with one from before it');
+});
+
+// #171 M6b: checkEnginePair takes two kinds of pair. A stored vendor and cua pair keeps every check above, the vendor
+// releases included, so M5's and M6a's stored lanes are re-judged as they were. A cua and cua pair, the only kind a run
+// made after M6b can form, needs one own runtime, commit, controller commit, device and case set, and each lane's engine
+// evidence; it takes no declarations and asks neither record for a vendor release.
+const STORED = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m6a/x64/regression/parity/', import.meta.url);
+const storedMeta = lane => JSON.parse(readFileSync(new URL(`${lane}/meta.json`, STORED), 'utf8'));
+test('checkEnginePair: M6a\'s stored vendor and cua lanes pass with their three declarations', () => {
+  const [v, c] = [storedMeta('vendor'), storedMeta('cua')];
+  const declarations = declarationsFor(NATIVE_LINUX_EXPECTED, vendorReleaseOf(v));
+  assert.equal(declarations.length, 3);
+  assert.doesNotThrow(() => checkEnginePair(v, c, {declarations}));
+});
+const post = (overrides = {}) => {
+  const run = without(m6a('cua'), 'vendorRelease');
+  Object.assign(run.meta, overrides);
+  return run.meta;
+};
+test('checkEnginePair: a cua and cua pair needs one runtime, commit, controller commit, device and case set, and no vendor release', () => {
+  assert.doesNotThrow(() => checkEnginePair(post(), post(), {}));
+  assert.doesNotThrow(() => checkEnginePair(post(), post(), {declarations: []}));
+  assert.throws(() => checkEnginePair(post(), post(), {declarations: X64_DECLARATIONS}), /no expected declarations/);
+  assert.throws(() => checkEnginePair(post(), post({runtimeRelease: 'cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mffffffffffff'}), {}), /two runtimes/);
+  assert.throws(() => checkEnginePair(post(), post({commit: 'd'.repeat(40)}), {}), /two commits/);
+  assert.throws(() => checkEnginePair(post(), post({harnessCommit: 'd'.repeat(40)}), {}), /two controller commits/);
+  assert.throws(() => checkEnginePair(post(), post({device: 'cua-gce'}), {}), /two devices/);
+  assert.throws(() => checkEnginePair(post(), post({caseIds: [KEY, TYPE]}), {}), /two case sets/);
+  assert.throws(() => checkEnginePair(post(), post({engineAnswered: []}), {}), /did not answer.*records no engine observation/);
+});
+test('checkEnginePair: a vendor pair with no vendor release fails as before M6b', () => {
+  assert.throws(() => checkEnginePair(without(m6a('vendor'), 'vendorRelease').meta, without(m6a('vendor'), 'vendorRelease').meta, {}), /records no vendor release/);
+  assert.throws(() => checkEnginePair(without(m6a('vendor'), 'vendorRelease').meta, post(), {}), /records no vendor release/);
 });

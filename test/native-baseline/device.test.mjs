@@ -32,7 +32,7 @@ test('fresh native preparation installs both runtimes in an owned home, removes 
   assert.deepEqual(calls[0].args.slice(-2),['bin/cua.mjs','install']);
   assert.equal(calls[0].env.CUA_HOME,prepared.home);
   assert.equal(calls[0].env.CUA_NODE,undefined);
-  assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor', 'preparation never builds an engine of its own, even once the default is cua\'s');
+  assert.equal('CUA_NATIVE_ENGINE' in calls[0].env,false, 'a Linux install names no engine: cua 0.30.0 refuses the vendor\'s there (#171 M6b)');
   assert.equal(calls[0].env.HOME,`${prepared.home}.home`, 'the user HOME is the cua home\'s sibling');
   assert.deepEqual(prepared.xSession,xSession);
   assert.equal(prepared.nodeMode,'managed');
@@ -40,6 +40,18 @@ test('fresh native preparation installs both runtimes in an owned home, removes 
   assert.throws(() => cleanupNative({...prepared,token:'wrong'},{directoryRoot:parent}),/ownership/);
   cleanupNative(prepared,{directoryRoot:parent});
   assert.equal(existsSync(prepared.home),false);
+});
+
+test('a macOS fresh preparation pins its install to the vendor engine, so it never builds one of its own (#117 M4)', t => {
+  const parent = mkdtempSync(join(tmpdir(), 'native-prepare-test-'));
+  t.after(() => rmSync(parent, {recursive:true, force:true}));
+  const calls = [];
+  const prepared = prepareNative({device:'mini'}, {directoryRoot:parent, tempRoot:'/different-tmp', ambient:{HOME:'/Users/bench', CUA_NATIVE_ENGINE:'cua'},
+    declared:() => ({platform:'darwin'}), run:(exe,args,options) => { calls.push({args,env:options.env}); return ''; },
+    inspect:({source}) => ({home:source, ownNode:{path:join(source,'node/24.22.0/bin/node'),version:'v24.22.0'}})});
+  assert.deepEqual(calls[0].args.slice(-2),['bin/cua.mjs','install']);
+  assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor', 'preparation never builds an engine of its own, even once the default is cua\'s');
+  cleanupNative(prepared,{directoryRoot:parent});
 });
 
 test('preparation rejects a fallback Node and removes the failed install', t => {

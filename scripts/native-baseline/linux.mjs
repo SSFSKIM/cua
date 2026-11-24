@@ -1,4 +1,5 @@
-// The native baseline on Linux: gedit on a declared Linux device’s recorded X session, driven by the vendor's sky_linux helper.
+// The native baseline on Linux: gedit on a declared Linux device’s recorded X session, driven by cua's engine
+// (cua-engine; the vendor's sky_linux lane is refused since #171 M6b).
 // What differs from macOS (./macos.mjs) is the target and its window: the run opens its own standalone gedit on a new
 // empty file in a new /tmp directory, finds that window by the file name and binds it by X11 window id, so every
 // observation and action is on the run's own window; it types with pressKey (./linux-cells.mjs says why) and clears the
@@ -90,13 +91,20 @@ for (const {pid, dir, file} of ${JSON.stringify(owned)}) {
 console.log(JSON.stringify(result));`);
 }
 
-// The running sky_linux helpers, one per line: elapsed seconds and command line.
-export const LINUX_HELPER_SCRIPT = `ps -eo etimes=,args= | grep -E '/sky_linux[A-Za-z0-9_]*( |$)' | grep -v grep || true`;
-export function classifyLinuxHelpers(output, runtimeRoot) {
+// The running engine helpers, one per line: elapsed seconds and command line. cua's cua-engine, and the vendor's
+// sky_linux, which no Linux lane runs since #171 M6b (cua 0.30.0 removed the vendor's engine there) and which is still
+// listed, so that one running is seen.
+export const LINUX_HELPER_PATTERN = '/(cua-engine|sky_linux[A-Za-z0-9_]*)( |$)';
+export const LINUX_HELPER_SCRIPT = `ps -eo etimes=,args= | grep -E '${LINUX_HELPER_PATTERN}' | grep -v grep || true`;
+// The helpers `output` lists -> [{path, kind, origin, ageSeconds}]: a cua-engine at `homeEngine` (the run home's engine,
+// by its real path: remote.mjs servedRuntime) is the run home's engine, another cua-engine another installation, and a
+// sky_linux foreign.
+export function classifyLinuxHelpers(output, homeEngine) {
   return String(output).split('\n').map(l => l.trim()).filter(Boolean).map(line => {
     const [, age, path] = line.match(/^(\d+)\s+(\S+)/) ?? [null, null, line];
-    return {path: path.replace(/^\/home\/[^/]+/, '~'), origin: runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation',
-      ageSeconds: age === null ? null : Number(age)};
+    const kind = path.endsWith('/cua-engine') ? 'cua' : 'vendor';
+    const origin = kind === 'vendor' ? 'foreign' : homeEngine && path === homeEngine ? 'the run home\'s engine' : 'another installation';
+    return {path: path.replace(/^\/home\/[^/]+/, '~'), kind, origin, ageSeconds: age === null ? null : Number(age)};
   });
 }
 // The engine processes below the run's serves (the serves of the clone at `checkout`, servePattern: every one is the
@@ -118,7 +126,7 @@ const times = names.map(n => statSync('/var/crash/' + n).mtimeMs).sort((a, b) =>
 console.log(JSON.stringify({files: names.length, newest: times.length ? new Date(times[0]).toISOString() : null}));`)}`;
 
 // The device operations of a Linux run, over `remote(script) -> stdout`.
-export function linuxDevice(remote, {display, checkout, runtimeRoot, xSession, userHome}) {
+export function linuxDevice(remote, {display, checkout, homeEngine, xSession, userHome}) {
   return {
     spawnGedit(role) {
       const line = remote(spawnGeditScript({display, role, xSession, userHome})).split('\n').at(-1);
@@ -126,7 +134,7 @@ export function linuxDevice(remote, {display, checkout, runtimeRoot, xSession, u
     },
     targetState: (entry, options) => remote(targetStateScript(entry, options)).trim(),
     terminate: entries => (entries.length ? JSON.parse(remote(terminateScript(entries)).split('\n').at(-1)) : {terminated: [], notOwned: [], gone: [], removed: []}),
-    helpers: () => classifyLinuxHelpers(remote(LINUX_HELPER_SCRIPT), runtimeRoot),
+    helpers: () => classifyLinuxHelpers(remote(LINUX_HELPER_SCRIPT), homeEngine),
     engines: () => JSON.parse(remote(linuxEnginesScript(checkout)).split('\n').at(-1)),
     leftovers() { const [serves, geditRunning] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, geditRunning}; },
     crashReports: () => JSON.parse(remote(CRASH_SCRIPT).split('\n').at(-1)),
@@ -140,7 +148,7 @@ const pinned = new Set();
 export const linuxAdapter = {
   platform: 'linux',
   target: 'gedit',
-  device: (remote, {pre, display}) => linuxDevice(remote, {display, checkout: pre.checkout, runtimeRoot: pre.runtimeRoot, xSession: pre.xSession, userHome: pre.userHome}),
+  device: (remote, {pre, display}) => linuxDevice(remote, {display, checkout: pre.checkout, homeEngine: pre.homeEngine, xSession: pre.xSession, userHome: pre.userHome}),
   // Only the run's own gedit window's app is accepted (the victims are gedit too: the connection's memory answers them).
   answer: pinnedApprovals(() => pinned),
   refuse(pre) {
@@ -169,7 +177,7 @@ export const linuxAdapter = {
     // From M3 each lane's engine runs behind its own service (the vendor's @oai/sky, or cua's own Linux service).
     // Which engine answered, and which service drove it, are the engine attestation's (meta.nativeEngine.observed:
     // each engine's executable and its trusted worker's CUA_SKY_SERVICE, judged when the run ends); `answered` is the
-    // service the bind's engine ran behind. The machine's sky_linux processes are evidence, not attested.
+    // service the bind's engine ran behind. The machine's engine processes (helpers) are evidence, not attested.
     meta.helpersAtBind = ctx.helperAttestation();
     ctx.observeEngines();
     const services = [...new Set((meta.nativeEngine?.observed ?? []).map(o => o.service ?? 'unknown'))];

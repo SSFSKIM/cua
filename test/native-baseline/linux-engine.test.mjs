@@ -8,16 +8,18 @@ import {assertEngineOptions, engineProblem} from '../../scripts/native-baseline/
 import {nativeEnvironment, preflightScript} from '../../scripts/native-baseline/remote.mjs';
 import {linuxDevice, linuxEnginesScript} from '../../scripts/native-baseline/linux.mjs';
 import {attestation} from '../../scripts/native-baseline/summary.mjs';
+import {LINUX_VENDOR_BASELINE_RETIRED} from '../../scripts/repl-parity/engine-answered.mjs';
 
 const BIN = '/Users/new/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine';
 const linux = {platform: 'linux', surface: 'computer', host: 'cua'};
 
 test('a Linux computer run names its engine; --engine-bin is the cua lane\'s, an absolute path', () => {
-  assertEngineOptions({...linux, engine: 'vendor'});
+  // #171 M6b: the vendor lane is refused, saying where its last runs are stored
+  assert.throws(() => assertEngineOptions({...linux, engine: 'vendor'}), error => error.message === LINUX_VENDOR_BASELINE_RETIRED);
   assertEngineOptions({...linux, engine: 'cua'});
   assertEngineOptions({...linux, engine: 'cua', engineBin: BIN});
-  assert.throws(() => assertEngineOptions(linux), /a Linux computer run needs --engine vendor\|cua/);
-  assert.throws(() => assertEngineOptions({...linux, engine: 'sky'}), /needs --engine vendor\|cua/);
+  assert.throws(() => assertEngineOptions(linux), /a Linux computer run needs --engine cua/);
+  assert.throws(() => assertEngineOptions({...linux, engine: 'sky'}), /needs --engine cua/);
   assert.throws(() => assertEngineOptions({...linux, engine: 'vendor', engineBin: BIN}), /--engine-bin .*--engine cua/);
   assert.throws(() => assertEngineOptions({...linux, engine: 'cua', engineBin: 'cua-engine'}), /--engine-bin needs an absolute path/);
   assert.throws(() => assertEngineOptions({...linux, engine: 'cua', approvedEngine: '/x/cua Engine.app'}), /--approved-engine .*macOS/);

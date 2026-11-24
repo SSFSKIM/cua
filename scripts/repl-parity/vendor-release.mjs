@@ -1,8 +1,9 @@
 // The vendor release a Linux run's vendor engine ran from, the one lookup the vendor engine's defects
 // (./vendor-defects.mjs) and the Linux declarations (./native-linux.mjs) are matched by.
 //   - Since #171 M6a a run's runtime is cua's own (runtimeRelease, the derived cua-linux-… release), and the vendor
-//     release is recorded apart: vendorRelease, the preparation's (provenance.mjs runtimeFacts), which every connection's
-//     recorded provenance (hostAttestations[].executionFacts) must bear out, with the same own runtime.
+//     release is recorded apart: vendorRelease, the preparation's (provenance.mjs runtimeFacts; since #171 M6b a run
+//     records none), which every connection's recorded provenance (hostAttestations[].executionFacts) must bear out,
+//     with the same own runtime.
 //   - A record from before M6a served the vendor's runtime itself: its runtimeRelease is that vendor release, and it
 //     records no vendor release apart (none, or null from a preparation that had none).
 // -> the vendor release, or null when the run does not establish one, which no defect or declaration names: its vendor

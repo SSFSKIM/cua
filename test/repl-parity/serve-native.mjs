@@ -1,5 +1,5 @@
-// Linux native lane: unchanged selected production facade + sky service + the lane's engine (CUA_NATIVE_ENGINE: the
-// pinned sky_linux, or cua-engine, installed or named by CUA_LINUX_ENGINE_BIN). Each connection owns one standalone
+// Linux native lane: unchanged selected production facade + cua's service + the lane's engine (CUA_NATIVE_ENGINE=cua: a
+// cua-engine, installed or named by CUA_LINUX_ENGINE_BIN; the vendor lane refused since #171 M6b). Each connection owns one standalone
 // gedit, a scratch HOME/CUA_HOME and its copied runtime. Never launches or binds a browser. Before every tool result the
 // serve reports which engine processes run below it, by executable (../../scripts/repl-parity/engine-answered.mjs).
 import {execFileSync,spawn} from 'node:child_process';
@@ -12,12 +12,13 @@ import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/r
 import {cellsServeEnv} from './fixture-launch.mjs';
 import {LINUX_COMPUTER_DEFAULT} from '../../scripts/repl-parity/compare.mjs';
 import {attestFixtureLaunch,fixtureNodeEnvironment} from './serve-cells.mjs';
-import {ENGINES,engineProcesses,engineWitness,expectedEngine} from '../../scripts/repl-parity/engine-answered.mjs';
+import {LINUX_VENDOR_LANE_RETIRED,engineProcesses,engineWitness,expectedEngine} from '../../scripts/repl-parity/engine-answered.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1'||process.platform!=='linux')throw Error('Native parity is remote Linux only');
 const source=process.env.CUA_HOME,host=process.env.CUA_REPL_HOST,facts=executionFacts({source});
 const engine=process.env.CUA_NATIVE_ENGINE,engineBin=process.env.CUA_LINUX_ENGINE_BIN||undefined;
-if(!ENGINES.includes(engine))throw Error('The native lane names its engine: CUA_NATIVE_ENGINE vendor|cua');
-if(engineBin!==undefined&&(engine!=='cua'||!engineBin.startsWith('/')))throw Error('CUA_LINUX_ENGINE_BIN names an absolute cua-engine, on the cua engine lane only');
+if(engine==='vendor')throw Error(LINUX_VENDOR_LANE_RETIRED);
+if(engine!=='cua')throw Error('The native lane names its engine: CUA_NATIVE_ENGINE=cua');
+if(engineBin!==undefined&&(engine!=='cua'||!engineBin.startsWith('/')))throw Error('CUA_LINUX_ENGINE_BIN names an absolute cua-engine');
 assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
 const name=process.env.CUA_PARITY_NATIVE_FILENAME;if(!/^cua-m4-[a-f0-9-]{36}\.txt$/.test(name??''))throw Error('Native fixture requires a unique owned filename');
 const scratch=prepareCapabilityHome({source,prefix:(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-m4t1-')+'cap-'}),file=join(scratch.userHome,name);

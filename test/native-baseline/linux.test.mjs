@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {execFileSync, spawn} from 'node:child_process';
 import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {classifyLinuxHelpers, linuxDevice, ownedEntry, spawnGeditScript, targetStateScript, terminateScript} from '../../scripts/native-baseline/linux.mjs';
+import {classifyLinuxHelpers, LINUX_HELPER_PATTERN, LINUX_HELPER_SCRIPT, linuxDevice, ownedEntry, spawnGeditScript, targetStateScript, terminateScript} from '../../scripts/native-baseline/linux.mjs';
 
 const sh = script => execFileSync('/bin/sh', ['-c', script], {encoding: 'utf8'}).trim();
 // A stand-in for a scratch gedit: a process whose command line names a file in a run-owned directory.
@@ -62,13 +62,25 @@ test('termination ends only the run\'s own process and removes only its director
   assert.deepEqual(JSON.parse(sh(terminateScript([entry]))), {terminated: [], notOwned: [], gone: [entry.pid], removed: []});
 });
 
-test('the sky_linux helpers are classified against the pinned runtime, with their age', () => {
-  const output = '  42 /home/admin/.local/share/cua/runtimes/r1/cua_node/lib/node_modules/@oai/cua/bin/linux/sky_linux_arm64 --stdio\n 9000 /opt/other/sky_linux_arm64\n';
-  assert.deepEqual(classifyLinuxHelpers(output, '/home/admin/.local/share/cua/runtimes/r1'), [
-    {path: '~/.local/share/cua/runtimes/r1/cua_node/lib/node_modules/@oai/cua/bin/linux/sky_linux_arm64', origin: 'pinned runtime', ageSeconds: 42},
-    {path: '/opt/other/sky_linux_arm64', origin: 'another installation', ageSeconds: 9000},
+// #171 M6b: the helpers are cua-engine, listed by the run home's engine, and any sky_linux, recorded as foreign: no
+// Linux lane runs the vendor's engine since cua 0.30.0.
+test('the engine helpers: the run home\'s cua-engine, another cua-engine, and a sky_linux as foreign, with their age', () => {
+  const ENGINE = '/home/admin/.local/share/cua-native-baseline/run-x/engine/linux/cua-engine';
+  const output = `  42 ${ENGINE} server --stdio\n 7 /opt/other/cua-engine\n 9000 /home/admin/.local/share/cua/runtimes/r1/cua_node/lib/node_modules/@oai/cua/bin/linux/sky_linux_arm64 --stdio\n`;
+  assert.deepEqual(classifyLinuxHelpers(output, ENGINE), [
+    {path: '~/.local/share/cua-native-baseline/run-x/engine/linux/cua-engine', kind: 'cua', origin: 'the run home\'s engine', ageSeconds: 42},
+    {path: '/opt/other/cua-engine', kind: 'cua', origin: 'another installation', ageSeconds: 7},
+    {path: '~/.local/share/cua/runtimes/r1/cua_node/lib/node_modules/@oai/cua/bin/linux/sky_linux_arm64', kind: 'vendor', origin: 'foreign', ageSeconds: 9000},
   ]);
+  assert.equal(classifyLinuxHelpers(` 3 ${ENGINE}\n`, null)[0].origin, 'another installation', 'with no home engine known, none is the run\'s');
   assert.deepEqual(classifyLinuxHelpers('', '/x'), []);
+  // the listing's pattern takes both programs, by their executable's own name, and nothing else
+  const pattern = new RegExp(LINUX_HELPER_PATTERN);
+  for (const line of [`1 ${ENGINE}`, `1 ${ENGINE} server`, '1 /x/sky_linux_x64 --stdio', '1 /x/sky_linux'])
+    assert.ok(pattern.test(line), line);
+  for (const line of ['1 /x/cua-engine-0.4.5-linux-x64.partial', '1 grep cua-engine', '1 /x/my-cua-engine'])
+    assert.ok(!pattern.test(line), line);
+  assert.ok(LINUX_HELPER_SCRIPT.includes(LINUX_HELPER_PATTERN));
 });
 
 test('the device operations parse what the scripts print and refuse output that is not a run-owned process', () => {

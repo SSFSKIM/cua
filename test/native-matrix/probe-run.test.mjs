@@ -645,3 +645,17 @@ test('probe cells off a hosted runner: run under the owner\'s ABC with the prefe
   assert.match(row.ownerInput, /ruling 1188.*the row needs the per-context input preference \(.*\) off, the owner's is unset, and the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.keylayout\.US$/);
   assert.deepEqual(validateCellResult(other.result), []);
 });
+
+test('probe cells when the venue could not enable ABC: NO VERDICT venue naming it, ABC never selected, nothing posted', async () => {
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'state') { const out = base(a); return {...out, answer: {...out.answer, venueMissing: ['com.apple.keylayout.ABC']}}; }
+    return base(a);
+  }};
+  const {steps, result} = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', ops, cell: c => (tagOf(c) === 'concurrent.act' ? acted(c) : null)});
+  assert.deepEqual(sourceSteps(steps), ['state', 'save', 'per-context off', 'restore'], 'ABC never selected');
+  assert.deepEqual(matrixSteps(steps, 'probe'), []);
+  const row = rowOf(result, 'chrome/concurrent@textedit');
+  assert.equal(sampleCause(row).category, 'venue');
+  assert.match(row.venueInput, /could not enable com\.apple\.keylayout\.ABC .*ruling 1189/);
+  assert.deepEqual(validateCellResult(result), []);
+});

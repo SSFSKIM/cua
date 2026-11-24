@@ -253,6 +253,19 @@ const textEditWriteText = w => {
   return `${w.key} read back${w.container.written !== undefined ? ' (written through the container: the domain\'s write did not reach it)' : ''}`;
 };
 const savedStateText = s => (s.removed ? `removed ${s.link ? 'the link ' : ''}${s.path}` : s.existed === false ? `none at ${s.path}` : `NOT removed ${s.path} (${s.error ?? 'unknown'})`);
+// The input sources setup enabled (ruling 1189, ./input-sources.mjs): each as TIS's enabled list and the preference's
+// value read it back, and the sources the runs could not select. -> lines.
+const listedText = s => (!s.tis ? 'unread' : !s.tis.installed ? 'not installed' : !s.tis.listed ? 'not in TIS\'s enabled list'
+  : `in TIS's enabled list, ${s.tis.enabled ? 'enabled' : 'NOT enabled'}${s.selects ? `, ${s.tis.selectCapable ? 'selectable' : 'NOT selectable'}` : ' (the input method its mode needs)'}`);
+function renderInputSources(sources) {
+  if (!sources) return ['Input sources: none enabled (no `input sources` step recorded): the image\'s own.', ''];
+  const each = sources.sources.map(s => `| ${s.id} | ${s.enable ? (s.enable.already ? 'already enabled' : `status ${s.enable.status ?? 'none'}${s.enable.reason ? ` (${s.enable.reason})` : ''}`) : 'not attempted'} | ${escape(listedText(s))} | ${s.preference === null ? 'unread' : s.preference ? 'listed' : 'not listed'} | ${s.held ? 'yes' : '**no**'} |`);
+  return [`Input sources (ruling 1189): enabled through ${sources.via}, read back from TIS's enabled list after ${sources.reads} read${sources.reads === 1 ? '' : 's'}; the preference's value (com.apple.HIToolbox AppleEnabledInputSources) recorded beside it; restored: ${sources.restored}. `
+    + (sources.missing.length ? `**Not enabled: ${sources.missing.join(', ')}**: every input row selecting ${sources.missing.length === 1 ? 'it' : 'them'} is NO VERDICT \`venue\`.` : 'Every source the runs select held.')
+    + (sources.error ? ` The helper failed: ${sources.error}.` : ''), '',
+    '| source | enable | TIS\'s enabled list | the preference | held |', '|---|---|---|---|---|', ...each, ''];
+}
+
 // sitting.md's section: the venue's differences, one row each, with the cells resting on them. -> markdown.
 export function renderVenue(venue) {
   const head = ['## The venue (ruling 1169)', ''];
@@ -260,6 +273,7 @@ export function renderVenue(venue) {
   const writes = venue.textEdit?.writes?.length ? `TextEdit's preferences (${venue.textEdit.domain}, read back from its container's plist): ${venue.textEdit.writes.map(textEditWriteText).join(', ')}.` : 'TextEdit\'s preferences: none recorded.';
   const states = venue.textEdit?.savedState ? ` TextEdit's saved application state: ${venue.textEdit.savedState.map(savedStateText).join('; ')}.` : '';
   return [...head, `The alert windows after the mode switch: ${venue.alerts === null ? 'unread' : venue.alerts.length ? alertsText(venue.alerts) : 'none'}. ${writes}${states}`, '',
+    ...renderInputSources(venue.inputSources), 
     '| scene | the mini | hosted | why | grounding | cells resting on it |', '|---|---|---|---|---|---|',
     ...venue.differences.map(d => `| ${d.scene} | ${escape(frameCell(d.mini))} | ${escape(frameCell(d.hosted))} | ${escape(d.reason)} | ${escape(d.grounding)} | ${escape(d.cells.join(', '))} |`), ''].join('\n');
 }

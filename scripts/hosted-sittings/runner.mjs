@@ -120,6 +120,14 @@ export function venueTextEditViewOf(record, at) {
   return isPoints(view?.width) && isPoints(view?.height) ? {width: view.width, height: view.height} : null;
 }
 
+// The run's input sources the venue could not enable (ruling 1189, ./input-sources.mjs): the ids its setup did not read
+// back as enabled and selectable, or [] when it read them all back; null off a hosted runner, or with no record of the
+// step (a record from before it), where nothing is declared.
+export function venueInputMissingOf(record, at) {
+  const sources = attestedVenue(record, at)?.inputSources;
+  return Array.isArray(sources?.missing) ? sources.missing.filter(id => typeof id === 'string') : null;
+}
+
 // meta.hosted and meta.runner, from the device's record (preflight's `runner`, null when it has none) and the
 // controller's environment; with the approved paths the harness was given, those must be the run's own install.
 // A controller on a GitHub-hosted runner drives the runner itself (no remote device is reachable from one), so its run

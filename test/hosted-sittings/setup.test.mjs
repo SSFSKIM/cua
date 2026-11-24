@@ -28,12 +28,28 @@ const SWITCHED = {ok: true, detail: '1024x768 (mode 3) -> 1920x1080 (mode 10), r
     after: {alerts: [], front: null}, promptSeen: [], recentred: [], watchedMs: 3000}};
 // TextEdit's saved application state the warm-ups left outside its container (./venue.mjs textEditSavedStates).
 const SAVED_STATE = `${HOME}/Library/Saved Application State/com.apple.TextEdit.savedState`;
-function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null, savedStates = [SAVED_STATE]} = {}) {
-  const calls = [], defaults = new Map();
+// The input-source helper (../../scripts/hosted-sittings/input-sources.swift) as TIS answers it on a fresh image: U.S.
+// alone enabled; `enable` adds each source but those in `refuse`. One JSON line, as the helper prints it.
+function fakeTis(refuse = []) {
+  const enabled = new Set(['com.apple.keylayout.US']);
+  const entry = id => (id.startsWith('com.apple.keylayout.') ? {InputSourceKind: 'Keyboard Layout', 'KeyboardLayout ID': 252, 'KeyboardLayout Name': id.split('.').at(-1)}
+    : id === 'com.apple.inputmethod.Korean' ? {InputSourceKind: 'Keyboard Input Method', 'Bundle ID': id} : {InputSourceKind: 'Input Mode', 'Bundle ID': 'com.apple.inputmethod.Korean', 'Input Mode': id});
+  return ([sub, ...ids]) => {
+    const out = {};
+    if (sub === 'enable') out.enabled = ids.map(id => (enabled.has(id) ? {id, status: 0, already: true} : refuse.includes(id) ? {id, status: -50} : (enabled.add(id), {id, status: 0})));
+    out.readings = ids.map(id => ({id, installed: true, type: id.includes('keylayout') ? 'TISTypeKeyboardLayout' : 'TISTypeKeyboardInputMode',
+      enabledList: enabled.has(id) ? {listed: true, enabled: true, selectCapable: id !== 'com.apple.inputmethod.Korean'} : {listed: false}}));
+    out.preference = [...enabled].map(entry);
+    return {status: 0, stdout: `${JSON.stringify(out)}\n`, stderr: ''};
+  };
+}
+function spies({fail = null, vendorUp = false, approved = true, missing = [], warmUp = null, screen = () => SCREEN, switched = SWITCHED, trust = {trusted: true}, trustFailed = null, savedStates = [SAVED_STATE], refuseSources = []} = {}) {
+  const calls = [], defaults = new Map(), tis = fakeTis(refuseSources);
   const exec = (command, args, options = {}) => {
     const line = [command, ...args].join(' ');
     calls.push({kind: 'exec', line, env: options.env});
     if (fail && line.includes(fail)) return {status: 1, stdout: '', stderr: 'no'};
+    if (command === 'swift' && args[0].endsWith('input-sources.swift')) return tis(args.slice(1));
     // TextEdit's preferences (../../scripts/hosted-sittings/venue.mjs): written, then read back as defaults prints them.
     if (command === '/usr/bin/defaults' && args[0] === 'write') { defaults.set(`${args[1]} ${args[2]}`, args[3] === '-bool' ? (/^(YES|true|1)$/i.test(args[4]) ? '1' : '0') : args[4]); return {status: 0, stdout: '', stderr: ''}; }
     if (command === '/usr/bin/defaults' && args[0] === 'read') { const v = defaults.get(`${args[1]} ${args[2]}`); return v === undefined ? {status: 1, stdout: '', stderr: 'does not exist'} : {status: 0, stdout: `${v.trimEnd()}\n`, stderr: ''}; }
@@ -56,7 +72,7 @@ function spies({fail = null, vendorUp = false, approved = true, missing = [], wa
     warmUp: async copy => { calls.push({kind: `warm-up ${copy}`}); return warmUp ? warmUp(copy) : warmedUp(copy); },
     switchMode: async () => { calls.push({kind: 'display mode'}); return switched; },
     screen: () => { calls.push({kind: 'screen'}); return screen(); },
-    stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; },
+    stopEngine: async () => { calls.push({kind: 'engine-stop'}); return {wasRunning: true, pid: 2142}; }, sleep: async () => {},
     write: (path, record) => calls.push({kind: 'write', path, record}),
     savedStateFs: {lstat: path => {
       const dir = path === dirname(SAVED_STATE), present = dir || savedStates.includes(path);
@@ -80,7 +96,7 @@ test('on a runner: the loopback device, the harness checkout, the install and en
   const {calls, deps} = spies();
   const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
   assert.equal(report.ok, true, report.steps.map(s => `${s.step}: ${s.detail}`).join('\n'));
-  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'display mode', 'placement', 'textedit defaults', 'key-window trust', 'engine stop', 'record']);
+  assert.deepEqual(report.steps.map(s => s.step), ['loopback', 'harness checkout', 'prepare', 'install', 'engine', 'vendor helper not running', 'vendor rows', 'approve', 'warm-up cua', 'warm-up vendor', 'display mode', 'placement', 'textedit defaults', 'input sources', 'key-window trust', 'engine stop', 'record']);
   const order = calls.map(c => (c.kind === 'exec' ? c.line.split(' ').slice(0, 3).join(' ') : c.kind === 'grant' ? `grant ${c.clients}` : c.kind));
   const at = needle => order.findIndex(o => o.startsWith(needle));
   assert.ok(at('sh scripts/hosted-sittings/loopback.sh') === 0);
@@ -271,4 +287,33 @@ test('the display mode: a failed switch stops the setup with its record kept; no
   // The warm-ups ran before the switch, at the image's 1024x768: one alert raised per copy, recorded as before.
   assert.deepEqual(report.warmUps.map(w => w.copy), ['cua', 'vendor']);
   assert.ok(calls.findIndex(c => c.kind === 'warm-up vendor') < calls.findIndex(c => c.kind === 'display mode'));
+});
+
+// Ruling 1189: ABC and Korean 2-Set (with its input method) enabled through TISEnableInputSource after TextEdit's
+// defaults, each read back from TIS's enabled list, the preference's value kept beside it, nothing restored. A source
+// that does not read back does not fail the setup: it is named, and the venue record carries it to the runs.
+test('input sources: enabled after TextEdit\'s defaults and read back from TIS\'s list, both readings recorded; one that does not hold is named, the setup goes on', async () => {
+  const {calls, deps} = spies();
+  const report = await hostedSetup({...deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(report.ok, true);
+  const tis = calls.filter(c => c.kind === 'exec' && c.line.startsWith('swift ')).map(c => c.line.split(' ').slice(2).join(' '));
+  assert.deepEqual(tis, ['enable com.apple.keylayout.ABC com.apple.inputmethod.Korean com.apple.inputmethod.Korean.2SetKorean', 'list com.apple.keylayout.ABC com.apple.inputmethod.Korean com.apple.inputmethod.Korean.2SetKorean'],
+    'the input method before its mode; never a selection, never a defaults write of the domain');
+  const order = calls.map(c => (c.kind === 'exec' ? c.line : c.kind));
+  assert.ok(order.findIndex(l => l.startsWith('swift ')) > order.findLastIndex(l => l.startsWith('/usr/bin/defaults write')), 'after TextEdit\'s defaults');
+  assert.ok(!calls.some(c => c.kind === 'exec' && /com\.apple\.HIToolbox/.test(c.line)), 'no HIToolbox write');
+  const sources = report.venue.inputSources;
+  assert.deepEqual(sources.missing, []);
+  assert.deepEqual(sources.sources.map(s => [s.id, s.tis.listed, s.tis.enabled, s.tis.selectCapable, s.preference, s.held]),
+    [['com.apple.keylayout.ABC', true, true, true, true, true], ['com.apple.inputmethod.Korean', true, true, false, true, true], ['com.apple.inputmethod.Korean.2SetKorean', true, true, true, true, true]]);
+  assert.equal(sources.preference.length, 4, 'the preference\'s value kept whole beside TIS\'s list');
+  assert.match(sources.restored, /nothing: the VM is thrown away/);
+  assert.deepEqual(calls.at(-1).record.venue.inputSources, sources, 'in the runner\'s record, which the device reads');
+  assert.equal(report.steps.find(s => s.step === 'input sources').detail,
+    'TISEnableInputSource (./input-sources.swift), read back from TIS\'s enabled list after 1 read: com.apple.keylayout.ABC enabled, selectable (in the preference); com.apple.inputmethod.Korean enabled (in the preference); com.apple.inputmethod.Korean.2SetKorean enabled, selectable (in the preference); every run\'s source enabled and selectable; restored: nothing: the VM is thrown away (ruling 1189)');
+  const refused = await hostedSetup({...spies({refuseSources: ['com.apple.inputmethod.Korean.2SetKorean']}).deps, engineArchive: '/t/engine.tgz'});
+  assert.equal(refused.ok, true, 'a source that does not read back never fails the sitting');
+  assert.deepEqual(refused.venue.inputSources.missing, ['com.apple.inputmethod.Korean.2SetKorean']);
+  assert.equal(refused.venue.inputSources.reads, 3, 'read again after each settle, up to the bound');
+  assert.match(refused.steps.find(s => s.step === 'input sources').detail, /com\.apple\.inputmethod\.Korean\.2SetKorean not in the enabled list \(not in the preference\); MISSING com\.apple\.inputmethod\.Korean\.2SetKorean: the input rows needing it are NO VERDICT venue/);
 });

@@ -372,3 +372,27 @@ test('off a hosted runner: the rows the owner\'s source allows run; the rest are
   assert.match(byCondition('midSwitch')[0].ownerInput, /the row needs the input source switched to com\.apple\.inputmethod\.Korean\.2SetKorean during its typing$/);
   assert.match(byCondition('perContext')[0].ownerInput, /the per-context input preference \(com\.apple\.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput\) on, the owner's is off, and /);
 });
+
+// Ruling 1189: a source the runner's setup could not enable is never selected; every row selecting it is NO VERDICT
+// `venue`, naming it, and never runs under the US layout to be judged.
+test('a source the venue could not enable: its rows are NO VERDICT venue naming it, never selected; the rest run', async () => {
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'state') { const out = base(a); return {...out, answer: {...out.answer, venueMissing: [KOREAN_2SET]}}; }
+    return base(a);
+  }};
+  const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  assert.ok(!sources(steps).some(s => s.includes('2SetKorean')), 'Korean 2-Set never selected');
+  assert.deepEqual(matrixSteps(steps, 'probe').filter(a => a[1] === 'input-source'), [], 'no switch to it scheduled');
+  assert.deepEqual(result.meta.inputSource.venueMissing, [KOREAN_2SET]);
+  const byCondition = c => result.rows.filter(r => r.condition === c);
+  assert.ok(byCondition('latin').length > 0 && byCondition('latin').every(r => r.ok === true && !r.invalid), 'the Latin rows need ABC only');
+  for (const c of ['korean', 'midSwitch', 'composing', 'perContext']) {
+    assert.ok(byCondition(c).length > 0, c);
+    for (const r of byCondition(c)) {
+      assert.deepEqual(sampleCause(r), {category: 'venue', detail: r.venueInput}, c);
+      assert.match(r.venueInput, /^the runner's setup could not enable com\.apple\.inputmethod\.Korean\.2SetKorean \(TISEnableInputSource did not read it back as enabled and selectable in TIS's list; ruling 1189\): the row needs it, and is never run under the US layout$/);
+    }
+  }
+});

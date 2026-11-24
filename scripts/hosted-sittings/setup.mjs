@@ -41,6 +41,13 @@
 //                       application state the warm-ups left outside its container is removed (clearTextEditSavedState),
 //                       recorded; the container's rests on ApplePersistenceIgnoreState. After the warm-ups'
 //                       TextEdit ended, before any run launches one. Kept in `venue.textEdit`
+//   input sources       ABC and Korean 2-Set (with its input method) enabled through TISEnableInputSource, the call
+//                       System Settings makes (./input-sources.mjs; ruling 1189): a fresh image enables U.S. alone, so
+//                       C's input rows could never select theirs (pilot C, run 45299196290). Each read back from TIS's
+//                       enabled list, enabled and selectable, in a fresh process after a settle; the preference's value
+//                       (AppleEnabledInputSources) read and kept beside it. A source that does not read back does not
+//                       fail the setup: it is named in `venue.inputSources.missing`, and the rows needing it are NO
+//                       VERDICT `venue`. Nothing is selected, and nothing restored: the VM is thrown away
 //   key-window trust    whether the key-window reader (../cursor-sitting/ax-state.swift, ./key-window.mjs) holds the
 //                       Accessibility grant where the runs reach the device: asked over the loopback ssh, in the harness
 //                       checkout (./guard-device.mjs trust). Kept in `venue.keyWindowTrust`, so every sitting says whether
@@ -69,6 +76,7 @@ import {warmUp as warmUpCopy} from './warm-up.mjs';
 import {isAlertWindow} from './alert-guard.mjs';
 import {TARGET_MODE, switchDisplayMode} from './display-mode.mjs';
 import {TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, hostedFrames, textEditWrites, venueRecord, writeTextEditDefaults} from './venue.mjs';
+import {enableInputSources, inputSourcesDetail} from './input-sources.mjs';
 import {assertGithubHosted, runnerRecord, runnerRecordPath, vmIdentity} from './runner.mjs';
 import {CLIENTS, grantRows} from './tcc.mjs';
 
@@ -117,7 +125,7 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
 // engineOf(home), identityOf(bundle), vmOf() (./runner.mjs vmIdentity), newId() (the setup's own VM id), realpath,
 // exists, savedStateFs (./venue.mjs clearTextEditSavedState's fs; node:fs's by default), vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
-// switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), stopEngine()
+// switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), sleep(ms), stopEngine()
 // (src/runtime/engine.mjs stopEngine), write(path, record), log}.
 // -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
@@ -125,7 +133,7 @@ export async function hostedSetup({env = process.env, platform = process.platfor
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync, savedStateFs = undefined,
   vendorRunning = app => spawnSync('pgrep', ['-f', `${app}/Contents/MacOS/`]).status === 0, grant = grantRows,
   approve = deps => hostedApprove(deps), warmUp = copy => warmUpCopy(copy, {env, platform, checkout}), switchMode = () => switchDisplayMode({env, platform}),
-  screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
+  screen = () => JSON.parse(spawnSync('swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8'}).stdout), sleep = ms => new Promise(done => setTimeout(done, ms)), stopEngine = () => stopApprovedEngine(), write = (path, record) => { mkdirSync(dirname(path), {recursive: true}); writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`); },
   log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the hosted setup');
   const report = {ok: false, steps: [], approve: null, warmUps: [], modeSwitch: null, placement: null, venue: null, engineStop: null, record: null, approved: null};
@@ -215,6 +223,10 @@ export async function hostedSetup({env = process.env, platform = process.platfor
       const removed = written.savedState.filter(s => s.removed).map(s => s.path), kept = written.savedState.filter(s => s.existed !== false && !s.removed);
       return `${written.domain}: ${written.writes.map(w => `${w.key} ${w.value.trim()}`).join(', ')}; each read back from TextEdit's container${through ? ` (${through} written through it)` : ''}; `
         + `saved application state removed: ${removed.length ? removed.join(', ') : 'none there'}${kept.length ? `; NOT removed: ${kept.map(s => `${s.path} (${s.error})`).join(', ')}` : ''}`;
+    }],
+    ['input sources', async () => {
+      report.venue.inputSources = await enableInputSources({env, platform, exec, sleep});
+      return inputSourcesDetail(report.venue.inputSources);
     }],
     ['key-window trust', () => {
       const asked = exec('ssh', [...loopbackSshArgs(DEVICE, home), DEVICE, `cd ${quote(clone)} && node scripts/hosted-sittings/guard-device.mjs trust`], {env});

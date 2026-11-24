@@ -713,6 +713,15 @@ test('ruling 1188: a row the owner\'s input source did not allow is NO VERDICT o
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /`ownerInput`/, 'named only when a row has it');
 });
 
+test('ruling 1189: a row whose source the runner could not enable is NO VERDICT venue, counted per side and per cell', () => {
+  const cause = 'the runner\'s setup could not enable com.apple.keylayout.ABC (TISEnableInputSource did not read it back as enabled and selectable in TIS\'s list; ruling 1189): the row needs it, and is never run under the US layout';
+  const venued = (rows, run) => (run === 2 ? set(CLICK, {ok: false, venueInput: cause, invalid: cause})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: venued}, cua: {axMs: 40, tweak: venued}});
+  const row = j.methods.find(x => x.id === CLICK);
+  assert.deepEqual([row.verdict, row.account.vendor.noVerdict, row.account.cua.noVerdict], ['no-verdict', {venue: 1}, {venue: 1}]);
+  assert.match(renderSummary(j), /`venue` \(a frame split, or an input source the runner's setup could not enable, ruling 1189\): cua 1, vendor 1;/);
+});
+
 test('an activate step that did not take front and key is NO VERDICT, not FAIL; a hosted sample without readings is NO VERDICT', () => {
   const failedActivate = {activate: {app: SCENE_APP, front: false, key: false}, before: {front: ALERT, key: ALERT}};
   const all = [1, 2, 3];

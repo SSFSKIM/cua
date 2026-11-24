@@ -25,7 +25,7 @@ import {
 } from './probe-plan.mjs';
 import {ABC} from './live-checks.mjs';
 import {requeryCell} from './matrix-cells.mjs';
-import {ownerInputCause, ownerInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
@@ -90,6 +90,8 @@ export class ResetBlocked extends Stop {
 async function sampled(ctx, base, attempt) {
   await resetHeldFixture(ctx);
   const row = {...base, engine: ctx.engine, sample: ctx.n, ok: false};
+  const venue = venueInputCause(ctx.venueMissing, [ABC]);
+  if (venue) return push(ctx, {...row, ...venueInputMarks(venue)});
   if (ctx.ownerInput && !ctx.latin) return push(ctx, {...row, ...ownerInputMarks(ownerInputCause(ctx.ownerInput, {source: ABC, perContext: false}))});
   if (!ctx.latin) return push(ctx, {...row, invalid: 'the Latin input source was not selected and read back with the per-context preference off'});
   const retries = [];

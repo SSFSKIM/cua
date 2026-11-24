@@ -43,7 +43,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   unread: 'front/key readings missing (hosted) or unread, or the alert guard could not read the alert windows\' bounds',
   activation: 'the activate step did not take front and key',
   alert: 'an app other than the cell\'s front or key (an alert), or the alert guard refused the cell unsent (an alert over the run\'s window, or holding the front or key)',
-  venue: 'the run\'s vendor and cua runs did not stand on one frame (ruling 1169): no sample of that run, on either side, is judged',
+  venue: 'the run\'s vendor and cua runs did not stand on one frame (ruling 1169): no sample of that run, on either side, is judged; or an input source the row selects that the runner\'s setup could not enable (ruling 1189)',
   keyWindow: 'a click or key cell refused unsent because its scene\'s app did not hold the window the cell acts in as its own key window (ruling 1169\'s addition)',
   ownerInput: 'off a GitHub-hosted runner, the owner\'s input source or per-context preference was not the row\'s, and the harness never changes them there (ruling 1188)',
   invalid: 'the harness\'s own invalid reason',
@@ -96,9 +96,11 @@ export function frontKeyCause(frontKey, {hosted = false} = {}) {
 // detail}, ./steps.mjs AlertGuarded; ruling 1154), by its own cause, `alert` or `unread`. A row of a run whose pair did
 // not stand on one frame (`frameSplit`, which the judge tags, ./summary.mjs splitFrameRuns) is `venue` before anything
 // else: the pair was no measurement. A row whose input source or preference the owner's Mac did not allow
-// (`ownerInput`, ruling 1188) was never sent: that is its cause. -> {category, detail?} | null.
+// (`ownerInput`, ruling 1188), or whose source the runner could not enable (`venueInput`, `venue`, ruling 1189), was
+// never sent: that is its cause. -> {category, detail?} | null.
 export function sampleCause(row) {
   if (row.frameSplit) return {category: 'venue', detail: `the run's pair did not stand on one frame (${row.frameSplit})`};
+  if (row.venueInput) return {category: 'venue', detail: row.venueInput};
   if (row.ownerInput) return {category: 'ownerInput', detail: row.ownerInput};
   if (row.alertHeld) return {category: 'alert', detail: `${row.alertHeld.front} in front at the key guard; ${row.alertHeld.keys.join(', ')} held`};
   if (row.alertGuard) return {category: row.alertGuard.cause, detail: `the alert guard: ${row.alertGuard.detail}`};

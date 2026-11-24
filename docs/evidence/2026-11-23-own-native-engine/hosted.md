@@ -2064,3 +2064,62 @@ Off a hosted runner the harness only reads:
 The next hosted C pilot proves the first. The input sections' restore should read `meta.inputSource.restored: true`.
 The put-back's input-source step should then read `perContextRestored: true` and remove the record, and the save-sheet
 lanes should begin.
+
+### The runner's input sources (ruling 1189)
+
+**What pilot C also showed.** The hosted image enables U.S. alone. Every Latin and Korean selection read
+`com.apple.keylayout.US` back, so all 5 probe-cell rows and all 225 unicode rows were invalid. Fixing the restore lets
+C complete, but without this step its input rows could never be judged.
+
+**The step.** A new setup step, `input sources`, runs after `textedit defaults` and before the runs
+(`scripts/hosted-sittings/input-sources.mjs`, `input-sources.swift`). It is hosted only (`assertGithubHosted`).
+
+- **What it enables.** com.apple.keylayout.ABC, then com.apple.inputmethod.Korean (the input method, never
+  selectable itself), then com.apple.inputmethod.Korean.2SetKorean (its mode).
+- **How.** TISEnableInputSource, the call System Settings makes. It never writes AppleEnabledInputSources and never
+  selects a source: the runs select through the approved bundle's probe.
+- **The IDs** were read from macOS's own data, not from memory:
+  - KoreanIM.app's `KIM_Extension.appex` Info.plist (`TISInputSourceID` com.apple.inputmethod.Korean; `tsInputModeListKey`
+    holding com.apple.inputmethod.Korean.2SetKorean).
+  - The helper's read-only `list` on macOS 27. ABC is `TISTypeKeyboardLayout`, selectable. The Korean input method is
+    `TISTypeKeyboardInputMethodModeEnabled`, enable-capable and not selectable. 2SetKorean is `TISTypeKeyboardInputMode`,
+    selectable.
+- **No restore.** The VM is thrown away after the job, as with TextEdit's preferences.
+
+**The read-back.** A fresh process (`input-sources.swift list`) reads the sources after a 1 s settle, up to 3 times.
+
+- A source a run selects holds only when TIS's enabled list (`TISCreateInputSourceList`, enabled only) lists it,
+  enabled and selectable. The input method holds when it is listed and enabled. A mode is usable only with its input
+  method.
+- The preference's value (com.apple.HIToolbox AppleEnabledInputSources, read through cfprefsd) is recorded beside the
+  list and never judged: the rows depend on the list.
+- Both readings go into `venue.inputSources` in the runner's record, and sitting.md's venue section renders a table:
+  each source's enable status, its place in TIS's list, the preference, and whether it held.
+
+**A source that does not hold.** It does not fail the setup or the sitting.
+
+- It is named in `venue.inputSources.missing`, and the device's `source state` passes it on (`venueMissing`,
+  `scripts/hosted-sittings/runner.mjs` `venueInputMissingOf`).
+- The run never selects it. Every row that selects it is NO VERDICT `venue`, its cause naming the source: the probe
+  cells and the Latin rows need ABC, the Korean rows need 2-Set, and the mid-switch, composition and per-context rows
+  need both. None runs under the US layout to be judged.
+- `summary.mjs` counts `venue` per side in its NO VERDICT line.
+
+**Unproven until a hosted run:**
+
+- whether TISEnableInputSource takes from the job's process on the runner, and whether the enabled list shows the
+  sources in a fresh process without a logout. The step's read-back answers both: if not, the rows are NO VERDICT
+  `venue`, named;
+- whether a source just enabled can be selected by the approved bundle's probe at once. The matrix reads each
+  selection back, as before.
+
+**The time it adds.** The step itself takes seconds: three swift runs, each compiling its script first, about 10 s on
+a runner, plus up to 3 s of settles. Each C run will also run its input rows for real, where pilot C's ended
+invalid at once:
+- the five probe cells, each a scheduled probe and up to three attempts;
+- the 225 unicode rows, each a facade call, with source reads and selections around each group.
+
+Pilot C's matrix-vendor-1 took 1408 s with those rows invalid. From the measured rows' cost (method rows about 0.47 s
+of wall each, speed rows about 0.44 s) and the probes' launches (about 1 to 2 s each), expect roughly 3 to 6 minutes
+more per run, so a full C sitting grows by about 20 to 35 minutes. That is an estimate until the next pilot measures it.
+

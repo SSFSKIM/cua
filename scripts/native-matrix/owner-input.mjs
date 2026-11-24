@@ -2,7 +2,8 @@
 // (ruling 1188): the harness never writes them there (./hitoolbox.mjs), so it reads the owner's and runs only what
 // their values allow. A row that needs another value is NO VERDICT, `ownerInput` (./front-key.mjs sampleCause), with
 // a cause naming the preference and the value it needed; the summary counts them (./summary.mjs), so the report shows
-// what the owner's machine could not judge.
+// what the owner's machine could not judge. On a hosted runner, a source its setup could not enable makes the rows
+// needing it NO VERDICT `venue` the same way (ruling 1189).
 import {INPUT_WRITES_HOSTED_ONLY, PER_CONTEXT_NAME, ownerValueName} from './hitoolbox.mjs';
 
 // What a row needs (`needs`: {source?: id, perContext?: boolean, switch?: what the row switches during it}) against
@@ -14,6 +15,15 @@ export function ownerInputCause(owner, needs) {
   if (needs.switch) parts.push(needs.switch);
   return parts.length ? `${INPUT_WRITES_HOSTED_ONLY}; the row needs ${parts.join(', and ')}` : null;
 }
+// The sources a row selects that the runner's venue could not enable (ruling 1189: its setup did not read them back
+// as enabled and selectable in TIS's list), named. -> the cause, or null when the venue holds every one.
+export function venueInputCause(missing, needs) {
+  const lacking = (needs ?? []).filter(id => (missing ?? []).includes(id));
+  return lacking.length ? `the runner's setup could not enable ${lacking.join(' and ')} (TISEnableInputSource did not read ${lacking.length === 1 ? 'it' : 'them'} back as enabled and selectable in TIS's list; ruling 1189): the row needs ${lacking.length === 1 ? 'it' : 'them'}, and is never run under the US layout` : null;
+}
+// A row's marks for the venue: `venueInput` the cause (NO VERDICT `venue`, ./front-key.mjs), `invalid` its backstop.
+export const venueInputMarks = cause => ({ok: false, venueInput: cause, invalid: cause});
+
 // The row's marks: `ownerInput` the cause, `invalid` the same as a backstop, so nothing that reads only `invalid`
 // counts it.
 export const ownerInputMarks = cause => ({ok: false, ownerInput: cause, invalid: cause});

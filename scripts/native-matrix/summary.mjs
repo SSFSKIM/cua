@@ -452,7 +452,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     // Ruling 1168: where every sample's vendor pair could not be the reference, the missing proof is the vendor's.
     return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
       : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
-      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169)' : 'has no valid cua sample'}`;
+      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [
@@ -544,7 +544,10 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   // Ruling 1188: the rows the owner's Mac could not judge, its input source or preference not theirs, per side.
   const ownerInput = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerInput ?? 0), 0);
   const owned = ownerInput('cua') + ownerInput('vendor');
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1189: the rows an input source the runner could not enable left unjudged (and any frame split), per side.
+  const venue = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.venue ?? 0), 0);
+  const venued = venue('cua') + venue('vendor');
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {

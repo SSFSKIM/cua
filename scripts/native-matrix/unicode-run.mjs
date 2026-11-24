@@ -19,7 +19,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {ownerInputCause, ownerInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
@@ -41,10 +41,12 @@ export async function unicodeSection(ctx, plan) {
       const unset = condition !== 'perContext' && ctx.perContextOff !== true
         ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
       const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition]) : null;
+      const venue = venueInputCause(ctx.venueMissing, SELECTS[condition]);
       for (const field of plan.fields) {
         const ofField = mine.filter(r => r.field === field);
         if (!ofField.length) continue;
         await ctx.checkpoint();
+        if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
         if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owned)}); continue; }
         if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
         if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
@@ -71,9 +73,14 @@ export const OWNER_NEEDS = Object.freeze({
   perContext: {perContext: true, switch: `${KOREAN_2SET} selected with the driven scene in front and ${ABC} with the user window in front`},
 });
 
-// A source selected through the probe and read back, with the keyboard layout read beside it; off a hosted runner
-// never selected (the owner's changed during the run: it does not hold). -> whether it holds.
+// The sources each condition selects: one the runner's setup could not enable leaves its rows NO VERDICT `venue`
+// (ruling 1189), never run under the US layout.
+export const SELECTS = Object.freeze({latin: [ABC], korean: [KOREAN_2SET], midSwitch: [ABC, KOREAN_2SET], composing: [ABC, KOREAN_2SET], perContext: [ABC, KOREAN_2SET]});
+
+// A source selected through the probe and read back, with the keyboard layout read beside it; off a hosted runner, or
+// one the venue could not enable, never selected (it does not hold). -> whether it holds.
 function useSource(ctx, id, when) {
+  if (ctx.venueMissing?.includes(id)) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not enabled on this runner (ruling 1189)'}); return false; }
   if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not selected off a hosted runner (ruling 1188)'}); return false; }
   const out = device(ctx, ['source', 'select', '--source', id]);
   const held = out?.selected === true && out.current === id;

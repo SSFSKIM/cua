@@ -872,7 +872,7 @@ async function launchRow(ctx, {scene, user}) {
     Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw && recorded?.recorded === true, outcome, ...(check.ok ? {} : {error: check.error})});
     if (after.watcher !== true) return push(ctx, {...row, ok: false, invalid: 'the activation watcher was not running after the launch'});
     push(ctx, row);
-    ctx.judged.set(key, {row, oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
+    ctx.judged.set(key, {row, oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
       launched: SCENES[scene].bundleId, order: {before: before.windowOrder ?? null, after: after.windowOrder ?? null}, targets: [SCENES[scene].bundleId],
       userWindow: {pid: userWindow.pid, number: before.reading?.topWindow?.number ?? null}}});
     return row;

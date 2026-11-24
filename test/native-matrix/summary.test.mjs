@@ -799,9 +799,13 @@ test('hold 3\'s records still load and judge: FAIL, on interference and Unicode 
   const j = judge(results, problems, {departures: []});
   assert.equal(j.verdict, 'FAIL');
   // The mid-switch row is judged by its measured prefix, paired or not: cua's run 2 failure fails it.
-  for (const line of ['not interfering: chrome/concurrent@textedit failed on cua', 'unicode: chrome/korean/typeText.lines failed on cua', 'finding elements: finder is lower on cua',
+  for (const line of ['unicode: chrome/korean/typeText.lines failed on cua', 'finding elements: finder is lower on cua',
     'unicode: chrome/midSwitch/typeText.long failed on cua'])
     assert.ok(j.blocking.includes(line), line);
+  // Its concurrent rows failed the oracle on both engines with nothing recorded of what came over the user window: shared,
+  // unread, and no longer blocking (ruling 1219, h5).
+  assert.ok(!j.blocking.includes('not interfering: chrome/concurrent@textedit failed on cua'));
+  assert.deepEqual(j.sharedInterference.map(s => [s.id, s.kind]), [['chrome/concurrent@textedit', 'unread'], ['finder/concurrent@textedit', 'unread']]);
   // Its Chrome notText row (#190): run 1's pair both refused alike, equal (a frontmost row, no shared limit); cua's run 2
   // has no vendor run, so it no longer fails on its own. It was the record's one frontmost "worse".
   const notText = j.methods.find(x => x.id === 'chrome/frontmost/selectText.notText');
@@ -1176,4 +1180,44 @@ test('vendorStopped is the stopped sample\'s alone: a stop between two samples o
   const m2 = (engine, sample, extra = {}) => ({section: 'method', id: CLICK, engine, run: 1, sample, ok: true, regime: 'frontmost', ...extra});
   const cell = judgeCell('reference', [m2('vendor', 1, {invalid: 'x'}), m2('vendor', 2, {ok: false, invalid: 'not run', unrun: stop})], [m2('cua', 1), m2('cua', 2)]);
   assert.deepEqual(cell.account.cua.noVerdict, {unpaired: 1, vendorStopped: 1});
+});
+
+// Ruling 1219 (h5): a not-interfering cell that fails on both engines blocks nothing (the flip regresses nothing there).
+// What moved decides it: the person's window, focus or input changed on either engine is a shared product defect, NO
+// VERDICT on cua naming a ticket (a placeholder main fills); nothing of the person's moved (a target's order, a window
+// other than the user's on top) is the venue's; a record that cannot tell is unread, never venue by default.
+test('a not-interfering failure on both engines: a shared defect, the venue\'s or unread by what moved; non-blocking, a cua-only one still blocks', () => {
+  const topOver = {ok: false, frontmost: true, topWindow: false, focus: true, activations: 0, route4: false, windowOrder: {before: false, after: false},
+    topChange: {before: {owned: true, pid: 11, number: 3, bounds: null}, after: {owned: false, bundleId: 'com.apple.TextInputUI.xpc.CursorUIViewService'}, userWindowMoved: false}};
+  const venue = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: topOver})}, cua: {axMs: 40, tweak: set(BACK, {interference: topOver})}});
+  assert.ok(!venue.blocking.some(b => b.includes(BACK)), venue.blocking.join('\n'));
+  assert.deepEqual(venue.sharedInterference, [{id: BACK, kind: 'venue', moved: [], seen: ['the top window (another window over the user\'s)'], ticket: null}]);
+  const focusLost = {ok: false, frontmost: true, topWindow: false, focus: false, activations: 0, route4: false};
+  const defect = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: focusLost})}, cua: {axMs: 40, tweak: set(BACK, {interference: topOver})}});
+  assert.ok(!defect.blocking.some(b => b.includes(BACK)), defect.blocking.join('\n'));
+  assert.deepEqual(defect.sharedInterference.map(s => [s.id, s.kind, s.moved, s.ticket]), [[BACK, 'defect', ['the focus'], null]]);
+  assert.match(renderSummary(defect), new RegExp(`- ${BACK.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: both engines failed; the person's focus moved: a shared product defect, NO VERDICT on cua, ticket to be registered`));
+  // The record that cannot say what moved (no topChange: C-5's records): unread, non-blocking.
+  const bare = {ok: false, frontmost: true, topWindow: false, focus: true, activations: 0, route4: false};
+  const unread = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: bare})}, cua: {axMs: 40, tweak: set(BACK, {interference: bare})}});
+  assert.deepEqual(unread.sharedInterference.map(s => [s.kind, s.seen]), [['unread', ['the top window (what came over it not recorded)']]]);
+  assert.ok(!unread.blocking.some(b => b.includes(BACK)));
+  // A target window above the user's says what came over it (C-5's launch row): the venue's.
+  const raised = {...bare, windowOrder: {before: false, after: true}};
+  const target = judged({vendor: {resolved: 9, axMs: 50, tweak: set(BACK, {interference: raised})}, cua: {axMs: 40, tweak: set(BACK, {interference: raised})}});
+  assert.deepEqual(target.sharedInterference.map(s => [s.kind, s.seen]), [['venue', ['a target window above the user\'s']]]);
+  // cua alone: blocks as before.
+  const alone = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(BACK, {interference: topOver})}});
+  assert.ok(alone.blocking.includes(`not interfering: ${BACK} failed on cua`), alone.blocking.join('\n'));
+  assert.deepEqual(alone.sharedInterference, []);
+});
+
+// Main's tickets for two known defects (#587, #588): where the judge names their cells, it cites them.
+test('the cells of a known defect are named with their ticket', () => {
+  const TYPE_SELECT = 'finder/frontmost/typeText.typeSelect';
+  const worse = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(TYPE_SELECT, {ok: false, outcome: {threw: 'x', errorName: 'typeUnconfirmed'}})}});
+  assert.ok(worse.blocking.includes(`method: ${TYPE_SELECT} is worse on cua (known defect #587)`), worse.blocking.join('\n'));
+  const SEARCH = 'openPanel/frontmost/typeText.search';
+  const unprepared = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: set(SEARCH, {ok: false, invalid: 'not prepared: the field could not be given the focus'})}});
+  assert.ok(unprepared.missing.includes(`method: ${SEARCH} has no valid cua sample (known defect #588)`), unprepared.missing.join('\n'));
 });

@@ -112,8 +112,12 @@ export function targetAbove(order, targets, userWindow) {
 // window read (an alert's window above both, say), and so does an order unread after it or one that does not hold the
 // person's window (targetAbove null); `before` is recorded beside it.
 // -> {ok, frontmost, topWindow, focus, activations, route4, windowOrder?: {before, after}, declared?}.
+// `named`: the front-window probe's own naming of each reading's top window (./matrix-device.mjs frontWindow.top), for
+// `topChange` (ruling 1219, h5): when the top window changed, what it was before and after (the run's own by pid, number
+// and bounds; another app's by its bundle) and whether the user's own window moved (the same process on top, another
+// window or other bounds), so a judge tells the person's window moving from another window over it. Never judged here.
 export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED,
-  order = null, targets = [], userWindow = null}) {
+  order = null, targets = [], userWindow = null, named = null}) {
   const same = sameFront(before, after);
   const focusKept = focus === null ? null : focus.appOwned === true && focus.appPid === userPid && focus.named === true;
   const windowOrder = order === null ? null : {before: targetAbove(order.before, targets, userWindow), after: targetAbove(order.after, targets, userWindow)};
@@ -127,8 +131,12 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const selfAccepted = own.length > 0 && accepted.selfActivating.includes(family);
   const ok = frontmost && topWindow && others.length === 0 && (own.length === 0 || selfAccepted) && (!route4 || route4Accepted);
   // Why the focus probe did not name the user window (./matrix-device.mjs ownedFocus), recorded and never judged.
+  const describe = (w, n) => (!w ? null : w.owned ? {owned: true, pid: w.ownerPid, number: w.number ?? null, bounds: w.bounds ?? null} : {owned: false, bundleId: n?.bundleId ?? null});
+  const userTop = w => w?.owned === true && userPid !== null && w.ownerPid === userPid;
+  const topChange = same.topWindow ? null : {before: describe(before?.topWindow, named?.before), after: describe(after?.topWindow, named?.after),
+    userWindowMoved: userTop(before?.topWindow) && userTop(after?.topWindow)};
   const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, ...(focus?.unnamed ? {focusUnnamed: focus.unnamed} : {}), activations: activations.length, route4,
-    ...(windowOrder ? {windowOrder} : {})};
+    ...(windowOrder ? {windowOrder} : {}), ...(topChange ? {topChange} : {})};
   if (own.length && !selfAccepted && frontmost && topWindow && others.length === 0)
     return {...out, declared: {kind: 'self-activating', cause: `${launched} activated at its launch: the family's own activation, recorded for the owner's acceptance`}};
   if (route4Accepted) return {...out, declared: {kind: 'route4-accepted', cause: `route 4 on ${family}, a family the owner accepted`}};

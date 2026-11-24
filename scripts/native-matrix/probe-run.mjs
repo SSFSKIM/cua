@@ -265,7 +265,7 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   const why = probeProblem(probe.answer) ?? postValidity(postedAt, interval);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
-  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
+  return span.end(row, {oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
     ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The window-order oracle's data for a background attempt (./oracle.mjs judgeInterference, #485): the order read before
@@ -354,7 +354,7 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: opening.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
   const routes = [opened.route, typed.route, opening.route, follow.route];
-  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid,
+  return span.end(row, {oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid,
     ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The untitled document closed after a variant that stopped part-way. Once the debounce a probe of this attempt may have

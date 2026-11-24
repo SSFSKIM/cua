@@ -446,7 +446,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     }
   }
 
-  const interferencePass = interference.cua.rows > 0 && interference.cua.failed.length === 0 && interference.cua.declared.length === 0;
+  // Ruling 1219 (h5): a not-interfering cell failed on both engines blocks nothing; what moved decides it (sharedInterferenceOf).
+  const sharedInterference = sharedInterferenceOf(rows, interference);
+  const sharedIds = new Set(sharedInterference.map(s => s.id));
+  const cuaFailed = interference.cua.failed.filter(f => !sharedIds.has(f.id));
+  const interferencePass = interference.cua.rows > 0 && cuaFailed.length === 0 && interference.cua.declared.length === 0;
   const speedMisses = speed.filter(s => s.beat === false);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
@@ -456,10 +460,10 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   ];
   const blocking = [
     ...departureFailures,
-    ...methods.filter(m => m.verdict === 'worse').map(m => `method: ${m.id} is worse on cua`),
+    ...methods.filter(m => m.verdict === 'worse').map(m => `method: ${m.id} is worse on cua${knownDefect('method', m.id)}`),
     ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
     ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
-    ...interference.cua.failed.map(f => `not interfering: ${f.id} failed on cua`),
+    ...[...new Set(cuaFailed.map(f => f.id))].map(id => `not interfering: ${id} failed on cua`),
     ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => (r.differs ? `${r.section}: ${r.id} composes otherwise on the vendor: the engines differ (ruling 1119)` : `${r.section}: ${r.id} failed on cua`)),
     ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
   ];
@@ -476,7 +480,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     return `${SECTION_NAMES[c.section]}: ${c.id} ${only('vendorStopped') ? `has no cua sample with a vendor sample to compare: the vendor's run stopped before it (${stops})`
       : unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
       : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
-      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}`;
+      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}${knownDefect(c.section, c.id)}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [
@@ -491,7 +495,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, cells, others, owner,
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), verdict};
 }
 
@@ -633,6 +637,9 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   }
   out.push('');
 
+  for (const s of j.sharedInterference ?? []) out.push(`- ${s.id}: both engines failed; ${s.kind === 'defect' ? `the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a shared product defect, NO VERDICT on cua, ${s.ticket ? `ticket ${s.ticket}` : 'ticket to be registered'}`
+    : s.kind === 'venue' ? `nothing of the person's moved (${s.seen.join(', ')}): the venue's, NO VERDICT on cua` : `the record does not say what moved (${s.seen.join(', ')}): unread, NO VERDICT on cua`} (ruling 1219)`);
+  if (j.sharedInterference?.length) out.push('');
   out.push('## What changes for a user', '', 'The places where cua refuses or answers unconfirmed where the vendor answered ok (R3), each declared with its Decision Log entry; nothing else can be here.', '');
   if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${d.decision}`);
   for (const h of j.honest) out.push(`- ${h.section} ${h.id}: the vendor answered ok with other text (a false ok), cua answered ${h.cua.kind} (${h.cua.name}) in ${h.samples} sample(s): better, no entry needed`);
@@ -720,4 +727,38 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push('');
   }
   return `${out.join('\n')}\n`;
+}
+
+// Main's tickets for known defects (#587, #588), cited wherever the judge names their cells; the same field a shared
+// not-interfering defect's ticket fills once main registers it (sharedInterferenceOf's `ticket`).
+export const KNOWN_DEFECTS = Object.freeze({'method finder/frontmost/typeText.typeSelect': '#587', 'method openPanel/frontmost/typeText.search': '#588'});
+const knownDefect = (section, id) => (KNOWN_DEFECTS[`${section} ${id}`] ? ` (known defect ${KNOWN_DEFECTS[`${section} ${id}`]})` : '');
+
+// Ruling 1219 (h5): the not-interfering cells cua failed whose vendor rows failed too (undeclared on both). Each is judged
+// from what moved, read on both engines' failing records: the person's front app, focus, an activation, the user's own
+// window (`topChange.userWindowMoved`), or the user's input (`userKept`, `userLanded`) is a shared product defect, NO
+// VERDICT on cua naming a ticket (null until main registers it; KNOWN_DEFECTS); with none of those, a window other than
+// the user's over it (`topChange` recorded) or a target window above the user's (`windowOrder.after`) is the venue's; a top
+// window changed with nothing recorded of what came over it is unread. -> [{id, kind: 'defect'|'venue'|'unread', moved, seen, ticket}].
+function sharedInterferenceOf(rows, interference) {
+  const failing = engine => new Set(interference[engine].failed.map(f => f.id));
+  const vendorFailed = failing('vendor');
+  const ids = [...failing('cua')].filter(id => vendorFailed.has(id)).sort();
+  return ids.map(id => {
+    const records = rows.filter(r => r.id === id && r.interference && !r.interference.ok && !r.interference.declared);
+    const moved = new Set(), seen = new Set();
+    for (const r of records) {
+      const i = r.interference;
+      if (i.frontmost === false) moved.add('the front app');
+      if (i.focus === false) moved.add('the focus');
+      if (i.activations > 0) moved.add('an activation');
+      if (i.topChange?.userWindowMoved) moved.add('the user window');
+      if (r.outcome?.userKept === false || r.outcome?.userLanded === false) moved.add('the input');
+      // A target window above the user's (`windowOrder.after`) is what came over it; else `topChange` says, or nothing does.
+      if (i.windowOrder?.after === true) seen.add('a target window above the user\'s');
+      else if (i.topWindow === false && !i.topChange?.userWindowMoved) seen.add(i.topChange ? 'the top window (another window over the user\'s)' : 'the top window (what came over it not recorded)');
+    }
+    const unread = !moved.size && [...seen].some(s => s.includes('not recorded'));
+    return {id, kind: moved.size ? 'defect' : unread ? 'unread' : 'venue', moved: [...moved], seen: [...seen], ticket: KNOWN_DEFECTS[`interference ${id}`] ?? null};
+  });
 }

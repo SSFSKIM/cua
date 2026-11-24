@@ -136,3 +136,16 @@ test('the window order: the target\'s window above the person\'s fails the row; 
   // No order given (a record from before the oracle read it): judged as before, the field absent.
   assert.equal('windowOrder' in judgeInterference(same), false);
 });
+
+// Ruling 1219 (h5): a top window that changed is recorded with what stood on top before and after, so a judge can tell
+// the person's own window moving from another window over it.
+test('judgeInterference records what the top window was before and after when it changed', () => {
+  const user = {ownerPid: 11, number: 3, bounds: {x: 0, y: 0, width: 10, height: 10}, owned: true};
+  const reading = topWindow => ({frontmost: {pid: 11, bundleId: 'com.apple.TextEdit', owned: true}, topWindow});
+  const over = judgeInterference({before: reading(user), after: reading({ownerPid: null, number: null, bounds: null, owned: false}), userPid: 11, scene: 'finder',
+    named: {before: null, after: {owned: false, bundleId: 'com.example.over', number: 9, ownerPid: 66, layer: 0}}});
+  assert.deepEqual(over.topChange, {before: {owned: true, pid: 11, number: 3, bounds: user.bounds}, after: {owned: false, bundleId: 'com.example.over'}, userWindowMoved: false});
+  const moved = judgeInterference({before: reading(user), after: reading({...user, bounds: {x: 5, y: 0, width: 10, height: 10}}), userPid: 11, scene: 'finder'});
+  assert.equal(moved.topChange.userWindowMoved, true);
+  assert.equal('topChange' in judgeInterference({before: reading(user), after: reading(user), userPid: 11, scene: 'finder'}), false);
+});

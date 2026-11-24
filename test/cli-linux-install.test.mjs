@@ -4,27 +4,35 @@ import './helpers/scratch-home.mjs'; // first: the engine setting is read from t
 // the pointer to the derived release once they are in place, then cua's engine, every step attempted whatever happened
 // before, and the exit status set by a failed common part, a failed engine the home asks for, or a vendor selection,
 // which cua 0.30.0 retired on Linux (engine_retired, once every step ran). Nothing of the vendor's is installed, and
-// --archive and --release are usage errors. Each installer is a stub that lays its part in a scratch home (or fails as a
-// download would); the sessions that open afterwards are planned by the real `openConnection` over that home. Also
-// `cua runtime use` on Linux, and macOS's install, which is the vendor's release and then Node, as before.
+// --archive and --release are usage errors. A vendor's release an older cua's install recorded is named, with its size,
+// and left as it is (§3). Each installer is a stub that lays its part in a scratch home (or fails as a download would);
+// the sessions that open afterwards are planned by the real `openConnection` over that home. Also `cua runtime use` on
+// Linux, and macOS's install, which is the vendor's release and then Node, as before.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {createHash, randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
+import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {main} from '../src/cli.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
-import {RELEASES_DIR, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, selectPin} from '../src/runtime/manifest.mjs';
+import {linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, selectPin} from '../src/runtime/manifest.mjs';
+import {loadModuleLock, loadModuleProvenance, pinnedClosure} from '../src/runtime/module-tree.mjs';
+import {helperAsset, loadHelperPin} from '../src/sandbox/linux.mjs';
+import {engineAsset, loadEnginePin} from '../src/runtime/linux-engine.mjs';
+import {loadNodePins, selectNodePin} from '../src/runtime/managed-node.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {guardedLinuxHelper} from '../src/runtime/sandbox.mjs';
 import {SCRATCH_HOME} from './helpers/scratch-home.mjs';
 import {fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
 import {scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {INSTALLED_AT, RETIRED as RECORDED, plantRetiredRelease} from './fixtures/retired-release.mjs';
+import {startRecording} from './helpers/vendor-tree-recorder.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 const RELEASE = linuxRelease(loadLinuxRuntime({host: LINUX}), 'x64');
-const VENDOR = selectPin(loadPins(), LINUX);
+// The vendor's release an older cua's install placed and recorded.
+const VENDOR_RELEASE = RECORDED.x64.release;
 const INSTALLER = ownInstaller().command;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const pointer = home => existsSync(join(home, 'current.json')) ? JSON.parse(readFileSync(join(home, 'current.json'), 'utf8')).release : null;
@@ -46,17 +54,17 @@ function scratchHome(t) {
   return realpathSync(s.dir);
 }
 
-// The vendor's tree for the checked-in pin, as an older cua's install left it (placeholder files; no vendor code).
-function layVendorTree(home) {
-  const root = join(home, 'runtimes', VENDOR.release);
-  for (const [key, rel] of Object.entries(VENDOR.layout)) {
+// §3.3's sentence for a release at `root` of `bytes`, written out.
+const retiredLine = (root, bytes) => `cua 0.30.0 no longer uses the vendor's release at ${root} for sessions: ${bytes} bytes as it is now, where a cua install `
+  + 'recorded placing it on 2026-10-28. cua leaves it in place and has not checked what it holds. Before deleting it by hand, check that no older cua '
+  + '(another checkout on this home) still runs from it, and for files added to it';
+// Every entry under `root`: its type, mode, size, mtime, and its bytes' hash.
+function treeState(root) {
+  return readdirSync(root, {recursive: true}).sort().map(rel => {
     const path = join(root, rel);
-    if (key === 'moduleDir' || key === 'skyServiceApp') { mkdirSync(path, {recursive: true}); continue; }
-    mkdirSync(dirname(path), {recursive: true});
-    writeFileSync(path, '');
-  }
-  writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: VENDOR.release, archive: {sha256: VENDOR.archive.sha256, length: VENDOR.archive.length}, source: 'download'}));
-  return root;
+    const stat = lstatSync(path);
+    return {rel, mode: stat.mode, size: stat.size, mtime: stat.mtimeMs, ...(stat.isFile() ? {sha256: sha256(readFileSync(path))} : {})};
+  });
 }
 
 // Stub installers: each records its call and lays its part, or throws as an unreachable server would while its name is
@@ -161,6 +169,7 @@ test('cua install in an empty home: the record, the module tree, the helper and 
   assert.deepEqual(report.pointer, {previous: null, current: RELEASE, changed: true});
   assert.equal(report.modules.root, join(home, 'modules', loadLinuxRuntime({host: LINUX}).modules.lock));
   assert.equal('vendor' in report, false, 'no vendor lane');
+  assert.deepEqual(report.retired, [], 'no vendor release to name');
   assert.equal(existsSync(join(home, 'runtimes')), false, 'no runtimes/ is made');
   assert.deepEqual(report.sessions, {browser: true, computer: true, engine: 'cua', why: {}}, 'no other engine is offered');
   assert.equal(report.error, undefined);
@@ -272,7 +281,7 @@ test('a vendor selection with a step that failed: that step\'s error is the inst
 });
 
 test('--archive and --release are usage errors on Linux, before anything is installed', async t => {
-  for (const args of [['--archive', '/srv/chatgpt.deb'], ['--release', VENDOR.release]]) {
+  for (const args of [['--archive', '/srv/chatgpt.deb'], ['--release', VENDOR_RELEASE]]) {
     const home = scratchHome(t);
     const {calls, deps} = installers(home);
     const run = await cli(['install', ...args], deps);
@@ -308,7 +317,7 @@ test('the engine fails under the default (cua\'s): nonzero; browser-only opens; 
 
 test('a common part fails: nonzero; the helper, Node and the engine are still attempted; the pointer is as it was; every session is refused, naming the installer', async t => {
   const home = scratchHome(t);
-  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
+  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR_RELEASE}));
   const {calls, deps} = installers(home, {down: new Set(['modules'])});
   const {status, report} = await installJson(deps);
   assert.equal(status, 1);
@@ -316,8 +325,8 @@ test('a common part fails: nonzero; the helper, Node and the engine are still at
   assert.deepEqual(report.modules, {failed: {code: 'download_failed', message: 'could not fetch modules: ENOTFOUND'}});
   assert.match(report.error.message, /^cua's module tree was not installed: could not fetch modules: ENOTFOUND$/);
   assert.ok(report.error.hint.includes(`\`${INSTALLER}\``), report.error.hint);
-  assert.deepEqual(report.pointer, {previous: VENDOR.release, current: VENDOR.release, changed: false});
-  assert.equal(pointer(home), VENDOR.release);
+  assert.deepEqual(report.pointer, {previous: VENDOR_RELEASE, current: VENDOR_RELEASE, changed: false});
+  assert.equal(pointer(home), VENDOR_RELEASE);
   assert.deepEqual(opened(report), {browser: false, computer: false});
   assert.equal(report.sessions.why.browser.code, 'runtime_not_installed');
   for (const options of [{surfaces: 'browser'}, {surfaces: 'computer'}, {surfaces: 'computer', engine: 'vendor'}]) {
@@ -344,16 +353,66 @@ test('a failure a step does not classify is normalized at its boundary, and the 
 
 test('cua install over a vendor pointer: the pointer moves to the derived release, both recorded; the vendor\'s tree is left as it was', async t => {
   const home = scratchHome(t);
-  const root = layVendorTree(home);
-  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
-  const record = readFileSync(join(root, 'install.json'));
-  const listing = readdirSync(root, {recursive: true}).sort();
+  const {root} = plantRetiredRelease(home);
+  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR_RELEASE}));
+  const before = treeState(root);
   const {status, report} = await installJson(installers(home).deps);
   assert.equal(status, 0);
-  assert.deepEqual(report.pointer, {previous: VENDOR.release, current: RELEASE, changed: true});
+  assert.deepEqual(report.pointer, {previous: VENDOR_RELEASE, current: RELEASE, changed: true});
   assert.equal(pointer(home), RELEASE);
-  assert.deepEqual(readFileSync(join(root, 'install.json')), record);
-  assert.deepEqual(readdirSync(root, {recursive: true}).sort(), listing);
+  assert.deepEqual(treeState(root), before);
+});
+
+// #171 M6b (§3, 1216): a release an older cua's install recorded is named, after the engine's line, with its path, its
+// size and the checks before deleting it by hand; nothing there changes, and a second install says the same.
+test('cua install over a recorded release, twice: its line and `retired` both times, every part unchanged the second time, the tree as it was', async t => {
+  const home = scratchHome(t);
+  const {root, bytes} = plantRetiredRelease(home);
+  writeFileSync(join(root, 'added-by-hand'), 'x');
+  const before = treeState(root);
+  const retired = [{release: VENDOR_RELEASE, path: root, bytes: bytes + 1, installedAt: INSTALLED_AT, source: 'download'}];
+  const first = await installJson(installers(home).deps);
+  assert.equal(first.status, 0, first.stderr);
+  assert.deepEqual(first.report.retired, retired);
+  for (let run = 0; run < 2; run++) {
+    const {deps} = installers(home);
+    const json = await installJson(deps);
+    assert.equal(json.status, 0);
+    assert.deepEqual(json.report.retired, retired);
+    assert.equal(json.report.changed, false, 'the report sets no `changed`');
+    for (const part of ['modules', 'sandboxHelper', 'node', 'engine', 'pointer']) assert.equal(json.report[part].changed, false, part);
+    const text = await cli(['install'], installers(home).deps);
+    const lines = text.stdout.trimEnd().split('\n');
+    const engineAt = lines.findIndex(line => line.startsWith('cua\'s Linux engine '));
+    assert.equal(lines[engineAt + 1], retiredLine(root, bytes + 1), text.stdout);
+    assert.equal(lines.filter(line => line.includes(root)).length, 1, 'said once');
+  }
+  assert.deepEqual(treeState(root), before);
+});
+
+// §5.1: an empty home's install asks for this machine's pinned assets and nothing else, looks up no `ar` or `xz`, and
+// makes no runtimes/. The real installers run, every download answered 404, so each lane asks for its first asset and
+// stops there.
+test('cua install in an empty home: no runtimes/ made, only this machine\'s pinned assets asked for, no ar or xz looked up, nothing retired', {skip: process.platform !== 'linux' && 'the real installers run here'}, async t => {
+  const home = scratchHome(t);
+  const host = {platform: 'linux', arch: process.arch};
+  const pinned = new Set([
+    ...pinnedClosure(loadModuleLock(), loadModuleProvenance(), {...host, libc: 'glibc'}).map(pkg => pkg.resolved),
+    helperAsset(loadHelperPin(), host.arch).url, engineAsset(loadEnginePin(), host.arch).url, selectNodePin(loadNodePins(), host).archive.url]);
+  const asked = [];
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async url => { asked.push(String(url)); return new Response('gone', {status: 404}); };
+  const recording = startRecording();
+  let run, seen;
+  try { run = await installJson({home, platform: 'linux', host, env: {HOME: SCRATCH_HOME}}); } finally { seen = recording.stop(); globalThis.fetch = fetch; }
+  assert.equal(run.status, 1, 'every lane failed its download');
+  assert.ok(asked.length >= 4, asked.join('\n'));
+  assert.deepEqual(asked.filter(url => !pinned.has(url)), [], 'no URL but this machine\'s pinned assets');
+  for (const url of [helperAsset(loadHelperPin(), host.arch).url, engineAsset(loadEnginePin(), host.arch).url, selectNodePin(loadNodePins(), host).archive.url])
+    assert.ok(asked.includes(url), url);
+  assert.ok(!seen.some(({path}) => /\/(ar|xz)$/.test(path)), 'no ar or xz looked up');
+  assert.equal(existsSync(join(home, 'runtimes')), false);
+  assert.deepEqual(run.report.retired, []);
 });
 
 // Fix wave 1: what opens is resolved as a session resolves it (the Node lookup, the helper, the engine selection), not
@@ -419,19 +478,14 @@ test('an engine setting that cannot be read is reported, and no computer session
   assert.equal(lastLine(text), `${SAID}browser-only sessions open; no computer session opens: ${why} (invalid_setting)`);
 });
 
-test('vendor pins this checkout cannot load or read change nothing of the install: the leftovers scan goes on without them', async t => {
-  for (const pins of [() => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); },
-    () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); }]) {
-    const home = scratchHome(t);
-    const {deps} = installers(home);
-    deps.pins = pins;
-    const {status, report} = await installJson(deps);
-    assert.equal(status, 0);
-    assert.equal(report.modules.changed, true);
-    assert.deepEqual(opened(report), {browser: true, computer: true});
-    const text = await cli(['install'], deps);
-    assert.equal(text.status, 0, text.stderr);
-  }
+test('cua install on Linux reads no vendor pin: one that cannot be loaded changes nothing', async t => {
+  const home = scratchHome(t);
+  const {deps} = installers(home);
+  deps.pins = () => assert.fail('no vendor pin is read on Linux');
+  const {status, report} = await installJson(deps);
+  assert.equal(status, 0);
+  assert.equal(report.modules.changed, true);
+  assert.deepEqual(opened(report), {browser: true, computer: true});
 });
 
 test('a current.json that is not a file is named to be moved aside; the parts are installed all the same', async t => {
@@ -557,14 +611,14 @@ test('--modules-dir is passed to the module tree step; --sandbox-helper and --en
 test('cua runtime use on Linux: the derived release verifies its tree again and takes the pointer; any other name, a vendor release\'s too, is unknown_release, its hint naming no engine', async t => {
   const home = scratchHome(t);
   const {root} = fakeModuleTree(home, LINUX);
-  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
+  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR_RELEASE}));
   const deps = {home, host: LINUX};
   const used = await cli(['runtime', 'use', RELEASE, '--json'], deps);
   assert.equal(used.status, 0, used.stderr);
   assert.deepEqual(JSON.parse(used.stdout), {ok: true, release: RELEASE, root});
   assert.equal(pointer(home), RELEASE);
 
-  for (const name of [VENDOR.release, 'cua-linux-x64-e9.9.9-n24.0.0-s0.0.0-m000000000000']) {
+  for (const name of [VENDOR_RELEASE, 'cua-linux-x64-e9.9.9-n24.0.0-s0.0.0-m000000000000']) {
     const other = await cli(['runtime', 'use', name, '--json'], deps);
     assert.equal(other.status, 1);
     assert.deepEqual(JSON.parse(other.stdout).error, {code: 'unknown_release', message: `release ${name} is not this cua's Linux runtime, ${RELEASE}`,

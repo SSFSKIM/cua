@@ -15,16 +15,16 @@
 // bytes are never modified: extraction uses `ditto`, which keeps modes, symlinks, extended attributes and quarantine,
 // and components move by rename on the same volume.
 //
-// A linux pin names the vendor's deb (`archive.format: "deb"`): the system `ar` takes its data.tar.xz member out and
-// `tar` unpacks that, both checked for (with `xz`, which tar runs) before anything is downloaded, so a machine without
-// them is refused with missing_tool and the package to install. A component may be a file.
-// A linux pin lists nothing to signature-check; the archive hash is its trust root. On Linux the vendor's tree is a lane
-// of `cua install` kept for CUA_NATIVE_ENGINE=vendor (#171 M6a, src/runtime/linux-install.mjs), installed with
-// `activate: false`: the pointer names cua's own runtime there, and this install leaves it as it was. A runtimes/ that is
-// not a directory blocks every release under it, and is refused as what stands in the way.
+// The vendor's runtime is macOS's alone: on Linux cua installs its own runtime (src/runtime/linux-install.mjs), and since
+// cua 0.30.0 (#171 M6b) nothing here fetches or unpacks the vendor's deb. A release an older cua placed there is reported
+// and left in place (src/runtime/retired-tree.mjs).
 //
 // The archive's Chrome plugin (OpenAI's host for the ChatGPT extension) is not installed: #79 removed that route. A
 // release installed before keeps the chrome-plugin directory it was given; nothing reads or launches it.
+//
+// The Linux steps below keep their reads and writes out of the vendor's tree an older cua placed (#171 M6b, the
+// pre-flight's §3.4): each refuses a staging/ that is a link before it touches it (vendor-tree.mjs
+// stagingOutsideVendorTree), and the helper's installed file is read only once it is shown to lie outside the tree.
 //
 // installSandboxHelper is `cua install`'s Linux sandbox helper step (#115 M3; src/sandbox/linux.mjs): the pinned asset
 // for the machine's architecture, fetched from its pinned URL (Node's fetch) or taken from a local file, checked against
@@ -44,9 +44,9 @@
 // selected or asked for, built and signed into the pending slot beside the approved engine, which keeps serving
 // untouched until `cua engine approve` promotes the pending build (ruling 1118).
 //
-// The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
-// always uses the production codesign check, the global fetch and the PATH.
-import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
+// The signature checker and fetch are injectable for tests through this module API only; the CLI always uses the
+// production codesign check and the global fetch.
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, createReadStream, createWriteStream} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
@@ -58,16 +58,12 @@ import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
 import {findPin, loadPins, locateRuntime, pointerObstruction, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
 import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
-import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
 import {ENGINE_BINARY, assertEnginePathsOutsideVendorTree, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
 import {buildEngine, engineDirectory, installedEngine} from './engine.mjs';
 import {signWaitMs} from './engine-sign.mjs';
 import {nativeEngineSetting} from './launch.mjs';
-
-// What unpacking a deb runs, and the package each comes from.
-const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
-const DEB_PAYLOAD = 'data.tar.xz';
+import {outsideVendorTree, stagingOutsideVendorTree} from './vendor-tree.mjs';
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -76,16 +72,14 @@ function run(command, args, options = {}) {
   });
 }
 
-export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress, tools = name => findTool(name), activate: makeActive = true}) {
+export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress}) {
   assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
-  // On Linux, a runtimes/ that is not a directory blocks every release under it: named as what stands in the way.
-  if (manifest.platform === 'linux' && blocksDirectory(layout.runtimes)) occupied(layout.runtimes);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
-  const acquisition = {manifest, archivePath, fetch, onProgress, tools, staging: layout.staging};
+  const acquisition = {manifest, archivePath, fetch, onProgress, staging: layout.staging};
 
   // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated.
   const existing = existingRelease(target, manifest);
@@ -96,7 +90,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       if (!(error instanceof CuaError)) throw error;
       fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target, manifest.platform), cause: error});
     }
-    if (makeActive) activate(real, manifest.release);
+    activate(real, manifest.release);
     return {release: manifest.release, root: target, record: existing, changed: false};
   }
   assertTargetFree(target);
@@ -117,29 +111,25 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
     writeFileSync(join(tree, RECORD_FILE), JSON.stringify(fresh, null, 2) + '\n', {mode: 0o644});
 
     moveIntoPlace(tree, target);
-    if (makeActive) activate(real, manifest.release);
+    activate(real, manifest.release);
     return {release: manifest.release, root: target, record: fresh, changed: true};
   });
 }
 
 // Acquires and verifies the pinned archive in a staging directory owned by this operation, extracts it there, runs
-// `use` with the extracted tree, and always removes the staging directory. A deb's tools are checked first, before
-// anything is downloaded or created.
-async function withStage({manifest, archivePath, fetch, onProgress, tools, staging}, use) {
-  const deb = manifest.archive.format === 'deb';
-  const unpackers = deb ? requireTools(DEB_TOOLS, tools, `cua install needs them to unpack the ${manifest.release} deb`) : null;
+// `use` with the extracted tree, and always removes the staging directory.
+async function withStage({manifest, archivePath, fetch, onProgress, staging}, use) {
   const stage = mkdtempSync(join(staging, `${manifest.release}-`));
   try {
-    const archive = join(stage, deb ? 'archive.deb' : 'archive.zip');
+    const archive = join(stage, 'archive.zip');
     const source = archivePath ? 'archive' : 'download';
-    if (archivePath) await snapshotArchive(archivePath, archive, manifest.archive, {deb});
+    if (archivePath) await snapshotArchive(archivePath, archive, manifest.archive);
     else await download(manifest.archive, archive, fetch, onProgress);
     await verifyArchive(archive, manifest.archive);
 
     const extracted = join(stage, 'extract');
     try {
-      if (deb) await extractDeb(archive, {stage, extracted, unpackers});
-      else await run('/usr/bin/ditto', ['-x', '-k', archive, extracted]);
+      await run('/usr/bin/ditto', ['-x', '-k', archive, extracted]);
     } catch (error) {
       fail('extract_failed', `could not extract ${manifest.release}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
     }
@@ -148,16 +138,6 @@ async function withStage({manifest, archivePath, fetch, onProgress, tools, stagi
   } finally {
     rmSync(stage, {recursive: true, force: true});
   }
-}
-
-// The deb's payload, unpacked whole into `extracted` (the pin names the components inside it). `ar x` writes the member
-// into its working directory, the stage; tar runs xz for the .xz payload.
-async function extractDeb(archive, {stage, extracted, unpackers}) {
-  await run(unpackers.ar, ['x', archive, DEB_PAYLOAD], {cwd: stage});
-  const payload = join(stage, DEB_PAYLOAD);
-  mkdirSync(extracted);
-  await run(unpackers.tar, ['-xJf', payload, '-C', extracted]);
-  rmSync(payload, {force: true});
 }
 
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
@@ -203,12 +183,6 @@ function occupied(target) {
   return fail('target_occupied', `${target} exists and was not installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
 }
 
-// Whether something at `path` stands where a directory must be: a file, or a link that leads to none.
-function blocksDirectory(path) {
-  try { return !statSync(path).isDirectory(); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  try { lstatSync(path); return true; } catch { return false; }
-}
-
 export function assertTargetFree(target) {
   try { lstatSync(target); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
   occupied(target);
@@ -245,14 +219,12 @@ export function moveIntoPlace(tree, target) {
 }
 
 // A local archive is cloned into staging first (APFS clone; extended attributes and quarantine kept), so the bytes
-// that are hashed are exactly the bytes that are extracted. A deb is copied with Node (a reflink where the filesystem
-// has them): Linux has no `cp -c`, and a deb carries no extended attributes cua keeps.
-async function snapshotArchive(path, dest, {length}, {deb}) {
+// that are hashed are exactly the bytes that are extracted.
+async function snapshotArchive(path, dest, {length}) {
   let stat;
   try { stat = statSync(path); } catch (error) { fail('archive_missing', `archive ${path} is not readable: ${error.code ?? error.message}`); }
   if (!stat.isFile()) fail('archive_missing', `archive ${path} is not a file`);
   if (stat.size !== length) fail('archive_length_mismatch', `archive ${path} is ${stat.size} bytes; the pin expects ${length}`, {hint: 'pass the pinned ChatGPT archive, or omit --archive to download it'});
-  if (deb) { copyFileSync(path, dest, fsConstants.COPYFILE_FICLONE); return; }
   try {
     await run('/bin/cp', ['-c', path, dest]);
   } catch {
@@ -326,19 +298,24 @@ export async function installSandboxHelper({home, pin = loadHelperPin(), path, f
   const asset = helperAsset(pin, host.arch);
   const real = realHome(home, {create: true});
   const target = helperPath(real, pin);
+  // What is placed is read only where it lies outside the vendor's tree, by the path the guard resolved.
+  const resolved = outsideVendorTree(target, real);
+  if (resolved.lead) fail('target_occupied', `${target} leads to ${resolved.lead}, under the vendor's tree, and cua does not install its sandbox helper through it`,
+    {hint: `move ${resolved.links[0] ?? target} aside first`});
+  const placedAt = resolved.real ?? target;
   let placed = null;
-  try { placed = readFileSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { placed = readFileSync(placedAt); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (placed) {
     if (sha256Of(placed) === asset.sha256) {
       // The pinned bytes without their mode would fail at spawn (src/sandbox/linux.mjs verifyHelper refuses them): restored.
-      if ((statSync(target).mode & 0o777) === 0o755) return {path: target, sha256: asset.sha256, changed: false};
-      chmodSync(target, 0o755);
+      if ((statSync(placedAt).mode & 0o777) === 0o755) return {path: target, sha256: asset.sha256, changed: false};
+      chmodSync(placedAt, 0o755);
       return {path: target, sha256: asset.sha256, changed: true};
     }
     fail('sandbox_helper_invalid', `the sandbox helper at ${target} is not the pinned ${pin.upstreamTag} helper for linux-${host.arch}; it is not replaced in place`,
       {hint: `stop any \`cua serve\` using it, remove ${helperDir(real, pin)}, then run \`cua install\` again`});
   }
-  const staging = homeLayout(real).staging;
+  const staging = stagingOutsideVendorTree(real);
   mkdirSync(staging, {recursive: true, mode: 0o700});
   const stage = mkdtempSync(join(staging, 'sandbox-helper-'));
   try {
@@ -389,7 +366,7 @@ export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = g
     if (!recordKept) writeEngineRecord(real, {...record, installedAt: new Date().toISOString()});
     return answer(true);
   }
-  const staging = homeLayout(real).staging;
+  const staging = stagingOutsideVendorTree(real);
   mkdirSync(staging, {recursive: true, mode: 0o700});
   const stage = mkdtempSync(join(staging, 'linux-engine-'));
   try {

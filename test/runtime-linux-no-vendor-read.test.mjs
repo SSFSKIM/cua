@@ -7,10 +7,14 @@
 // Linux one before M6a), which must be recorded stat-ing the vendor's bin/node. The traced live cell (§5.2, E1) is the
 // check on reads by any route the recorder does not wrap. The recorder (./helpers/vendor-tree-recorder.mjs) notes each
 // path as the call reaches it, through links and PATH, and also watches a real `cua serve` from its first line.
+// #171 M6b (its pre-flight's §3.4) adds install's and doctor's own reads and writes: the linked fixtures replayed through
+// the whole of doctor and of install, and full installs whose staging/ is a link into a recorded release, each run with
+// the release's report stubbed (nothing under runtimes/) and real (only the report's own lstat, readdir and one open).
 import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import {spawn, spawnSync} from 'node:child_process';
 import {syncBuiltinESMExports} from 'node:module';
 import {dirname, join, relative} from 'node:path';
@@ -18,13 +22,21 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {buildLaunch, nativeEngineFor, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
 import {linuxRelease, loadLinuxRuntime, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {assertSandboxConfines, assertSandboxFits} from '../src/runtime/sandbox.mjs';
-import {useRuntime} from '../src/runtime/install.mjs';
+import {installLinuxEngine, installSandboxHelper, useRuntime} from '../src/runtime/install.mjs';
+import {installLinux} from '../src/runtime/linux-install.mjs';
+import {installModuleTree, loadModuleLock, loadModuleProvenance} from '../src/runtime/module-tree.mjs';
+import {installNode} from '../src/runtime/node-install.mjs';
+import {buildLinuxEngine} from '../src/runtime/linux-engine.mjs';
+import {retiredTrees} from '../src/runtime/retired-tree.mjs';
+import {stagingGuard} from '../src/runtime/vendor-tree.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
-import {helperFor} from '../src/sandbox/linux.mjs';
+import {helperFor, loadHelperPin} from '../src/sandbox/linux.mjs';
 import {projectRoot} from '../src/secrets/project.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
-import {forgeActiveRuntime, scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
-import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
+import {scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {RETIRED, plantRetiredRelease} from './fixtures/retired-release.mjs';
+import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree, moduleHostOf} from './fixtures/own-linux-runtime.mjs';
+import {writeFixtureModules} from './fixtures/module-registry.mjs';
 import {inVendorTree, recorded, startRecording, within} from './helpers/vendor-tree-recorder.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -33,7 +45,8 @@ const LINUX = {platform: 'linux', arch: 'x64'};
 const SESSION = '6f1c2d3e-0000-4000-8000-0000000006a3';
 
 // A home as `cua install` leaves it after M6a, the vendor tree kept beside it: the module tree, the managed Node, an
-// engine recorded at the minimum, and the vendor's release with an executable bin/node.
+// engine recorded at the minimum, and the vendor's release an older cua's install recorded, with an executable bin/node
+// and current.json naming it.
 function homeWithVendorTree(t) {
   const s = shortScratch();
   t.after(s.cleanup);
@@ -41,11 +54,13 @@ function homeWithVendorTree(t) {
   fakeModuleTree(home, LINUX);
   fakeManagedNode(home, LINUX);
   fakeInstalledEngine(home, MIN_ENGINE_VERSION);
-  const {root} = forgeActiveRuntime(home, {node: '#!/bin/sh\necho v24.21.0\n'}, {host: LINUX, ownRuntime: false});
+  const {root} = plantRetiredRelease(home);
+  fs.writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: RETIRED.x64.release}));
   const vendorNode = join(root, 'cua_node', 'bin', 'node');
+  fs.writeFileSync(vendorNode, '#!/bin/sh\necho v24.21.0\n');
   assert.ok(fs.statSync(vendorNode).mode & 0o111, 'the vendor tree holds an executable Node');
   const user = scratchUserHome(t);
-  return {home, runtimes: join(home, 'runtimes'), vendorNode, ambient: {HOME: user, USER: 'u', PATH: `${dirname(vendorNode)}:/usr/bin:/bin`, DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'}};
+  return {home, runtimes: join(home, 'runtimes'), release: root, vendorNode, ambient: {HOME: user, USER: 'u', PATH: `${dirname(vendorNode)}:/usr/bin:/bin`, DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'}};
 }
 
 // A session's open and launch, as a connection makes them (src/mcp/connection.mjs), with the platform's default engine.
@@ -437,4 +452,268 @@ test('the project lookup on Linux keeps PATH\'s meaning: `..` after a link is th
   const work = join(scratch, 'work');
   fakeGit(join(work, 'tools'), '/relative');
   assert.equal(projectRoot(work, {env: {PATH: 'tools:/nonexistent'}, platform: 'linux', home: h.home}), '/relative');
+});
+
+// ---- #171 M6b: install's and doctor's own reads and writes (the pre-flight's §3.4, §5.1) ----
+
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const HELPER_BYTES = Buffer.from('#!/bin/sh\nexit 0\n');
+const REAL_HELPER_PIN = loadHelperPin();
+// Pins of the test's own, each naming bytes the test lays or serves (the real assets are never fetched).
+const helperPin = bytes => ({...REAL_HELPER_PIN, assets: {...REAL_HELPER_PIN.assets, 'linux-x64': {url: 'https://fixture.invalid/codex-linux-sandbox', length: bytes.length, sha256: sha256(bytes)}}});
+const enginePinFor = bytes => ({version: MIN_ENGINE_VERSION, release: `linux-engine-v${MIN_ENGINE_VERSION}`,
+  assets: {x64: {url: 'https://fixture.invalid/cua-engine', sha256: sha256(bytes)}, arm64: {url: 'https://fixture.invalid/cua-engine-arm64', sha256: sha256('arm64')}}});
+const NODE_VERSION = loadLinuxRuntime({host: LINUX}).node.version;
+const nodePinFor = ({sha256: hash, length}) => ({schema: 1, version: NODE_VERSION, platform: 'linux', arch: 'x64',
+  archive: {url: `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz`, length, sha256: hash}, notes: 'fixture'});
+// The engine fakeInstalledEngine lays, and the archive fakeManagedNode's record names.
+const FAKE_ENGINE = Buffer.from(`#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)"\n`);
+const FAKE_NODE_ARCHIVE = {sha256: 'a'.repeat(64), length: 1};
+const NO_RETIRED = () => ({trees: [], lines: []});
+
+// What the release's report itself touches in `home`, recorded alone: what "only its own" is held to.
+const own = seen => seen.map(({call, path}) => `${call} ${path}`).sort();
+const reportsOwn = home => own(inVendorTree(recorded(() => retiredTrees({home})), home));
+
+// Every entry of the release: its type, size, mode, mtime and bytes, and the release directory's own mtime.
+function releaseState(root) {
+  return fs.readdirSync(root, {recursive: true}).sort().map(rel => {
+    const stat = fs.lstatSync(join(root, rel));
+    return [rel, stat.mode, stat.size, stat.mtimeMs, stat.isFile() ? sha256(fs.readFileSync(join(root, rel))) : null];
+  }).concat([['.', fs.lstatSync(root).mtimeMs]]);
+}
+
+// Doctor whole over the home, with the release's report `retired` (a stub, or the real one when undefined).
+const doctorOf = (h, retired) => inspectRuntime({home: h.home, env: {HOME: h.ambient.HOME, DISPLAY: ':9'}, host: LINUX, verifySignatures: () => assert.fail('codesign'),
+  inspectHelper: () => assert.fail('the native socket helper'), inspectSecrets: async () => ({dir: '/nowhere', exists: false}),
+  inspectLinux: async () => [], inspectChrome: async () => [], inspectAgent: async () => [], readLinuxCapabilities: async () => null, ...(retired ? {retired} : {})});
+
+// Install whole over the home with the real installers, each held to the parts the home holds or to the archives
+// `serve` and `modules` give, with the release's report `retired`. `fetched` lists every URL asked for.
+function installOf(h, {retired, serve = {}, nodePin = nodePinFor(FAKE_NODE_ARCHIVE), enginePin = enginePinFor(FAKE_ENGINE), helper = helperPin(HELPER_BYTES), modules} = {}) {
+  const fetched = [];
+  const fetch = async url => {
+    fetched.push(url);
+    const bytes = serve[url];
+    return bytes ? new Response(bytes, {headers: {'content-length': String(bytes.length)}}) : modules ? modules.fetch(url) : new Response('gone', {status: 404});
+  };
+  const run = () => installLinux({values: {}, home: h.home, env: {HOME: h.ambient.HOME}, host: LINUX,
+    installModules: options => installModuleTree({...options, host: moduleHostOf(LINUX), fetch, ...(modules ? {lock: modules.lock, provenance: modules.provenance} : {})}),
+    installHelper: options => installSandboxHelper({...options, pin: helper, host: LINUX, fetch}),
+    installNode: options => installNode({...options, host: LINUX, fetch}), nodePins: () => [nodePin],
+    installEngine: options => installLinuxEngine({...options, host: LINUX, fetch}), enginePin: () => enginePin,
+    ...(retired ? {retired} : {})});
+  return {run, fetched};
+}
+
+// Runs the async `fn` recorded -> {value, error, seen}.
+async function recordedRun(fn) {
+  const recording = startRecording();
+  let value, error, seen;
+  try { value = await fn(); } catch (caught) { error = caught; } finally { seen = recording.stop(); }
+  return {value, error, seen};
+}
+
+// A home holding every part as an install leaves it, the helper included, with the vendor's recorded release beside.
+function wholeHome(t) {
+  const h = homeWithVendorTree(t);
+  const {path} = helperFor({home: h.home, arch: LINUX.arch});
+  fs.mkdirSync(dirname(path), {recursive: true});
+  fs.writeFileSync(path, HELPER_BYTES, {mode: 0o755});
+  return {...h, helper: path};
+}
+// Replaces `own` (a file or directory of the home's) with a link to a copy of it planted under runtimes/ -> `own`.
+function linkIntoTree(h, path) {
+  const planted = join(h.runtimes, `planted-${relative(h.home, path).replaceAll('/', '-')}`);
+  if (fs.existsSync(path)) { fs.cpSync(path, planted, {recursive: true}); fs.rmSync(path, {recursive: true}); } else fs.mkdirSync(planted, {recursive: true});
+  fs.symlinkSync(planted, path);
+  return path;
+}
+
+// The linked fixtures above, each a part of the home made a link into the tree, and a node/ and a modules/ that are
+// themselves such links (§3.4). `node`: the Node step's refusal and doctor's runtime.node must name the link.
+const LINKED = {
+  'the Node pointer': h => ({link: linkIntoTree(h, join(h.home, 'node', 'current.json')), node: true}),
+  'the Node record': h => ({link: linkIntoTree(h, join(h.home, 'node', NODE_VERSION, 'install.json')), node: true}),
+  'node/': h => ({link: linkIntoTree(h, join(h.home, 'node')), node: true}),
+  'modules/': h => ({link: linkIntoTree(h, join(h.home, 'modules'))}),
+  'the engine': h => ({link: linkIntoTree(h, join(h.home, 'engine', 'linux', 'cua-engine'))}),
+  'the engine record': h => ({link: linkIntoTree(h, join(h.home, 'engine', 'linux', 'install.json'))}),
+  'engine/linux/': h => ({link: linkIntoTree(h, join(h.home, 'engine', 'linux'))}),
+  'engine/': h => ({link: linkIntoTree(h, join(h.home, 'engine'))}),
+  'the helper': h => ({link: linkIntoTree(h, h.helper)}),
+  'sandbox/': h => ({link: linkIntoTree(h, join(h.home, 'sandbox'))}),
+  'staging/': h => ({link: linkIntoTree(h, join(h.home, 'staging'))}),
+  'current.json': h => ({link: linkIntoTree(h, join(h.home, 'current.json'))}),
+};
+
+test('the replay: each linked part through the whole of doctor and of install, the report stubbed then real, touches nothing under runtimes/ but the report\'s own, and a reinstall acquires nothing', async t => {
+  for (const [name, link] of Object.entries(LINKED)) {
+    const h = wholeHome(t);
+    const linked = link(h);
+    const before = releaseState(h.release);
+    const yardstick = reportsOwn(h.home);
+    assert.ok(yardstick.some(entry => entry.startsWith('openSync ')) && yardstick.some(entry => entry.startsWith('readdirSync ')), 'the report names the release and walks it');
+    for (const [label, retired] of [['stubbed', NO_RETIRED], ['real', undefined]]) {
+      const doctor = await recordedRun(() => doctorOf(h, retired));
+      assert.equal(doctor.error, undefined, `${name}, doctor (${label}): ${doctor.error?.stack}`);
+      assert.deepEqual(own(inVendorTree(doctor.seen, h.home)), label === 'stubbed' ? [] : yardstick, `${name}, doctor (${label})`);
+      const install = installOf(h, {retired});
+      const installed = await recordedRun(install.run);
+      assert.equal(installed.error, undefined, `${name}, install (${label}): ${installed.error?.stack}`);
+      assert.deepEqual(own(inVendorTree(installed.seen, h.home)), label === 'stubbed' ? [] : yardstick, `${name}, install (${label})`);
+      assert.deepEqual(install.fetched, [], `${name}: a reinstall acquires nothing`);
+      if (linked.node) {
+        // install refuses the Node step, naming the link; doctor's runtime.node names it as what blocks the installer
+        const {node} = installed.value.report;
+        assert.equal(node.failed?.code, 'target_occupied', `${name}: ${JSON.stringify(node)}`);
+        assert.match(node.failed.message, /under the vendor's tree, and cua does not install its Node through it$/);
+        assert.equal(node.failed.hint, `move ${linked.link} aside first`, name);
+        const row = doctor.value.checks.find(c => c.name === 'runtime.node');
+        assert.equal(row.status, 'fail', name);
+        assert.ok(row.detail.includes(`move ${linked.link} aside, then`), `${name}: ${row.detail}`);
+      }
+      if (label === 'real') {
+        assert.deepEqual(installed.value.report.retired.map(tree => tree.path), [h.release], name);
+        assert.ok(doctor.value.checks.some(c => c.name === 'runtime.retired' && c.status === 'skip'), name);
+      }
+    }
+    assert.deepEqual(releaseState(h.release), before, `${name}: the release is as it was`);
+  }
+});
+
+// ---- full installs with staging/ a link into the recorded release ----
+
+// The archives a full install takes, each served by URL: the module tree's fixture registry, the helper, a Node tarball
+// and the engine.
+function servedArchives(t) {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const registry = writeFixtureModules(join(s.dir, 'modules-pins'));
+  const modules = {lock: loadModuleLock(registry.dir), provenance: loadModuleProvenance(registry.dir), fetch: registry.fetch};
+  const top = `node-v${NODE_VERSION}-linux-x64`;
+  fs.mkdirSync(join(s.dir, 'node-tree', top, 'bin'), {recursive: true});
+  fs.writeFileSync(join(s.dir, 'node-tree', top, 'bin', 'node'), `#!/bin/sh\necho v${NODE_VERSION}\n`, {mode: 0o755});
+  fs.writeFileSync(join(s.dir, 'node-tree', top, 'LICENSE'), 'licence\n');
+  const tarball = join(s.dir, 'node.tar.gz');
+  assert.equal(spawnSync('tar', ['-czf', tarball, '-C', join(s.dir, 'node-tree'), top]).status, 0);
+  const nodeBytes = fs.readFileSync(tarball);
+  const nodePin = nodePinFor({sha256: sha256(nodeBytes), length: nodeBytes.length});
+  const engine = Buffer.from(`#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fedcba987654)"\n`);
+  const helper = helperPin(HELPER_BYTES);
+  const enginePin = enginePinFor(engine);
+  return {modules, nodePin, enginePin, helper,
+    serve: {[helper.assets['linux-x64'].url]: HELPER_BYTES, [nodePin.archive.url]: nodeBytes, [enginePin.assets.x64.url]: engine}};
+}
+const PARTS = {
+  'the module tree': (h, a) => fs.rmSync(join(h.home, 'modules', a.modules.lock.hash), {recursive: true}),
+  'the helper': h => fs.rmSync(helperFor({home: h.home, arch: LINUX.arch}).path),
+  'Node': h => fs.rmSync(join(h.home, 'node', NODE_VERSION), {recursive: true}),
+  'the engine': h => fs.rmSync(join(h.home, 'engine', 'linux', 'cua-engine')),
+};
+const LANE = {'the module tree': 'modules', 'the helper': 'sandboxHelper', 'Node': 'node', 'the engine': 'engine'};
+
+// A home holding only the recorded release; with `missing`, every part placed first by this same install through a
+// real staging/, then that part removed. -> {h, archives}.
+async function stagedHome(t, {missing} = {}) {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const home = fs.realpathSync(s.dir);
+  const {root} = plantRetiredRelease(home);
+  const h = {home, runtimes: join(home, 'runtimes'), release: root, ambient: {HOME: scratchUserHome(t)}};
+  const archives = servedArchives(t);
+  if (missing) {
+    const {value} = await recordedRun(installOf(h, archives).run);
+    assert.equal(value.ok, true, JSON.stringify(value.report.error));
+    PARTS[missing](h, archives);
+  }
+  return {h, archives};
+}
+// staging/ made a link to a directory inside the recorded release.
+function linkStaging(h) {
+  fs.rmSync(join(h.home, 'staging'), {recursive: true, force: true});
+  fs.symlinkSync(join(h.release, 'cua_node', 'lib'), join(h.home, 'staging'));
+}
+const refusedStaging = (h, failed) => {
+  const staging = join(h.home, 'staging');
+  assert.equal(failed?.code, 'target_occupied', JSON.stringify(failed));
+  assert.equal(failed.message, `${staging} leads to ${h.runtimes}, under the vendor's tree, and cua does not install through it`);
+  assert.equal(failed.hint, `move ${staging} aside first`);
+};
+
+// The full install over `h`, run with the report stubbed and then real, its guard on: the lanes in `refused` refuse,
+// naming the link, before anything is created; the others acquire nothing; nothing is recorded under runtimes/ but the
+// report's own; the release is as it was.
+async function installsRefused(h, archives, refused) {
+  const before = releaseState(h.release);
+  const yardstick = reportsOwn(h.home);
+  for (const [label, retired] of [['stubbed', NO_RETIRED], ['real', undefined]]) {
+    const install = installOf(h, {...archives, retired});
+    const {value, seen} = await recordedRun(install.run);
+    for (const lane of Object.values(LANE)) {
+      if (refused.includes(lane)) refusedStaging(h, value.report[lane].failed);
+      else assert.equal(value.report[lane].changed, false, `${lane}: ${JSON.stringify(value.report[lane])}`);
+    }
+    assert.deepEqual(install.fetched, [], 'nothing was fetched');
+    assert.equal(value.ok, false);
+    assert.deepEqual(own(inVendorTree(seen, h.home)), label === 'stubbed' ? [] : yardstick, label);
+  }
+  assert.deepEqual(releaseState(h.release), before, 'the release\'s listing, bytes and mtimes are as before; no temp directory was made there');
+}
+
+// The negative control: with the guard off through its seam, the same install is recorded making its scratch directory
+// inside the release, which a recorder that saw nothing would otherwise pass.
+async function unguardedReaches(h, archives) {
+  stagingGuard.enabled = false;
+  try {
+    const {seen} = await recordedRun(installOf(h, {...archives, retired: NO_RETIRED}).run);
+    return seen.some(({call, reached}) => call === 'mkdtempSync' && within(reached, h.release));
+  } finally { stagingGuard.enabled = true; }
+}
+
+test('a full install with every part missing and staging/ a link into the recorded release: each acquiring lane refuses it, naming it, before it creates anything', async t => {
+  const {h, archives} = await stagedHome(t);
+  linkStaging(h);
+  await installsRefused(h, archives, Object.values(LANE));
+  assert.equal(await unguardedReaches(h, archives), true, 'the negative control: unguarded, the mkdtemp lands in the release');
+});
+
+for (const part of Object.keys(PARTS)) {
+  test(`a full install with ${part} alone missing and staging/ a link into the recorded release: that lane's own guard refuses it; the others acquire nothing`, async t => {
+    const {h, archives} = await stagedHome(t, {missing: part});
+    linkStaging(h);
+    await installsRefused(h, archives, [LANE[part]]);
+    assert.equal(await unguardedReaches(h, archives), true, 'the negative control');
+  });
+}
+
+test('a staging/ that is absent, or a real directory, installs as today: every part placed', async t => {
+  for (const real of [false, true]) {
+    const {h, archives} = await stagedHome(t);
+    if (real) fs.mkdirSync(join(h.home, 'staging'));
+    const {value} = await recordedRun(installOf(h, archives).run);
+    assert.equal(value.ok, true, JSON.stringify(value.report.error));
+    for (const lane of Object.values(LANE)) assert.equal(value.report[lane].changed, true, lane);
+  }
+});
+
+test('a local build\'s placing with staging/ a link into the recorded release: refused, naming it, before anything is created; unguarded, its mkdtemp lands there', async t => {
+  const {h} = await stagedHome(t);
+  linkStaging(h);
+  const source = join(h.home, 'source');
+  fs.mkdirSync(join(source, 'target', 'release'), {recursive: true});
+  fs.writeFileSync(join(source, 'Cargo.toml'), '[package]\n');
+  fs.writeFileSync(join(source, 'target', 'release', 'cua-engine'), '#!/bin/sh\necho local\n', {mode: 0o755});
+  const run = (command, args) => (args[0] === '--version' ? {status: 0, stdout: `cua-engine ${MIN_ENGINE_VERSION} (0123456789ab)\n`} : {status: 0, stdout: ''});
+  const build = () => buildLinuxEngine({home: h.home, sourceRoot: source, cargo: '/fixture/cargo', run, host: LINUX});
+  const before = releaseState(h.release);
+  const {error, seen} = await recordedRun(build);
+  refusedStaging(h, error);
+  assert.deepEqual(inVendorTree(seen, h.home), []);
+  assert.deepEqual(releaseState(h.release), before);
+  stagingGuard.enabled = false;
+  try {
+    const unguarded = await recordedRun(build);
+    assert.ok(unguarded.seen.some(({call, reached}) => call === 'mkdtempSync' && within(reached, h.release)), 'the negative control');
+  } finally { stagingGuard.enabled = true; }
 });

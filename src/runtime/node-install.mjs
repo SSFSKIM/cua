@@ -15,6 +15,11 @@
 // guidance, and a target path this tool did not install is refused and left as it is. Older versions stay until the
 // user removes them.
 //
+// On Linux (#171 M6b, the pre-flight's §3.4) the step first keeps its reads out of the vendor's tree an older cua placed,
+// as a session's lookup does (managed-node.mjs managedNodeIntoVendorTree): a pointer, an install record or a bin/node that
+// leads there is refused (target_occupied), naming the link to move aside, with nothing there read. Its staging/ is
+// created only when it acquires, and refused as a link before that (vendor-tree.mjs stagingOutsideVendorTree).
+//
 // The signature checker, the version probe, fetch and the tool lookup are injectable for tests through this module
 // API only; the CLI always uses codesign, the binary itself, the global fetch and the PATH.
 import {copyFileSync, lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync, constants as fsConstants} from 'node:fs';
@@ -26,7 +31,8 @@ import {homeLayout, realHome} from './layout.mjs';
 import {isRealDirectory} from './manifest.mjs';
 import {assertTargetFree, download, moveIntoPlace, verifyArchive} from './install.mjs';
 import {findTool, requireTools} from './tools.mjs';
-import {NODE_RECORD_FILE, fileDigest, nodeDistName, nodeLayout, nodeMatchesRecord, nodeVersion, readNodePointer, readNodeRecord} from './managed-node.mjs';
+import {NODE_RECORD_FILE, fileDigest, managedNodeIntoVendorTree, nodeDistName, nodeLayout, nodeMatchesRecord, nodeVersion, readNodePointer, readNodeRecord} from './managed-node.mjs';
+import {stagingOutsideVendorTree} from './vendor-tree.mjs';
 
 // What unpacking the tarball runs, and the package each comes from (GNU tar runs gzip for -z).
 const NODE_TOOLS = {tar: 'tar', gzip: 'gzip'};
@@ -59,9 +65,15 @@ export async function installNode({home, pin, archivePath, fetch = globalThis.fe
   const real = realHome(home, {create: true});
   const nodes = nodeLayout(real);
   const {staging} = homeLayout(real);
-  for (const dir of [nodes.root, staging]) {
-    try { mkdirSync(dir, {recursive: true, mode: 0o700}); } catch (error) { fail('node_install_failed', `could not create ${dir} (${error.code ?? error.message})`, {cause: error}); }
+  const linux = host.platform === 'linux';
+  if (linux) {
+    const into = managedNodeIntoVendorTree(real, pin.version);
+    if (into) fail('target_occupied', `${into.path} leads to ${into.lead}, under the vendor's tree, and cua does not install its Node through it`, {hint: `move ${into.link} aside first`});
   }
+  const create = dir => {
+    try { mkdirSync(dir, {recursive: true, mode: 0o700}); } catch (error) { fail('node_install_failed', `could not create ${dir} (${error.code ?? error.message})`, {cause: error}); }
+  };
+  for (const dir of [nodes.root, ...(linux ? [] : [staging])]) create(dir);
   const target = nodes.version(pin.version);
   const result = (record, changed, activated) => ({version: pin.version, root: target, node: join(target, 'bin', 'node'), changed, activated, source: record.source});
   const checks = {verifySignature, versionOf};
@@ -82,6 +94,7 @@ export async function installNode({home, pin, archivePath, fetch = globalThis.fe
   assertTargetFree(target);
 
   const unpack = requireTools(NODE_TOOLS, tools, `cua install needs them to unpack Node ${pin.version}`);
+  if (linux) create(stagingOutsideVendorTree(real));
   const stage = mkdtempSync(join(staging, `node-${pin.version}-`));
   try {
     const archive = join(stage, 'node.tar.gz');

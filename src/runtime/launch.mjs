@@ -194,7 +194,7 @@ import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs'
 import {assertTrustedServicesContained, helperOutsideVendorTree} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
-import {NODE_FLOOR, NODE_RECORD_FILE, managedNode, nodeLayout, nodeVersion, readNodePointer} from './managed-node.mjs';
+import {NODE_FLOOR, managedNode, managedNodeIntoVendorTree, nodeVersion, readNodePointer} from './managed-node.mjs';
 import {ownInstaller} from './manifest.mjs';
 import {ENGINE_HINT} from './installer.mjs';
 import {outsideVendorTree} from './vendor-tree.mjs';
@@ -780,12 +780,15 @@ function linuxHostNode({ambient, home, arch, versionOf}) {
     if (resolved.lead) missing(`${path} ${intoTree(path, resolved.lead)}, which is no part of cua's`);
     return resolved;
   };
-  const layout = nodeLayout(real);
-  guard(layout.pointer);
+  const refuseInTree = version => {
+    const into = managedNodeIntoVendorTree(real, version);
+    if (into) missing(`${into.path} ${intoTree(into.path, into.lead)}, which is no part of cua's`);
+  };
+  refuseInTree();
   let pinned;
   try { pinned = readNodePointer(real); } catch (error) { missing(error.message); }
   if (!pinned) missing('not installed');
-  for (const path of [join(layout.version(pinned), NODE_RECORD_FILE), join(layout.version(pinned), 'bin', 'node')]) guard(path);
+  refuseInTree(pinned);
   const managed = managedNode(real, {host: {platform: 'linux', arch}});
   if (!managed.path) missing(managed.missing);
   if (Number(managed.version.split('.')[0]) < NODE_FLOOR) missing(`its version ${managed.version} is below ${NODE_FLOOR}`);

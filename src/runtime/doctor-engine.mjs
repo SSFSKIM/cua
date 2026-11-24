@@ -242,7 +242,6 @@ const DESKTOP_WORDS = {
 async function linuxRow(selection, {env, config, session, facts, readCapabilities}) {
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
-  const held = linuxHeld(facts, say);
   const source = SOURCE_WORDS[selection.preferred.reason];
   const report = linuxReport({...selection, facts});
   const {refused} = selection;
@@ -263,15 +262,18 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
     return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${refused.code}): ${refused.message}${refused.hint ? `; ${refused.hint}` : ''}`), report};
 
   const bin = session.engine.bin;
-  const runs = bin.source === 'override'
-    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
-    : `${held}, ${SERVICE_WORDS}`;
   const device = deviceMode({env, config});
   const desktop = device.desktop;
   const mode = device.verdict ? say(device.verdict, `${device.words}: ${SETTING_FIX.desktop}`) : device.words;
   // An invalid device mode has failed the row already, and no session starts the engine in it.
   const caps = desktop ? await linuxCapabilities({bin, facts, desktop: desktop.mode, env, readCapabilities}) : {report: null, unread: 'the device mode is invalid', words: ''};
   if (caps.verdict) verdicts.push(caps.verdict);
+  // A start that failed as a session's would carries the row's one remedy (#171 M6b, fix wave 2), so what the home holds
+  // is then said as facts alone.
+  const held = caps.startFailed ? linuxHeldFacts(facts) : linuxHeld(facts, say);
+  const runs = bin.source === 'override'
+    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
+    : `${held}, ${SERVICE_WORDS}`;
   return {row: result('engine', worst(verdicts), `cua's engine is selected (${source('cua')}): sessions here run ${runs}; ${mode}${caps.words}`),
     report: {...report, service: 'cua', runs: {path: bin.path, source: bin.source}, desktop, capabilities: caps.report, capabilitiesUnread: caps.unread}};
 }
@@ -282,7 +284,7 @@ const NO_DISPLAY = /failed to connect to the X server/;
 const noDisplay = why => ({verdict: 'warn', words: `; its capability report is unread: no X display is reachable here (${why}; see display), and cua-engine starts only on one`});
 
 // The capability report of the engine sessions here run, read as a session's start reads it, with the desktop session
-// the launch hands a session -> {report, unread, verdict?, words}. The engine is started only where a session would
+// the launch hands a session -> {report, unread, verdict?, startFailed?, words}. The engine is started only where a session would
 // start it: a file cua placed or recorded, or the one CUA_LINUX_ENGINE_BIN names, on a display.
 async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
   if (bin.source !== 'override' && facts.build !== 'pinned' && facts.build !== 'local') {
@@ -295,12 +297,16 @@ async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
     report = await readCapabilities({path: bin.path, desktop, env: {...desktopSessionEnv(env), ...(env.HOME ? {HOME: env.HOME} : {})}});
   } catch (error) {
     if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
-    // The remedy, in the selection's form (#171 M6b, §2.1): for an engine CUA_LINUX_ENGINE_BIN names, its unset as the
-    // prerequisite, then the one command, since the home may hold no engine to fall back to; an installed one may be
-    // placed again, and the session's environment (display, bus, sandbox) is what doctor's other rows describe.
-    const remedy = bin.source === 'override' ? `unset CUA_LINUX_ENGINE_BIN, then run ${engineInstall()}`
-      : `if the engine is at fault, ${engineInstall()} places the pinned one again; the display, accessibility and sandbox rows describe the session's environment`;
-    return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
+    // The remedy, in the selection's form (#171 M6b, §2.1), one for the whole row: for an engine CUA_LINUX_ENGINE_BIN
+    // names, its unset as the prerequisite, then the one command, since the home may hold no engine to fall back to; an
+    // installed one may be placed again, and the session's environment (display, bus, sandbox) is what doctor's other
+    // rows describe. The client's own sentence stays as it is (N5): where it already names the installer, the row adds
+    // only the prerequisite.
+    const named = error.message.includes(ownInstaller().command);
+    const remedy = bin.source === 'override' ? (named ? 'unset CUA_LINUX_ENGINE_BIN before running it' : `unset CUA_LINUX_ENGINE_BIN, then run ${engineInstall()}`)
+      : `${named ? '' : `if the engine is at fault, run ${engineInstall()} to place the pinned one again; `}the display, accessibility and sandbox rows describe the session's environment`;
+    return {report: null, unread: error.message, verdict: 'fail', startFailed: true,
+      words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
   }
   const {CANNOT} = await import('../services/engine/linux/methods.mjs');   // the service's words, loaded only on Linux
   const lacking = Object.keys(CANNOT).filter(key => [undefined, null, false].includes(key.split('.').reduce((at, part) => at?.[part], report)));

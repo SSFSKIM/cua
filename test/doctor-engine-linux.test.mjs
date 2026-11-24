@@ -116,14 +116,19 @@ test('no X display: the engine is not started, its capability report unread, the
 });
 
 test('an engine sessions would refuse, or one that fails its report, fails the row with its own sentence', async () => {
-  const old = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error('cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine')});
+  // The client's own sentence, which names the installer (src/services/engine/linux/client.mjs): it is the row's remedy,
+  // never repeated (fix wave 2); the environment's rows are named besides.
+  const sentence = `cua-engine 0.4.4 is older than ${MIN_ENGINE_VERSION}, which this cua needs; run ${ENGINE_INSTALL}`;
+  const old = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error(sentence)});
   assert.equal(old.row.status, 'fail');
-  assert.match(old.row.detail, /; its capability report could not be read, and sessions here fail the same way: cua-engine 0\.2\.0 is older than 0\.3\.0, which this cua needs; run cua install --engine; /);
-  // Fix wave 1: the remedy: the engine placed again where it is at fault; the environment's rows otherwise.
-  assert.ok(old.row.detail.endsWith(`; if the engine is at fault, ${ENGINE_INSTALL} places the pinned one again; the display, accessibility and sandbox rows describe the session's environment`), old.row.detail);
-  assert.equal(old.report.capabilitiesUnread, 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine');
+  assert.ok(old.row.detail.endsWith(`; its capability report could not be read, and sessions here fail the same way: ${sentence}; `
+    + 'the display, accessibility and sandbox rows describe the session\'s environment'), old.row.detail);
+  assert.equal(old.row.detail.split(ownInstaller().command).length, 2, 'one command');
+  assert.equal(old.report.capabilitiesUnread, sentence);
+  // A sentence with no remedy of its own: the engine placed again where it is at fault; the environment's rows otherwise.
   const crashed = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
   assert.equal(crashed.row.status, 'fail');
+  assert.ok(crashed.row.detail.endsWith(`; if the engine is at fault, run ${ENGINE_INSTALL} to place the pinned one again; the display, accessibility and sandbox rows describe the session's environment`), crashed.row.detail);
 });
 
 test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names gives the override\'s prerequisite, then the one command', async t => {
@@ -140,6 +145,38 @@ test('a capability failure of the engine CUA_LINUX_ENGINE_BIN names gives the ov
   assert.equal(check.row.detail.split(ownInstaller().command).length, 2, 'one command');
   const bare = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, {read: NONE, capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
   assert.ok(bare.row.detail.endsWith(`; unset CUA_LINUX_ENGINE_BIN, then run ${ENGINE_INSTALL}`), bare.row.detail);
+});
+
+// Fix wave 2: on a capability failure the whole row carries one remedy, whatever the home holds and whatever the client's
+// own sentence says. What the home holds is said as facts; the client's sentence (N5) and the raw diagnostic stay as they
+// are, so where it already names the installer the row adds only the prerequisite, if any.
+test('a capability failure: the complete row names the installer once and no build, across the home\'s states and the client\'s sentence', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const built = join(realpathSync(s.dir), 'cua-engine');
+  writeFileSync(built, `#!/bin/sh\necho "cua-engine ${MIN_ENGINE_VERSION} (fixture0)"\n`, {mode: 0o755});
+  // the client's own sentences (src/services/engine/linux/client.mjs): one with no remedy, one naming the installer
+  const crash = 'cua-engine stopped (signal=SIGSEGV)';
+  const older = `cua-engine 0.4.4 is older than ${MIN_ENGINE_VERSION}, which this cua needs; run ${ENGINE_INSTALL}`;
+  const homes = {
+    installed: facts(), local: facts({build: 'local', release: null, current: false}),
+    missing: NONE, 'no pin': {...NONE, pinned: null}, 'unreadable pin': {...NONE, pinned: null, pinProblem: 'x.json: broken'},
+  };
+  const cases = [];
+  for (const [home, read] of Object.entries(homes)) for (const message of [crash, older]) {
+    cases.push({label: `override, ${home}, ${message === crash ? 'crash' : 'older'}`, env: {CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, read, message, prerequisite: true});
+    if (read.exists) cases.push({label: `installed, ${home}, ${message === crash ? 'crash' : 'older'}`, env: {CUA_NATIVE_ENGINE: 'cua'}, read, message, prerequisite: false});
+  }
+  for (const {label, env, read, message, prerequisite} of cases) {
+    const {row: check, report} = await row(env, {read, capabilities: () => new Error(message)});
+    assert.equal(check.status, 'fail', label);
+    assert.equal(check.detail.split(ownInstaller().command).length, 2, `${label}: one command on the whole row: ${check.detail}`);
+    assert.doesNotMatch(check.detail, /cua engine build|cargo/, label);
+    assert.ok(check.detail.includes(`sessions here fail the same way: ${message}`), `${label}: the client's sentence as it is`);
+    assert.equal(report.capabilitiesUnread, message, `${label}: the raw diagnostic`);
+    if (prerequisite) assert.ok(/unset CUA_LINUX_ENGINE_BIN/.test(check.detail.slice(check.detail.indexOf(message))), `${label}: the prerequisite`);
+    if (prerequisite && message === older) assert.ok(check.detail.endsWith(`${message}; unset CUA_LINUX_ENGINE_BIN before running it`), `${label}: ${check.detail}`);
+  }
 });
 
 test('what doctor does not start: a file it does not recognize, an invalid device mode, the vendor engine', async () => {

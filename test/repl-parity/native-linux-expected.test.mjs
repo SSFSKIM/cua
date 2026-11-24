@@ -241,12 +241,27 @@ test('checkEnginePair: a cua and cua pair needs one runtime, commit, controller 
   assert.doesNotThrow(() => checkEnginePair(post(), post(), {}));
   assert.doesNotThrow(() => checkEnginePair(post(), post(), {declarations: []}));
   assert.throws(() => checkEnginePair(post(), post(), {declarations: X64_DECLARATIONS}), /no expected declarations/);
-  assert.throws(() => checkEnginePair(post(), post({runtimeRelease: 'cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mffffffffffff'}), {}), /two runtimes/);
+  const served = runtime => { const m = post({runtimeRelease: runtime}); m.hostAttestations = m.hostAttestations.map(a => (a.executionFacts ? {...a, executionFacts: {...a.executionFacts, release: runtime}} : a)); return m; };
+  assert.throws(() => checkEnginePair(post(), served('cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mffffffffffff'), {}), /two runtimes/);
   assert.throws(() => checkEnginePair(post(), post({commit: 'd'.repeat(40)}), {}), /two commits/);
   assert.throws(() => checkEnginePair(post(), post({harnessCommit: 'd'.repeat(40)}), {}), /two controller commits/);
   assert.throws(() => checkEnginePair(post(), post({device: 'cua-gce'}), {}), /two devices/);
   assert.throws(() => checkEnginePair(post(), post({caseIds: [KEY, TYPE]}), {}), /two case sets/);
   assert.throws(() => checkEnginePair(post(), post({engineAnswered: []}), {}), /did not answer.*records no engine observation/);
+});
+// fix wave 1, finding 5: a cua and cua pair is two runs of cua's own Linux runtime, by its derived name, borne out by
+// every connection's recorded provenance; no runtime at all, or a vendor release where the own runtime goes, is refused
+test('checkEnginePair: a cua and cua pair needs a valid own Linux runtime identity on both runs', () => {
+  const none = () => { const m = post(); delete m.runtimeRelease; return m; };
+  assert.throws(() => checkEnginePair(none(), none(), {}), /not cua's own Linux runtime/, 'both runtimeRelease fields missing');
+  assert.throws(() => checkEnginePair(post({runtimeRelease: '26.928.40906-linux-x64'}), post({runtimeRelease: '26.928.40906-linux-x64'}), {}), /not cua's own Linux runtime/, 'the same vendor release in both');
+  assert.throws(() => checkEnginePair(post({runtimeRelease: 'cua-linux-x64-garbage'}), post({runtimeRelease: 'cua-linux-x64-garbage'}), {}), /not cua's own Linux runtime/);
+  // the connections' recorded provenance must bear the runtime out
+  const unattested = () => post({hostAttestations: []});
+  assert.throws(() => checkEnginePair(unattested(), unattested(), {}), /no connection's recorded provenance bears/);
+  const other = () => { const m = post(); m.hostAttestations = m.hostAttestations.map(a => ({...a, executionFacts: {...a.executionFacts, release: 'cua-linux-x64-e0.4.3-n24.22.0-s0.163.0-mb71dc1f8185d'}})); return m; };
+  assert.throws(() => checkEnginePair(other(), other(), {}), /served cua-linux-x64-e0\.4\.3/);
+  assert.doesNotThrow(() => checkEnginePair(post(), post(), {}));
 });
 test('checkEnginePair: a vendor pair with no vendor release fails as before M6b', () => {
   assert.throws(() => checkEnginePair(without(m6a('vendor'), 'vendorRelease').meta, without(m6a('vendor'), 'vendorRelease').meta, {}), /records no vendor release/);

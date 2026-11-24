@@ -51,6 +51,18 @@ export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(read
 //     engine as a determinism check (no declarations), each recording the one vendor release its connections bear out;
 //   - a cua and cua pair, the only kind a run made after M6b forms: the same case set besides, no declarations, and no
 //     vendor release asked of either record.
+// cua's own Linux runtime by its derived name (src/runtime/manifest.mjs linuxRelease): the engine, Node and sandbox
+// helper versions and the module lock's first twelve hex digits. No vendor release (digits first) has this form.
+export const OWN_LINUX_RELEASE = /^cua-linux-(x64|arm64)-e\d+\.\d+\.\d+-n\d+\.\d+\.\d+-s\d+\.\d+\.\d+-m[0-9a-f]{12}$/;
+// A cua lane's own runtime identity (#171 M6b, fix wave 1): its runtimeRelease is cua's own Linux runtime by name, and
+// every connection whose provenance was recorded served that release, at least one of them. Throws why not.
+function ownRuntimeProblem(meta, side) {
+  if (typeof meta.runtimeRelease !== 'string' || !OWN_LINUX_RELEASE.test(meta.runtimeRelease)) throw new Error(`the ${side} run's runtime ${JSON.stringify(meta.runtimeRelease)} is not cua's own Linux runtime: a cua and cua pair is two runs of it`);
+  const served = (Array.isArray(meta.hostAttestations) ? meta.hostAttestations : []).map(at => at?.executionFacts?.release).filter(r => r !== undefined);
+  if (!served.length) throw new Error(`in the ${side} run no connection's recorded provenance bears its runtime ${meta.runtimeRelease} out`);
+  const other = served.find(r => r !== meta.runtimeRelease);
+  if (other !== undefined) throw new Error(`a connection of the ${side} run served ${other}, not its runtime ${meta.runtimeRelease}`);
+}
 export function checkEnginePair(a, b, {declarations = []} = {}) {
   for (const [meta, side] of [[a, 'first'], [b, 'second']]) {
     if (meta.engine === undefined) throw new Error(`the ${side} run names no engine: an engine-lane diff takes two runs of repl-parity.mjs run --engine`);
@@ -64,6 +76,7 @@ export function checkEnginePair(a, b, {declarations = []} = {}) {
   if (a.commit !== b.commit) throw new Error(`the runs were prepared at two commits (${a.commit}, ${b.commit}): one sitting is one preparation`);
   if (a.harnessCommit !== b.harnessCommit) throw new Error('the runs\' cells came from two controller commits: the same cells run on both engines');
   if (a.engine === 'cua' && b.engine === 'cua') {
+    for (const [meta, side] of [[a, 'first'], [b, 'second']]) ownRuntimeProblem(meta, side);
     if (!isDeepStrictEqual(a.caseIds, b.caseIds)) throw new Error('the runs ran two case sets: a cua and cua pair runs the same cases');
   } else {
     for (const [meta, side] of [[a, 'first'], [b, 'second']])

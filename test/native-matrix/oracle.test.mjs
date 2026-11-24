@@ -204,6 +204,12 @@ test('ruling 1223: a top window of the user app\'s own process passes only with 
     const unwitnessed = judgeInterference({...base, ...over});
     assert.deepEqual([unwitnessed.ok, unwitnessed.noVerdict, unwitnessed.userAppWindow.failed.includes(failure)], [false, undefined, true], failure);
   }
+  // Fix wave M3: a row that never measured the user's landing (a background row's, userLanded null) gets no R3 record:
+  // the top window changed, it fails as any such row does.
+  for (const userLanded of [null, undefined]) {
+    const background = judgeInterference({...base, userLanded, posts: witnessed});
+    assert.deepEqual([background.ok, 'userAppWindow' in background, background.noVerdict], [false, false, undefined], String(userLanded));
+  }
   // Another process's window on top, or the user window itself changed, is not this case.
   assert.equal('userAppWindow' in judgeInterference({...base, after: reading({...popup, ownerPid: 66, owned: false})}), false);
   assert.equal('userAppWindow' in judgeInterference({...base, after: reading({...user, bounds: {x: 5, y: 0, width: 500, height: 400}})}), false);

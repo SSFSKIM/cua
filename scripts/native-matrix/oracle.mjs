@@ -109,9 +109,12 @@ export function targetAbove(order, targets, userWindow) {
 // ./witness.mjs rowPosts) shows the engine posted nothing to the user app's pid in the cell. A failed condition fails
 // it whatever the witness; otherwise no witness, or one with a gap (`gaps`: coverage, its positive control, the
 // person's posts not told from the engine's), is NO VERDICT, what is missing named, and a post by anyone but the
-// simulated person (`others`) fails it. -> null when the top window is not such a window, else {pass, failed, noVerdict?}.
+// simulated person (`others`) fails it. -> null when the row measured no landing (userLanded not a boolean) or the top
+// window is not such a window, else {pass, failed, noVerdict?}.
 function userAppWindow({same, after, userPid, userWindow, order, focusKept, userLanded, posts}) {
   const top = after?.topWindow;
+  // Only a row that measured the user's landing (a concurrent row's) is this case: no misleading record on any other.
+  if (typeof userLanded !== 'boolean') return null;
   if (same.topWindow || top?.owned !== true || userPid === null || top.ownerPid !== userPid || !Number.isInteger(userWindow?.number) || top.number === userWindow.number) return null;
   const failed = [];
   if (!(Array.isArray(order?.after) && order.after.some(w => w?.owned === true && w.pid === userPid && w.number === userWindow.number))) failed.push('the user window\'s number is not in the order after the act');

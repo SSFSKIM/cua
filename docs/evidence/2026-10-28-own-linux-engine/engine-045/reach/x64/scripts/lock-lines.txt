@@ -1,0 +1,15 @@
+2026-11-24T06:35:14Z wait h10-x64 load=1.17 0.64 0.93 render-host=none :: bash -c ./setup.sh > setup.log 2>&1; echo setup $?; ./check-home.sh > check-home.log 2>&1; echo check $?
+2026-11-24T06:35:14Z acquire h10-x64 load=1.17 0.64 0.93 render-host=none :: bash -c ./setup.sh > setup.log 2>&1; echo setup $?; ./check-home.sh > check-home.log 2>&1; echo check $?
+2026-11-24T06:35:52Z release h10-x64 status=0 load=2.47 1.05 1.06 render-host=none :: bash -c ./setup.sh > setup.log 2>&1; echo setup $?; ./check-home.sh > check-home.log 2>&1; echo check $?
+2026-11-24T06:36:12Z wait h10-x64 load=2.27 1.10 1.07 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H1
+2026-11-24T06:36:12Z acquire h10-x64 load=2.27 1.10 1.07 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H1
+2026-11-24T06:56:20Z release h10-x64 status=0 load=0.41 0.36 0.61 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H1
+2026-11-24T06:56:20Z wait h10-x64 load=0.41 0.36 0.61 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H2
+2026-11-24T06:56:24Z acquire h10-x64 load=0.38 0.36 0.60 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H2
+2026-11-24T07:15:00Z release h10-x64 status=0 load=0.46 0.42 0.49 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh H2
+2026-11-24T07:15:00Z wait h10-x64 load=0.46 0.42 0.49 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4a
+2026-11-24T07:15:00Z acquire h10-x64 load=0.46 0.42 0.49 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4a
+2026-11-24T07:34:53Z release h10-x64 status=0 load=17.48 17.01 12.67 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4a
+2026-11-24T07:34:53Z wait h10-x64 load=17.48 17.01 12.67 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4d
+2026-11-24T07:34:53Z acquire h10-x64 load=17.48 17.01 12.67 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4d
+2026-11-24T07:58:03Z release h10-x64 status=0 load=18.41 17.75 15.76 render-host=none :: timeout -s TERM -k 60 45m /Users/new/.local/share/cua-171/task162/step.sh L4d

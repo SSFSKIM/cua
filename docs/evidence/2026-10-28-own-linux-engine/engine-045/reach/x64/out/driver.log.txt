@@ -1,0 +1,18 @@
+2026-11-24T06:36:12Z driver start: H1 H2 L4a L4d
+2026-11-24T06:36:12Z wait H1 load=2.27 1.10 1.07 df avail 24G
+2026-11-24T06:56:20Z end H1 exit 0 load=0.41 0.36 0.61 
+    step.sh 2026-11-24T06:38:12Z start H1 after 120 s quiet wait: load=0.88 1.04 1.06 stress-ng=none df=23G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/home-x64-045 --out /Users/new/.local/share/cua-171/m5/out-x64-h10
+2026-11-24T06:56:20Z wait H2 load=0.41 0.36 0.61 df avail 23G
+2026-11-24T07:15:00Z end H2 exit 0 load=0.46 0.42 0.49 
+    step.sh 2026-11-24T06:56:24Z start H2 after 0 s quiet wait: load=0.38 0.36 0.60 stress-ng=none df=23G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/scripts/linux-engine-gate/gate.mjs run H2 --pinned /Users/new/.local/share/cua-171/m5/home-x64-045 --out /Users/new/.local/share/cua-171/m5/out-x64-h10
+2026-11-24T07:15:00Z wait L4a load=0.46 0.42 0.49 df avail 23G
+2026-11-24T07:34:53Z end L4a exit 0 load=17.48 17.01 12.67 
+    step.sh 2026-11-24T07:15:00Z start L4a after 0 s quiet wait: load=0.46 0.42 0.49 stress-ng=none df=23G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/scripts/linux-engine-gate/gate.mjs run L4a --pinned /Users/new/.local/share/cua-171/m5/home-x64-045 --out /Users/new/.local/share/cua-171/m5/out-x64-h10
+2026-11-24T07:34:53Z wait L4d load=17.48 17.01 12.67 df avail 23G
+2026-11-24T07:58:03Z end L4d exit 0 load=18.41 17.75 15.76 
+    step.sh 2026-11-24T07:37:53Z start L4d after 180 s quiet wait: load=0.94 9.35 10.45 stress-ng=none df=23G
+    step.sh command: /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/t162-x64/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-x64-045 --out /Users/new/.local/share/cua-171/m5/out-x64-h10
+2026-11-24T07:58:03Z driver done: H1 H2 L4a L4d

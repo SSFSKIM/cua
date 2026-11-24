@@ -12,6 +12,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {checkPair, diffNativeMac, isSettled, loadNativeMacRun, summaryLine, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
 import {laneTexts, lanesMeta, settledAfter, writeRun} from './native-mac-fixtures.mjs';
+import {NOTE} from '../../src/services/engine/render.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -29,9 +30,11 @@ test('the goldens\' two lanes differ only as native-mac.json declares: summary 0
   assert.equal(report.ok, true);
   assert.equal(report.summary, '0 unexpected differences');
   assert.equal(summaryLine(report), 'summary: 0 unexpected differences');
-  // The declared list names what was applied where: Finder's capped count on its two trees, TextEdit's diff scene state.
-  assert.deepEqual(report.declared.map(d => `${d.scene}/${d.golden}/${d.kind}`).sort(),
-    ['finder/before/subsetCount', 'finder/full/subsetCount', 'textedit/diff/header', 'textedit/diff/missing', 'textedit/diff/missing'].sort());
+  // The declared list names what was applied where: Finder's capped count on its two trees, TextEdit's diff scene state,
+  // and the lineBreaks departure where it made TextEdit's document lines equal (the text area and the focused trailer).
+  assert.deepEqual(report.declared.map(d => `${d.scene}/${d.golden}/${d.kind}${d.kind === 'lineBreaks' ? `×${d.count}` : ''}`).sort(),
+    ['finder/before/subsetCount', 'finder/full/subsetCount', 'textedit/diff/header', 'textedit/diff/missing', 'textedit/diff/missing',
+      'textedit/full/lineBreaks×2', 'textedit/before/lineBreaks×2', 'textedit/diff/lineBreaks×1'].sort());
   for (const scene of ['textedit', 'finder', 'chrome', 'electron']) assert.deepEqual(report.scenes[scene].settle, {vendor: true, cua: true});
   // The JSON's last key is the summary, so the report ends with it.
   assert.equal(Object.keys(report).at(-1), 'summary');
@@ -141,15 +144,26 @@ test('the observation right after the action is compared in the form it came in:
 });
 
 test('numeric lines inside a multi-line value are compared with their numbers, never renumbered away', () => {
-  // TextEdit's document is the text entry area's value, its lines raw continuation lines (textedit/vendor.txt).
-  const document = (texts, first, second) => { texts.textedit.full = texts.textedit.full.replace('\nLine 01\nLine 02\n', `\n${first}\n${second}\n`); return texts; };
+  // TextEdit's document is the text entry area's value: in the vendor's text its lines are raw continuation lines
+  // (textedit/vendor.txt), in cua's they are escaped on the element's one line (#526, ruling 1175).
+  const document = (texts, first, second) => {
+    const full = texts.textedit.full;
+    texts.textedit.full = full.includes('\nLine 01\nLine 02\n') ? full.replace('\nLine 01\nLine 02\n', `\n${first}\n${second}\n`)
+      : full.replace('\\nLine 01\\nLine 02\\n', `\\n${first}\\n${second}\\n`);
+    return texts;
+  };
   assert.match(laneTexts('vendor').textedit.full, /\nLine 01\nLine 02\n/);
+  assert.match(laneTexts('cua').textedit.full, /\\nLine 01\\nLine 02\\n/);
   const judge = (vendor, cua, options = {declarations}) => diffNativeMac(...pair({vendor: {texts: vendor}, cua: {texts: cua}}), options);
   // The tree's indexes unchanged, one number in the value changed.
   const changed = judge(document(laneTexts('vendor'), '200 apples', '999 oranges'), document(laneTexts('cua'), '300 apples', '999 oranges'));
   assert.notEqual(changed.summary, '0 unexpected differences');
   assert.ok(changed.differences.every(d => d.scene === 'textedit' && d.golden === 'full'));
-  assert.equal(judge(document(laneTexts('vendor'), '200 apples', '999 oranges'), document(laneTexts('cua'), '200 apples', '999 oranges')).summary, '0 unexpected differences');
+  assert.equal(judge(document(laneTexts('vendor'), 'apples 200', 'oranges 999'), document(laneTexts('cua'), 'apples 200', 'oranges 999')).summary, '0 unexpected differences');
+  // The same value whose lines start with a number: in the vendor's text those raw lines read as element lines that
+  // cua's escaped one lacks, so the comparison shows them (fail-closed), never hides them.
+  const same = judge(document(laneTexts('vendor'), '200 apples', '999 oranges'), document(laneTexts('cua'), '200 apples', '999 oranges'));
+  assert.deepEqual(same.differences.map(d => `${d.kind} ${d.index ?? ''}`.trim()), ['missing 200', 'missing 999', 'text']);
   // The digits as printed: a leading zero, or a number beyond the safe integers, is another text.
   for (const [vendorLine, cuaLine] of [['200 apples', '0200 apples'], ['9007199254740992 apples', '9007199254740993 apples']]) {
     const report = judge(document(laneTexts('vendor'), vendorLine, '999 oranges'), document(laneTexts('cua'), cuaLine, '999 oranges'));
@@ -267,4 +281,26 @@ test('the CLI: diff of two native-mac runs prints the JSON report and then the s
   try { execFileSync(process.execPath, [script, 'diff', vendor, changed, '--expected', EXPECTED_FILE], {encoding: 'utf8'}); } catch (error) { failure = error; }
   assert.equal(failure?.status, 1);
   assert.equal(failure.stdout.trim().split('\n').at(-1), 'summary: 1 unexpected differences');
+});
+
+test('#526: validateDeclarations takes a lineBreaks departure for every scene, with no count', () => {
+  const rule = {scene: '*', kind: 'lineBreaks', fault: 'departure', decisionLog: '- Decision (2026-10-18, verification call at authoring)', cause: 'why'};
+  assert.equal(validateDeclarations({declarations: [rule]}).length, 1);
+  assert.throws(() => validateDeclarations({declarations: [{...rule, fault: 'vendor'}]}), /lineBreaks/);
+  assert.throws(() => validateDeclarations({declarations: [{...rule, count: 2}]}), /lineBreaks/);
+  assert.throws(() => validateDeclarations({declarations: [{...rule, scene: 'textedit'}]}), /lineBreaks/);
+});
+
+test('#552 (ruling 1177): cua\'s longer selected-text fence is read as the trailer, settled alike, and declared against the vendor\'s three', () => {
+  const lane = laneTexts('cua'), {later} = lane.chrome;
+  const selected = (text, fence) => `${later.split('\n')[0]}\nSelected text: ${fence}\n${text}\n${fence}\n\n${NOTE}`;
+  assert.equal(isSettled(selected('a ``` b', '````'), selected('a ``` b', '````')), true);
+  assert.equal(isSettled(selected('a ``` b', '````'), selected('a ``` c', '````')), false, 'the selection moved');
+  // The vendor's diff golden and cua's carrying the same selection: only the fence differs, under the departure.
+  const vendorLane = laneTexts('vendor');
+  const withSelection = (texts, fence) => ({...texts, chrome: {...texts.chrome, diff: `${texts.chrome.diff.split('\nThe focused UI element is')[0]}\nSelected text: ${fence}\na \`\`\` b\n${fence}\n\n${NOTE}`}});
+  const report = diffNativeMac(...pair({vendor: {texts: withSelection(vendorLane, '```')}, cua: {texts: withSelection(lane, '````')}}), {declarations});
+  assert.deepEqual(report.differences.filter(d => d.scene === 'chrome' && d.golden === 'diff'), []);
+  const undeclared = diffNativeMac(...pair({vendor: {texts: withSelection(vendorLane, '```')}, cua: {texts: withSelection(lane, '````')}}), {declarations: declarations.filter(rule => rule.kind !== 'lineBreaks')});
+  assert.deepEqual(undeclared.differences.filter(d => d.scene === 'chrome' && d.golden === 'diff').map(d => d.kind), ['trailer']);
 });

@@ -49,28 +49,56 @@ export function indexOfId(ax, id) {
   return elementLines(ax).find(l => lone.test(l.content))?.index ?? null;
 }
 // The value of the element `index` (its `Value: ` part, through the lines a multi-line value spans, up to the next
-// element line or the blank line before the trailer), or null when the line carries none.
-export function valueOfIndex(ax, index) {
+// element line or the blank line before the trailer), or null when the line carries none, as {value, real}: `real`
+// false for a raw escaped reading (below), which a cell must not search for a substring. On cua's lane (`rendering`
+// 'cua', by default the lane the run's bind recorded, globalThis.__axRendering, ./goldens-cells.mjs BIND) a multi-line
+// value prints on its element's one line with its breaks escaped (#526: `\n`, `\r`, any other break `\uXXXX`), and so
+// does every other part's continuation. Ruling 1185: there, in any app, a Value part is decoded only when it starts at
+// a real part boundary before the line's first escape (the element's first part, anchored after its role words and
+// flags group, or after `, `) and is the line's final part (nothing `, ` after it). Any other line holding an escape
+// reads as its raw escaped text, from the earlier of the Value part's start and the line's first escape (the first
+// escape when there is no Value part) to the line's end: it always holds an escape's backslash, so it is never null or
+// "" and never equals an expected value (ruling 1184's rule, kept). A line without an escape reads as before, a value
+// with a later part cut at its first `, ` (#561's residue). A part whose own text holds `Value:` or a fake flags group
+// is #561's.
+export function valueReadingOf(ax, index, rendering = globalThis.__axRendering) {
   const lines = String(ax).split('\n');
   const at = lines.findIndex(line => { const m = /^[~+-]?\t*(\d+) /.exec(line); return m && Number(m[1]) === index; });
-  if (at < 0) return null;
-  const head = lines[at], start = head.indexOf('Value: ');
-  if (start < 0) return null;
+  if (at < 0) return {value: null, real: true};
+  const head = lines[at];
+  const breaks = /\\(?:n|r|u(?:000b|000c|001c|001d|001e|0085|2028|2029))/g;
+  if (rendering === 'cua' && head.search(breaks) >= 0) {
+    const content = head.replace(/^[~+-]?\t*\d+ /, ''), escapeAt = content.search(breaks);
+    const flag = '(?:selectable|selected|disabled|expanded|collapsed|settable|boolean|integer|float|string|date|unknown|sent by me)';
+    const first = new RegExp('^(?:[^,:()]+ )?(?:\\(' + flag + '(?:, ' + flag + ')*\\) )?Value: ').exec(content);
+    const later = content.slice(0, escapeAt).indexOf(', Value: ');
+    const valueAt = first ? first[0].length : later >= 0 ? later + ', Value: '.length : -1;
+    if (valueAt >= 0 && valueAt <= escapeAt && !content.slice(valueAt).includes(', ')) {
+      return {value: content.slice(valueAt).replace(breaks, e => (e === '\\n' ? '\n' : e === '\\r' ? '\r' : String.fromCharCode(parseInt(e.slice(2), 16)))), real: true};
+    }
+    return {value: content.slice(valueAt >= 0 ? Math.min(valueAt, escapeAt) : escapeAt), real: false};
+  }
+  const start = head.indexOf('Value: ');
+  if (start < 0) return {value: null, real: true};
   const parts = [head.slice(start + 'Value: '.length)];
   for (let j = at + 1; j < lines.length && lines[j] !== '' && !/^[~+-]?\t*\d+ /.test(lines[j]); j++) parts.push(lines[j]);
   const value = parts.join('\n');
   // A part after the value on its first line (only short parts follow a value; a long value moves last).
-  return parts.length === 1 ? value.split(', ')[0] : value;
+  return {value: parts.length === 1 ? value.split(', ')[0] : value, real: true};
+}
+export function valueOfIndex(ax, index, rendering = globalThis.__axRendering) {
+  return valueReadingOf(ax, index, rendering).value;
 }
 // The trailer's focused element, or null.
 export function focusedIndexOf(ax) {
   const m = /^The focused UI element is (\d+) /m.exec(String(ax));
   return m ? Number(m[1]) : null;
 }
-// The trailer's selected text, or null.
+// The trailer's selected text, or null: raw inside its fence, three backticks on the vendor's lane and on cua's longer
+// than any run of backticks in the text (#552).
 export function selectedTextOf(ax) {
-  const m = /\nSelected text: ```\n([\s\S]*?)\n```/.exec(String(ax));
-  return m ? m[1] : null;
+  const m = /\nSelected text: (`{3,})\n([\s\S]*?)\n\1(?=\n|$)/.exec(String(ax));
+  return m ? m[2] : null;
 }
 // The trailer's selected elements: [index].
 export function selectedIndexesOf(ax) {
@@ -264,7 +292,7 @@ export function selectionEvidence(ax, index, before = null) {
 }
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
-export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex,
+export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueReadingOf, valueOfIndex,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, focusReading, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

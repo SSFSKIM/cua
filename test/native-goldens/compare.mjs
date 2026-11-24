@@ -7,11 +7,12 @@
 // page's port, DRIFT). The trailer and a diff's removed IDs are compared as text. Every difference is declared in
 // ./expected.json with its cause and its exact value or count, never absorbed.
 //
-// Why indexes are compared, not renumbered (fail-closed): the renderer prints every free-text attribute raw, newlines
-// included (src/services/engine/render.mjs: the window title in the header, the role description as the role word, the
-// title, Description, Help, Value, Details, Placeholder and ID parts; Fetch.swift reads them unaltered), so after the
-// header no line is certainly an element line rather than the continuation of one of those, and a line renumbered away
-// could be a value's text (`200 apples` against `300 apples`). With the two lanes numbering alike (the recorded goldens
+// Why indexes are compared, not renumbered (fail-closed): the vendor prints every free-text attribute raw, newlines
+// included (the window title in the header, the role description as the role word, the title, Description, Help, Value,
+// Details, Placeholder and ID parts), so after the header no line of its text is certainly an element line rather than
+// the continuation of one of those, and a line renumbered away could be a value's text (`200 apples` against `300
+// apples`). cua's renderer escapes those breaks (src/services/engine/render.mjs escapeLineBreaks; #526, ruling 1175),
+// which the `lineBreaks` departure declares. With the two lanes numbering alike (the recorded goldens
 // add no line) the comparison is exact; where a declared added or missing line or another lineage shifts the
 // numbering, the shifted lines are differences in plain view: a false positive is visible, a hidden difference is not.
 //
@@ -22,6 +23,8 @@
 // as n characters: the redaction folds a localized role word, the flags and the title into one ⟨n⟩, so the length is
 // what the redacted line still tells.
 
+import {NOTE, escapeLineBreaks, selectedTextFence} from '../../src/services/engine/render.mjs';
+
 export const LABELS = ['Secondary Actions', 'Description', 'Placeholder', 'Columns', 'Details', 'Value', 'Rows', 'Help', 'URL', 'ID'];
 const LABEL_ANYWHERE = new RegExp(`(?:^|, | )(${LABELS.join('|')}): `, 'g');
 const FLAG_WORDS = new Set(['selectable', 'selected', 'disabled', 'expanded', 'collapsed', 'settable', 'boolean', 'integer', 'float', 'string', 'sent by me']);
@@ -30,35 +33,42 @@ const ROLE_WORDS = ['full screen button', 'disclosure triangle', 'search text fi
   'radio button', 'value indicator', 'close button', 'zoom button', 'scroll area', 'scroll bar', 'split group', 'static text', 'menu button',
   'text field', 'tab group', 'container', 'checkbox', 'splitter', 'element', 'toolbar', 'outline', 'heading', 'button', 'column', 'window',
   'slider', 'image', 'group', 'table', 'list', 'link', 'cell', 'text', 'row'];
-const TRAILER = /^(The focused UI element is |Selected:$|Selected text: ```$)/;
+// The selected-text fence is three backticks in the vendor's text and in cua's at least three (ruling 1177).
+const TRAILER = /^(The focused UI element is |Selected:$|Selected text: `{3,}$)/;
 // What differs between the lanes without being a rendering: each lane served the Chrome scene's page on its own port.
 const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
 // A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, text} | null, removed: string | null,
 // unparsed: [line]}. Every line shaped as an element line (`<tabs><index> `, in a diff `~` or `+` first) opens an item;
 // any other line continues the last item's (`rest`: its line after the index, then its continuation lines; `index`: the
-// index's digits as printed, compared as text, never as a number, which would make `0200` and `200` alike). `unparsed`
+// index's digits as printed, compared as text, never as a number, which would make `0200` and `200` alike). The
+// numbered prefix is matched apart from the rest of the line, which may hold any character a value carries (a CR, LS
+// or PS the split on LF leaves inside the line), so such a line still opens its own item. `unparsed`
 // holds the lines before the first item that are none of the text's kind (a full tree read as a diff, say), which a
 // comparison reports rather than drops. The trailer runs to the end and is kept whole.
 export function parse(text, {kind}) {
-  const lines = text.replace(/\n$/, '').split('\n');
+  // A final LF ends a tree with no trailer; after a focused-element trailer it is that element's own text (a value
+  // ending in a break), kept for the trailer (#526).
+  const full = text.split('\n'), lines = full.slice(0, text.endsWith('\n') ? -1 : undefined);
   const header = lines.shift();
   const items = [];
-  const out = {header, items, trailer: null, removed: null, unparsed: []};
+  // headerTail: how many of the unparsed lines directly follow the header, before any line the parse consumed (a
+  // diff's removed IDs): only those can be a window title's or app name's later lines.
+  const out = {header, items, trailer: null, removed: null, unparsed: [], headerTail: 0};
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
       const last = items.at(-1);
       if (last && lines[i - 1] === '') last.rest = last.rest.replace(/\n$/, '');
-      out.trailer = parseTrailer(lines.slice(i));
+      out.trailer = parseTrailer(line.startsWith('The focused UI element is ') ? full.slice(i + 1) : lines.slice(i));
       break;
     }
     const removed = /^Removed element IDs: (.*)$/.exec(line);
     if (removed && kind === 'diff' && !items.length && out.removed === null) { out.removed = removed[1]; continue; }
-    const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
+    const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) ([^]*)$/ : /^()(\t*)(\d+) ([^]*)$/).exec(line);
     if (match) items.push({mark: match[1], depth: match[2].length, index: match[3], rest: match[4]});
     else if (items.length) items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
-    else out.unparsed.push(line);
+    else { out.unparsed.push(line); if (out.removed === null) out.headerTail++; }
   }
   return out;
 }
@@ -96,8 +106,9 @@ const textOf = (rest, structural) => (structural ? rest : normalizeDrift(rest));
 const lengthOf = text => [...text.replace(/⟨(\d+)⟩/g, (_, n) => 'x'.repeat(Number(n)))].length;
 
 // An element line's head, as a declaration names it: diff mark, role word, flags and title, then ` | ` and the labels.
-function headOf(item, structural) {
-  const line = normalize(item.rest, {structural});
+// `rest` is the item's text as compared (the vendor's with its breaks escaped under the lineBreaks departure).
+function headOf(item, structural, rest = item.rest) {
+  const line = normalize(rest, {structural});
   const head = line.role === null ? line.title : [line.role, line.flags.length ? `(${line.flags.join(', ')})` : '', line.title].filter(Boolean).join(' ');
   return `${structural ? `${item.depth}:` : ''}${item.mark}${normalizeDrift(head)} | ${line.labels.join(', ')}`;
 }
@@ -144,13 +155,42 @@ function applySubsetCount(vendorLine, cuaLine, {identifier, cap}) {
   return `${head} (showing ${c[1]} of ${vendorN} items)`;
 }
 
-// → {differences: [{kind, …}], added, lines}. `declared`: the entries of ./expected.json for this golden: `missing` and
-// `added` lines by head, `part` differences inside a matched line, the `header` and the `trailer` (each pinned to both
-// sides' exact text), the vendor's capped `subsetCount`, each `count` times exactly (default 1).
+// A vendor trailer as cua prints it (the lineBreaks departure, rulings 1175 and 1177): the focused element's line with its
+// breaks escaped; each selected element's line escaped, the boundaries between them and before the note kept; the
+// selected text raw in the fence cua gives it. -> the text, or the vendor's own when its shape is not the trailer's.
+function asCuaTrailer({kind, text}) {
+  if (kind === 'focused') return escapeLineBreaks(text);
+  const tail = `\n\n${NOTE}`;
+  if (!text.endsWith(tail)) return text;
+  const body = text.slice(0, -tail.length);
+  if (kind === 'selected') {
+    const lines = body.split('\n').slice(1), elements = [];
+    for (const line of lines) { if (/^\t\d+ /.test(line) || !elements.length) elements.push(line); else elements[elements.length - 1] += `\n${line}`; }
+    return `Selected:\n${elements.map(escapeLineBreaks).join('\n')}${tail}`;
+  }
+  const open = /^Selected text: (`{3,})\n/.exec(body);
+  if (!open || !body.endsWith(`\n${open[1]}`)) return text;
+  const selected = body.slice(open[0].length, -(open[1].length + 1)), fence = selectedTextFence(selected);
+  return `Selected text: ${fence}\n${selected}\n${fence}${tail}`;
+}
+
+// → {differences: [{kind, …}], added, lines, lineBreaks (the lines and trailers the departure below made equal)}.
+// `declared`: the entries of ./expected.json for this golden: `missing` and `added` lines by head, `part` differences
+// inside a matched line, the `header` and the `trailer` (each pinned to both sides' exact text), the vendor's capped
+// `subsetCount`, each `count` times exactly (default 1); and `lineBreaks`, cua's departure of printing an attribute's
+// line breaks escaped where the vendor prints them raw (#526, ruling 1175) and fencing the selected text with more
+// backticks than it holds (#552, ruling 1177), a rule with no count that is never over-declared. Under it each vendor
+// item is keyed and compared by its text with its breaks escaped (its index, depth and the parse's boundaries kept), and
+// the header and every trailer by their text as cua prints them (asCuaTrailer); it holds only on exact equality, so a
+// redacted line, compared by length otherwise, takes it only where its visible text matches whole.
 export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = []} = {}) {
   const declared = rules.map(rule => ({...rule, left: rule.count ?? 1}));
   const vendor = parse(vendorText, {kind}), cua = parse(cuaText, {kind});
-  const vendorHeads = vendor.items.map(item => headOf(item, structural)), cuaHeads = cua.items.map(item => headOf(item, structural));
+  const escapesBreaks = declared.some(rule => rule.kind === 'lineBreaks');
+  // Under the departure, a vendor item is keyed and compared by its text with its breaks escaped: its index, depth and
+  // the item boundaries the parse found stay as they are.
+  const asCua = text => (escapesBreaks ? escapeLineBreaks(text) : text);
+  const vendorHeads = vendor.items.map(item => headOf(item, structural, asCua(item.rest))), cuaHeads = cua.items.map(item => headOf(item, structural));
   // Matched by index and head: an index is never renumbered away (the top of this file).
   const pairs = matchInOrder(vendor.items.map((item, i) => `${item.index} ${vendorHeads[i]}`), cua.items.map((item, j) => `${item.index} ${cuaHeads[j]}`));
   const differences = [];
@@ -160,7 +200,8 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     return Boolean(rule);
   };
 
-  // Two texts alike: exactly, or (redacted) by length.
+  // Two texts alike: exactly, or (redacted) by length. The departure is taken only on exact equality: a redacted
+  // line's length cannot show where its breaks were, so there it holds only where the visible text matches whole.
   const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
   const matchedVendor = new Set(pairs.map(([i]) => i)), matchedCua = new Set(pairs.map(([, j]) => j));
   vendorHeads.forEach((head, i) => {
@@ -174,12 +215,17 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
   });
 
   const parts = declared.filter(rule => rule.kind === 'part'), subsets = declared.filter(rule => rule.kind === 'subsetCount');
+  let lineBreaks = 0;   // the lines, headers and trailers the lineBreaks departure made equal
   for (const [i, j] of pairs) {
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
-    const vendorLine = textOf(v.rest, structural);
+    const raw = textOf(v.rest, structural), escaped = asCua(raw);
+    // Where the vendor's text holds a break, only its escaped form is cua's: cua printing it raw is a difference.
+    const required = escaped !== raw;
     let cuaLine = textOf(c.rest, structural);
-    if (same(vendorLine, cuaLine)) continue;
+    if (required ? escaped === cuaLine : same(raw, cuaLine)) { if (required) lineBreaks++; continue; }
+    // The declared part and subset differences, on the vendor's text as cua must print it.
+    const vendorLine = escaped;
     const applied = [];
     for (const rule of subsets) {
       const next = rule.left > 0 ? applySubsetCount(vendorLine, cuaLine, rule) : null;
@@ -189,21 +235,38 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
       const next = rule.left > 0 ? applyPart(cuaLine, rule) : null;
       if (next !== null) { cuaLine = next; applied.push(rule); }
     }
-    if (applied.length && same(vendorLine, cuaLine)) for (const rule of applied) rule.left--;
+    if (applied.length && (required ? vendorLine === cuaLine : same(vendorLine, cuaLine))) { for (const rule of applied) rule.left--; if (required) lineBreaks++; }
     else differences.push({kind: 'text', vendor: v.rest, cua: c.rest});
   }
 
-  // A header the redaction replaced whole is compared by its length.
+  // A header the redaction replaced whole is compared by its length. Under the departure a vendor header whose window
+  // title or app name held a break is its first line and the lines before the first element, escaped, compared exactly.
   const redactedWhole = /^⟨(\d+)⟩$/.exec(vendor.header);
   const headerOf = text => (structural ? text.replace(/App: .*\.$/, 'App: ⟨⟩.').replace(/⟨\d+⟩/g, '⟨⟩') : text);
-  const sameHeader = structural && redactedWhole ? Number(redactedWhole[1]) === [...cua.header].length : headerOf(vendor.header) === headerOf(cua.header);
+  let sameHeader = structural && redactedWhole ? Number(redactedWhole[1]) === [...cua.header].length : headerOf(vendor.header) === headerOf(cua.header);
+  if (escapesBreaks) {
+    // Only the lines right after the header, before any line the parse consumed, can continue it; and where the
+    // vendor's header holds a break, only its escaped form is cua's.
+    const tail = vendor.unparsed.slice(0, vendor.headerTail), whole = [vendor.header, ...tail].join('\n'), own = escapeLineBreaks(vendor.header);
+    if (tail.length && !cua.unparsed.length && escapeLineBreaks(whole) === cua.header) { sameHeader = true; lineBreaks++; vendor.unparsed = vendor.unparsed.slice(tail.length); }
+    else if (own !== vendor.header) { sameHeader = own === cua.header; if (sameHeader) lineBreaks++; }
+  }
   if (!sameHeader && !allow('header', rule => rule.vendor === vendor.header && rule.cua === cua.header)) {
     differences.push({kind: 'header', vendor: vendor.header, cua: cua.header});
   }
 
-  // The trailer, whole: its kind and its text, the elements it names by their indexes.
-  const sameTrailer = !vendor.trailer || !cua.trailer ? vendor.trailer === cua.trailer
-    : vendor.trailer.kind === cua.trailer.kind && same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
+  // The trailer, whole: its kind and its text, the elements it names by their indexes; under the departure, the
+  // vendor's as cua prints it (asCuaTrailer), compared exactly.
+  // Where the vendor's trailer needs an escape or a longer fence, only that form is cua's.
+  const requiredTrailer = escapesBreaks && vendor.trailer ? asCuaTrailer(vendor.trailer) : null;
+  let sameTrailer;
+  if (requiredTrailer !== null && requiredTrailer !== vendor.trailer.text) {
+    sameTrailer = Boolean(cua.trailer) && vendor.trailer.kind === cua.trailer.kind && textOf(requiredTrailer, structural) === textOf(cua.trailer.text, structural);
+    if (sameTrailer) lineBreaks++;
+  } else {
+    sameTrailer = !vendor.trailer || !cua.trailer ? vendor.trailer === cua.trailer
+      : vendor.trailer.kind === cua.trailer.kind && same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
+  }
   if (!sameTrailer && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
     differences.push({kind: 'trailer', vendor: vendor.trailer?.text ?? null, cua: cua.trailer?.text ?? null});
   }
@@ -216,7 +279,7 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
       differences.push({kind: 'overdeclared', rule: rule.kind, head: rule.head ?? rule.label ?? rule.identifier ?? null, left: rule.left});
     }
   }
-  return {differences, added, lines: cua.items.length};
+  return {differences, added, lines: cua.items.length, lineBreaks};
 }
 
 // The engine-side differences a golden declares (./expected.json, `kind: "skyshot"`), applied to a copy of cua's

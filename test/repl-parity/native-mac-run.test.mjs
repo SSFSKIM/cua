@@ -509,3 +509,41 @@ test('native-mac barriers precede every teardown and failed final settlement hol
   assert.equal(fs.existsSync(join(out.out, 'preparation.json')), true);
   assert.match(out.meta.probeSettlement.error, /SSH/);
 });
+
+// #526 (ruling 1183, P1-1): the parity runner's bind names the lane's engine, so on a fresh cua lane the action cell
+// finds TextEdit's target in cua's escaped rendering. The runner's own bind and action cells run here for real, on the
+// checked-in cua TextEdit golden.
+test('#526: on a cua lane the runner\'s bind records cua\'s rendering, and its action finds TextEdit\'s target in cua\'s golden', async () => {
+  const device = fakeDevice(), base = fakeLane(device, {engine: 'cua'}), codes = [];
+  const lane = {...base, connect: (spec, given) => {
+    const client = base.connect(spec, given), request = client.request;
+    client.request = async (method, params) => { if (method === 'tools/call') codes.push(params.arguments.code); return request.call(client, method, params); };
+    return client;
+  }};
+  await runLane({engine: 'cua', device, lane});
+  const bind = codes.find(c => c.includes('/* goldens:bind textedit */')), action = codes.find(c => c.includes('/* native-mac:action textedit */'));
+  assert.match(bind, /globalThis\.__axRendering = "cua";/);
+  // The two cells as the REPL runs them: the bind (cua.getApp answering a TextEdit that shows cua's golden), then the
+  // action; the bind's globals (`__apps`, `__axRendering`) stay the REPL's between them.
+  const golden = fs.readFileSync(new URL('../native-goldens/textedit/cua.txt', import.meta.url), 'utf8');
+  assert.match(golden, /Value: cua scene document\\n/, 'the golden prints the document escaped');
+  const clicked = [], app = {getAXState: async () => golden, click: async index => { clicked.push(index); }};
+  const runCell = async code => {
+    const writes = [], saved = {cua: globalThis.cua, repl: globalThis.nodeRepl};
+    Object.assign(globalThis, {cua: {getApp: async () => app}, nodeRepl: {write: text => { writes.push(String(text)); }}});
+    try { await new (async () => {}).constructor(code)(); } finally { Object.assign(globalThis, {cua: saved.cua, nodeRepl: saved.repl}); }
+    return parseCell(writes.join('\n'));
+  };
+  // The action writes its texts into the run's temp directory: a scratch one here (withTemp), never the shared one.
+  await withTemp(async temp => {
+    try {
+      assert.equal((await runCell(bind)).ok, true);
+      assert.equal(globalThis.__axRendering, 'cua');
+      const acted = await runCell(action);
+      assert.equal(acted.ok, true, JSON.stringify(acted));
+      assert.equal(acted.value.index, 2);
+      assert.deepEqual(clicked, [2]);
+      assert.ok(acted.value.files.every(f => f.path.startsWith(`${temp}/`)), JSON.stringify(acted.value.files.map(f => f.path)));
+    } finally { delete globalThis.__axRendering; }
+  });
+});

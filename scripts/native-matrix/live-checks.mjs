@@ -177,10 +177,10 @@ export function vendorMenuItem(ax, path) {
   }
   return {index: found.line.index, enabled: !found.flags.includes('disabled')};
 }
-// The trailer's selected text (`Selected text: ``` … ```), or null.
+// The trailer's selected text (`Selected text: ``` … ```), or null; cua's fence may be longer (#552).
 export function vendorSelectedText(ax) {
-  const match = /\nSelected text: ```\n([\s\S]*?)\n```/.exec(String(ax));
-  return match ? match[1] : null;
+  const match = /\nSelected text: (`{3,})\n([\s\S]*?)\n\1(?=\n|$)/.exec(String(ax));
+  return match ? match[2] : null;
 }
 // The index of the text area whose value begins with `firstLine` (`… Value: <firstLine>` on its first line).
 export function vendorTextAreaIndex(ax, firstLine) {

@@ -8883,6 +8883,95 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     optional (1172), its question now whether S occurs often enough for the refusal to cost runs (`pointerRefusal`
     counts it).
   Date/Author: 2026-11-23, cursor235's builder for #538.
+- Decision (2026-11-23, #526, rulings 1175 to 1177 and 1179, `fix/526-escape-product` from 3df1fecb): **a selectable
+  element's flattened title, description and value are joined one piece per line, as the vendor joins them; cua prints
+  every line break inside an element's text escaped and fences the selected text past its longest backtick run, where
+  the vendor prints both raw (declared departures); and the harness reads that output on cua's lane.**
+  - The cause is not a multi-line AXValue. M5 pilot B's Finder "go up" row (runs 45226949355 and 45274556933) is a
+    selectable AXRow whose cells' static texts are flattened into it by transformation (1). The vendor's
+    `UIElementTree.Item.flattenedString` (0x10063eb80, decompiled in the #117 Ghidra project) compactMaps the selector
+    over the item and its subtree, trims each piece of `CharacterSet.whitespacesAndNewlines`, drops the empty ones and
+    joins with the small-string literal 0x0a; `transform` (0x1006473d0) calls it for the title, the description and
+    the value. cua's renderer joined with one space and did not trim (B §5 had the join "not read"). The vendor's text
+    carries a raw LF there (the artifacts' bytes: `Value: Name\nDate Modified\nSize\nKind`, 0x0a each). The engine reads
+    each attribute unaltered (Fetch.swift `stringValue`, capped at `maxValueLength` before any rendering), so nothing
+    changes in Swift.
+  - The join rule: `flattenIntoSelectableAncestor` builds each of the three from the node's and its descendants' pieces,
+    trimmed of Foundation's whitespacesAndNewlines exactly as `CharacterSet.whitespacesAndNewlines` answers on macOS 27
+    (U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B, U+2028, U+2029, U+202F, U+205F, U+3000), empties
+    dropped, joined by "\n". (8) mergeTextOnlySiblings' join (FUN_100646f38) is still unread and keeps one space.
+  - Ruling 1175, the escape: a raw break inside an attribute lets a page or a document put a line into the tree that
+    reads as an element (`[99] button Delete`, or a tab-indented `99 button Delete`), a path for prompt injection, in
+    every free-text field (title, Description, Help, Value, Details, Placeholder, ID, the role description, the window
+    title and app name), the vendor's raw TextEdit document included. The renderer escapes the whole element text after
+    the parts are ordered (`escapeLineBreaks`), so the long-part rule still reads the raw text: LF and CR as `\n` and
+    `\r` (the vendor's own Linux rendering escapes them so) and VT, FF, U+001C–U+001E, NEL, LS and PS as `\uXXXX`; a
+    backslash is left as it is, as on Linux. The header's window title and app name are escaped the same way. A
+    continuation indent was rejected: an element line is itself tab-indented.
+  - Ruling 1176, the model's side: a value copied back from the tree would write a literal backslash-n, so the
+    first-call document says, in one sentence, that breaks show as `\n` or `\r` (others `\uXXXX`) and that `setValue`
+    and `typeText` take real ones: in `agent-cursor.md`'s paragraph on replacing a field's text and at the end of the
+    `macos/accessibility-tree` lookup, so the macOS core carries it with or without the lookups (the surface inventory's
+    "Table 3 amendment (2026-11-23, #526, ruling 1176)"). Linux's tree text is the vendor's own and escapes `\r`, `\n`
+    and `\t`, unmentioned in `core.md` and `linux-engine.md`: the same pitfall, left to its own decision.
+  - Ruling 1177 (#552, closed with #526): the selected text stays raw inside its fence, which is longer than the longest
+    run of backticks in it and at least three (`selectedTextFence`), so the text cannot close it.
+  - Declared in the judges: the `lineBreaks` departure (`scene: "*"`, no count, never over-declared;
+    `test/native-goldens/compare.mjs`, `scripts/repl-parity/native-mac-diff.mjs`, both expected files). Under it a
+    vendor item is keyed and compared by its text with its breaks escaped (index, depth and the parse's boundaries
+    kept, a numbered line holding a CR, LS or PS still its own item), and the header and every trailer by their text as
+    cua prints them, the fence included; it holds only on exact equality, never by a redacted length, and where the
+    vendor's text needs an escape or a longer fence only that form is cua's. The recorded TextEdit goldens' `cua.txt`
+    are re-pinned.
+  - Ruling 1179, the split: this entry's branch is the product part (the renderer, the documentation sentence, the
+    fence, the judges' departure) and the minimum harness support that has to travel with it. The ambiguity machinery
+    of a multi-line value followed by another part (the readers' `{ambiguous}`, the no-verdict cause and its mapping
+    through every runner and judge) is #561's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
+  - The harness support, lane-aware and nothing more. The run's bind records the lane (`goldens-cells.mjs` `BIND(scene,
+    app, engine)`, `globalThis.__axRendering`; the matrix's run and the cursor sitting's sessions pass their engine).
+    `matrix-text.mjs` `valueOfIndex` decoded, on cua's lane only, a multi-line value that is its line's last part
+    (nothing `, ` after `Value: `), and only the escapes the renderer emits (narrowed by rulings 1183 and 1185 below);
+    every other value reads exactly as on main, so a multi-line value followed by another part is cut at its first `, `
+    (#561's residue).
+    `scenes-mac-text.mjs` `indexOfTarget` ends a name at such an escape only on cua's lane, only in the `Value:` part
+    and only when that value ends its line; every other part and the vendor's lane match exactly as before.
+    `selectedTextOf` and `live-checks.mjs` `vendorSelectedText` read a fence of three backticks or more. Ruling 1182:
+    the reader errs only toward a false FAIL; a multi-line value that is not last on its line reads as main reads it and
+    fails a check, and is never found as a target, never a match (tests in `matrix-text.test.mjs`,
+    `scenes-mac.test.mjs` and `multiline-lanes.test.mjs`, which runs #187's and #188's cells and TextEdit's document
+    cells for real on both lanes).
+  - A declared limit (ruling 1182), #561's and #555's: the renderer leaves a literal backslash as it is,
+    so on cua's lane a page's literal `\n` text and a real break print alike and the decoder reads both as a break. No
+    current scene puts a backslash in a value.
+  - Ruling 1183, the scoped review's fix round, one rule for the readers: match only at a real part start, decode only
+    a real final Value part, and on cua's lane a Value part holding an escape the reader did not decode is read as its
+    raw escaped remainder, so an exact check fails, never a prefix. On cua's lane a line holding an escape is read
+    only by its first line (the text before its first escape, the vendor's element line): `indexOfTarget` matches a
+    name ended by a comma there, or a final `Value:` part's first line ended by the escape; `valueOfIndex` gives no
+    value for a `Value: ` after an escape (it may sit in another part's continuation), decodes a final escaped Value
+    part, and reads one with a later part as its raw remainder. The parity runner's bind (`native-mac.mjs`) now passes
+    the lane's engine, as the matrix's and the cursor sitting's do, so a fresh cua lane finds TextEdit's target in
+    cua's golden. The goldens judge's parse keeps a focused trailer's final LF (a value ending in a break) instead of
+    stripping it as a tree's terminator. Tested through the real cells (`multiline-lanes.test.mjs`) and through the
+    parity runner's own bind and action cells on the checked-in cua TextEdit golden (`native-mac-run.test.mjs`). The
+    fence readers accepting a longer fence anywhere in vendor output is #561's.
+  - Ruling 1185 (replacing 1184): on cua's lane `valueOfIndex` decodes, in any app, a Value part that starts at a real
+    part boundary before the line's first escape (the element's first part, anchored after its role words and flags
+    group from the element's start, or a later part after `, `) and is the line's final part (nothing `, ` after it).
+    Any other cua line holding an escape reads as its raw escaped text, from the earlier of the Value part's start and
+    the line's first escape (the first escape when there is no Value part) to the line's end: 1184's never-null rule,
+    kept, so the reading always holds an escape's backslash and never equals "" or an expected value (a real Value
+    after another multi-line part is read raw: an exact check fails, an emptiness check is not ready and the field is
+    emptied). `valueReadingOf` says whether a reading is real; the cells that search a reading for a substring
+    (TextEdit's tree cell, the intervention's `endsWithCell`) require a real one. `indexOfTarget` keeps 1183's
+    first-line rule and anchors a final `Value:` the same way, so a `) ` inside another part's text is no flags group.
+    Why 1184 was withdrawn: its TextEdit-only decode made the live paths that write multi-line values fail on cua's
+    lane with certainty (#187's rows type and paste the two-line Unicode case into Chrome and Electron, #188's click
+    prepares write eight lines into Electron, the matrix's Unicode rows and the Chrome and Electron drag checks hold
+    multi-line values); under 1185 they read back on both lanes (`multiline-lanes.test.mjs`). To #561: a part whose own
+    text holds `Value:` or a fake flags group (adversarial part text), and the residue of a multi-line value followed by
+    another part (raw, a false FAIL). The parity test's action writes into its own temp directory.
+  Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective
 

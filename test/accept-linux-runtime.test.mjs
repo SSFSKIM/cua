@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {ARTIFACT_FILES, ENVIRONMENT_ROWS, environmentVerdict, MANDATORY_STEPS, pilotAnswers, pilotVerdict, projectSmoke, rowVerdict} from '../scripts/accept/linux-runtime-pilot.mjs';
-import {summarizeTrace, traceVerdict} from '../scripts/accept/linux-trace.mjs';
+import {callKind, execArgv, summarizeTrace, traceVerdict} from '../scripts/accept/linux-trace.mjs';
 
 const doctor = (overrides = {}) => ({checks: [
   {name: 'display', status: 'pass', detail: 'X display :99 has XTEST, Composite and XFIXES'},
@@ -302,6 +302,11 @@ test('the acceptance job runs the driver with the older checkout and uploads onl
   assert.match(text, /scripts\/accept\/linux-runtime-env\.sh "\$RUN" -- node scripts\/accept\/linux-runtime\.mjs --out "\$RUN\/artifact" --older "\$GITHUB_WORKSPACE\/older-cua"/);
   assert.deepEqual([...upload.matchAll(/\$\{\{ env\.RUN \}\}\/artifact\/([\w.-]+)/g)].map(m => m[1]), ['runtime.json']);
   assert.match(jobUpload('pilot').text, /inputs\.suite == 'pilot'/);
+  // #171 M6b: acceptance 13, its upgraded home made by the older cua's real install, which needs the deb's tools (F11),
+  // and E0's static-linkage check, which needs file.
+  assert.match(text, /name: acceptance 13 /);
+  assert.match(text, /apt-get install [^\n]*\\\n[^\n]*\bstrace file binutils xz-utils\b/);
+  assert.match(text, /the cua before M6b/);
 });
 
 test('a smoke\'s projection keeps its status and each step\'s name and status, nothing of its details', () => {
@@ -428,4 +433,72 @@ test('negative control (fix wave 2, #4): every Node a worker or kernel pid exec\
   lines.splice(at, 0, `106   execve("/usr/bin/node", ["node", "${REPO}/src/repl-host/kernel.mjs"], 0x7ffd /* 9 vars */) = 0`);
   const summary = summarizeTrace(lines.join('\n'), {helper: HELPER, home: HOME});
   assert.deepEqual(summary.kernels[0].nodeExes, ['/usr/bin/node', MNODE]);
+});
+
+// #171 M6b, T6: the reader's records for a traced command with no serve (an install, a doctor run) and for a refused
+// open's execs: every exec with its argument vector, every call under runtimes/ by kind, and the whole trace's count.
+test('every exec is kept with its argument vector, done or looked up, and the programs that ran are counted by path', () => {
+  const s = summarizeTrace([
+    '700   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "doctor", "--json"], 0x7ffd /* 9 vars */) = 0',
+    '700   clone(child_stack=NULL, flags=SIGCHLD) = 701',
+    '701   execve("/usr/local/bin/gzip", ["gzip", "-d"], 0x7ffd /* 9 vars */) = -1 ENOENT (No such file or directory)',
+    '701   execve("/usr/bin/gzip", ["gzip", "-d"], 0x7ffd /* 9 vars */) = 0',
+    '700   clone(child_stack=NULL, flags=SIGCHLD) = 702',
+    '702   execve("/r/out dated/cua-engine", ["/r/out dated/cua-engine", "--version", "a \\"quoted\\" word"], 0x7ffd /* 1 var */) = 0',
+    '700   exit_group(0) = ?', '701   exit_group(0) = ?', '702   exit_group(0) = ?',
+  ].join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(s.execs.map(({pid, program, argv, ok}) => ({pid, program, argv, ok})), [
+    {pid: 700, program: '/usr/bin/node', argv: ['node', '/repo/bin/cua.mjs', 'doctor', '--json'], ok: true},
+    {pid: 701, program: '/usr/local/bin/gzip', argv: ['gzip', '-d'], ok: false},
+    {pid: 701, program: '/usr/bin/gzip', argv: ['gzip', '-d'], ok: true},
+    {pid: 702, program: '/r/out dated/cua-engine', argv: ['/r/out dated/cua-engine', '--version', 'a "quoted" word'], ok: true}]);
+  assert.deepEqual(s.programs, [{path: '/r/out dated/cua-engine', count: 1}, {path: '/usr/bin/gzip', count: 1}, {path: '/usr/bin/node', count: 1}]);
+  assert.deepEqual(s.whole, {processes: 3, unresolved: 0, pending: 0, unended: 0, unreadLines: 0, orphans: 0, complete: true});
+  assert.deepEqual(s.root, {program: '/usr/bin/node', argv: ['node', '/repo/bin/cua.mjs', 'doctor', '--json']});
+});
+
+test('each call under runtimes/ of the whole trace is kept with its kind: lstat, stat, opendir, open, write, unlink, rename, exec', () => {
+  const R = `${HOME}/runtimes/26.928.40906-linux-x64`;
+  const lines = [
+    `800   statx(AT_FDCWD</w>, "${R}", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = 0`,
+    `800   newfstatat(AT_FDCWD</w>, "${R}/a", {st_mode=S_IFREG|0644, st_size=3, ...}, AT_SYMLINK_NOFOLLOW) = 0`,
+    `800   newfstatat(AT_FDCWD</w>, "${R}/b", {st_mode=S_IFREG|0644, st_size=3, ...}, 0) = 0`,
+    `800   statx(AT_FDCWD</w>, "${R}/c", AT_STATX_SYNC_AS_STAT, STATX_ALL, 0x7ffc) = 0`,
+    `800   openat(AT_FDCWD</w>, "${R}", O_RDONLY|O_CLOEXEC|O_DIRECTORY) = 3<${R}>`,
+    `800   openat(AT_FDCWD</w>, "${R}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = 4<${R}/install.json>`,
+    `800   openat(AT_FDCWD</w>, "${R}/new", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0666) = 5<${R}/new>`,
+    `800   unlinkat(AT_FDCWD</w>, "${R}/new", 0) = 0`,
+    `800   renameat2(AT_FDCWD</w>, "/tmp/x", AT_FDCWD</w>, "${R}/y", 0) = 0`,
+    `800   mkdir("${R}/d", 0700) = -1 EEXIST (File exists)`,
+    `800   execve("${R}/cua_node/bin/node", ["node"], 0x7ffd /* 9 vars */) = -1 EACCES (Permission denied)`,
+    '800   openat(AT_FDCWD</w>, "/etc/hosts", O_RDONLY) = 6</etc/hosts>',
+    '800   exit_group(0) = ?',
+  ];
+  const s = summarizeTrace(lines.join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(s.files.map(f => [f.kind, f.ok]), [['lstat', true], ['lstat', true], ['stat', true], ['stat', true], ['opendir', true], ['open', true], ['write', true], ['unlink', true],
+    ['rename', true], ['write', false], ['exec', false]]);
+  assert.deepEqual(s.files[8].paths, [`${R}/y`]);
+});
+
+test('negative control: a process of a traced install with no end, or an unresolved path, leaves the whole trace incomplete', () => {
+  const s = summarizeTrace(['900   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "install"], 0x7ffd /* 9 vars */) = 0', '900   clone(child_stack=NULL, flags=SIGCHLD) = 901',
+    '901   openat(AT_FDCWD, "relative", O_RDONLY) = 3', '900   exit_group(0) = ?'].join('\n'), {helper: HELPER, home: HOME});
+  assert.deepEqual(s.whole, {processes: 2, unresolved: 1, pending: 0, unended: 1, unreadLines: 0, orphans: 0, complete: false});
+});
+
+test('callKind and execArgv read a call\'s own text', () => {
+  assert.equal(callKind('openat', 'openat(AT_FDCWD</w>, "/a", O_RDONLY|O_APPEND) = 3</a>'), 'write');
+  assert.equal(callKind('open', 'open("/a", O_RDONLY|O_DIRECTORY) = 3'), 'opendir');
+  assert.equal(callKind('creat', 'creat("/a", 0644) = 3'), 'write');
+  assert.equal(callKind('lstat', 'lstat("/a", {...}) = 0'), 'lstat');
+  assert.equal(callKind('statx', 'statx(21</a/install.json>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {...}) = 0'), 'fstat');
+  assert.equal(callKind('newfstatat', 'newfstatat(3</a>, "", {st_mode=S_IFREG|0644, ...}, AT_EMPTY_PATH) = 0'), 'fstat');
+  // A named path with AT_EMPTY_PATH is still looked up.
+  assert.equal(callKind('statx', 'statx(AT_FDCWD</w>, "/a", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {...}) = 0'), 'stat');
+  assert.equal(callKind('readlink', 'readlink("/a", "b", 4095) = 1'), 'readlink');
+  assert.equal(callKind('execveat', 'execveat(3</d>, "x", ["x"], 0x1 /* 0 vars */, 0) = 0'), 'exec');
+  assert.deepEqual(execArgv('execveat(3</d>, "x", ["x", "-v"], 0x1 /* 0 vars */, 0) = 0'), ['x', '-v']);
+  // An argument vector strace abbreviated is not read as one.
+  assert.equal(execArgv('execve("/x", ["x", ...], 0x1 /* 0 vars */) = 0'), null);
+  assert.equal(execArgv('execve("/x", 0x7ffd, 0x1) = 0'), null);
 });

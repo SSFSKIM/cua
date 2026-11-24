@@ -15,8 +15,10 @@
 #   scripts/accept/linux-runtime-env.sh <run dir> -- <command> [args...]   exits with the command's status; 2 when the
 #                                                                          environment cannot be made
 set -euo pipefail
-here="$(cd "$(dirname "$0")" && pwd)"
-repo="$(cd "$here/../.." && pwd)"
+# Physical paths: node runs a module's main block only when argv[1] is its real path, so a checkout reached through a
+# symbolic link would otherwise print no environment and leave the caller's homes in place.
+here="$(cd "$(dirname "$0")" && pwd -P)"
+repo="$(cd "$here/../.." && pwd -P)"
 
 case "${1:-}" in
   --display-stage)

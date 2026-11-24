@@ -5,7 +5,7 @@
 // before and after. On a GitHub-hosted runner only, refused before anything is read, built or granted.
 // The record (`out`): {ruling, tap: {app, bundleId, grant} | {error}, tcc: {engines}, cleanup: {ok, failures}}. A tap not
 // built or granted is recorded and the matrix still runs: its witness then never starts, and its R3 cells stay NO
-// VERDICT. Exit 1 only when the engines' rows changed or could not be read.
+// VERDICT. Exit 1 only when the engines' rows changed or could not be read; unread before, nothing is built or granted.
 import {buildTapApp} from '../native-matrix/key-route-device.mjs';
 import {assertGithubHosted} from './runner.mjs';
 import {engineRows, grantDiagnosticListen, rowsChanged} from './tcc.mjs';
@@ -19,10 +19,14 @@ export function runWitnessTap({out}, io) {
   const failures = [];
   let before = null;
   try { before = io.engineRows(); } catch (error) { failures.push(`the engines' TCC rows could not be read before the grant (${message(error)}): unchanged is unproven`); }
-  try {
-    report.tap = io.buildTap();
-    report.tap.grant = io.grantTap(report.tap.app);
-  } catch (error) { report.tap = {...(report.tap ?? {}), error: message(error)}; }
+  // No grant whose effect on the engines' rows could not be shown (fix wave M5).
+  if (!before) report.tap = {error: 'not granted: the engines\' TCC rows could not be read before it'};
+  else {
+    try {
+      report.tap = io.buildTap();
+      report.tap.grant = io.grantTap(report.tap.app);
+    } catch (error) { report.tap = {...(report.tap ?? {}), error: message(error)}; }
+  }
   if (before) {
     try {
       const changed = rowsChanged(before, io.engineRows()), grant = changed?.grant;

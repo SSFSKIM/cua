@@ -42,6 +42,17 @@ test('the witness tap step builds and grants the tap app alone, the engines\' ro
   assert.deepEqual(CHECKS.witnessTap({report: '/o/none.json'}, {exit: 1, readJson: () => null}), ['FAIL', 'the witness tap\'s record /o/none.json was not written (exit 1)']);
 });
 
+// Fix wave M5: with the engines' rows unread before, a grant could not be shown to leave them unchanged: none is made.
+test('the engines\' rows unread before the grant: nothing is granted, the tap not ready and the step failed', () => {
+  const {io: given, calls, written} = io();
+  given.engineRows = () => { calls.push('engineRows'); throw new Error('tccd unreadable'); };
+  assert.equal(runWitnessTap({out: '/o/w.json'}, given), 1);
+  assert.deepEqual(calls, ['engineRows']);
+  const report = written['/o/w.json'];
+  assert.equal(report.tap.error, 'not granted: the engines\' TCC rows could not be read before it');
+  assert.deepEqual(report.cleanup.failures, ['the engines\' TCC rows could not be read before the grant (tccd unreadable): unchanged is unproven']);
+});
+
 test('off a GitHub-hosted runner the step refuses before it reads, builds or grants anything', () => {
   const {io: given, calls} = io({env: {}});
   assert.throws(() => runWitnessTap({out: '/o/w.json'}, given), /R3's witness tap: refused/);

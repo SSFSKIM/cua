@@ -2,8 +2,8 @@
 // accessibility.bus, sandbox.userns and sandbox.launcher (the pinned helper). Since #171 M6a the runtime rows describe
 // cua's own runtime (the pre-flight's §4.5): `platform` names the release its record derives, `runtime.installed` every
 // common part (the module tree, Node and the sandbox helper) and the pointer, `runtime.modules` the tree's full check,
-// `runtime.node` the Node a session resolves (launch.mjs's own lookup) against its pin, and the vendor's tree is one
-// row, `runtime.vendor`, kept for CUA_NATIVE_ENGINE=vendor; every fail, and every warn for a part behind its pin, names
+// `runtime.node` the Node a session resolves (launch.mjs's own lookup) against its pin; since #171 M6b no row checks a
+// vendor runtime, whose engine cua 0.30.0 retired on Linux. Every fail, and every warn for a part behind its pin, names
 // the remedy that repairs the home: what to move aside where an installer refuses to replace it, then this cua's own
 // installer by its absolute path (ruling 1110). The Linux host and every system probe are injected, so this runs on any
 // machine.
@@ -91,19 +91,18 @@ const doctor = (home, pin, over = {}) => inspectRuntime({home, env: {DISPLAY: ':
   inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
   inspectLinux: async () => DESKTOP_PASS, inspectChrome: async () => [], inspectAgent: async () => [], linuxHelper: pinnedHelper, ...pinnedEngine(home), ...over});
 
-test('a healthy Linux install: cua\'s own runtime rows pass, the vendor\'s tree is one row, no darwin rows, the Linux desktop rows, the pinned sandbox helper, the secret store', async t => {
+test('a healthy Linux install: cua\'s own runtime rows pass, no row checks the vendor\'s tree beside them, no darwin rows, the Linux desktop rows, the pinned sandbox helper, the secret store', async t => {
   const {home, pin} = await linuxHome(t);
   const report = await doctor(home, pin);
   const rows = byName(report);
   assert.equal(report.ok, true, JSON.stringify(report.checks.filter(c => c.status !== 'pass'), null, 1));
-  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.vendor', 'sandbox', 'sandbox.launcher', 'sandbox.userns', 'repl.host', 'engine'])
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'sandbox', 'sandbox.launcher', 'sandbox.userns', 'repl.host', 'engine'])
     assert.equal(rows[name]?.status, 'pass', `${name}: ${rows[name]?.detail}`);
   assert.equal(rows.platform.detail, `linux-x64: cua's own runtime ${RELEASE}`);
   assert.equal(rows['runtime.installed'].detail, `cua's own runtime ${RELEASE} at ${TREE(home)}: its module tree, Node and sandbox helper are installed, and current.json names it, the last install that completed here`);
   assert.match(rows['runtime.modules'].detail, /^the module tree at \S+ verifies: \d+ packages, each file's digest, and 0 native files by SHA-256$/);
   assert.equal(rows['runtime.node'].detail, `the pinned Node ${RECORD.node.version} at ${NODE_BIN(home)}, its bytes the ones its install record names`);
-  assert.equal(rows['runtime.vendor'].detail, `the vendor's release ${pin.release} at ${join(home, 'runtimes', pin.release)}, kept for CUA_NATIVE_ENGINE=vendor: installed from its pinned archive (its length and SHA-256, the trust root on Linux), every layout path present, runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, linux-x64`);
-  for (const name of VENDOR_ROWS) assert.equal(rows[name], undefined, `${name} is folded into runtime.vendor`);
+  for (const name of ['runtime.vendor', ...VENDOR_ROWS]) assert.equal(rows[name], undefined, `${name}: no row checks a vendor runtime (M6b)`);
   assert.deepEqual(report.runtime, {release: RELEASE, root: TREE(home), paths: {moduleDir: join(TREE(home), 'node_modules')}, parts: RECORD});
   assert.match(rows['sandbox.launcher'].detail, /the pinned helper .*\/sandbox\/rust-v0\.163\.0\/codex-linux-sandbox/);
   assert.equal(rows['helper.live'], undefined);
@@ -115,13 +114,11 @@ test('a healthy Linux install: cua\'s own runtime rows pass, the vendor\'s tree 
   assert.equal(summarize(report), 'passive runtime checks pass');
 });
 
-test('a home with cua\'s own runtime and no vendor tree gets the own rows, and runtime.vendor skips', async t => {
+test('a home with cua\'s own runtime and no vendor tree gets the own rows, and no vendor row', async t => {
   const {home, pin} = await linuxHome(t, {vendor: false});
   const rows = byName(await doctor(home, pin));
   for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node']) assert.equal(rows[name].status, 'pass', `${name}: ${rows[name].detail}`);
-  for (const name of VENDOR_ROWS) assert.equal(rows[name], undefined, name);
-  assert.equal(rows['runtime.vendor'].status, 'skip');
-  assert.equal(rows['runtime.vendor'].detail, `the vendor's release ${pin.release} is not installed here; only CUA_NATIVE_ENGINE=vendor needs it, and ${INSTALLER} installs it beside cua's own runtime`);
+  for (const name of ['runtime.vendor', ...VENDOR_ROWS]) assert.equal(rows[name], undefined, name);
 });
 
 test('runtime.installed: no module tree fails; a pointer naming the vendor\'s release, another runtime or nothing warns; each names the installer', async t => {
@@ -306,55 +303,36 @@ test('runtime.node: the mode fix quotes a managed Node path with a space or a qu
   assert.ok(row.detail.includes(`restore its mode with \`chmod 755 ${quoted}\``), row.detail);
 });
 
-test('runtime.vendor: a damaged tree fails with its recovery; a runtimes/ that is a file, or a link to nothing, fails naming it', async t => {
+// #171 M6b (§2.3): the vendor's tree, whole, damaged or blocked, fails no row; a vendor selection is refused whatever it is.
+test('the vendor\'s tree, damaged, or a runtimes/ that is a file or a link to nothing, fails no row; a vendor selection is refused whatever the tree', async t => {
   const {home, pin} = await linuxHome(t);
+  const vendorSelected = {env: {DISPLAY: ':9', CUA_NATIVE_ENGINE: 'vendor'}};
+  const retired = rows => {
+    assert.equal(rows.engine.status, 'fail');
+    assert.match(rows['repl.host'].detail, /^refused \(engine_retired\): CUA_NATIVE_ENGINE=vendor selects the vendor's engine, which cua 0\.30\.0 removed from Linux/);
+  };
+  retired(byName(await doctor(home, pin, vendorSelected)));
   rmSync(join(home, 'runtimes', pin.release, 'install.json'));
-  const damaged = byName(await doctor(home, pin))['runtime.vendor'];
-  assert.equal(damaged.status, 'fail');
-  assert.ok(damaged.detail.startsWith(`the vendor's release ${pin.release} in ${home} is damaged: `), damaged.detail);
-  assert.ok(damaged.detail.includes(`remove ${join(home, 'runtimes', pin.release)}, then run ${INSTALLER}`), damaged.detail);
-
-  rmSync(join(home, 'runtimes'), {recursive: true});
-  writeFileSync(join(home, 'runtimes'), 'not a directory');
-  const blocked = byName(await doctor(home, pin))['runtime.vendor'];
-  assert.equal(blocked.status, 'fail');
-  assert.equal(blocked.detail, `the vendor's release ${pin.release} in ${home} is damaged: ${join(home, 'runtimes')} is not a directory, so no release can be installed under it; `
-    + `stop any \`cua serve\` using it, remove ${join(home, 'runtimes')}, then run ${INSTALLER} (or ${INSTALLER.slice(0, -1)} --archive <ChatGPT deb>\` with the pinned archive)`);
-  assert.doesNotMatch(blocked.detail, new RegExp(`runtimes/${pin.release.replaceAll('.', '\\.')}`));
-
-  // A link that leads nowhere looks absent to a lookup, but blocks the install all the same.
-  rmSync(join(home, 'runtimes'));
-  symlinkSync(join(home, 'gone'), join(home, 'runtimes'));
-  const dangling = byName(await doctor(home, pin))['runtime.vendor'];
-  assert.equal(dangling.status, 'fail');
-  assert.ok(dangling.detail.includes(`${join(home, 'runtimes')} is not a directory, so no release can be installed under it`), dangling.detail);
-  assert.ok(dangling.detail.includes(`remove ${join(home, 'runtimes')}, then run ${INSTALLER}`), dangling.detail);
+  for (const setup of [() => {}, () => { rmSync(join(home, 'runtimes'), {recursive: true}); writeFileSync(join(home, 'runtimes'), 'not a directory'); },
+    () => { rmSync(join(home, 'runtimes')); symlinkSync(join(home, 'gone'), join(home, 'runtimes')); }]) {
+    setup();
+    const report = await doctor(home, pin);
+    assert.equal(report.ok, true, JSON.stringify(report.checks.filter(c => c.status === 'fail'), null, 1));
+    assert.equal(byName(report)['runtime.vendor'], undefined);
+    retired(byName(await doctor(home, pin, vendorSelected)));
+  }
 });
 
-// Fix wave 1: a vendor pin this checkout cannot parse fails the vendor's row alone; the own rows and the rest of doctor
-// stand.
-test('runtime.vendor: vendor pins that cannot be loaded fail that row alone', async t => {
+// Vendor pins this checkout cannot load or read fail nothing: they describe only the vendor's tree, which no row checks
+// and no session uses; the leftovers scan goes on without them.
+test('vendor pins that cannot be loaded or read fail no row', async t => {
   const {home} = await linuxHome(t);
-  const report = await doctor(home, null, {pins: undefined, loadPins: () => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); }});
-  const rows = byName(report);
-  assert.equal(rows['runtime.vendor'].status, 'fail');
-  assert.equal(rows['runtime.vendor'].detail, `release pin x.json: unknown field "y"; restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}; only CUA_NATIVE_ENGINE=vendor needs the vendor's tree`);
-  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
-});
-
-// Fix wave 2: a pins directory the filesystem refuses is a pin error like any other, kept in the vendor's row, and in the
-// selection of a session that asks for the vendor's engine.
-test('runtime.vendor: a pins directory that cannot be read fails that row alone, naming the pins to restore; a vendor selection refuses with it', async t => {
-  const {home} = await linuxHome(t);
-  const unreadable = () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); };
-  const rows = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable}));
-  assert.equal(rows['runtime.vendor'].status, 'fail');
-  assert.ok(rows['runtime.vendor'].detail.startsWith(`the vendor's release pins at ${RELEASES_DIR} cannot be read (ENOENT); restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}`), rows['runtime.vendor'].detail);
-  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'repl.host', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
-
-  const vendor = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable, env: {DISPLAY: ':9', CUA_NATIVE_ENGINE: 'vendor'}}));
-  assert.equal(vendor['runtime.vendor'].status, 'fail');
-  assert.ok(vendor.engine, 'doctor reaches the engine row');
+  for (const loadPins of [() => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); },
+    () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); }]) {
+    const report = await doctor(home, null, {pins: undefined, loadPins});
+    assert.equal(report.ok, true, JSON.stringify(report.checks.filter(c => c.status === 'fail'), null, 1));
+    assert.equal(byName(report)['runtime.vendor'], undefined);
+  }
 });
 
 test('sandbox.launcher: a helper not placed fails, naming the installer', async t => {

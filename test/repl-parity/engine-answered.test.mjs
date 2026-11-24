@@ -235,8 +235,11 @@ test('expectedEngine: the vendor lane reads the vendor tree as the vendor select
   const {loadPins, selectPin, vendorLinuxRuntime} = await import('../../src/runtime/manifest.mjs');
   const vendor = exe => ({exe, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'});
   const host = {platform: 'linux', arch: 'x64'};
-  // A home cua's own install left: the own runtime, its pointer the derived release, and the vendor tree beside it.
+  // A home cua's own install left: the own runtime, its pointer the derived release, and the vendor tree an older cua's
+  // install placed beside it (the Linux fixture home holds none of its own since #171 M6b).
   const home = fakeInstalledHome(t, {host});
+  const {forgeActiveRuntime} = await import('../fixtures/runtime-fixture.mjs');
+  forgeActiveRuntime(home, {}, {host, ownRuntime: false});
   writePointer(home, fakeModuleTree(home, host).release);
   const pin = selectPin(loadPins(), host);
   const sky = fs.realpathSync(join(homeLayout(home).runtimes, pin.release, pin.layout.skyLinuxBin));

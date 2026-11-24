@@ -178,11 +178,9 @@ test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host alw
  // explicit setting, and nothing falls back to the vendor's engine
  assert.deepEqual(row({}),{error:'engine_not_installed'});
  assert.deepEqual(row({installed:true}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({defaultEngine:'vendor'}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({engine:'vendor',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
  assert.deepEqual(row({engine:'cua',node24:false}),{error:'engine_not_installed'},'the engine refuses before Node');
  assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({engine:'invalid'}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
+ assert.deepEqual(row({engine:'invalid'}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be cua (cua 0.30.0 removed the vendor\'s engine from Linux)'});
  assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
  assert.deepEqual(row({defaultEngine:'cua'}),{error:'engine_not_installed'});
  // #171 M6a (F2): an installed engine older than this cua needs, or one no record of its bytes names, is refused at the
@@ -190,11 +188,12 @@ test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host alw
  for(const [installed,error] of [['outdated','engine_outdated'],['unrecorded','engine_unrecorded']])for(const fields of [{},{engine:'cua'},{engine:'cua',engineFrom:'settings'}])
   assert.deepEqual(row({...fields,installed}),{error},`${installed} ${JSON.stringify(fields)}`);
  assert.deepEqual(row({defaultEngine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
- // the vendor's tree: needed by the vendor selection alone, and refused without it; a browser-only session needs no engine
- assert.deepEqual(row({engine:'vendor',vendorTree:false}),{error:'engine_not_installed'});
- assert.deepEqual(row({engine:'vendor',engineFrom:'settings',vendorTree:false}),{error:'engine_not_installed'});
- assert.deepEqual(row({engine:'cua',installed:true,vendorTree:false}),{host:'cua',reason:'linux',status:'pass'});
- assert.deepEqual(row({engine:'vendor',vendorTree:false,lane:'profiles'}),{host:'cua',reason:'linux',status:'pass'});
+ // #171 M6b: the vendor's engine is engine_retired in every row, by either source, cua's installed or not, the default
+ // too; a browser-only session needs no engine
+ for(const fields of [{engine:'vendor'},{engine:'vendor',engineFrom:'settings'},{engine:'vendor',installed:true},{engine:'vendor',override:'cua'},{engine:'vendor',node24:false},
+  {defaultEngine:'vendor'},{defaultEngine:'vendor',installed:true}])
+  assert.deepEqual(row(fields),{error:'engine_retired'},JSON.stringify(fields));
+ assert.deepEqual(row({engine:'vendor',lane:'profiles'}),{host:'cua',reason:'linux',status:'pass'});
  // the Node (#171 M6a, F2a): the managed one or CUA_NODE; a Node 24 running cua or on PATH counts for nothing, and
  // without either the runtime is not installed. Linux has no vendor host to fall back to.
  assert.deepEqual(row({node24:false,installed:true}),{host:'cua',reason:'linux',status:'pass'},'the managed Node, whatever runs cua');
@@ -205,13 +204,11 @@ test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host alw
  assert.deepEqual(row({override:'vendor'}),{error:'repl_host_refused'});
  assert.deepEqual(row({override:'vendor',lane:'profiles'}),{error:'repl_host_refused'});
 });
-// The vendor selection's tree as the live lane's home holds it (vendorTree true, the seam standing in for the lookup), or
-// as the doctor fixture's scratch home does not (false, the real lookup finding none).
-const LINUX_TREE={release:'26.928.40906-linux-x64',root:'/scratch/runtimes/26.928.40906-linux-x64',paths:{skyLinuxBin:'/scratch/sky_linux_x64',skyVendorService:'/scratch/service.js',moduleDir:'/scratch/node_modules'}};
-const linuxEngineInputs=row=>({config:()=>({}),installed:()=>null,...(row.vendorTree===false?{}:{vendor:()=>LINUX_TREE})});
+// The live lane's home holds no engine of cua's (the seam standing in for the lookup).
+const linuxEngineInputs=()=>({config:()=>({}),installed:()=>null});
 test('every Linux engine row agrees with doctor\'s actual row, which names no engine',async t=>{
  const reviewed=reviewedSource(t);
- for(const vendorTree of [true,false])for(const row of selectionCases('linux').filter(r=>r.engine).map(r=>({...r,managedNode:true,vendorTree})))await t.test(JSON.stringify(row),async t=>{
+ for(const row of selectionCases('linux').filter(r=>r.engine).map(r=>({...r,managedNode:true})))await t.test(JSON.stringify(row),async t=>{
   const expected=expectedSelection(row);
   const doctor=await doctorReplHost(t,{platform:'linux',env:{...envFor(row),...engineEnv(row)},node:MANAGED,engine:linuxEngineInputs(row)});
   if(expected.error){assert.doesNotThrow(()=>assertSelection(row,{doctor,error:expected.error,errorMessage:expected.sentence??'refused'},reviewed));return;}

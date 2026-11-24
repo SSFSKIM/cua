@@ -18,10 +18,10 @@ import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {openConnection} from '../src/mcp/connection.mjs';
-import {resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {toolOverrides} from '../src/repl-host/instructions.mjs';
 import {ENGINE_GRANTS, grantSteps} from '../src/runtime/engine.mjs';
-import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {fakeInstalledHome, fakeUpstreamLaunch} from './fixtures/installed-home.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
@@ -218,12 +218,12 @@ const COMPUTER_RULES = {
   'typeText drops emoji: paste those': /typeText drops characters the layout cannot key \(emoji\); paste those and multiline text\./,
   'js_reset and rebind, never osascript': /If REPL state is confused, js_reset and rebind; never also use osascript\./,
 };
-// Phase F: the Linux rules replace the macOS-only ones.
+// Phase F: the Linux rules replace the macOS-only ones; since #171 M6b they are cua's engine's alone.
 const LINUX_RULES = {
   'bind by X11 window': /cua\.getApp\(\{windowId\}\) with an id from listWindows\(\); if REPL state is confused, js_reset and rebind/,
   'no setValue or selectText; paste types': /setValue and selectText do not exist; paste types like typeText/,
-  'GTK3 text views: pressKey, not typeText or paste': /typeText and paste crash GTK3 text views: type there with pressKey/,
-  'X keysyms': /one X keysym per call/,
+  'exact text by typeText and paste': /typeText and paste insert exact text, Unicode and newlines included/,
+  'X keysyms': /pressKey takes X keysyms \(minus, space\)/,
   'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
   // #117 M3: Linux asks per app too, and says what an app is there.
   'approval per window app, launched id or the whole desktop': /Approval is per app: a window's app as listWindows\(\) names it, launch_app's id, and the whole desktop for input without a window\./,
@@ -450,27 +450,21 @@ test('maws unreachable reads as not ready with the reason and the step, never wi
   assert.match(guidance, /^maws is not ready \(maws_unreachable\): MAWS is not running or this session's browser socket is gone, so start MAWS and call profiles_list again; or cua's peer check is unavailable and its relay refuses the browser service \(cua doctor's maws\.hosts row says why\)\./);
 });
 
-// The Linux js rule on text input follows the engine the connection selected (#171 M5, T8; the spec's Decision Log,
-// M5 pre-flight): the vendor engine's typeText and paste fail in GTK 3 text views, so its rule sends typing to pressKey;
-// cua's engine inserts exact text and refuses, on a shared desktop, input an app ignores in the background, and its
-// rule says so. macOS's follow it too (below).
-const GTK3_RULE = /typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call \(minus, space\)\./;
+// The Linux js rule on text input is cua's engine's (#171 M5, T8; M6b): cua's engine inserts exact text and refuses, on a
+// shared desktop, input an app ignores in the background, and its rule says so. The vendor engine's GTK 3 rule went
+// with that engine, which cua 0.30.0 retired on Linux, so a Linux computer session has cua's rules whatever engine is
+// passed. macOS's follow the engine (below).
+const GTK3_RULE = /typeText and paste crash GTK3 text views/;
 const CUA_TEXT_RULE = /typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms \(minus, space\)\./;
 const SHARED_DESKTOP_RULE = /"does not accept background input": nothing was sent, since this desktop is shared; use the element's action, or tell the user\./;
 
-test('on Linux the js rule on text input follows the selected engine', () => {
+test('on Linux the js rules are cua\'s engine\'s, whatever engine is passed', () => {
   for (const surfaces of [['computer'], ['computer', 'browser']]) {
-    const vendor = jsRulesFor(surfaces, {platform: 'linux', engine: 'vendor'});
     const cua = jsRulesFor(surfaces, {platform: 'linux', engine: 'cua'});
-    assert.equal(jsRulesFor(surfaces, {platform: 'linux'}), vendor, `${surfaces}: an engine not named keeps the vendor engine's rule`);
-    assert.match(vendor, GTK3_RULE, surfaces.join());
-    assert.doesNotMatch(vendor, CUA_TEXT_RULE, surfaces.join());
-    assert.doesNotMatch(vendor, SHARED_DESKTOP_RULE, surfaces.join());
+    for (const engine of [undefined, 'vendor', 'other']) assert.equal(jsRulesFor(surfaces, {platform: 'linux', engine}), cua, `${surfaces}: ${engine}`);
     assert.doesNotMatch(cua, /GTK3|crash/, surfaces.join());
     assert.match(cua, CUA_TEXT_RULE, surfaces.join());
     assert.match(cua, SHARED_DESKTOP_RULE, surfaces.join());
-    const without = (text, ...rules) => text.split('\n').filter(line => !rules.some(rule => rule.test(line)));
-    assert.deepEqual(without(cua, CUA_TEXT_RULE, SHARED_DESKTOP_RULE), without(vendor, GTK3_RULE), `${surfaces}: only the text rule changes`);
     assert.ok(cua.length + 2 < DESCRIPTION_CAP, `${surfaces}: cua's rules are never cut`);
   }
   assert.equal(jsRulesFor(['browser'], {platform: 'linux', engine: 'cua'}), jsRulesFor(['browser'], {platform: 'linux', engine: 'vendor'}), 'no computer surface, no rule');
@@ -520,31 +514,37 @@ test('a macOS server shows the js rules of the engine it was given', async () =>
   }
 });
 
-test('the server shows the js rule of the engine it was given', async () => {
-  for (const [engine, rule] of [['cua', CUA_TEXT_RULE], ['vendor', GTK3_RULE], [null, GTK3_RULE]]) {
+test('a Linux server shows cua\'s js rules whatever engine it was given', async () => {
+  for (const engine of ['cua', 'vendor', null]) {
     const h = harness({server: {surfaces: ['computer'], platform: 'linux', engine, profiles: {list: () => []}}});
     const js = (await toolsOf(h)).find(t => t.name === 'js');
-    assert.match(js.description, rule, String(engine));
+    assert.match(js.description, CUA_TEXT_RULE, String(engine));
+    assert.doesNotMatch(js.description, GTK3_RULE, String(engine));
     assert.ok(js.description.startsWith(jsRulesFor(['computer'], {platform: 'linux', engine: engine ?? undefined})), String(engine));
   }
 });
 
 // The whole path: a real Linux connection resolves its engine once at the open (launch.mjs replHostFor), and its
-// tools/list shows that engine's rule; the fake installed runtime's upstream answers the handshake.
-test('a Linux connection shows the js rule of the engine it selected', async t => {
+// tools/list shows cua's rules; the fake upstream answers the handshake. The vendor's engine is refused at the open.
+test('a Linux connection shows cua\'s js rules; one selecting the vendor\'s engine is refused at the open', async t => {
   const LINUX = {platform: 'linux', arch: 'x64'};
   const engineDir = mkdtempSync(join(tmpdir(), 'cua-linux-engine-'));
   t.after(() => rmSync(engineDir, {recursive: true, force: true}));
   const engineBin = join(engineDir, 'cua-engine');
   writeFileSync(engineBin, '#!/bin/sh\n', {mode: 0o755});
-  for (const [selected, rule] of [['cua', CUA_TEXT_RULE], ['vendor', GTK3_RULE]]) {
+  for (const [selected, rule] of [['cua', CUA_TEXT_RULE], ['vendor', null]]) {
     const home = fakeInstalledHome(t, {host: LINUX});
-    const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
     const input = new PassThrough(), output = new PassThrough();
     const frames = [];
     createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
     const env = {PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
-    const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+    const prepareLaunch = fakeUpstreamLaunch(home);
+    if (!rule) {
+      await assert.rejects(openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
+        resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'}),
+        engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin}), installedVersion: () => MIN_ENGINE_VERSION}}), {code: 'engine_retired'});
+      continue;
+    }
     const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
       resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'}),
       engine: {config: () => ({engine: selected}), installed: () => ({path: engineBin}), installedVersion: () => MIN_ENGINE_VERSION}});

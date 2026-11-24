@@ -50,9 +50,9 @@
 // (src/sandbox/linux.mjs) present at $CUA_HOME/sandbox/<tag>/ with the pinned SHA-256; `fail` names a missing or
 // tampered helper, which every confined launch refuses (sandbox_unavailable).
 // On Linux the runtime rows describe cua's own runtime, which every Linux session resolves (#171 M6a;
-// src/runtime/doctor-linux-runtime.mjs: platform, runtime.installed, runtime.modules, runtime.node), and the vendor's
-// tree is one row beside them, runtime.vendor, trusted by its archive hash (no codesign runs) and kept for
-// CUA_NATIVE_ENGINE=vendor; the darwin helper.live and helper.permissions rows give way to display, accessibility.bus
+// src/runtime/doctor-linux-runtime.mjs: platform, runtime.installed, runtime.modules, runtime.node); no row checks a
+// vendor runtime, whose engine cua 0.30.0 retired there (M6b); the darwin helper.live and helper.permissions rows give
+// way to display, accessibility.bus
 // and sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted). The sandbox
 // row protects cua's module trees ($CUA_HOME/modules) there, which are no trusted code.
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
@@ -131,13 +131,12 @@ function launcherCheck({sandboxExec, compat, node}) {
 
 export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = installedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
-  // On Linux the vendor's pins describe only the vendor's tree: pins this checkout cannot parse or read (manifest.mjs
-  // vendorPinsOf) fail that row alone (runtime.vendor), and a vendor selection with that error; the leftovers scan goes
-  // on without the release trees they name.
-  let pinsError = null;
+  // On Linux the vendor's pins describe only the vendor's tree, which no session uses since cua 0.30.0 (#171 M6b): pins
+  // this checkout cannot parse or read (manifest.mjs vendorPinsOf) fail nothing, and the leftovers scan goes on without
+  // the release trees they name.
   if (pins === undefined) {
     if (host.platform !== 'linux') pins = loadVendorPins();
-    else try { pins = vendorPinsOf(loadVendorPins); } catch (error) { if (!(error instanceof CuaError)) throw error; pinsError = error; pins = []; }
+    else try { pins = vendorPinsOf(loadVendorPins); } catch (error) { if (!(error instanceof CuaError)) throw error; pins = []; }
   }
   const checks = [];
   let pin, runtime;
@@ -145,10 +144,10 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   // repl.host alike. CUA_NODE's form is repl.host's to check first; an invalid one is that row's failure.
   const resolveNode = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home, platform: host.platform, arch: host.arch})));
   if (host.platform === 'linux') {
-    // cua's own runtime and the vendor's tree beside it (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
+    // cua's own runtime (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
     let sandboxMode = null;
     try { sandboxMode = sandboxModeFrom(env); } catch (error) { if (!(error instanceof CuaError)) throw error; }
-    const own = linuxRuntimeChecks({home, env, host, pins, pinsError, resolveNode, linuxHelper, sandbox: sandboxMode, ...(linuxRuntime ? {linuxRuntime} : {})});
+    const own = linuxRuntimeChecks({home, env, host, pins, resolveNode, linuxHelper, sandbox: sandboxMode, ...(linuxRuntime ? {linuxRuntime} : {})});
     checks.push(...own.rows);
     if (own.stop) return {ok: false, checks};
     runtime = own.runtime;
@@ -211,7 +210,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  const engineInputs = host.platform === 'linux' ? {...(pinsError ? {vendor: () => { throw pinsError; }} : {}), ...engine} : sharedEngineInputs(engine, env);
+  const engineInputs = host.platform === 'linux' ? engine : sharedEngineInputs(engine, env);
   const replHost = replHostCheck(home, env, host, resolveNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,

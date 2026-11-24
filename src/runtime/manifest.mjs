@@ -313,7 +313,7 @@ function locateOwnLinuxRuntime({home, release: named, host}) {
   const parts = loadLinuxRuntime({host, lock});
   const release = linuxRelease(parts, host.arch);
   if (named != null && named !== release)
-    fail('unknown_release', `release ${named} is not this cua's Linux runtime, ${release}`, {hint: 'on Linux this cua resolves only its own runtime; CUA_NATIVE_ENGINE=vendor selects the vendor\'s engine'});
+    fail('unknown_release', `release ${named} is not this cua's Linux runtime, ${release}`, {hint: 'on Linux this cua resolves only its own runtime'});
   const tree = readModuleTree(home, lock, moduleHostOf(host));
   if (!tree) {
     // Something at the tree's path (or a modules/ that is not a directory) that is not cua's install of this lock for

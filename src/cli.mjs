@@ -10,6 +10,7 @@ import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installMacosEngine, installRuntime, useRuntime} from './runtime/install.mjs';
 import {installLinux} from './runtime/linux-install.mjs';
+import {VENDOR_ENGINE_RETIRED_IN} from './runtime/launch.mjs';
 import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin} from './runtime/linux-engine.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
@@ -40,12 +41,12 @@ import {chromeMigration, rebindRequired} from './chrome/route.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME} from './chrome/extension.mjs';
 import {configuredBackends, startClientBackends} from './chrome/client-mode.mjs';
 
-// The usage text names this platform's archive kind and default home, and the service manager that runs an installed
-// agent (agent install, uninstall, status): launchd on macOS, the systemd user manager on Linux. The console check is
-// macOS-only.
+// The usage text names this platform's default home, on macOS the vendor's archive kind (Linux takes none since cua
+// 0.30.0), and the service manager that runs an installed agent (agent install, uninstall, status): launchd on macOS,
+// the systemd user manager on Linux. The console check is macOS-only.
 const PLATFORM_USAGE = {
   darwin: {archive: 'ChatGPT zip', home: '~/Library/Application Support/cua'},
-  linux: {archive: 'ChatGPT deb', home: '$XDG_DATA_HOME/cua, else ~/.local/share/cua'},
+  linux: {home: '$XDG_DATA_HOME/cua, else ~/.local/share/cua'},
 };
 const AGENT_JOB_USAGE = {
   darwin: `  agent install [--http <host:port>] [--surfaces <list>] [--json]  run the agent as a launchd job in this login session
@@ -78,11 +79,9 @@ ${darwin ? `  install [--archive <${archive}>] [--release <id>] [--json]   insta
           [--modules-dir <dir>] [--sandbox-helper <file>]      helper and the pinned Node 24 (local copies of the module
           [--node-archive <node tarball> | --no-node]          tarballs, the helper asset or the nodejs.org tarball; or
                                                                no Node: sessions then need CUA_NODE); then cua's pinned
-          [--engine]                                           engine and the vendor's release, each tried whatever
-          [--archive <${archive}>] [--release <id>]           happened before: a failed one fails the command only
-                                                               when it is asked for, by --engine or --archive/--release,
-                                                               or by the engine CUA_NATIVE_ENGINE (else engine.json)
-                                                               selects
+          [--engine]                                           engine, tried whatever happened before: its failure fails
+                                                               the command when --engine or the engine setting
+                                                               (CUA_NATIVE_ENGINE, else engine.json) asks for it
 `}          [--prune-leftovers]                                  then remove what the Codex CLI left in this home (its
                                                                CODEX_HOME files, a release's unused ${darwin ? 'CodexCLI.app' : 'codex file'}):
                                                                only once every cua using this home is updated, since
@@ -171,7 +170,8 @@ function progressReporter() {
   };
 }
 
-// On Linux, cua's own runtime and then each engine's lane, every step attempted (src/runtime/linux-install.mjs; #171 M6a).
+// On Linux, cua's own runtime and then cua's engine, every step attempted (src/runtime/linux-install.mjs; #171 M6a), and
+// nothing of the vendor's (M6b: --archive and --release are usage errors there).
 // On macOS the runtime first, then, with --prune-leftovers, the Codex CLI's leftovers in this home are removed
 // (src/runtime/codex-leftovers.mjs: each named in the output, none of them a failure; without it install only says
 // they are there), then the own REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16),
@@ -190,6 +190,9 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     'engine-sign': {type: 'string'}, 'sign-wait': {type: 'string'}, 'modules-dir': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
   for (const [flag, given] of [['--sandbox-helper', values['sandbox-helper'] !== undefined], ['--modules-dir', values['modules-dir'] !== undefined]])
     if (given && platform !== 'linux') throw new UsageError(`install takes ${flag} on Linux only`);
+  // #171 M6b (§3.5): Linux has no vendor archive or release to take.
+  if ((values.archive !== undefined || values.release !== undefined) && platform === 'linux')
+    throw new UsageError(`install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua ${VENDOR_ENGINE_RETIRED_IN}, no ChatGPT package`);
   if (values.engine && platform !== 'linux' && platform !== 'darwin') throw new UsageError('install takes --engine on macOS and Linux only');
   if ((values['engine-sign'] !== undefined || values['sign-wait'] !== undefined) && platform !== 'darwin')
     throw new UsageError('install takes --engine-sign and --sign-wait on macOS only (the Linux engine is not signed)');
@@ -201,7 +204,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   const onProgress = values.json ? undefined : progressReporter();
   if (platform === 'linux') {
     const {host = {platform, arch: process.arch}, ...seams} = linuxSeams;
-    const {ok, report, error} = await installLinux({values, home, env, host, onProgress, installRuntime: runtimeInstaller, installNode: nodeInstaller, pins: pinsOf, nodePins, ...seams,
+    const {ok, report, error} = await installLinux({values, home, env, host, onProgress, installNode: nodeInstaller, pins: pinsOf, nodePins, ...seams,
       say: values.json ? undefined : print, progress: values.json ? undefined : line => process.stderr.write(`${line}\n`)});
     if (values.json) { print(report); return ok ? 0 : 1; }
     if (!ok) throw new CuaError(error.code, error.message, {hint: error.hint});

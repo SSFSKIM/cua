@@ -113,9 +113,10 @@ test('the usage names the default home per platform: Application Support on macO
   assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
   assert.match(usageFor('linux'), /\[--node-archive <node tarball> \| --no-node\]/);
   assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run \(agent install carries those set into\n  the unit\):/m);
-  // On Linux the deb is the vendor's lane, after cua's own runtime (#171 M6a).
+  // On Linux install takes no vendor archive or release (#171 M6b): cua's own runtime, then cua's engine.
   assert.match(usageFor('linux'), /^  install \[--json\] +install cua's own runtime/m);
-  assert.match(usageFor('linux'), /^ +\[--archive <ChatGPT deb>\] \[--release <id>\] +happened before/m);
+  assert.match(usageFor('linux'), /^ +\[--engine\] +engine, tried whatever happened before/m);
+  assert.doesNotMatch(usageFor('linux'), /--archive|--release <id>|ChatGPT deb|vendor/);
 });
 
 test('devices add, import, list and remove are listed on both platforms', async () => {

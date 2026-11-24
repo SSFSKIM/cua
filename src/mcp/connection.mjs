@@ -4,8 +4,8 @@
 // `openConnection` resolves the installed runtime (per connection, so a `cua runtime use` or a first `cua install`
 // takes effect on the next connection without restarting an agent: on macOS the pointer's vendor release, on Linux cua's
 // own runtime whatever the pointer says, #171 M6a, its release derived from its parts so the handshake records follow
-// them), resolves its selection once (the REPL host, its Node and its engine: on Linux the vendor's tree is reached only
-// by a CUA_NATIVE_ENGINE=vendor selection, here, and every launch of the connection takes it from that selection), claims run/<sessionId> (src/runtime/run-dir.mjs),
+// them), resolves its selection once (the REPL host, its Node and its engine: on Linux cua's, by its path, the vendor's
+// refused since cua 0.30.0, and every launch of the connection takes it from that selection), claims run/<sessionId> (src/runtime/run-dir.mjs),
 // resolves the secret store (src/secrets/store.mjs: $HOME/.config/claude-secrets, and with `project` that project's
 // directory beneath it, unless secrets are off), plans the
 // launch for the enabled surfaces (CUA_SHIM_SURFACES) with their trusted services registered (src/services/sky.mjs for
@@ -131,8 +131,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // and only when the selection would be cua's own host: a default that finds no Node 24 keeps the vendor host
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
-    // On Linux the selection also carries the engine (launch.mjs linuxEngineFor): cua's engine by its path, or the
-    // vendor's tree, found once here, so no later launch of the connection looks for that tree again.
+    // On Linux the selection also carries the engine (launch.mjs linuxEngineFor): cua's engine by its path, resolved once
+    // here, so every later launch of the connection runs what this open resolved.
     const replHost = replHostFor({platform: runtime.manifest.platform, arch: runtime.manifest.arch, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode, engine});
     const launchFor = (extra = {}) => buildLaunch({
       ...extra, runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,

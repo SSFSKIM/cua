@@ -130,6 +130,12 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
       for (const b of judged.blocking) log(`  blocking: ${b}`);
       for (const m of judged.missing) log(`  missing: ${m}`);
       for (const o of judged.owner) log(`  owner: ${o}`);
+      // Passes on their own effect whose act threw (ruling 1204's setValue.name): counted per engine, each with its reply.
+      const landed = judged.thrownButLanded ?? {vendor: [], cua: []};
+      if (landed.vendor.length + landed.cua.length) {
+        log(`  thrownButLanded: cua ${landed.cua.length}, vendor ${landed.vendor.length}`);
+        for (const engine of ['cua', 'vendor']) for (const t of landed[engine]) log(`    ${engine} ${t.id} (run ${t.run ?? '?'}, sample ${t.sample ?? '?'}): ${t.errorName ?? 'no error name'}: ${t.message}`);
+      }
     }
     return VERDICT_CODE[judged.verdict];
   }

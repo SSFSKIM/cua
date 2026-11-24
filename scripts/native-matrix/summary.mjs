@@ -79,7 +79,7 @@ import {findingSamples, judgeCell, judgeSpeed} from './cell-verdict.mjs';
 import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
-import {ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
+import {ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
@@ -481,7 +481,20 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, shared, cells, others, owner,
-    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, verdict};
+    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), verdict};
+}
+
+// The samples of a row judged by its own effect (./plan.mjs OWN_EFFECT_IDS) that passed although the act threw: a write a
+// model was told failed while it landed. A pass all the same, counted apart per engine with the thrown reply (its error
+// name and its message's first line). -> {vendor: [{id, run, sample, errorName, message}], cua: […]}.
+export function thrownButLandedOf(rows) {
+  const out = {vendor: [], cua: []};
+  for (const r of rows) {
+    const threw = r.outcome?.threw;
+    if (r.section !== 'method' || r.ok !== true || !OWN_EFFECT_IDS.includes(r.id) || typeof threw !== 'string' || !threw || !out[r.engine]) continue;
+    out[r.engine].push({id: r.id, run: r.run ?? null, sample: r.sample ?? null, errorName: r.outcome.errorName ?? null, message: threw.split('\n')[0]});
+  }
+  return out;
 }
 
 // ---- the report ---------------------------------------------------------------------------------------------------------
@@ -564,6 +577,16 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   const ownerSitting = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerSitting ?? 0), 0);
   const sitting = ownerSitting('cua') + ownerSitting('vendor');
   out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}${sitting ? `; \`ownerSitting\` (the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203): cua ${ownerSitting('cua')}, vendor ${ownerSitting('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+
+  // A pass on its own effect whose act threw: a model told the write failed while it worked (ruling 1204's setValue.name).
+  const landed = j.thrownButLanded ?? {vendor: [], cua: []};
+  if (landed.vendor.length + landed.cua.length) {
+    out.push(`- **Thrown but landed** (\`thrownButLanded\`: a pass on its own effect whose act threw, so a model was told the write failed while it worked): cua ${landed.cua.length}, vendor ${landed.vendor.length}.`, '');
+    out.push('## Thrown but landed', '', 'Each sample that passed on its own effect while its act threw, with the thrown reply (its error name and its message\'s first line).', '',
+      '| engine | row | run | sample | error name | message |', '|---|---|---|---|---|---|');
+    for (const engine of ['cua', 'vendor']) for (const t of landed[engine]) out.push(`| ${engine} | ${t.id} | ${t.run ?? '-'} | ${t.sample ?? '-'} | ${t.errorName ?? '-'} | ${t.message.replace(/\|/g, '\\|')} |`);
+    out.push('');
+  }
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {

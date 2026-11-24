@@ -696,6 +696,9 @@ return {ok: refusedAs(${j(REFUSALS.noWindow)}) && unbound, outcome: {refused: __
 export const CASES = Object.freeze({textedit, finder, chrome, electron, openPanel, savePanel, windowless});
 // A target's cases in one regime: every case but those that name other regimes (`regimes`, the caret cases').
 export const casesOf = (target, regime) => CASES[target].filter(c => !c.regimes || c.regimes.includes(regime));
+// The frontmost method rows judged by their own effect whatever their act answered (`ownEffect`, ./matrix-cells.mjs):
+// one that threw and passed is a write a model was told failed while it worked (./summary.mjs thrownButLanded).
+export const OWN_EFFECT_IDS = Object.freeze(Object.keys(CASES).flatMap(target => casesOf(target, 'frontmost').filter(c => c.ownEffect).map(c => `${target}/frontmost/${c.method}.${c.case}`)));
 // A case as the run sends it, grounded on the frame its scene's window was launched at (ruling 1169): `frames` the venue's
 // (meta.venue.frames, ../hosted-sittings/venue.mjs; null off a hosted runner). A case whose points stand on its window's
 // size (`ground`, Chrome's drag) is rebuilt on that frame; every other case, and every case off a hosted runner, is

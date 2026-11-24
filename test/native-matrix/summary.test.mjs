@@ -1070,3 +1070,33 @@ test('a panel opening that stood apart on the two lanes takes only its own rows 
   assert.deepEqual(j.cells.find(c => c.id === OPEN).account.cua.noVerdict, {venue: 1});
   assert.deepEqual(j.cells.find(c => c.id === CLICK).account.cua.noVerdict ?? {}, {});
 });
+
+// The coordinator's follow-up to ruling 1204: a row judged by its own effect that passed while its act threw is still a
+// pass, and counted apart per engine with its thrown reply, in the summary and in compare's output.
+const SET_NAME = 'savePanel/frontmost/setValue.name';
+const landedIn = (run, engine) => rows => rows.map(r => (r.id === SET_NAME && r.section === 'method' && run === 1
+  ? {...r, ok: true, outcome: {written: true, final: 'read', unchanged: false, threw: `the ${engine} write was not confirmed\nsecond line`, errorName: engine === 'cua' ? 'valueUnconfirmed' : null, effect: true}} : r));
+test('thrown but landed: a pass on its own effect whose act threw, counted per engine with its reply in the summary', () => {
+  const j = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40, tweak: (rows, run) => landedIn(run, 'cua')(rows)}});
+  assert.deepEqual(j.thrownButLanded, {vendor: [], cua: [{id: SET_NAME, run: 1, sample: 1, errorName: 'valueUnconfirmed', message: 'the cua write was not confirmed'}]});
+  assert.equal(j.methods.find(m => m.id === SET_NAME).cua.ok, 3, 'still a pass');
+  const text = renderSummary(j);
+  assert.match(text, /^- \*\*Thrown but landed\*\* \(`thrownButLanded`: .*\): cua 1, vendor 0\.$/m);
+  assert.ok(text.includes(`| cua | ${SET_NAME} | 1 | 1 | valueUnconfirmed | the cua write was not confirmed |`), text);
+  // With none, the summary says nothing of it.
+  assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /Thrown but landed/);
+});
+test('thrown but landed: compare lists each one per engine with its error name and first line', async () => {
+  const {main} = await import('../../scripts/native-matrix.mjs');
+  const dir = fs.mkdtempSync(join(tmpdir(), 'matrix-compare-'));
+  try {
+    for (let n = 1; n <= 3; n++) {
+      writeCellResult(join(dir, 'vendor', `run-${n}`), fullRun('vendor', n, {resolved: 9, axMs: 50, tweak: (rows, run) => landedIn(run, 'vendor')(rows)}));
+      writeCellResult(join(dir, 'cua', `run-${n}`), fullRun('cua', n, {axMs: 40}));
+    }
+    const lines = [];
+    await main(['compare', join(dir, 'vendor'), join(dir, 'cua')], {log: line => lines.push(line)});
+    assert.ok(lines.includes('  thrownButLanded: cua 0, vendor 1'), lines.join('\n'));
+    assert.ok(lines.includes(`    vendor ${SET_NAME} (run 1, sample 1): no error name: the vendor write was not confirmed`), lines.join('\n'));
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});

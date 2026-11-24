@@ -602,7 +602,8 @@ const engineBin = (path, lookup, source, links) => ({path, lookup, source, ...(l
 // variable, and, when the variable decided, engine.json too if a bounded second look finds `"engine": "vendor"` there
 // (engineFileSetting); `"engine": "vendor"` alone when the file decided. After the colon comes each source's
 // prerequisite, then, from a selection (`after` 'open'), the one command; from `cua install` (`after` 'install'), which
-// is that command, that the install otherwise completed, and nothing about what a next open meets (F10).
+// is that command, that the install otherwise completed, and nothing about what a next open meets (F10). Linux's default
+// is cua's, so a vendor selection is the variable's or engine.json's (a test's `defaultEngine` reads as the variable's).
 export function retiredEngine({setting, env, cuaHome, after = 'open'}) {
   const path = engineSettingsPath(env);
   const sources = setting.reason === 'settings' ? ['settings'] : engineFileSetting(path, cuaHome) === 'vendor' ? ['explicit', 'settings'] : ['explicit'];

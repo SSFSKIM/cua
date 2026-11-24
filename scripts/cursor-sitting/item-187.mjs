@@ -1076,13 +1076,18 @@ function barOf({groupOf, cells, putback, cellRows}) {
 }
 
 // The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
-// requested. -> {ok, requested, current, why}.
+// requested. Off a hosted runner nothing was selected (ruling 1188, `written: false`): it holds when the owner's
+// recorded source still reads as the current one. -> {ok, requested, current, written?, why}.
 export function restoreOf(rows, {recorded, stopped}) {
   const result = rows.findLast(r => r.kind === 'task' && r.task === 'select-source')?.result ?? null;
   const base = {requested: result?.requested ?? null, current: result?.current?.id ?? null};
   if (!recorded) return {ok: false, ...base, why: 'the owner\'s input source was not selected again (187-end not recorded)'};
   if (stopped && !result) return {ok: false, ...base, why: `the owner's input source was not selected again (187-end stopped: ${stopped})`};
   if (!result) return {ok: false, ...base, why: 'the owner\'s input source was not selected again (187-end has no selection)'};
+  if (result.written === false) {
+    const holds = result.holds === true;
+    return {ok: holds, ...base, written: false, why: holds ? null : `the owner's recorded input source ${result.requested} does not hold, nothing selected off a hosted runner: ${result.problem}`};
+  }
   const ok = result.ok === true && result.switched === true && typeof result.requested === 'string' && result.current?.id === result.requested;
   return {ok, ...base, why: ok ? null : `the owner's input source was not restored: ${result.problem ?? (result.switched !== true ? result.reason ?? 'nothing was switched' : `read back ${result.current?.id ?? 'nothing'}, not ${result.requested}`)}`};
 }
@@ -1121,7 +1126,7 @@ export function item187Markdown(judged) {
     `**The bar**: chrome/composing@textedit 18/18 with every line confirmed by its own change (\`cua/paste.perLine\`); the three controls 18/18; the background-paste cell, latin on purpose, on ${CELL_REPS} counted repetitions a half: AFTER (the shipping build) both pastes delivered, and BEFORE (the saved engine, in the same slot) the background paste timing out at the read stage and the frontmost paste not delivered (a BEFORE that delivers: NO VERDICT, the cell does not discriminate); the key-window readings are reported in the mechanism section, never the bar; every watcher whole with its longest gap within ${WATCH_GAP_MS} ms; no raise and no menu opened; nothing else on the person's side touched; the put-back verified (the owner's source read back, the saved engine installed and approved). A person-touched row or repetition is invalid. The AXPress route is reported, never the bar. Anything less is DOES NOT LAND.`, '',
     `## Overall: ${judged.overall.verdict}${judged.overall.on ? `, on ${judged.overall.on}` : ''}`, '', ...(judged.overall.why.length ? judged.overall.why.map(w => `- ${w}`) : ['- every condition held']), '',
     `The baseline, cited and not re-run: on ${BASELINE.engine} as built (the slot of 2026-11-01's arm A, ${BASELINE.items}), ${BASELINE.delivered} of ${BASELINE.rows} valid rows delivered, every one stopping at the ${BASELINE.stage} stage (${BASELINE.evidence}).`, '',
-    `The put-back: the owner's input source ${judged.restore.ok ? `restored (${judged.restore.current}, read back)` : `NOT restored (${judged.restore.why})`}; the engine ${judged.putback.engine ? judged.putback.engine.ok ? `put back (build ${judged.putback.engine.current?.build}, approved, the save's)` : `NOT put back (${judged.putback.engine.problem})` : 'put-back not read'}.`, ''];
+    `The put-back: the owner's input source ${judged.restore.ok ? judged.restore.written === false ? `held (${judged.restore.current}, read; nothing selected off a hosted runner)` : `restored (${judged.restore.current}, read back)` : `NOT restored (${judged.restore.why})`}; the engine ${judged.putback.engine ? judged.putback.engine.ok ? `put back (build ${judged.putback.engine.current?.build}, approved, the save's)` : `NOT put back (${judged.putback.engine.problem})` : 'put-back not read'}.`, ''];
   const pasteState = r => (!r ? '–' : r.invalid ? `invalid: ${r.invalid}` : r.delivered ? 'delivered' : 'not delivered');
   const stageText = r => (r?.paste ? `${r.paste.stage ?? '–'} / ${r.paste.readWait ?? '–'}` : '–');
   const kindText = k => (k ? [k.kind, k.point ?? k.skippedReason, k.when].filter(Boolean).join(' ') : '–');

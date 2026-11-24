@@ -15,14 +15,27 @@ const KOREAN = {id: 'com.apple.inputmethod.Korean.2SetKorean', name: '2-Set Kore
 const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
 
 // Ruling 1188: the input sources are how the owner types every day, so off a GitHub-hosted runner nothing selects one,
-// the owner's yes recorded or not; the series' own check of the source decides, as with no yes.
-test('off a hosted runner no source is selected, even with the owner\'s yes; the live probe\'s select refuses before it is compiled or run', t => {
+// the owner's yes recorded or not. The selection becomes a read: the step holds only when the source it needs is
+// already the current one, so nothing is sent under another, and its result says nothing was written.
+test('off a hosted runner no source is selected, even with the owner\'s yes: the current one is read instead, and the step holds only when it is the one needed', t => {
   const out = scratch(t), asked = [];
   writeConsent(out, {consent: true, reading: KOREAN});
-  const result = switchSource({at: OWNERS_MAC, out, which: 'latin', sources: {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }}, beforeSelect: () => asked.push('marked')});
-  assert.deepEqual([result.ok, result.switched, result.requested], [true, false, LATIN_SOURCE]);
-  assert.match(result.reason, /ruling 1188.*the series' own check of the source decides/);
-  assert.deepEqual(asked, [], 'never selected, never marked as an attempt');
+  const sources = current => ({current: () => { asked.push('read'); return current; }, select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }});
+  const onKorean = switchSource({at: OWNERS_MAC, out, which: 'latin', sources: sources(KOREAN), beforeSelect: () => asked.push('marked')});
+  assert.deepEqual([onKorean.ok, onKorean.switched, onKorean.written, onKorean.holds, onKorean.requested, onKorean.current], [false, false, false, false, LATIN_SOURCE, KOREAN]);
+  assert.match(onKorean.problem, /needs com\.apple\.keylayout\.ABC, and the current source reads com\.apple\.inputmethod\.Korean\.2SetKorean: nothing is selected \(off a GitHub-hosted runner .*ruling 1188/);
+  const onAbc = switchSource({at: OWNERS_MAC, out, which: 'latin', sources: sources({id: LATIN_SOURCE}), beforeSelect: () => asked.push('marked')});
+  assert.deepEqual([onAbc.ok, onAbc.switched, onAbc.written, onAbc.holds, onAbc.problem], [true, false, false, true, undefined]);
+  assert.match(onAbc.reason, /com\.apple\.keylayout\.ABC is already the current source: nothing selected/);
+  assert.deepEqual(asked, ['read', 'read'], 'read only: never selected, never marked as an attempt');
+  // The read goes under the same target check as a selection; a read that fails holds nothing.
+  const covered = switchSource({at: OWNERS_MAC, out, which: 'owner', sources: sources(KOREAN), targetProblem: 'the frontmost is process 9'});
+  assert.deepEqual([covered.ok, covered.written, covered.holds], [false, false, false]);
+  assert.match(covered.problem, /not read: the frontmost is process 9/);
+  const unread = switchSource({at: OWNERS_MAC, out, which: 'owner', sources: {current: () => { throw new Error('probe exited 1'); }}});
+  assert.deepEqual([unread.ok, unread.written, unread.holds], [false, false, false]);
+  assert.match(unread.problem, /the current input source could not be read \(probe exited 1\)/);
+  assert.deepEqual(asked, ['read', 'read']);
   const ran = [];
   const live = liveSourceSwitch({at: OWNERS_MAC, compile: () => { ran.push('compile'); return '/bin/probe'; }, exec: (bin, args) => { ran.push(args.join(' ')); return '{"current":{"id":"com.apple.keylayout.ABC"}}'; }});
   assert.throws(() => live.select(LATIN_SOURCE), /GitHub-hosted runner/);

@@ -7,8 +7,8 @@
 // source read back is the one selected; otherwise the series stops before any session opens. With no yes recorded
 // nothing is switched, and the series' own check of the source (./timing.mjs latinSourceProblem) decides as before.
 // Every selection is hosted only (ruling 1188, ../native-matrix/hitoolbox.mjs): the input sources are how the owner
-// types every day, so off a GitHub-hosted runner the kit never selects one, consent or not; the series' own check
-// decides, as with no yes recorded.
+// types every day, so off a GitHub-hosted runner the kit never selects one, consent or not. The selection becomes a read
+// there (readInstead): a step holds only when the source it needs is already the current one.
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
@@ -82,12 +82,28 @@ export function sourceTargetProblem({record, problem, frontmost}) {
 export function switchSource({out, which, id: named = null, sources, targetProblem = null, beforeSelect = () => {}, at = {}}) {
   const consent = readConsent(out), id = sourceToSelect(consent, which, named);
   const refused = id ? inputWriteRefusal(at) : null;
-  if (refused) return {ok: true, which, switched: false, requested: id, reason: `${refused}: the series' own check of the source decides`};
+  if (refused) return readInstead({which, id, sources, targetProblem, refused});
   if (!id) return {ok: true, which, switched: false, reason: consent ? 'the owner said no: they switch by hand' : 'no answer recorded (source consent): nothing is switched'};
   if (targetProblem) return {ok: false, which, switched: false, requested: id, problem: `${id} not selected: ${targetProblem}`};
   beforeSelect();
   const answer = sources.select(id), problem = selectionProblem(answer, id);
   return {ok: problem === null, which, switched: true, requested: id, current: answer?.current ?? null, ...(problem ? {problem} : {})};
+}
+
+// Off a hosted runner the selection becomes a read (ruling 1188): nothing is selected, the current source is read under
+// the same target check, and the step holds only when it is already the one the selection would have made, so nothing
+// is sent under another source and the end verifies the owner's without selecting it. -> the task's result, with
+// `written: false` and `holds`.
+function readInstead({which, id, sources, targetProblem, refused}) {
+  const base = {which, switched: false, written: false, requested: id};
+  if (targetProblem) return {ok: false, ...base, holds: false, problem: `${id} not read: ${targetProblem}`};
+  let current;
+  try { current = sources.current() ?? null; } catch (error) {
+    return {ok: false, ...base, holds: false, current: null, problem: `the current input source could not be read (${String(error.message).slice(0, 200)}): nothing is selected (${refused})`};
+  }
+  const holds = current?.id === id;
+  return {ok: holds, ...base, holds, current, ...(holds ? {reason: `${id} is already the current source: nothing selected (${refused})`}
+    : {problem: `the step needs ${id}, and the current source reads ${current?.id ?? 'nothing'}: nothing is selected (${refused})`})};
 }
 
 // After a run that failed, by a thrown failure (`ctx.error`) or an ordinary failed result (`ctx.failed`), once a

@@ -173,3 +173,19 @@ test('the key-window rule: the scene window is its app\'s focused window; an app
   assert.deepEqual(record.alertGuardCounts, {'electron/action': {alert: 0, unread: 0, keyWindow: 1}});
   assert.equal(record.alertGuardStop.cause, 'keyWindow');
 });
+
+// Pilot C-4: a sheet on the scene window holds the app's focus (ax-state's `sheet`): the scene window's own, as the
+// reading of a sheet in front already is. Every refusal names the window Accessibility held focused.
+test('the key-window rule: a sheet of the scene window focused holds; a refusal names the focused window', () => {
+  const own = (focusedWindow, focused) => ({trusted: true, ok: true, scene: 'textedit', number: 586, frontmost: false, focusedWindow, mainWindow: 'run', ...(focused === undefined ? {} : {focused})});
+  assert.equal(keyWindowCause(own('sheet', {number: 590, frame: {x: 10, y: 20, width: 300, height: 200}, role: 'AXSheet', subrole: null, of: 'own'})), null);
+  const focused = {number: 412, frame: {x: 81, y: 73, width: 880, height: 448}, role: 'AXWindow', subrole: 'AXStandardWindow', of: 'scene'};
+  const cause = keyWindowCause(own('other', focused));
+  assert.equal(cause.detail, 'the textedit app\'s key window is another of its windows, not the scene window 586 (Accessibility\'s focused window: window 412 at 81,73 880x448, AXWindow/AXStandardWindow, the scene\'s)');
+  assert.deepEqual(cause.focused, focused);
+  assert.match(keyWindowCause(own('other', {...focused, number: null, of: 'neither'})).detail, /focused window: not in the window list, at 81,73 880x448, AXWindow\/AXStandardWindow, neither the scene's nor the run's own\)$/);
+  assert.match(keyWindowCause(own('other', null)).detail, /not the scene window 586 \(Accessibility's focused window: none read\)$/);
+  // A reading without the focused window (an older reader) refuses as before.
+  assert.equal(keyWindowCause(own('other')).detail, 'the textedit app\'s key window is another of its windows, not the scene window 586');
+  assert.equal(keyWindowCause(own('other')).focused, undefined);
+});

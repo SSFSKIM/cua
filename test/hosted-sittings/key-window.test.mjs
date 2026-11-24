@@ -56,3 +56,24 @@ test('a reading not taken keeps why: an untrusted reader, a reader that failed, 
   assert.equal(at(() => answer({ok: false, failed: ['focusedWindow'], focusedWindow: null})).reason, 'a read failed: focusedWindow');
   assert.deepEqual(ownKeyWindow([], {scene: 'textedit', pid: 600}, () => answer()), {scene: 'textedit', number: null, trusted: null, ok: false, reason: 'the scene window is not on screen'});
 });
+
+// Pilot C-4 (and C-3 before it): both TextEdit cells that open a sheet on the run's untitled document (super+w's
+// keep-or-delete sheet, super+s's Save sheet) passed the guard for every key up to the sheet and were refused at the
+// first cell after it, "the textedit app's key window is another of its windows". With a sheet up the app's
+// AXFocusedWindow is the sheet (an AXSheet whose parent is the document), never CFEqual to the document: ax-state names
+// it `sheet`, the document's own. The focused window's role, subrole and frame ride on every reading (`focused`), its
+// number resolved from the window list, so a refusal says which window held the focus.
+test('a sheet of the window read is its focused window: kept as `sheet`, and the focused window resolved to its number', () => {
+  const r = ownKeyWindow([SHEET, UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({frontmost: false, focusedWindow: 'sheet', mainWindow: 'run',
+    focusedWindowElement: {role: 'AXSheet', subrole: null, frame: SHEET.bounds}}));
+  assert.deepEqual([r.number, r.ok, r.focusedWindow], [9, true, 'sheet']);
+  assert.deepEqual(r.focused, {number: 11, frame: SHEET.bounds, role: 'AXSheet', subrole: null});
+  // Another window focused: its number when the list holds a window at its frame, else null with the frame kept.
+  const other = ownKeyWindow([UNTITLED, SCENE], {scene: 'textedit', pid: 600, number: 9}, () => answer({focusedWindow: 'other', focusedWindowElement: {role: 'AXWindow', subrole: 'AXStandardWindow', frame: {...SCENE.bounds, x: 243}}}));
+  assert.deepEqual(other.focused, {number: 4, frame: {...SCENE.bounds, x: 243}, role: 'AXWindow', subrole: 'AXStandardWindow'});
+  const unlisted = ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'other', focusedWindowElement: {role: 'AXWindow', subrole: null, frame: rect(1, 2, 3, 4)}}));
+  assert.deepEqual(unlisted.focused, {number: null, frame: rect(1, 2, 3, 4), role: 'AXWindow', subrole: null});
+  // No focused window: none recorded; a reader that says nothing of it (an older reader): no `focused` at all.
+  assert.equal(ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer({focusedWindow: 'none', focusedWindowElement: null})).focused, null);
+  assert.equal('focused' in ownKeyWindow([SCENE], {scene: 'textedit', pid: 600}, () => answer()), false);
+});

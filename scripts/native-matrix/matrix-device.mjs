@@ -243,7 +243,19 @@ function guardReading(io) {
 // `own`: the number of a window the run opened on the scene for the case in force (../native-matrix/steps.mjs
 // ownKeyWindowNumber; pilot C-3), read for in place of the scene's own window while it is on screen; one no longer on
 // screen (closed) is read as no window at all would be: the scene's own lookup, `ownGone` naming the number.
+// The focused window the reading carries (`focused`) is named `of`: the run's own window ('own'), the scene's recorded
+// window ('scene'), or neither; a sheet of the window read (`focusedWindow` 'sheet'), or that window itself, is the read
+// window's: the own window's when it was read for, else the scene's.
 export function sceneKeyWindow(scene, io, own = null) {
+  const reading = sceneKeyWindowReading(scene, io, own);
+  const f = reading.focused;
+  if (!f) return reading;
+  const ownNumber = own !== null && /^\d+$/.test(String(own)) ? Number(own) : null, sceneNumber = io.state().scenes?.[scene]?.window?.number ?? null;
+  const of = f.number !== null && f.number === ownNumber ? 'own' : f.number !== null && f.number === sceneNumber ? 'scene'
+    : ['run', 'sheet'].includes(reading.focusedWindow) ? (reading.own ? 'own' : 'scene') : 'neither';
+  return {...reading, focused: {...f, of}};
+}
+function sceneKeyWindowReading(scene, io, own) {
   const record = io.state().scenes?.[scene];
   if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) return {scene, number: null, trusted: null, ok: false, reason: 'the scene is not up in this run'};
   let windows = null;

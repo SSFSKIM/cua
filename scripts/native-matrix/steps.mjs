@@ -84,22 +84,33 @@ export const read = (ctx, focus = null, {electronMode = false, frontKey = false,
 // (ownWindowOpened), is the window the guard reads for, but only for the cells of the case that opened it (`owner`, the
 // case in force: ctx.caseOwner) and that case's cleanup, its held fixture's reset included. Any other case's cell is
 // read as before, so a window the run did not open for that case still refuses. Each opening is kept in
-// meta.ownWindows ({owner, scene, number} or {owner, scene, reason}).
+// meta.ownWindows (ownWindowOpened).
 export const ownKeyWindowNumber = (ctx, scene) => (ctx.ownWindow && ctx.ownWindow.scene === scene && ctx.ownWindow.owner === ctx.caseOwner ? ctx.ownWindow.number : null);
+const windowNumbersOf = (r, scene) => (Array.isArray(r?.alertBounds?.windows) ? new Set(r.alertBounds.windows.filter(w => w.scene === scene).map(w => w.number)) : null);
 // The scene's windows on screen by number (the alert guard's reading), or null when the list was unread.
-export function sceneWindowNumbers(ctx, scene) {
-  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
-  return Array.isArray(bounds?.windows) ? new Set(bounds.windows.filter(w => w.scene === scene).map(w => w.number)) : null;
-}
-// The window the run just opened on `scene` (one new since `known`) recorded as the case's own key window. A window not
-// told apart (the list unread, none or several new) is recorded with why, and the guard reads as before.
+export const sceneWindowNumbers = (ctx, scene) => windowNumbersOf(read(ctx, null, {alertBounds: true}), scene);
+// The window the run just opened on `scene` recorded as the case's own key window (pilot C-4, ruling 1213): the app's
+// AXFocusedWindow just after the opening cell confirmed the new document in front of TextEdit, resolved to its number in
+// the window list (../hosted-sittings/key-window.mjs `focused`) and taken only when it is a new window (not in `known`,
+// the scene's windows before the opening); else the window list's one newcomer since `known`. Both are read in one read
+// and both are kept: {owner, scene, number, from: 'focused' | 'newcomer', focused, newcomer, focusedReason?,
+// newcomerReason?}, or with neither {owner, scene, focused: null, newcomer: null, reason} and the guard reads as before.
 export function ownWindowOpened(ctx, scene, known) {
-  const owner = ctx.caseOwner ?? null, now = sceneWindowNumbers(ctx, scene);
-  const fresh = now && known ? [...now].filter(n => !known.has(n)) : null;
-  const entry = fresh?.length === 1 ? {owner, scene, number: fresh[0]}
-    : {owner, scene, reason: !fresh ? 'the window list was unread' : fresh.length ? `${fresh.length} new windows` : 'no new window'};
+  const owner = ctx.caseOwner ?? null;
+  ctx.ownWindow = null;
+  const r = read(ctx, null, {alertBounds: true, keyWindow: scene});
+  const now = windowNumbersOf(r, scene), fresh = now && known ? [...now].filter(n => !known.has(n)) : null;
+  const newcomer = fresh?.length === 1 ? fresh[0] : null;
+  const newcomerReason = newcomer !== null ? null : !fresh ? 'the window list was unread' : fresh.length ? `${fresh.length} new windows` : 'no new window';
+  const f = r?.ownKey?.trusted === true ? r.ownKey.focused : undefined, n = f?.number;
+  const focused = Number.isSafeInteger(n) && known && !known.has(n) ? n : null;
+  const focusedReason = focused !== null ? null : f === undefined ? 'Accessibility\'s focused window was unread' : f === null ? 'Accessibility named no focused window'
+    : !Number.isSafeInteger(n) ? 'Accessibility\'s focused window is not in the window list' : !known ? 'the window list before the opening was unread' : `Accessibility's focused window, ${n}, is no new window`;
+  const number = focused ?? newcomer;
+  const entry = number === null ? {owner, scene, focused: null, newcomer: null, reason: `${focusedReason}; ${newcomerReason === 'no new window' ? 'no new window in the window list' : newcomerReason}`}
+    : {owner, scene, number, from: focused !== null ? 'focused' : 'newcomer', focused, newcomer, ...(focusedReason ? {focusedReason} : {}), ...(newcomerReason ? {newcomerReason} : {})};
   (ctx.meta.ownWindows ??= []).push(entry);
-  ctx.ownWindow = entry.number === undefined ? null : entry;
+  ctx.ownWindow = number === null ? null : entry;
   return ctx.ownWindow;
 }
 // The case's own window closed (its cleanup ran) or the case over: the window counts for nothing more.
@@ -149,7 +160,10 @@ export class AlertHeld extends Error {
 // `unread` (./front-key.mjs sampleCause), with an invalid reason as a backstop. `reading`: the front and key the guard read;
 // `guard`: the guard's cause ({category, detail}).
 export const GUARD_INVALID = 'the alert guard refused the cell: nothing of it was sent';
-export const guardRow = cause => ({alertGuard: {cause: cause.category, detail: cause.detail}, invalid: GUARD_INVALID});
+// A key-window refusal keeps the window Accessibility held focused (`focused`, ../hosted-sittings/alert-guard.mjs
+// keyWindowCause) on the row and in meta.alertGuards.
+const focusedOf = cause => (cause.focused !== undefined ? {focused: cause.focused} : {});
+export const guardRow = cause => ({alertGuard: {cause: cause.category, detail: cause.detail, ...focusedOf(cause)}, invalid: GUARD_INVALID});
 export class AlertGuarded extends AlertHeld {
   constructor(cause, reading) {
     super([], reading);
@@ -159,7 +173,7 @@ export class AlertGuarded extends AlertHeld {
   }
 }
 // A refusal kept in the run's meta (`alertGuards`: {beforeRow, cause, detail}).
-export const noteGuard = (ctx, cause) => (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail});
+export const noteGuard = (ctx, cause) => (ctx.meta.alertGuards ??= []).push({beforeRow: ctx.rows.length, cause: cause.category, detail: cause.detail, ...focusedOf(cause)});
 // The guard before a cell: refused when `cause` (./alert-guard.mjs guardCause) names one.
 function refuse(ctx, cause, reading) {
   noteGuard(ctx, cause);
@@ -172,11 +186,17 @@ function refuse(ctx, cause, reading) {
 // for, or null.
 export const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
 // Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; otherwise counted under
-// `key`, read (meta.keyWindowRead) or not taken (meta.keyWindowUnread, the cell then sent unchecked).
+// `key`, read (meta.keyWindowRead) or not taken (meta.keyWindowUnread, the cell then sent unchecked). A cell sent with a
+// sheet of the window focused (pilot C-4) is also kept under `key` with the focused window (meta.keyWindowSheets:
+// {count, focused}, the first reading's).
 function keyWindowGuard(ctx, r, key) {
   const cause = keyWindowCause(r?.ownKey);
   if (cause) refuse(ctx, cause, keyReading(r));
   recordKeyWindowReading(ctx.meta, key, r?.ownKey ?? null);
+  if (r?.ownKey?.ok === true && r.ownKey.focusedWindow === 'sheet') {
+    const kept = (ctx.meta.keyWindowSheets ??= {})[key] ??= {count: 0, focused: r.ownKey.focused ?? null};
+    kept.count += 1;
+  }
 }
 // The lane every cell of the run goes through (./run.mjs): a cell that sends a pointer event (./alert-guard.mjs
 // sendsPointer), on either engine alike, is sent only after a fresh read of the screen shows no alert over its target's

@@ -3,9 +3,12 @@
 //   ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>]
 //       Whether the app and its window at those bounds (global top-left points, the window list's; within 2 pt) hold
 //       the key: {"trusted", "ok", "failed", "frontmost", "found", "focused", "main", "focusedWindow", "mainWindow",
-//       "windows", "sheet"?}: the app's AXFrontmost, the matched window's AXFocused (key) and AXMain, whether the app's
-//       AXFocusedWindow and AXMainWindow are that window ("run"), another ("other") or none ("none"), and the count of
-//       its AXWindows. `ok` is false, and `failed` names the reads, when a read the answer rests on did not succeed.
+//       "focusedWindowElement", "windows", "sheet"?}: the app's AXFrontmost, the matched window's AXFocused (key) and
+//       AXMain, whether the app's AXFocusedWindow and AXMainWindow are that window ("run"), another ("other") or none
+//       ("none"), the focused one also "sheet" when it is an AXSheet of that window, its AXParent or child (pilot C-4: a sheet
+//       on a document is the app's focused window, not the document), the focused window's role, subrole and frame
+//       (`focusedWindowElement`, null when there is none), and the count of its AXWindows. `ok` is false, and `failed`
+//       names the reads, when a read the answer rests on did not succeed.
 //       With sheet bounds, `sheet` says whether the matched window has a child of role AXSheet at them (within 2 pt):
 //       the proof that a window-list window Accessibility lists no window for is that window's sheet (null when the
 //       window was not matched or its children could not be read, `failed` then naming "sheet").
@@ -116,6 +119,12 @@ if args[1] == "actions" {
   exit(0)
 }
 
+/// Whether `sheet` is a sheet of `window`: its AXParent, or one of the window's AXChildren.
+func sheetOf(_ sheet: AXUIElement, _ window: AXUIElement) -> Bool {
+  if let parent = element(read(sheet, kAXParentAttribute).value), CFEqual(parent, window) { return true }
+  return ((read(window, kAXChildrenAttribute).value as? [AXUIElement]) ?? []).contains { CFEqual($0, sheet) }
+}
+
 if args[1] == "window" {
   guard args.count == 4 || args.count == 5 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
   guard let (windows, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
@@ -131,11 +140,21 @@ if args[1] == "window" {
     answer["focused"] = NSNull()
     answer["main"] = NSNull()
   }
-  // The app's focused and main windows: none (no value) is a reading; any other failure is not.
+  // The app's focused and main windows: none (no value) is a reading; any other failure is not. A sheet of the matched
+  // window holding the focus is its own side; the focused window is described whatever it is.
+  answer["focusedWindowElement"] = NSNull()
   for (attribute, key) in [(kAXFocusedWindowAttribute, "focusedWindow"), (kAXMainWindowAttribute, "mainWindow")] {
     let r = read(app, attribute)
     if r.status == .noValue || (r.status == .success && element(r.value) == nil) { answer[key] = "none" }
-    else if r.status == .success, let w = element(r.value) { answer[key] = run.map { CFEqual($0, w) } == true ? "run" : "other" }
+    else if r.status == .success, let w = element(r.value) {
+      let role = read(w, kAXRoleAttribute).value as? String
+      if let run, CFEqual(run, w) { answer[key] = "run" }
+      else if key == "focusedWindow", let run, role == kAXSheetRole as String, sheetOf(w, run) { answer[key] = "sheet" }
+      else { answer[key] = "other" }
+      if key == "focusedWindow" {
+        answer["focusedWindowElement"] = ["role": role.map { $0 as Any } ?? NSNull(), "subrole": (read(w, kAXSubroleAttribute).value as? String).map { $0 as Any } ?? NSNull(), "frame": rectWire(frame(w))]
+      }
+    }
     else { answer[key] = NSNull(); failed.append(key) }
   }
   // The sheet asked about: an AXSheet child of the matched window at its bounds.

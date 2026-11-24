@@ -184,6 +184,24 @@ test('the variable `vendor` beside an engine.json that is no second source: the 
   assert.deepEqual(inVendorTree(seen, home), []);
 });
 
+// Fix wave 1: the second look opens the path the vendor-tree guard resolved, never the spelling again, so a directory
+// link on the way that changes after the check cannot redirect the read (O_NOFOLLOW guards the last component alone).
+test('the second look reads engine.json at the path the guard resolved: its lstat and open name no link on the way', t => {
+  const {dir, home, user} = cuaHome(t);
+  const real = join(dir, 'elsewhere', 'config');
+  mkdirSync(join(real, 'cua'), {recursive: true});
+  writeFileSync(join(real, 'cua', 'engine.json'), JSON.stringify({engine: 'vendor'}));
+  mkdirSync(user, {recursive: true});
+  symlinkSync(real, join(user, '.config'));
+  const spelled = settingsOf(user);
+  let message;
+  const seen = recorded(() => { message = refusalOf(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'vendor'})).message; });
+  assert.equal(message, retired(spelled, {env: true, file: true}), 'the file, reached through the link, is a second source');
+  const opens = seen.filter(({call, path}) => call === 'openSync' && path.endsWith('engine.json'));
+  assert.deepEqual(opens.map(({path}) => path), [join(real, 'cua', 'engine.json')], 'opened by its resolved path, once');
+  assert.deepEqual(seen.filter(({call, path}) => /^lstat/.test(call) && path === spelled), [], 'never lstat-ed by its spelling either');
+});
+
 // #171 M6a (F3): M5's fallback is gone. Without an engine this cua can drive, the default refuses as an explicit setting
 // does; M6b (§2.1): with the one install command and no other way out, the hint holding none.
 test('cua\'s engine needs one installed in the cua home: refused without it, under the default as when set, naming the one install command', t => {
@@ -261,7 +279,10 @@ test('CUA_LINUX_ENGINE_BIN names the engine only when the selection is cua: abso
   recordedIn(home, MIN_ENGINE_VERSION);
   assert.equal(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}).bin.path, built, 'it wins over the installed one');
   assert.equal(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: ''}).bin.source, 'installed', 'empty reads as unset');
-  assert.throws(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: 'target/cua-engine'}), {code: 'invalid_setting', message: 'CUA_LINUX_ENGINE_BIN must be an absolute path'});
+  // A relative path takes the form too (§2.1: every override invalid_setting): the unset, then the one command.
+  assert.deepEqual(refusalOf(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: 'target/cua-engine'})), {code: 'invalid_setting',
+    message: `CUA_NATIVE_ENGINE=cua selects cua's own engine, and CUA_LINUX_ENGINE_BIN names target/cua-engine, which is not an absolute path: unset CUA_LINUX_ENGINE_BIN, then ${RUN}`,
+    hint: HINT});
   // the override's prerequisite, then the one command: no build, no second remedy
   assert.deepEqual(refusalOf(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: join(dir, 'absent')})), {code: 'engine_not_installed',
     message: `CUA_NATIVE_ENGINE=cua selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${join(dir, 'absent')}, which is not an executable file: unset CUA_LINUX_ENGINE_BIN, then ${RUN}`,
@@ -294,6 +315,7 @@ test('no engine refusal on Linux offers cua engine build, cargo, the vendor\'s e
   const collect = (env, options) => { try { select(home, {HOME: user, ...env}, options); } catch (error) { refusals.push(error); } };
   collect({});
   collect({CUA_LINUX_ENGINE_BIN: join(dir, 'absent')});
+  collect({CUA_LINUX_ENGINE_BIN: 'relative/cua-engine'});
   collect({CUA_LINUX_ENGINE_BIN: engineAt(join(dir, 'older', 'cua-engine'), {version: '0.4.4'})});
   collect({CUA_LINUX_ENGINE_BIN: engineAt(join(dir, 'garbled', 'cua-engine'), {line: 'hello'})});
   collect({CUA_LINUX_ENGINE_BIN: `${engineAt(join(dir, 'plain', 'cua-engine'))}/`});
@@ -302,7 +324,7 @@ test('no engine refusal on Linux offers cua engine build, cargo, the vendor\'s e
   recordedIn(home, '0.4.4');
   collect({});
   collect({}, {installedVersion: () => null});
-  assert.equal(refusals.length, 9);
+  assert.equal(refusals.length, 10);
   for (const {code, message, hint} of refusals) {
     assert.doesNotMatch(message, /cua engine build|cargo|or set CUA_NATIVE_ENGINE|for the vendor engine/, `${code}: ${message}`);
     assert.equal(message.split(`${INSTALLER}`).length, 2, `${code}: one command: ${message}`);

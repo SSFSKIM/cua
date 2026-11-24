@@ -181,7 +181,7 @@
 // (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
 import {accessSync, chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
@@ -553,9 +553,9 @@ function linuxEngineFor({env, home, defaultEngine, config, installed, installedV
   const install = `run \`${ownInstaller().command} --engine\``;
   const override = env.CUA_LINUX_ENGINE_BIN;
   if (override !== undefined && override !== '') {
-    if (!isAbsolute(override)) fail('invalid_setting', 'CUA_LINUX_ENGINE_BIN must be an absolute path');
     // The override's prerequisite, then the one command, which places the installed engine it stands in for (§2.1).
     const refuse = (code, why) => fail(code, `${source} selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${override}, which ${why}: unset CUA_LINUX_ENGINE_BIN, then ${install}`, {hint: ENGINE_HINT});
+    if (!isAbsolute(override)) refuse('invalid_setting', 'is not an absolute path');
     const resolved = outsideVendorTree(override, cuaHome());
     if (resolved.lead) refuse('invalid_setting', `${intoTree(override, resolved.lead)}, and no engine of cua's runs from the vendor's release`);
     // A path the kernel would refuse as written is refused, never reinterpreted into one that exists.
@@ -618,17 +618,22 @@ export function retiredEngine({setting, env, cuaHome, after = 'open'}) {
 
 // engine.json's `engine` at `path`, read a second time and bounded, or undefined (M6b's pre-flight, §2.1): only for the
 // sentence of a vendor selection the variable already decided, so never through readEngineSettings, which follows a
-// link and would wait on a FIFO. The path is kept out of the vendor's tree of the cua home `cuaHome()` first, and one that
-// leads there is not opened; then it must be a regular file by lstat (no link), of at most SETTINGS_BOUND bytes, opened
-// without following a link and without blocking, and still a regular file by fstat. Any failure, a document that is no
-// JSON object among them, is no second source: it never throws and never waits.
+// link and would wait on a FIFO. Its directory is resolved first and kept out of the vendor's tree of the cua home
+// `cuaHome()` (outsideVendorTree, which touches nothing there), and every access after that names the file in the
+// directory the guard resolved, never the spelling again: a link on the way that changes after the check cannot
+// redirect the read, which O_NOFOLLOW alone would not stop. The file itself must be a regular file by lstat (a link is
+// no second source, wherever it leads), of at most SETTINGS_BOUND bytes, opened without following a link and without
+// blocking, and still a regular file by fstat. Any failure, a document that is no JSON object among them, is no second
+// source: it never throws and never waits.
 const SETTINGS_BOUND = 64 * 1024;
 function engineFileSetting(path, cuaHome) {
   try {
-    if (!outsideVendorTree(path, cuaHome()).real) return undefined;
-    const stat = lstatSync(path);
+    const directory = outsideVendorTree(dirname(path), cuaHome()).real;
+    if (!directory) return undefined;
+    const at = join(directory, basename(path));
+    const stat = lstatSync(at);
     if (!stat.isFile() || stat.size > SETTINGS_BOUND) return undefined;
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const fd = openSync(at, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
       const opened = fstatSync(fd);
       if (!opened.isFile() || opened.size > SETTINGS_BOUND) return undefined;

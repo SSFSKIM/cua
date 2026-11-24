@@ -1202,3 +1202,17 @@ surface the document reads:
 > - `macos/action-answers`: a scroll succeeds only once what is at its point moved or was already at its end, and a Show Menu only once a menu opened, else `scrollUnconfirmed` or `menuUnconfirmed`; read when one of them or `setValue` fails, or before `setValue` in a background Chromium page, whose field then gets no focus event
 > - `macos/accessibility-tree`: a tree ending `[truncated: …]` lists what the window shows first, so scroll toward an element it omits and observe again; a `[window off screen: …]` line or `windowOnAnotherSpace` needs the user to move the window onto a display or switch to its Space; a Chromium-based app's table columns and headers take new element IDs at every observation; read when an element you need is not listed
 > - `macos/typing`: how `typeText` confirms its text, a password field checked by its length or caret, input methods that paste, and a Tab or Return in the text; read before typing a `{{secret:…}}`, into a password field, or under a non-Latin input source, and when `typeText` fails
+
+### Table 3 amendment (2026-11-23, #526, ruling 1176)
+
+#526 (the native engine spec's Decision Log, "2026-11-23, #526") makes cua's macOS renderer print a line break inside
+an element's text escaped, where the vendor prints it raw (ruling 1175: a raw break lets a page or a document forge a
+tree line). A model that copies a value it read back into `setValue` or `typeText` would then write a literal
+backslash-n, so ruling 1176 has the first-call document say so. One sentence opens the paragraph on replacing a
+field's text in `agent-cursor.md` (the rules a first action acts on) and closes the `macos/accessibility-tree` lookup
+(the #301 paragraph), so the core carries it whether or not the lookups are served:
+
+> In the accessibility tree, a line break inside an element's text shows as `\n` or `\r` (any other line break as `\uXXXX`), so each element keeps one line; `setValue` and `typeText` take real line breaks, not the escape.
+
+The Linux tree text is the vendor's own (`src/cua-api/linux-accessibility-tree.mjs`), which escapes `\r`, `\n` and
+`\t` itself; neither `core.md` nor `linux-engine.md` says so, and this amendment leaves them as they are.

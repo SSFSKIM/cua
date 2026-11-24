@@ -288,7 +288,8 @@ async function runScene(ctx, id) {
     if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error}); account.outcome = `${cell} failed on the lane`; }
     return answer;
   };
-  if (!(await lane('bind', BIND(id, record.app), BIND_MS)).ok) return;
+  // The lane's engine recorded for the cells' readers: cua's rendering escapes a value's line breaks (#526).
+  if (!(await lane('bind', BIND(id, record.app, ctx.meta.engine), BIND_MS)).ok) return;
   emit({scene: id, cell: 'bind', ok: true});
   // The prime's failure is the fixed state's: it is the first read of it.
   if (!(await lane('fixed', PRIME(id))).ok) return;

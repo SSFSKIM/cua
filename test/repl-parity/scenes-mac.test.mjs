@@ -1312,3 +1312,24 @@ test('Finder does not reopen a recorded window marked off screen to overcome a b
   assert.equal((await activateScene('finder', {run, io})).ok, false);
   assert.equal(io.calls.filter(c => c[0] === 'show').length, 0);
 }));
+
+test('#526: on cua\'s lane a target ends at a multi-line Value\'s escape, only in the Value part; the vendor\'s lane and other parts match exactly', () => {
+  const head = 'Window: "d", App: TextEdit.\n0 standard window d\n';
+  const cua = `${head}\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\\n**Bold scene line**\\nLine 01\n`;
+  const vendor = `${head}\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\n**Bold scene line**\nLine 01\n`;
+  assert.equal(indexOfTarget(cua, 'cua scene document', 'cua'), 2);
+  assert.equal(indexOfTarget(vendor, 'cua scene document', 'vendor'), 2);
+  assert.equal(indexOfTarget(cua, 'cua scene document', 'vendor'), null, 'the vendor\'s lane keeps exact matches');
+  assert.equal(indexOfTarget(cua, 'cua scene doc', 'cua'), null, 'a prefix of the line is not it');
+  assert.equal(indexOfTarget(cua.replace('\\n**Bold', '\\u2028**Bold'), 'cua scene document', 'cua'), 2);
+  assert.equal(indexOfTarget(cua.replace('\\n**Bold', '\\t**Bold'), 'cua scene document', 'cua'), null, 'only the escapes the renderer emits');
+  // The reviewer's case: an earlier element whose title is the target and then "A" on a line of its own does not win.
+  const both = `${head}\t1 button cua scene document\\nA\n\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\\nLine 01\n`;
+  assert.equal(indexOfTarget(both, 'cua scene document', 'cua'), 2);
+  assert.equal(actionIndex(cua, {click: 'cua scene document'}, 'cua'), 2);
+  // Ruling 1182: a multi-line Value with another part after it on its line is not found, as on main.
+  const notLast = `${head}\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\\nLine 01, Details: d\n`;
+  assert.equal(indexOfTarget(notLast, 'cua scene document', 'cua'), null);
+  globalThis.__axRendering = 'cua';
+  try { assert.equal(indexOfTarget(cua, 'cua scene document'), 2, 'the lane the bind recorded'); } finally { delete globalThis.__axRendering; }
+});

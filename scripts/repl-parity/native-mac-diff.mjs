@@ -41,7 +41,7 @@ const TEXT_OF = Object.freeze({full: ['fixed', 'full'], before: ['action', 'befo
 // two lanes' actions left differently, or cua's departure from the vendor that a Decision Log entry records. An engine
 // or renderer fault of cua's is a defect to fix, never a declaration.
 export const FAULTS = Object.freeze(['vendor', 'scene state', 'departure']);
-const LINE_KINDS = ['missing', 'added', 'part', 'header', 'trailer', 'subsetCount', 'addedOverTenPercent'];
+const LINE_KINDS = ['missing', 'added', 'part', 'header', 'trailer', 'subsetCount', 'addedOverTenPercent', 'lineBreaks'];
 const NEEDS = {
   missing: rule => typeof rule.head === 'string' && rule.head !== '' || 'a missing line names its matching `head`',
   added: rule => (typeof rule.head !== 'string' || rule.head === '' ? 'an added line names its matching `head`'
@@ -51,6 +51,8 @@ const NEEDS = {
   trailer: rule => (typeof rule.vendor === 'string' || rule.vendor === null) && (typeof rule.cua === 'string' || rule.cua === null) || 'a trailer names both sides\' exact text',
   subsetCount: rule => typeof rule.identifier === 'string' && Number.isInteger(rule.cap) && rule.cap > 0 || 'a subsetCount names the element\'s `identifier` and the vendor\'s `cap`',
   addedOverTenPercent: rule => citesDecisionLog(rule.decisionLog) || 'addedOverTenPercent cites a Decision Log entry by its dated opening',
+  // A rendering rule of cua's on every line, not an instance: every scene, no count (test/native-goldens/compare.mjs).
+  lineBreaks: rule => (rule.scene === '*' && rule.count === undefined && rule.fault === 'departure') || 'lineBreaks is a departure for every scene (`*`), with no count',
   settle: rule => ['vendor', 'cua'].includes(rule.lane) || 'a settle declaration names the `lane` that did not settle, vendor or cua',
 };
 // The spec's Decision Log entry a declaration cites, by its dated opening (`- Decision (<YYYY-MM-DD>…`), as the goldens'
@@ -181,7 +183,9 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
       if (as === 'full' && result.added > result.lines * 0.1 && !allowsAddedLines(rules)) found.push({scene, golden, kind: 'addedOverTenPercent', added: result.added, lines: result.lines});
       out[golden] = {compared: true, added: result.added, lines: result.lines, differences: found};
       differences.push(...found);
-      declared.push(...rules.map(rule => ({scene, golden, kind: rule.kind, fault: rule.fault, cause: rule.cause, ...(rule.count ? {count: rule.count} : {})})));
+      // The lineBreaks rule (no count) is listed where it made lines equal, with how many.
+      declared.push(...rules.filter(rule => rule.kind !== 'lineBreaks' || result.lineBreaks > 0)
+        .map(rule => ({scene, golden, kind: rule.kind, fault: rule.fault, cause: rule.cause, ...(rule.kind === 'lineBreaks' ? {count: result.lineBreaks} : rule.count ? {count: rule.count} : {})})));
     }
     // The settle cell, on both engines.
     const settleRules = applies(scene, 'settle').map(rule => ({...rule, left: rule.count ?? 1}));

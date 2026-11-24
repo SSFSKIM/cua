@@ -343,7 +343,7 @@ session's to add on `docs/117-progress`).
   consumes its admission only once the admission held. The panel's absence is certified only when every candidate
   window's identifier (and frame) was read. key-route.json carries each lane's attributed capture (`capture`, the one
   the section renders) beside the taps' raw events (`rawEvents`), and a tap counts as live through the press only on
-  its own stop line or a kill at the stop. The deadline is the earlier of the step's cap (45 min, provisional) and the
+  its own stop line or a kill at the stop. The deadline is the earlier of the step's cap (60 min, provisional: under 45 the cua lane got 6 to 10 min once the grace held the real recovery bound) and the
   job's limit (M5_JOB_STARTED, 360 min) less 15 min for what C does after the step. A lane's grace after SIGTERM is
   sized to the recovery's own bound (`recoverBoundMs`, about 22 min) plus the step it is in and its close (about 29
   min in all). The final inventory's reader is compiled before any hold. A lane with too little time left is skipped

@@ -2185,7 +2185,7 @@ on what this step records. It is sitting C's last step, after the counted lanes 
    there: they are the matrix's ordinary hold and preparation, used against the owner's Mac in every owner sitting and
    put back; every act of the key-route's own (the panel, the Escape, the taps, the TCC row) comes after the
    attestation and refuses without it.
-   It is bounded by the job's clock: its deadline is the earlier of its own cap (45 min, provisional) and the job's
+   It is bounded by the job's clock: its deadline is the earlier of its own cap (60 min, provisional: under 45 the cua lane got 6 to 10 min once the grace held the real recovery bound) and the job's
    limit (360 min from M5_JOB_STARTED) less 15 min for what C does after it (its reports, the screen at the end, the
    upload). When that leaves too little for its set-up and its cleanup, or the job's start is unread, it is skipped
    before it reads, builds, grants or holds anything, recorded, INFO.

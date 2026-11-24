@@ -56,7 +56,7 @@ const message = error => String(error?.message ?? error).split('\n')[0].slice(0,
 // bound, min(LANE_TIMEOUT_MS, provisional, and what is left less its grace and the cleanup's reserve), at least
 // LANE_MIN_MS, else that lane is skipped, recorded.
 const MINUTE = 60_000;
-export const KEY_ROUTE_BUDGET_MS = 45 * MINUTE, KEY_ROUTE_JOB_RESERVE_MS = 15 * MINUTE;
+export const KEY_ROUTE_BUDGET_MS = 60 * MINUTE, KEY_ROUTE_JOB_RESERVE_MS = 15 * MINUTE;
 export const LANE_TIMEOUT_MS = 20 * MINUTE, LANE_MIN_MS = 5 * MINUTE;
 // A lane's grace after its SIGTERM, before SIGKILL: the step it is in (a device command, bounded by its 300 s compile;
 // a js call is 135 s), then the matrix's recovery to its own bound (live-checks.mjs recoverBoundMs), then its close

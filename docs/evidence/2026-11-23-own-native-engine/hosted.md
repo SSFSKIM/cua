@@ -1651,6 +1651,13 @@ checks:
   recorded as not moved with "the move was refused: …", and the alert guard refuses what the window overlaps.
   `loopback.sh` ends by checking that its own session carries the variable, and fails the bring-up if not.
 
+The guard test, `test/product-ci-env.test.mjs`, leaves exactly one directory out of the product it scans:
+`native/<package>/Tests`, a Swift package's XCTest target, which is never built into the shipped engine. Since #582's
+merge, its hosted-only canary (`native/engine/Tests/EngineTests/KeyTargetTests.swift`) skips off the runner by
+reading `RUNNER_ENVIRONMENT`, and it keeps that read. Everything compiled into Sources is still scanned, test helpers
+and fixtures included, and the test's planted read in Sources is still caught (the design session, accepted after
+#582's merge). #560's pull request carries this note in its body.
+
 The goldens recorder's `finderFrame` step (`goldens-device.mjs`) is not a hosted-only write: it pins Finder on the mini
 by design, at `FINDER_FRAME` there and at the venue's frame only where the venue is read. It is left as it is.
 

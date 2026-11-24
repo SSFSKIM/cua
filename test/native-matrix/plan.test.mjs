@@ -99,11 +99,14 @@ test('the tree case passes on both engines\' goldens of every scene, and returns
 // selection, changed by the fake's actions as the app would (or, for an inert engine, not).
 // `press`: the click keeps the field's selection, as cua's AXPress does on Chromium's textarea (#188), where a posted
 // click places a caret; `sticky`: no write clears the selection either.
-function electronField({value = '', inert = false, insertAtStart = false, press = false, sticky = false} = {}) {
+// `onClear`: what an emptying setValue("") does instead of emptying the field: 'gone' (the field leaves the text) or
+// 'renumber' (the field, its value kept, prints at index 99).
+function electronField({value = '', inert = false, insertAtStart = false, press = false, sticky = false, onClear = null} = {}) {
   const lines = golden('electron', 'vendor.txt').split('\n\nThe focused UI element')[0].split('\n');
-  const state = {value, focused: 5, selected: null};
+  const state = {value, focused: 5, selected: null, cleared: null};
   const render = () => {
-    const tree = lines.map(line => (/^\t+5 /.test(line) ? `${line}${state.value ? `, Value: ${state.value}` : ''}` : line)).join('\n');
+    const tree = lines.filter(line => !(state.cleared === 'gone' && /^\t+5 /.test(line)))
+      .map(line => (/^\t+5 /.test(line) ? `${state.cleared === 'renumber' ? line.replace(/^(\t+)5 /, '$199 ') : line}${state.value ? `, Value: ${state.value}` : ''}` : line)).join('\n');
     const focused = lines.find(l => new RegExp(`^\\t*${state.focused} `).test(l))?.trim() ?? '';
     return withTrailer(tree, state.selected ? {selectedText: state.selected} : {focused});
   };
@@ -114,7 +117,7 @@ function electronField({value = '', inert = false, insertAtStart = false, press 
   };
   const app = fakeApp('', {
     click: (_, index) => { if (Number.isInteger(index)) state.focused = index; if (!press) state.selected = null; },
-    setValue: (_, index, v) => { if (index !== 5) return; if (v !== state.value && !sticky) state.selected = null; state.value = v; },
+    setValue: (_, index, v) => { if (index !== 5) return; if (onClear && v === '') { state.cleared = onClear; return; } if (v !== state.value && !sticky) state.selected = null; state.value = v; },
     selectText: (_, index, word) => { if (index === 5 && state.value.includes(word)) state.selected = word; },
     typeText: (_, text) => write(text), paste: (_, text) => write(text),
   });
@@ -408,6 +411,24 @@ test('a clear that does not take is stated as attempted, never as emptied', asyn
   delete globalThis.__m;
   assert.deepEqual(prepared.value.prepared, ['emptying attempted to clear a selection, the field still read 19 characters']);
   assert.ok(!prepared.value.prepared.includes(CLEARED));
+});
+
+// Final review, item 3: the clear's read-back finds the field again in the fresh observation. A field that left the text
+// is not an empty one, and a renumbered field's old index reads nothing of it.
+test('the clear\'s read-back re-finds the field: gone is not emptied, renumbered is read where it now is', async () => {
+  for (const [onClear, prepared, reason] of [
+    ['gone', ['emptying attempted to clear a selection, the field no longer in the text'], 'the field is not in the text'],
+    ['renumber', ['emptying attempted to clear a selection, the field still read 19 characters'], FOCUS_REASONS.masked],
+  ]) {
+    const {app, state} = electronField({value: 'alpha one\nbravo two', press: true, onClear});
+    state.selected = 'bravo';
+    const out = await run(caseCells('electron', casesOf('electron', 'pressKey', 'tab')).prepare, {apps: {electron: app}});
+    delete globalThis.__m;
+    assert.deepEqual(out.value.prepared, prepared, onClear);
+    assert.ok(!out.value.prepared.includes(CLEARED), onClear);
+    if (onClear === 'gone') assert.deepEqual([out.value.ready, out.value.reason], [false, reason]);
+    else assert.deepEqual(out.value.focus, {index: 99, trailer: 'masked'}, 'the field read at its new index');
+  }
 });
 
 test('rows no longer depend on the selection an earlier row left: Electron\'s selectText then paste, in one field', async () => {

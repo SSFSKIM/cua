@@ -97,14 +97,23 @@ const CLEAR_ATTEMPTED = 'emptying attempted to clear a selection';
 // `clear`, the stated clear when a selection still masks the trailer after it. A field the unmasked trailer shows
 // unfocused is not ready; otherwise the reading ('focused' or 'masked') is left in `__m.focus` for the row's verdict,
 // which reads the observation's own focus where the engine reports one.
-const focusOn = ({clear}) => `if (focusReading(now, index) !== "focused") { await __app.click(index); now = await observe(); }
+// `find`: the field's index as an expression over `ax`, read again in each fresh observation (its index may change, or
+// it may leave the text, which is not an empty field; final review item 3); `index` must be a `let`.
+const focusOn = ({clear, find}) => {
+  const refind = `index = (ax => (${find}))(now);`;
+  return `if (focusReading(now, index) !== "focused") {
+  await __app.click(index); now = await observe(); ${refind}
+  if (index === null) return {ready: false, reason: "the field is not in the text"};
+}
 ${clear ? `if (focusReading(now, index) === "masked") {
-  await __app.setValue(index, ""); now = await observe();
+  await __app.setValue(index, ""); now = await observe(); ${refind}
+  if (index === null) { __m.prepared.push(${j(`${CLEAR_ATTEMPTED}, the field no longer in the text`)}); return {ready: false, reason: "the field is not in the text"}; }
   const left = plain(valueOfIndex(now, index) ?? "").length;
   __m.prepared.push(left === 0 ? ${j(CLEARED)} : ${j(`${CLEAR_ATTEMPTED}, the field still read `)} + left + " characters");
 }` : ''}
 if (focusReading(now, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
 __m.focus = {index, trailer: focusReading(now, index)};`;
+};
 // The row's verdict on a prepare's focus reading `focus` ({index, trailer}), given the engine's meta of the prepare's
 // last observation (`cua/observation`, ./lane.mjs engineMetaOf; null on the vendor, which reports none). cua's names the
 // focused element by index (src/services/engine/service.mjs), which no selection masks, so it is read in the trailer's
@@ -158,7 +167,7 @@ return {ok: refusedAs(${j(sentence)}) && unchanged, outcome: {refused: __m.threw
 const selectedIn = ({find, value = null, word, focus = true}) => `${observed}
 let now = ax, index = ${find};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-${focus ? focusOn({clear: value !== null}) : ''}
+${focus ? focusOn({clear: value !== null, find}) : ''}
 ${value === null ? '' : `if (plain(valueOfIndex(now, index)) !== ${value}) { await __app.setValue(index, ${value}); now = await observe(); }`}
 if (count(plain(valueOfIndex(now, index)), ${word}) !== 1) return {ready: false, reason: "the word to replace is not in the field once"};
 const unselected = plain(valueOfIndex(now, index));
@@ -553,9 +562,9 @@ return {ok: toggled, outcome: {toggled}};`},
   {method: 'pressKey', case: 'tab', expect: 'outcome', keys: ['Tab'],
     prepare: `${observed}
 let now = ax;
-const index = ${named('Scene notes')};
+let index = ${named('Scene notes')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-${focusOn({clear: true})}
+${focusOn({clear: true, find: named('Scene notes')})}
 return {ready: true};`,
     act: 'await __app.pressKey("Tab");',
     check: `const ax = await observe();
@@ -613,7 +622,7 @@ export const CARET = Object.freeze({
 const caretAtEnd = `${observed}
 let now = ax, index = ${named('Fixture text')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-${focusOn({clear: true})}
+${focusOn({clear: true, find: named('Fixture text')})}
 if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) { await __app.setValue(index, ${FIELD_VALUE}); now = await observe(); }
 if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) return {ready: false, reason: "the field could not be given its value"};
 await __app.selectText(index, ${j(FIELD_LINES.at(-1).split(' ').at(-1))}, {selectionType: "cursor_after"}); now = await observe();
@@ -646,9 +655,9 @@ return {ok: after === __m.before + 1, outcome: {pressedOnce: after === __m.befor
   {method: 'pressKey', case: 'tab', expect: 'outcome', keys: ['Tab'],
     prepare: `${observed}
 let now = ax;
-const index = ${named('Fixture text')};
+let index = ${named('Fixture text')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-${focusOn({clear: true})}
+${focusOn({clear: true, find: named('Fixture text')})}
 return {ready: true};`,
     act: 'await __app.pressKey("Tab");',
     check: `const ax = await observe();

@@ -200,7 +200,8 @@ return {ok: lines && value === __m.before, outcome: {selected: typeof selected =
 const TEXT_AREA = 'indexOfPart(ax, "ID", "First Text View")';
 const NOW_AREA = 'indexOfPart(now, "ID", "First Text View")';
 const textedit = [
-  tree(`ax => { const value = valueOfIndex(ax, ${TEXT_AREA}) ?? ""; return {ok: plain(value).includes(${j(DOCUMENT[0])}), outcome: {document: plain(value).includes(${j(DOCUMENT[0])})}}; }`),
+  // The document's first line in a real reading of its value, never a substring of raw escaped text (#526, ruling 1185).
+  tree(`ax => { const reading = valueReadingOf(ax, ${TEXT_AREA}), document = reading.real && plain(reading.value ?? "").includes(${j(DOCUMENT[0])}); return {ok: document, outcome: {document}}; }`),
   listApps('textedit'),
   // A synthesized click (the text view advertises no action) from a selection it must collapse.
   {method: 'click', case: 'element', expect: 'outcome',

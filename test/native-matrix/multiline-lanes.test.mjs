@@ -37,25 +37,25 @@ async function run(code, {apps, lane, m}) {
 }
 const LANES = ['vendor', 'cua'];
 
-// Ruling 1184: on cua's lane only TextEdit's document is decoded; every other multi-line field reads raw, so its checks
-// are a false FAIL there (#561 lifts it), never a pass. On the vendor's lane they read as before.
-test('#187: the field check reads a multi-line string back exactly on the vendor\'s lane; on cua\'s it fails (ruling 1184)', async () => {
+// Ruling 1185: on cua's lane a final Value part at a real part boundary is decoded in any app, so the live paths that
+// write multi-line values (#187's two-line Unicode case, #188's eight lines) read them back on both lanes.
+test('#187: the field check reads the two-line Unicode case back exactly on both lanes', async () => {
   const lines = UNICODE_STRINGS.find(s => s.text.includes('\n'));
-  for (const [lane, exact] of [['vendor', true], ['cua', false]]) {
+  for (const lane of LANES) {
     const chrome = field({lane, title: 'cua scene page', line: 'text entry area (settable) Scene notes', value: lines.text});
     const r = await run(CHECK('chrome', lines.text), {apps: {chrome}, lane});
-    assert.deepEqual([r.ok, r.value.ok, r.value.outcome.exact], [true, exact, exact], lane);
+    assert.deepEqual([r.ok, r.value.ok, r.value.outcome.exact], [true, true, true], lane);
   }
 });
 
-test('#188: the click prepare gives the field its multi-line value and reads it back on the vendor\'s lane; on cua\'s it is not ready (ruling 1184)', async () => {
-  assert.ok(CLICK_VALUE.includes('\n'));
-  const vendor = field({lane: 'vendor', title: 'cua Electron fixture', line: 'text entry area (settable) Fixture text', value: ''});
-  assert.deepEqual(await run(CLICK_PREPARE.i, {apps: {electron: vendor}, lane: 'vendor'}).then(r => [r.ok, r.value]), [true, {ready: true}]);
-  assert.equal(vendor.state.selected, CLICK_WORD);
-  const cua = field({lane: 'cua', title: 'cua Electron fixture', line: 'text entry area (settable) Fixture text', value: ''});
-  const r = await run(CLICK_PREPARE.i, {apps: {electron: cua}, lane: 'cua'});
-  assert.deepEqual([r.ok, r.value.ready], [true, false], JSON.stringify(r));
+test('#188: the click prepare writes its eight lines, reads them back and selects its word on both lanes', async () => {
+  assert.equal(CLICK_VALUE.split('\n').length, 8);
+  for (const lane of LANES) {
+    const electron = field({lane, title: 'cua Electron fixture', line: 'text entry area (settable) Fixture text', value: ''});
+    const r = await run(CLICK_PREPARE.i, {apps: {electron}, lane});
+    assert.deepEqual([r.ok, r.value], [true, {ready: true}], `${lane}: ${JSON.stringify(r)}`);
+    assert.equal(electron.state.selected, CLICK_WORD);
+  }
 });
 
 test('TextEdit: the document cells read the multi-line document on both lanes (its first line, a write of it whole)', async () => {
@@ -120,7 +120,7 @@ test('#526 ruling 1183: a target is matched only at a real part start of an elem
 });
 
 // Ruling 1184, through the real cells on cua's lane.
-test('#526 ruling 1184: a real Value after another multi-line part reads raw: the empty check fails and emptying is not skipped', async () => {
+test('#526 rulings 1184/1185: a real Value after another multi-line part reads raw: the empty check fails and emptying is not skipped', async () => {
   // The reviewer's P1: Help and Value both multi-line, Help first, on a focused non-empty field.
   const line = `1 text entry area (settable) Scene notes, Help: a${escapeLineBreaks('\nb')}, Value: c${escapeLineBreaks('\nd')}`;
   const empty = await run(CHECK('chrome', ''), {apps: {chrome: scenePage([line])}, lane: 'cua'});
@@ -137,7 +137,7 @@ test('#526 ruling 1184: a real Value after another multi-line part reads raw: th
   assert.deepEqual([after.value.ok, after.value.outcome.exact], [false, false]);
 });
 
-test('#526 ruling 1184: "Value:" inside another part\'s first line is not the Value part, for the check and the target', async () => {
+test('#526 rulings 1184/1185: "Value:" inside another part\'s first line is not the Value part, for the check and the target', async () => {
   const line = `1 text entry area (settable) Scene notes, Help: Expected Value: one${escapeLineBreaks('\ntwo')}`;
   const r = await run(CHECK('chrome', 'one\ntwo'), {apps: {chrome: scenePage([line])}, lane: 'cua'});
   assert.deepEqual([r.value.ok, r.value.outcome.exact], [false, false]);
@@ -145,7 +145,7 @@ test('#526 ruling 1184: "Value:" inside another part\'s first line is not the Va
   assert.equal(indexOfTarget(`Window: "cua scene page", App: Chrome.\n0 standard window cua scene page\n\t${line}\n`, 'one', 'cua'), null);
 });
 
-test('#526 ruling 1184: TextEdit\'s document decodes only as its line\'s last part; otherwise it reads raw and a check fails', async () => {
+test('#526 ruling 1185: TextEdit\'s document decodes only as its line\'s last part; otherwise it reads raw and a check fails', async () => {
   const DOC = textEditDocument().lines, value = DOC.join('\n');
   const line = 'text entry area (settable) ID: First Text View';
   const set = caseCells('textedit', CASES.textedit.find(c => c.method === 'setValue' && c.case === 'document'));
@@ -155,8 +155,32 @@ test('#526 ruling 1184: TextEdit\'s document decodes only as its line\'s last pa
   const written = await run(set.check, {apps: {textedit}, lane: 'cua'});
   assert.deepEqual([written.ok, written.value.ok], [true, false], 'raw: the write cannot read back equal');
   delete globalThis.__m;
-  // The same document as another app's field reads raw too: only TextEdit's text view is decoded.
+  // The same document as another app's field, the line's last part, decodes too (any app, ruling 1185).
   const {valueOfIndex} = await import('../../scripts/native-matrix/matrix-text.mjs');
   const other = `Window: "cua-scene", App: Notes.\n0 standard window cua-scene\n\t1 ${line}, Value: ${escapeLineBreaks(value)}\n`;
-  assert.ok(valueOfIndex(other, 1, 'cua').includes('\\'));
+  assert.equal(valueOfIndex(other, 1, 'cua'), value);
+});
+
+test('#526 ruling 1185 (P2-b): a target\'s Value part is anchored from the element\'s start; a ") " inside Help text is no flags group', async () => {
+  const page = scenePage([`1 button Exit, Help: Read (example) Value: Scene option${escapeLineBreaks('\nmore')}`, '2 checkbox Scene option, Value: 0']);
+  const clicked = [];
+  page.click = async index => { clicked.push(index); };
+  const r = await run(CLICK_CONTROL('sceneOption'), {apps: {chrome: page}, lane: 'cua'});
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(clicked, [2]);
+});
+
+test('#526 ruling 1185 (P2-a): TextEdit\'s tree cell and the intervention\'s landing need a real reading, never a substring of raw text', async () => {
+  const tree = caseCells('textedit', CASES.textedit.find(c => c.method === 'getAXState'));
+  const help = `text entry area (settable) ID: First Text View, Help: see${escapeLineBreaks('\ncua scene document\nmore')}`;
+  const textedit = {getAXState: async () => `Window: "cua-scene", App: TextEdit.\n0 standard window cua-scene\n\t1 ${help}\n`};
+  for (const code of [tree.prepare, tree.act]) await run(code, {apps: {textedit}, lane: 'cua'});
+  const read = await run(tree.check, {apps: {textedit}, lane: 'cua'});
+  delete globalThis.__m;
+  assert.deepEqual([read.ok, read.value.ok, read.value.outcome.document], [true, false, false]);
+  const {endsWithCell} = await import('../../scripts/native-matrix/probe-plan.mjs');
+  const landing = {getAXState: async () => `Window: "cua-scene", App: TextEdit.\n0 standard window cua-scene\n\t1 text entry area (settable) ID: First Text View, Value: a${escapeLineBreaks('\nb')}, Help: x\n`};
+  assert.equal((await run(endsWithCell('textedit', 'x'), {apps: {textedit: landing}, lane: 'cua'})).value.landed, false);
+  const landed = {getAXState: async () => `Window: "cua-scene", App: TextEdit.\n0 standard window cua-scene\n\t1 text entry area (settable) ID: First Text View, Value: a${escapeLineBreaks('\nbx')}\n`};
+  assert.equal((await run(endsWithCell('textedit', 'x'), {apps: {textedit: landed}, lane: 'cua'})).value.landed, true);
 });

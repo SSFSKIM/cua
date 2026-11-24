@@ -164,7 +164,7 @@ test('a field\'s selection evidence is lengths and SHA-256 hashes only, with wha
 // #526: cua prints a value's line breaks escaped on the element's one line (`\n`, `\r`, any other break `\uXXXX`), the
 // vendor raw. The reader is lane-aware and nothing more: the ambiguity of a multi-line value followed by another part
 // is the reader ticket's.
-test('#526: a value reads as before on either lane, and on cua\'s TextEdit\'s document, ending its line, is decoded', () => {
+test('#526: a value reads as before on either lane, and on cua\'s a final Value at a real part boundary is decoded, in any app', () => {
   const ax = line => `Window: "x", App: y.\n0 standard window x\n\t1 ${line}\n\t2 button OK\n`;
   const doc = value => `Window: "cua-scene.rtf", App: TextEdit.\n0 standard window cua-scene.rtf\n\t\t2 text entry area (settable) ID: First Text View, Value: ${value}\n`;
   // Single-line values: exactly main's reading, on every lane.
@@ -175,10 +175,13 @@ test('#526: a value reads as before on either lane, and on cua\'s TextEdit\'s do
   }
   // A backslash the vendor prints is never decoded; on cua's lane a literal backslash-n reads as a break (#555).
   for (const rendering of ['vendor', undefined]) assert.equal(text.valueOfIndex(ax('text field (settable) Value: C:\\new'), 1, rendering), 'C:\\new');
-  // cua's lane: TextEdit's document, the line's last part, decoded whole, every break the renderer emits (ruling 1184);
-  // any other field with a break reads raw, its escapes' backslashes kept.
+  // cua's lane (ruling 1185): a final Value part at a real part boundary, in any app, decoded whole with every break the
+  // renderer emits; the element's first part (after its role words and flags group) or a later one (after `, `).
   assert.equal(text.valueOfIndex(doc('one\\ntwo\\r\\nthree\\u2028four'), 2, 'cua'), 'one\ntwo\r\nthree\u2028four');
-  assert.equal(text.valueOfIndex(ax('text entry area (settable) ID: Notes, Value: one\\ntwo'), 1, 'cua'), 'one\\ntwo');
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) ID: Notes, Value: one\\ntwo'), 1, 'cua'), 'one\ntwo');
+  assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\\ntwo'), 1, 'cua'), 'one\ntwo');
+  assert.equal(text.valueOfIndex(ax('텍스트 엔트리 영역 (settable) Fixture text, Value: one\\ntwo'), 1, 'cua'), 'one\ntwo');
+  assert.deepEqual(text.valueReadingOf(ax('text entry area (settable) Help: a\\nb'), 1, 'cua'), {value: '\\nb', real: false});
   // The vendor's lane: raw lines as before; backslashes never decoded.
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: one\ntwo'), 1, 'vendor'), 'one\ntwo');
   assert.equal(text.valueOfIndex(ax('text entry area (settable) Value: C:\\new\\nx'), 1, 'vendor'), 'C:\\new\\nx');

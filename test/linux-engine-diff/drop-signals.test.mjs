@@ -673,3 +673,13 @@ test("the re-review of 0e43238b, finding 1: the stop is scheduled on the monoton
     else delete performance.now;
   }
 });
+
+test("a row carries its drag's or its handle end's release_sync, null where the engine wrote none (#512's item 4)", async () => {
+  const { releaseSyncOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const drag = { schedule: 'after_path', overran: true, visits_dropped: 0, unconfirmed: null };
+  const handle = { ran: true, motions: 4, interrupted_unconfirmed: false };
+  assert.deepEqual(releaseSyncOf({ release_sync: drag, handle: { release_sync: handle } }), drag);
+  assert.deepEqual(releaseSyncOf({ handle: { release_sync: handle } }), handle);
+  assert.equal(releaseSyncOf({ hold: {} }), null);
+  assert.equal(releaseSyncOf({}), null);
+});

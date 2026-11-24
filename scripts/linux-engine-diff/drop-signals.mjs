@@ -336,6 +336,13 @@ function frameOn(id) {
  * the line, or its counter, is missing. Never the engine's last counter of any line (`Engine.dropSettles`): a lost line
  * would leave that counter stale (the review of 4e0ba0a9, P1 2).
  */
+/**
+ * The drop's `release_sync` record (#512, ruling 1142 (4)): a drag's, at its `--stats` line's top, else a handle end's,
+ * in its `handle` record; null where the engine wrote none. A row carries it, so a counted row shows whether its tail
+ * ran, where (`schedule`), whether its path overran floor_until (`overran`) and why it was answered unconfirmed.
+ */
+export const releaseSyncOf = (stats) => stats?.release_sync ?? stats?.handle?.release_sync ?? null;
+
 export const counterOf = (reply) => ({ from: Number.isInteger(reply?.id) ? reply.id : null, counter: Number.isInteger(reply?.stats?.drop_settles?.entered) ? reply.stats.drop_settles : null });
 
 /** A fresh engine's counter, before its first request: it has entered no settle since it started. */
@@ -1012,6 +1019,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     notice,
     next,
     after_release: stats.after_release,
+    // the tail before the release, a drag's or a handle end's (#512's item 4)
+    release_sync: releaseSyncOf(stats),
     // Electron's drop: the drag loop's cursor read at the release (a drag's `drop_cursor`, a handle's in its record)
     drop_cursor: stats.drop_cursor ?? stats.handle?.drop_cursor,
     // how many settles the drop's requests entered, the engine's count (`settleCount`): the judge's evidence that one ran

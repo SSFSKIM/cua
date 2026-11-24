@@ -385,14 +385,25 @@ if (!__saveSheet(ax)) return {ready: false, reason: "the Save sheet was not up"}
 const __name = __named(ax), __before = ax;
 const __identified = ["panel", "goTo", "goToField", "location"].every(k => typeof __controls[k]?.id === "string" && typeof __controls[k]?.role === "string");
 const __goToUp = a => (__identified ? controlIndexOf(a, __controls.goTo) !== null : !__saveSheet(a) || /\bGoToWindow\b/.test(a));
-// Out of the cell with the Go To dialog closed: Escape while it is up, each awaited, the Save sheet left up.
+// Out of the cell with the Go To dialog closed, every step in this one dispatch (rulings 1219 and 1221): Escape while it
+// is up, at most three times, each awaited, the Save sheet left up; still up, the dialog's own CloseButton clicked;
+// still up, the Save sheet cancelled as SAVE_SHEET_CANCEL_CELL cancels it (Escape while it or the dialog is up). Each
+// step is said on the result.
+const __goToIndex = a => controlIndexOf(a, __identified ? __controls.goTo : {id: "GoToWindow", role: "sheet"});
+const __closeButton = a => { const g = __goToIndex(a), b = controlIndexOf(a, {id: "CloseButton", role: "button"}); return g !== null && b !== null && isInside(a, b, g) ? b : null; };
 const __out = async result => {
-  let a = await observe(), escapes = 0;
-  for (; __goToUp(a) && escapes < 3; escapes++) {
-    await __app.pressKey("Escape");
-    for (const end = Date.now() + 2000; __goToUp(a) && Date.now() < end;) a = await observe();
+  let a = await observe(), escapes = 0, closeClicked = false, sheetCancelled = false;
+  const settle = async gone => { for (const end = Date.now() + 2000; !gone(a) && Date.now() < end;) a = await observe(); };
+  for (; __goToUp(a) && escapes < 3; escapes++) { await __app.pressKey("Escape"); await settle(x => !__goToUp(x)); }
+  if (__goToUp(a)) {
+    const b = __closeButton(a);
+    if (b !== null) { closeClicked = true; await __app.click(b); await settle(x => !__goToUp(x)); }
   }
-  return {...result, goTo: {closed: !__goToUp(a), sheetUp: __saveSheet(a), escapes}};
+  if (__goToUp(a)) {
+    for (let n = 0; n < 3 && (__goToUp(a) || __saveSheet(a)); n++) { await __app.pressKey("Escape"); await settle(x => !__goToUp(x) && !__saveSheet(x)); }
+    sheetCancelled = !__goToUp(a) && !__saveSheet(a);
+  }
+  return {...result, goTo: {closed: !__goToUp(a), sheetUp: __saveSheet(a), escapes, closeClicked, sheetCancelled}};
 };
 if (!__identified) {
   await __app.pressKey("super+shift+g");

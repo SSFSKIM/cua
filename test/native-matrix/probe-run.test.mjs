@@ -702,16 +702,34 @@ test('probe cells when the venue could not enable ABC: NO VERDICT venue naming i
 
 // Ruling 1220's fourth condition: a failure anywhere on #212's destination path decides that row alone. The Go To dialog
 // that would not close is said on the row; the run goes on to its next row, with no stop and no ResetBlocked.
-test('#212\'s destination failing with the Go To dialog left up decides its row alone; the run goes on', async () => {
-  const destination = {ready: false, reason: 'the Go To dialog and its focused path field were not identified', goTo: {closed: false, sheetUp: false, escapes: 3}};
+// Ruling 1221 (F1): a Go To dialog Escape left up closes on its CloseButton in the same cell; the row gets its verdict
+// and the run goes on.
+test('#212\'s destination failing with the Go To dialog closed on its CloseButton decides its row alone; the run goes on', async () => {
+  const destination = {ready: false, reason: 'the Go To dialog and its focused path field were not identified', goTo: {closed: true, sheetUp: true, escapes: 3, closeClicked: true, sheetCancelled: false}};
   const plan = {...planOf('intervention-save-sheet'), intervention: ['saveSheet', 'fires'], id: 'x'};
   const {result} = await runWith({plan, cellName: 'intervention-save-sheet', cell: saveCells({destination})});
   const row = rowOf(result, SAVE_SHEET);
-  assert.equal(row.invalid, 'the Save sheet\'s destination was not set to the run\'s folder (the Go To dialog and its focused path field were not identified; the Go To dialog would not close)');
+  assert.equal(row.invalid, 'the Save sheet\'s destination was not set to the run\'s folder (the Go To dialog and its focused path field were not identified)');
   assert.deepEqual(row.outcome.goTo, destination.goTo);
   assert.ok(result.rows.some(r => r.id === 'textedit/intervention.fires'), 'the next row ran');
   assert.deepEqual(result.problems, []);
   assert.equal(result.complete, true);
+});
+// Only a dialog that survives Escape, its CloseButton and the Save sheet's cancel leaves TextEdit's key window another
+// one, so the cleanup is refused, the reset too, and the run stops: its text names the dialog and each step tried.
+test('#212\'s Go To dialog surviving every step stops the run, the stop naming it and each step tried', async () => {
+  const destination = {ready: false, reason: 'the Go To dialog and its focused path field were not identified', goTo: {closed: false, sheetUp: false, escapes: 3, closeClicked: true, sheetCancelled: false}};
+  let stuck = false;
+  const cell = c => { if (tagOf(c) === 'savesheet.destination') stuck = true; return saveCells({destination})(c); };
+  const ops = {matrix: (base, a) => {
+    const out = base(a);
+    return stuck && out?.ownKey ? {...out, ownKey: {...out.ownKey, focusedWindow: 'other', focused: {number: 9, frame: null, role: 'AXSheet', subrole: null, parent: null}}} : out;
+  }};
+  const plan = {...planOf('intervention-save-sheet'), intervention: ['saveSheet', 'fires'], id: 'x'};
+  const {result} = await runWith({plan, cellName: 'intervention-save-sheet', cell, ops});
+  assert.equal(result.complete, false);
+  const stop = result.problems.find(p => /could not be reset/.test(p));
+  assert.match(stop ?? '', /with the Go To dialog up through every step its cell tried \(Escape 3x: still up; its CloseButton: clicked, still up; the Save sheet's cancel: still up\) \(its cleanup refused by the key-window guard\)/, JSON.stringify(result.problems));
 });
 
 // Ruling 1220's third condition: nothing is saved, and the row proves it at the run's folder and where an untitled

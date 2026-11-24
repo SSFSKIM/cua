@@ -75,9 +75,16 @@ async function resetHeldFixture(ctx) {
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
   if (!failed) return;
   const reason = String(failed.message ?? failed).slice(0, 300);
-  const message = `the ${held.scene} fixture ${held.entry.row} left (its cleanup ${heldByText(held.heldBy)}) could not be reset: ${reason}; the run stopped collecting evidence`;
+  const message = `the ${held.scene} fixture ${held.entry.row} left${stuckGoTo(held.row)} (its cleanup ${heldByText(held.heldBy)}) could not be reset: ${reason}; the run stopped collecting evidence`;
   if (held.entry.blockedBy) throw new ResetBlocked(message, {category: held.entry.blockedBy, detail: `the ${held.scene} fixture ${held.entry.row}'s reset was held (${reason})`});
   throw new Stop(message);
+}
+// #212's Go To dialog that survived every step its destination cell took (ruling 1221): the one way a dialog left up can
+// stop the run, named with each step and its result. It leads the stop's text, which a CellResult bounds (cell-result.mjs).
+function stuckGoTo(row) {
+  const g = row?.outcome?.goTo;
+  if (!g || g.closed !== false) return '';
+  return ` with the Go To dialog up through every step its cell tried (Escape ${g.escapes}x: still up; its CloseButton: ${g.closeClicked ? 'clicked, still up' : 'not found'}; the Save sheet's cancel: ${g.sheetCancelled ? 'done' : 'still up'})`;
 }
 // The guard that held a fixture's cleanup, from the held cause's category (ruling 1219, s2: C-5's key-window refusal was
 // named the capture alert's).

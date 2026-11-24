@@ -1436,6 +1436,35 @@ test('activate with top on a hosted runner: a wait that misses raises the run\'s
   assert.equal(stuck.ok, false);
   assert.equal(stuck.toTop.path, 'raised');
   assert.match(stuck.reason, /the run's window is not the top window after its raise: com\.example\.other's window 31 is/);
+  // A raise that threw is no raise (fix wave M3): its own path, the error kept, not ok.
+  io.raiseWindow = () => { throw new Error('panel-ax raise: refused'); };
+  const failed = await activateScene('textedit', {run, io, top: true, boundMs: 1000});
+  assert.equal(failed.ok, false);
+  assert.deepEqual([failed.toTop.path, failed.toTop.raise], ['raiseFailed', {error: 'panel-ax raise: refused'}]);
+  assert.match(failed.reason, /; its raise failed: panel-ax raise: refused$/);
+}));
+// Fix wave I5: the top wait passes over the engine under test's own windows, both roots' (the vendor's CUAService
+// overlay on the vendor lane, cua's cursor on cua's), as h3's read does, and keeps what it passed over.
+test('activate with top passes over the engine\'s own windows, the vendor overlay among them, and keeps them', async () => withRun(async run => {
+  const io = fakeDevice();
+  const te = await upScene('textedit', {run, io});
+  const {own, blocker} = topOrder(te);
+  const overlay = {ownerPid: 900, ownerBundleId: 'com.openai.sky.CUAService', ownerName: 'CUAService', number: 77, layer: 0, bounds: {x: 0, y: 0, width: 1920, height: 1080}};
+  io.windowOrder = () => [overlay, own, blocker];
+  io.enginePids = () => [900];
+  io.hosted = () => true;
+  io.raiseWindow = (...a) => { io.calls.push(['raise', ...a]); return {raised: 0}; };
+  const out = await activateScene('textedit', {run, io, top: true});
+  assert.equal(out.ok, true, out.reason);
+  assert.deepEqual(out.toTop, {path: 'waited', ms: 0, topBefore: {bundleId: TEXTEDIT, number: te.window.number, layer: 0, owned: true},
+    skipped: [{bundleId: 'com.openai.sky.CUAService', number: 77, layer: 0}]});
+  assert.deepEqual(io.calls.filter(c => c[0] === 'raise'), []);
+  // Not the engine's: the overlay's process counts as any other's window on top.
+  io.enginePids = () => [];
+  io.hosted = () => false;
+  const blocked = await activateScene('textedit', {run, io, top: true, boundMs: 500});
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.toTop.topBefore, {bundleId: 'com.openai.sky.CUAService', number: 77, layer: 0, owned: false});
 }));
 test('activate with top off a hosted runner: a wait that misses raises nothing and is not ok, the top window named', async () => withRun(async run => {
   const io = fakeDevice();

@@ -517,16 +517,16 @@ export function judge(results, problems = [], {departures: entries = readDepartu
 }
 
 // The background rows' user windows by the path they took to the top (ruling 1221, H2; ./steps.mjs keepToTop): per user
-// scene and engine, the rows whose activation's wait found the run's window on top and those it raised there, and the
-// rows still not ok after a raise. Recorded, never judged. -> {counts: [{scene, engine, waited, raised}], afterRaise:
-// [{engine, id}]}.
+// scene and engine, the rows whose activation's wait found the run's window on top, those it raised there and those
+// whose raise threw (counted apart, fix wave M3), and the rows still not ok after a raise. Recorded, never judged. ->
+// {counts: [{scene, engine, waited, raised, raiseFailed}], afterRaise: [{engine, id}]}.
 export function toTopOf(rows) {
   const counts = new Map(), afterRaise = [];
   for (const r of rows) {
     const path = r.toTop?.path;
-    if (path !== 'waited' && path !== 'raised') continue;
+    if (!['waited', 'raised', 'raiseFailed'].includes(path)) continue;
     const k = `${r.toTop.scene}\u0000${r.engine}`;
-    if (!counts.has(k)) counts.set(k, {scene: r.toTop.scene, engine: r.engine, waited: 0, raised: 0});
+    if (!counts.has(k)) counts.set(k, {scene: r.toTop.scene, engine: r.engine, waited: 0, raised: 0, raiseFailed: 0});
     counts.get(k)[path] += 1;
     if (path === 'raised' && r.ok !== true) afterRaise.push({engine: r.engine, id: r.id});
   }
@@ -709,7 +709,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
 
   const toTop = j.toTop ?? {counts: [], afterRaise: []};
   if (toTop.counts.length) {
-    out.push(`- User windows to the top (ruling 1221): ${toTop.counts.map(c => `${c.scene} ${c.engine} waited ${c.waited}, raised ${c.raised}`).join('; ')}`
+    out.push(`- User windows to the top (ruling 1221): ${toTop.counts.map(c => `${c.scene} ${c.engine} waited ${c.waited}, raised ${c.raised}, raise failed ${c.raiseFailed}`).join('; ')}`
       + `${toTop.afterRaise.length ? `; not ok after a raise: ${toTop.afterRaise.map(r => `${r.engine} ${r.id}`).join(', ')}` : ''}.`);
   }
   const notJudgedListed = s => j.notJudged.some(n => n.section === 'interference' && n.id === s.id);

@@ -1245,11 +1245,13 @@ test('the cells of a known defect are named with their ticket', () => {
 test('to the top: background rows counted waited and raised per user scene and engine, the rows not ok after a raise named', () => {
   const row = (engine, id, user, path, ok = true) => ({section: 'method', engine, id, user, ok, toTop: {scene: user, path, ms: 10, topBefore: null}});
   const t = toTopOf([row('cua', 'finder/background/a@textedit', 'textedit', 'waited'), row('cua', 'finder/background/b@textedit', 'textedit', 'raised'),
-    row('cua', 'finder/background/c@textedit', 'textedit', 'raised', false), row('vendor', 'chrome/background/a@electron', 'electron', 'waited'), {section: 'method', engine: 'cua', id: 'x', ok: true}]);
-  assert.deepEqual(t, {counts: [{scene: 'electron', engine: 'vendor', waited: 1, raised: 0}, {scene: 'textedit', engine: 'cua', waited: 1, raised: 2}],
+    row('cua', 'finder/background/c@textedit', 'textedit', 'raised', false), row('vendor', 'chrome/background/a@electron', 'electron', 'waited'),
+    row('cua', 'finder/background/d@textedit', 'textedit', 'raiseFailed', false), {section: 'method', engine: 'cua', id: 'x', ok: true}]);
+  // A raise that threw is counted apart (fix wave M3), never as raised.
+  assert.deepEqual(t, {counts: [{scene: 'electron', engine: 'vendor', waited: 1, raised: 0, raiseFailed: 0}, {scene: 'textedit', engine: 'cua', waited: 1, raised: 2, raiseFailed: 1}],
     afterRaise: [{engine: 'cua', id: 'finder/background/c@textedit'}]});
   const text = renderSummary({...judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}}), toTop: t});
-  assert.match(text, /^- User windows to the top \(ruling 1221\): electron vendor waited 1, raised 0; textedit cua waited 1, raised 2; not ok after a raise: cua finder\/background\/c@textedit\.$/m);
+  assert.match(text, /^- User windows to the top \(ruling 1221\): electron vendor waited 1, raised 0, raise failed 0; textedit cua waited 1, raised 2, raise failed 1; not ok after a raise: cua finder\/background\/c@textedit\.$/m);
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /User windows to the top/);
 });
 

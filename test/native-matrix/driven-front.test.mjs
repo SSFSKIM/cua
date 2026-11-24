@@ -99,7 +99,9 @@ test('background rows keep their user window\'s path to the top: the activation 
   assert.ok(asked.some(a => a[0] === 'textedit' && a[1] === '--top-window' && a[2] === 'yes'), JSON.stringify(asked));
   assert.ok(!result.rows.some(r => !r.id.includes('/background/') && r.toTop), 'only background rows');
 });
-test('a background user window whose wait missed off a hosted runner: its rows NO VERDICT, the path kept, nothing raised', async () => {
+// The run's side of a missed wait (the activation's own side, the wait and the raise, is test/repl-parity/scenes-mac's):
+// an activation that answered not ok with its path leaves its rows NO VERDICT, the path kept on each.
+test('a background user window whose activation answered not ok, its wait missed: its rows NO VERDICT, the answer\'s path kept on each', async () => {
   const missed = {scene: 'textedit', ok: false, frontmost: {pid: 1, bundleId: 'com.apple.TextEdit'}, reads: 21,
     reason: 'the run\'s window is not the top window within 5000 ms: com.example.other\'s window 31 is; not raised off a GitHub-hosted runner',
     toTop: {path: 'waited', ms: 5000, topBefore: {bundleId: 'com.example.other', number: 31, layer: 0, owned: false}}};
@@ -111,4 +113,16 @@ test('a background user window whose wait missed off a hosted runner: its rows N
     assert.equal(row.invalid, 'the user window (textedit) did not come to the front', row.id);
     assert.deepEqual(row.toTop, {scene: 'textedit', ...missed.toTop}, row.id);
   }
+});
+
+// Fix wave I6: an Open panel pairing's close activates TextEdit after its rows; the user window's path is kept from its
+// own activation, not from that one.
+test('openPanel/background@finder rows keep the user window\'s path though the panel\'s close activates TextEdit after them', async () => {
+  const asked = [];
+  const ops = {matrix: (base, a) => { if (a[0] === 'step' && a[1] === 'activate') asked.push(a[2]); return base(a); }};
+  const {result} = await runWith({plan: planOf('background', {scene: 'openPanel'}), ops, slept: []});
+  const rows = result.rows.filter(r => r.id.startsWith('openPanel/background/'));
+  assert.ok(rows.length > 0);
+  assert.ok(asked.lastIndexOf('textedit') > asked.lastIndexOf('finder'), `the close activated TextEdit last: ${asked.join(', ')}`);
+  for (const row of rows) assert.deepEqual(row.toTop, {scene: 'finder', path: 'waited', ms: 0, topBefore: null}, row.id);
 });

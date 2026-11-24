@@ -522,6 +522,13 @@ test('the activate step\'s own check: front and key read after the scene\'s acti
     assert.deepEqual(out.answer, {scene: 'textedit', ok: true});
     assert.deepEqual(out.frontKey, {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'});
     assert.ok(out.at[0] <= out.at[1]);
+    // Fix wave I5: the scenes command is handed the engine under test's pids by both roots, as `read` skips them, and the
+    // harness's raise.
+    let handed = null;
+    const raiseWindow = () => ({raised: 0});
+    await main(['step', 'activate', 'textedit', '--top-window', 'yes', '--run', dir, '--approved-runtime', '/R', '--approved-engine', '/E'],
+      {io: {...io, raiseWindow, enginePids: bundles => (bundles.join() === '/R,/E' ? [900, 901] : []), scenes: async (args, extra) => { handed = extra; return {scene: args[1], ok: true}; }}});
+    assert.deepEqual([handed.enginePids(), handed.raiseWindow], [[900, 901], raiseWindow]);
     const down = await main(['step', 'down', 'textedit', '--run', dir], {io: {...io, scenes: async () => ({down: true})}});
     assert.equal('frontKey' in down, false, 'only an activation is checked');
     await assert.rejects(main(['read', '--run', dir, '--with', 'front-key,titles']), /--with/);

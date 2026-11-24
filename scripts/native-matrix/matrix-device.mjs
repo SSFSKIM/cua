@@ -826,7 +826,9 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {
       const from = Date.now();
-      const answer = await (io.scenes ?? scenesMain)(argv.slice(1), {raiseWindow: io.raiseWindow});
+      // The engine under test's processes by both roots (fix wave I5), as `read` passes them over, and the harness's raise.
+      const engineRoots = [roots.approvedRuntime, roots.approvedEngine].filter(Boolean);
+      const answer = await (io.scenes ?? scenesMain)(argv.slice(1), {raiseWindow: io.raiseWindow, ...(engineRoots.length ? {enginePids: () => io.enginePids(engineRoots)} : {})});
       const frontKey = positional[0] === 'activate' && SCENES[positional[1]] ? await activationCheck(SCENES[positional[1]].bundleId, io) : null;
       return {answer, at: [from, Date.now()], ...(frontKey ? {frontKey} : {})};
     }

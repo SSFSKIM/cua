@@ -678,9 +678,16 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
       reason: 'the run\'s Finder window is not on screen (closed, minimized or on another Space): Finder is not activated, since an activated Finder with no window on screen opens a new one'});
   }
   io.activateApp(record.app);
-  let readBefore = finder, reads = 0, topBefore;
+  let readBefore = finder, reads = 0, topBefore, skippedBefore = [], skippedAtTop = [];
   const t0 = io.now(), isRun = w => w?.ownerPid === record.pid && w.number === record.window.number;
-  const toTop = (path, extra = {}) => ({path, ms: io.now() - t0, topBefore: topBefore ?? null, ...extra});
+  // The top wait's reading (fix wave I5): every on-screen window, the engine's own (skipPids: both roots' processes,
+  // the vendor's CUAService overlay as cua's cursor) passed over here and kept, as h3's read keeps them.
+  const topOrder = () => {
+    const all = io.windowOrder({skipPids: []});
+    skippedAtTop = all.filter(w => skipPids.includes(w.ownerPid)).slice(0, 5).map(w => ({bundleId: w.ownerBundleId ?? null, number: w.number ?? null, layer: w.layer ?? 0}));
+    return all.filter(w => !skipPids.includes(w.ownerPid));
+  };
+  const toTop = (path, extra = {}) => ({path, ms: io.now() - t0, topBefore: topBefore ?? null, ...(skippedBefore.length ? {skipped: skippedBefore} : {}), ...extra});
   for (;;) {
     frontmost = io.frontmostProcess();
     reads += 1;
@@ -688,8 +695,8 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     if (finder && fresh) order = io.windowOrder({skipPids});
     readBefore = false;
     if (frontmost?.pid === record.pid && waitsTop) {
-      order = io.windowOrder({skipPids});
-      if (topBefore === undefined) topBefore = topSeen(order[0], record);
+      order = topOrder();
+      if (topBefore === undefined) { topBefore = topSeen(order[0], record); skippedBefore = skippedAtTop; }
       if (isRun(order[0])) return finish({scene: id, ok: true, frontmost, reads, toTop: toTop('waited')});
     } else if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost, reads};
@@ -707,10 +714,10 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);
   }
-  if (!finder) order = io.windowOrder({skipPids});
+  if (!finder) order = waitsTop ? topOrder() : io.windowOrder({skipPids});
   if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reads, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`,
     ...(top ? {toTop: toTop(raised ? 'raised' : 'waited')} : {})});
-  if (waitsTop) return finish(await raisedToTop({record, io, order, isRun, toTop, skipPids, boundMs, pollMs, raiseMs, out: {scene: id, frontmost, reads}}));
+  if (waitsTop) return finish(await raisedToTop({record, io, order, isRun, toTop, readOrder: topOrder, boundMs, pollMs, raiseMs, out: {scene: id, frontmost, reads}}));
   const place = runWindowPlace(order, record);
   const targetIndex = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
   const foreign = targetIndex < 0 ? null : order.slice(0, targetIndex).find(w => w.ownerPid !== record.pid);
@@ -723,7 +730,7 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
 }
 // A `top` activation whose wait missed (activateScene): on a hosted runner the run's own window raised once and read on
 // top within `raiseMs`; anywhere else not ok, nothing raised. -> the activation's answer, before `finish`.
-async function raisedToTop({record, io, order, isRun, toTop, skipPids, boundMs, pollMs, raiseMs, out}) {
+async function raisedToTop({record, io, order, isRun, toTop, readOrder, boundMs, pollMs, raiseMs, out}) {
   if (isRun(order[0])) return {...out, ok: true, toTop: toTop('waited')};
   const missed = `the run's window is not the top window within ${boundMs} ms: ${topNamed(order[0], record)} is`;
   if (io.hosted?.() !== true) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; not raised off a GitHub-hosted runner`};
@@ -731,10 +738,14 @@ async function raisedToTop({record, io, order, isRun, toTop, skipPids, boundMs, 
   if (!own?.bounds) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; it is not on screen to raise`};
   if (!io.raiseWindow) return {...out, ok: false, toTop: toTop('waited'), reason: `${missed}; no raise helper was given`};
   let raise;
-  try { raise = io.raiseWindow(record.pid, [own.bounds.x, own.bounds.y, own.bounds.width, own.bounds.height].join(',')); } catch (error) { raise = {error: String(error.message).slice(0, 160)}; }
+  // A raise that threw is no raise (fix wave M3): its own path, not ok.
+  try { raise = io.raiseWindow(record.pid, [own.bounds.x, own.bounds.y, own.bounds.width, own.bounds.height].join(',')); } catch (error) {
+    const failed = String(error?.message ?? error).slice(0, 160);
+    return {...out, ok: false, toTop: toTop('raiseFailed', {raise: {error: failed}}), reason: `${missed}; its raise failed: ${failed}`};
+  }
   for (const r0 = io.now(); ;) {
     await io.sleep(pollMs);
-    order = io.windowOrder({skipPids});
+    order = readOrder();
     if (isRun(order[0])) return {...out, ok: true, toTop: toTop('raised', {raise})};
     if (io.now() - r0 >= raiseMs) break;
   }
@@ -981,7 +992,7 @@ const runDir = flags => {
   return fs.realpathSync(run);
 };
 
-export async function main(argv, {raiseWindow = null} = {}) {
+export async function main(argv, {raiseWindow = null, enginePids = null} = {}) {
   const {command, positional: [target], flags} = parse(argv);
   switch (command) {
     case 'describe': return describeScenes();
@@ -995,7 +1006,8 @@ export async function main(argv, {raiseWindow = null} = {}) {
       sitting: flags['finder-baseline'] ?? null});
     case 'activate': {
       if (flags['top-window'] !== undefined && flags['top-window'] !== 'yes') throw new Error('--top-window yes is the one value');
-      return activateScene(target, {run: runDir(flags), top: flags['top-window'] === 'yes', ...(raiseWindow ? {io: {...defaultIo(), raiseWindow}} : {})});
+      const given = {...(raiseWindow ? {raiseWindow} : {}), ...(enginePids ? {enginePids} : {})};
+      return activateScene(target, {run: runDir(flags), top: flags['top-window'] === 'yes', ...(Object.keys(given).length ? {io: {...defaultIo(), ...given}} : {})});
     }
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();

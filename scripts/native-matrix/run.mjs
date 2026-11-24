@@ -707,7 +707,7 @@ function fillTimings(ctx, target, plan) {
 // A pairing whose driven target is a panel is one opening: its rows carry the opening's id (./panels.mjs tagOpening).
 async function backgroundPairing(ctx, pairing) {
   const from = ctx.rows.length;
-  ctx.toTop = null;
+  ctx.userToTop = null;
   try { return await pairingRows(ctx, pairing, from); } finally {
     if (isPanelTarget(pairing.driven)) tagOpening(ctx, from, pairingOpening(pairing));
     keepToTop(ctx, from);
@@ -835,7 +835,7 @@ async function findingRows(ctx, scene) {
 // launch reached the scene's own window) is its `ok`, judged apart from its interference (the oracle).
 async function launchRow(ctx, launch) {
   const from = ctx.rows.length;
-  ctx.toTop = null;
+  ctx.userToTop = null;
   try { return await launchRowOf(ctx, launch); } finally { keepToTop(ctx, from); }
 }
 async function launchRowOf(ctx, {scene, user}) {

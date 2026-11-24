@@ -54,8 +54,6 @@ export function step(ctx, args) {
   if (args[0] === 'activate') {
     const app = SCENES[args[1]].bundleId, seen = keyReading({frontKey});
     ctx.activated = {app, front: seen.front === app, key: seen.key === app, seen};
-    // The user window's path to the top (ruling 1221, H2), in force until the next activation: set by activateUser's.
-    ctx.toTop = answer?.toTop ? {scene: args[1], ...answer.toTop} : null;
     if (answer?.windowOrder) {
       (ctx.meta.activationGuards ??= []).push({scene: args[1], beforeRow: ctx.rows.length, at, ok: answer.ok,
         ...(answer.reason ? {reason: answer.reason} : {}), windowOrder: answer.windowOrder, ...(answer.framePin ? {framePin: answer.framePin} : {})});
@@ -66,12 +64,18 @@ export function step(ctx, args) {
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
 // A background row's user window brought to the front (ruling 1221, H2): its activation also waits for the run's window
 // on top, raised on a hosted runner when the wait misses (../repl-parity/scenes-mac.mjs activateScene `top`).
-export const activateUser = (ctx, scene) => step(ctx, ['activate', scene, '--top-window', 'yes']);
-// The rows since `from` of the user window whose path to the top is in force (ctx.toTop) keep it (`toTop`).
+// Its path is kept apart from any later activation (ctx.userToTop; fix wave I6: an Open panel pairing's close activates
+// TextEdit after its rows), and the engine's roots go with it so its own windows are passed over (fix wave I5).
+export function activateUser(ctx, scene) {
+  const answer = step(ctx, ['activate', scene, '--top-window', 'yes', ...engineRoots(ctx)]);
+  ctx.userToTop = answer?.toTop ? {scene, ...answer.toTop} : null;
+  return answer;
+}
+// The rows since `from` of the user window whose path to the top was taken (ctx.userToTop) keep it (`toTop`).
 export function keepToTop(ctx, from) {
-  const toTop = ctx.toTop;
+  const toTop = ctx.userToTop;
   if (toTop) for (const row of ctx.rows.slice(from)) if (row.user === toTop.scene && row.toTop === undefined) row.toTop = toTop;
-  ctx.toTop = null;
+  ctx.userToTop = null;
 }
 // The engine under test's roots, for the device to tell its own windows (./matrix-device.mjs enginePids).
 const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();

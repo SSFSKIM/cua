@@ -295,6 +295,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // A disabled connection confines nothing, so it neither needs the deny list nor fails on discovering it (an unreadable
   // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
   // without one, so it can never be confined later without its list.
+  if (linux && sandbox !== 'disabled') assertDenyRootsOutsideVendorTree(owned.home, sessionTmp);
   const denyRead = sandbox === 'disabled' ? null
     : realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform}));
 
@@ -652,6 +653,19 @@ const unresolved = resolved => (resolved.notDirectory ? `cannot be opened as wri
 // Where `path` enters the vendor's tree, or null (outsideVendorTree's `lead`).
 export const vendorTreeLead = (path, home) => outsideVendorTree(path, home).lead ?? null;
 export {outsideVendorTree};
+
+// The home directories a Linux deny list names by their real paths (src/sandbox/policy.mjs denyListFor: state/,
+// remote/, chrome/, and run/ with the session's directory, which `sessionTmp`'s walk covers), each walked by the guard
+// before realDenyList resolves it, in scoped and default alike: one that leads into the vendor's tree is refused,
+// naming the link to move aside, and nothing there is resolved (#589, #171 M6b). Doctor's sandbox row checks the same
+// directories in the same words (doctor.mjs sandboxRow).
+function assertDenyRootsOutsideVendorTree(home, sessionTmp) {
+  for (const root of [join(home, 'state'), join(home, 'remote'), join(home, 'chrome'), sessionTmp]) {
+    const at = outsideVendorTree(root, home);
+    if (at.lead) fail('sandbox_conflict', `${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: what JavaScript cells may not read is taken by its real path, which is not resolved there; nothing was started`,
+      {hint: `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``});
+  }
+}
 // The sentence half that says where a path that entered the tree went.
 const intoTree = (path, lead) => (lead === resolve(path) ? 'lies under the vendor\'s tree' : `leads to ${lead}, under the vendor's tree`);
 

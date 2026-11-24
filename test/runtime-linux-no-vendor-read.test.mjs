@@ -399,6 +399,48 @@ test('a home directory that is a link into the tree, the sandbox helper\'s, stag
   }
 });
 
+// #589, folded into #171 M6b T4: the deny list a confined launch builds names state/, remote/, chrome/ and run/ (with
+// the session's directory) by their real paths, so each is kept out of the tree before it is resolved, as doctor's
+// sandbox row keeps them (T2's fix waves 1 and 2): in scoped and default alike, one that is a link into the tree refuses
+// the launch, naming the link to move aside, and nothing there is resolved. A disabled launch builds no deny list.
+test('a deny-list directory that is a link into the tree, state/, remote/, chrome/ or run/: a confined launch refuses it, naming it, nothing there resolved; doctor says the same', async t => {
+  for (const name of ['state', 'remote', 'chrome', 'run']) {
+    const h = homeWithVendorTree(t);
+    const own = join(h.home, name);
+    const planted = join(h.runtimes, `planted-${name}`);
+    fs.mkdirSync(name === 'state' ? join(planted, 'codex') : planted, {recursive: true});
+    fs.symlinkSync(planted, own);
+    const runtime = resolveRuntime({home: h.home, host: LINUX});
+    for (const surfaces of [['computer'], ['browser']]) {
+      const replHost = replHostFor({platform: 'linux', arch: LINUX.arch, surfaces, ambient: h.ambient, home: h.home});
+      const services = surfaces.includes('computer') ? {sky: SKY_SERVICE} : {browser: BROWSER_SERVICE};
+      const launchWith = sandbox => buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces, replHost, services, sandbox});
+      for (const sandbox of ['scoped', 'default']) {
+        const what = `${name}/ (${surfaces}, ${sandbox})`;
+        let error;
+        const seen = recorded(() => { try { assertSandboxFits(sandbox, launchWith(sandbox)); } catch (caught) { error = caught; } });
+        assert.equal(error?.code, 'sandbox_conflict', `${what}: ${error?.message ?? 'not refused'}`);
+        assert.ok(error.message.startsWith(`${name === 'run' ? join(own, SESSION, 'tmp') : own} leads to ${h.runtimes}, under the vendor's tree`), `${what}: ${error.message}`);
+        assert.match(error.message, /nothing was started$/, what);
+        assert.equal(error.hint, `move ${own} aside, then run \`node ${join(REPO, 'bin', 'cua.mjs')} install\``, what);
+        assert.deepEqual(inVendorTree(seen, h.home), [], what);
+      }
+      const open = launchWith('disabled');
+      assert.equal(open.denyRead, null, `${name}/: a disabled launch builds no deny list`);
+      assert.ok(!Object.values(open.env).some(value => value.includes(h.runtimes)), `${name}/: a disabled launch names nothing in the tree`);
+    }
+    // doctor's sandbox row says what the launch now does, in both confined modes
+    for (const mode of ['scoped', 'default']) {
+      const {value, seen} = await recordedRun(() => doctorOf(h, NO_RETIRED, {CUA_SHIM_SANDBOX: mode}));
+      const row = value.checks.find(c => c.name === 'sandbox');
+      assert.equal(row.status, 'fail', `${name}/, doctor (${mode})`);
+      assert.ok(row.detail.includes(`${name === 'run' ? join(own, 'session', 'tmp') : own} leads to ${h.runtimes}, under the vendor's tree`) && row.detail.includes('cua serve refuses to start like this (sandbox_conflict)')
+        && row.detail.includes(`move ${own} aside, then`), `${name}/, doctor (${mode}): ${row.detail}`);
+      assert.deepEqual(inVendorTree(seen, h.home), [], `${name}/, doctor (${mode})`);
+    }
+  }
+});
+
 // The helper that was outside the tree at the open and is a link into it by a later (lazy or idle) launch: the
 // connection does not repeat its preflight there, so the launch's own construction refuses it.
 test('a helper that becomes a link into the tree after the open: the next confined launch\'s construction refuses it; a disabled one names no path there', t => {

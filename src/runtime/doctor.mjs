@@ -340,7 +340,7 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   // normalized, each just before the check that resolves it: the deny list's state/, remote/, chrome/ and run/ (with the
   // session directory) here, in scoped and default alike; the scoped check's protected directories and state/codex just
   // before that check, which default mode never makes. One that leads there is named, and nothing there is resolved
-  // (#171 M6b).
+  // (#171 M6b). A confined launch refuses the deny list's alike (launch.mjs assertDenyRootsOutsideVendorTree, #589).
   const intoTree = (roots, said) => {
     if (!linux) return null;
     for (const root of roots) {
@@ -351,7 +351,8 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
     return null;
   };
   const unchecked = () => 'the sandbox\'s check takes it by its real path, which is not resolved there, so the sandbox is not checked';
-  const denied = intoTree([join(owned.home, 'state'), join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')], unchecked);
+  const denied = intoTree([join(owned.home, 'state'), join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')],
+    () => 'what JavaScript cells may not read is taken by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict)');
   if (denied) return denied;
   let deny;
   try {

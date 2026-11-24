@@ -2903,6 +2903,19 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - (c) The `engine_retired` sentence is as "Retirement (M6b)" says.
   Date/Author: 2026-11-24, linux171 (plan-executor), recording the owner's decision and ruling 1193.
 
+- Decision (2026-11-24, linux-engine 0.4.5; rulings 1194 and its F2 clarification): **0.4.5 is built to its pre-flight (docs/doperpowers/specs/2026-10-28-own-linux-engine-045-preflight.md, F1–F7 as written). "The path's last step" in item 1 is the instant the X server acknowledged the path's last motion, not the instant the engine issued it.**
+  - **Why the acknowledgement.** Task 159's review read F2's "went out" as the send, and asked for the stamp to be taken before the engine waits for the checked reply (pointer.rs, `place_again`).
+    - The X server delivers the motion to Chrome before it replies, so the acknowledgement is an upper bound on when Chrome can have it. A stamp at the send is a lower bound, and could miss a real overrun by the round trip.
+    - So a path whose last motion is sent before floor_until (326 ms after the take) and acknowledged after it takes the after-path tail. That costs about 25 ms on that row, and it is the safe side of #512.
+    - The acknowledgement can only come later than the send, so it can only add overruns, never miss one.
+  - **The development bar holds (task 160; evidence on `engine-045-x300`, 8e0f7d889).** t14-floor `left` ×300 at arm64 twice the load, on the publish=false candidate of e85ebd379 (run 45321559071), gave 0 false oks: 300 honest, all answered unconfirmed, with 0 landed, 0 stale and 0 activations after the release.
+    - 35 rows had their path's last step 0.1–24.0 ms past floor_until (median 6.0) and took the after-path tail that item 1 adds. Task 147's three false oks, at +7.2, +8.8 and +12.7 ms, fall in that range.
+    - Those rows released 8 ms later at the median and 25 ms at p95, against 0.4.4's comparable rows.
+    - No row dropped a visit, so item 2 went unexercised live; its unit test drives the drag's own decision.
+    - The 95% upper bound on the false-ok rate is 1.0%, against 3 in 260 before the fix.
+  - **Item 3 is declined for 0.4.5 (F1).** The engine sees Chrome's leave cursor, but it can't use it: it never knows the drop zone, a genuine drop also ends with no leave, and Chrome's Xdnd status never crosses X. The question is #575.
+  Date/Author: 2026-11-24, linux171 (plan-executor); the F2 reading accepted by the design session.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

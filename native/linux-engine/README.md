@@ -355,9 +355,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   (`floor_until`) decides where the tail runs, inside the floor only for a path whose last step came by it (since 0.4.5,
   above). A floor that spread a path's
   steps 1.45 ms apart still ended on steps far shorter than Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
-  through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
-  path outlasts the 350 ms floor or whose last step comes after the 326 ms (since 0.4.5), and nothing on those whose
-  path ends by the 326 ms, whose tail runs inside the floor. A Chrome source's `drag_handle` end with its drag and drop under
+  through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail itself lasts about 24 ms (rest 8,
+  visit, 8, visit, 8). On a drag whose path outlasts the 350 ms floor it adds those 24 ms to the release. On one whose
+  last step comes after the 326 ms but by the 350 ms (since 0.4.5), it starts at that step, so the release comes up to
+  24 ms past the floor's 350 ms (task 160's moved rows at arm64 twice the load: 8 ms later at the median, 25 ms at p95).
+  On those whose path ends by the 326 ms, it runs inside the floor and costs nothing. A Chrome source's `drag_handle` end with its drag and drop under
   way (a take by then) gets the tail too (ruling 998, confirmed by 1026; task 132's handle long-left at arm64 twice the
   load answered one false ok in 100 on f9d1f86b): after the end's own rest, two visits from the pointer's own place,
   each the 1 px step along the handle's last segment and back, each followed by 8 ms, then the release; about 16 ms.

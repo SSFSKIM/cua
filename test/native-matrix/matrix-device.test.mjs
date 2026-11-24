@@ -586,5 +586,9 @@ test('document: the window the run opened read by Accessibility at its bounds, b
   const unread = {...io, axDocument: () => ({trusted: true, ok: false, failed: ['edited'], found: true, document: false, edited: null, editedFrom: null})};
   assert.deepEqual(documentState({scene: 'textedit', window: '70'}, unread), {ok: false, number: 70, found: true, document: false, edited: null, editedFrom: null, reason: 'a read failed: edited'});
   assert.deepEqual(documentState({scene: 'textedit', window: '70'}, {...io, axDocument: () => ({trusted: false})}), {ok: false, number: 70, reason: 'the reader is not trusted for Accessibility'});
+  // Fix wave M1: two windows at the bounds (the saved scene document's among them) leave the read unread, never a "saved".
+  const twin = {...io, axDocument: () => ({trusted: true, ok: false, failed: ['ambiguous'], found: true, atBounds: 2, document: null, edited: null, editedFrom: null})};
+  assert.deepEqual(documentState({scene: 'textedit', window: '70'}, twin), {ok: false, number: 70, found: true, document: null, edited: null, editedFrom: null,
+    reason: 'Accessibility lists 2 windows at its bounds: which one is the run\'s cannot be told'});
   assert.throws(() => documentState({scene: 'textedit', window: 'x'}, io), /--window/);
 });

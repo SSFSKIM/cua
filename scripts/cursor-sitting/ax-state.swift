@@ -26,7 +26,9 @@
 //       Whether the window at those bounds has a document on disk behind it and unsaved edits (#212's unsaved proof,
 //       ruling 1221): {"trusted", "ok", "failed", "found", "document", "edited", "editedFrom"}: `document` whether its
 //       AXDocument names one (no value is false), `edited` its AXEdited, read on the window, else on its close button
-//       (`editedFrom` "window" or "closeButton"). Booleans only: no URL, no title. It reads no folder.
+//       (`editedFrom` "window" or "closeButton"). Booleans only: no URL, no title. It reads no folder. More than one
+//       window at the bounds (the saved scene document's could be one) reads nothing: `failed` names "ambiguous", with
+//       their count (`atBounds`), so no other window's document can answer for the run's.
 // It never asks for a grant: an untrusted terminal answers {"trusted": false} and reads nothing.
 import ApplicationServices
 import Foundation
@@ -127,7 +129,10 @@ if args[1] == "actions" {
 
 if args[1] == "document" {
   guard args.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
-  guard let (_, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  guard let (windows, first) = runWindow(args[3]), let want = rect(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  let atBounds = windows.filter { at($0, want) }.count
+  if atBounds > 1 { failed.append("ambiguous") }
+  let run = atBounds > 1 ? nil : first
   var document: Any = NSNull(), edited: Any = NSNull(), editedFrom: Any = NSNull()
   if let run {
     // A document on disk: AXDocument's URL (a string or a URL), present and non-empty; no value is none.
@@ -141,7 +146,7 @@ if args[1] == "document" {
     else if let button = element(read(run, kAXCloseButtonAttribute).value), let value = read(button, kAXEditedAttribute).value as? Bool { edited = value; editedFrom = "closeButton" }
     else { failed.append("edited") }
   }
-  emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": run != nil, "document": document, "edited": edited, "editedFrom": editedFrom])
+  emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": first != nil, "atBounds": atBounds, "document": document, "edited": edited, "editedFrom": editedFrom])
   exit(0)
 }
 

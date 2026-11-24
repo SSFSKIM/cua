@@ -259,7 +259,8 @@ export function documentState({scene, window}, io) {
   const a = io.axDocument(pid, [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','));
   if (a?.trusted !== true) return {ok: false, number, reason: 'the reader is not trusted for Accessibility'};
   const read = {found: a.found === true, document: typeof a.document === 'boolean' ? a.document : null, edited: typeof a.edited === 'boolean' ? a.edited : null, editedFrom: a.editedFrom ?? null};
-  if (a.ok !== true) return {ok: false, number, ...read, reason: a.found === false ? 'Accessibility lists no window at its bounds' : `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
+  if (a.ok !== true) return {ok: false, number, ...read, reason: a.found === false ? 'Accessibility lists no window at its bounds'
+    : (a.failed ?? []).includes('ambiguous') ? `Accessibility lists ${a.atBounds ?? 'several'} windows at its bounds: which one is the run's cannot be told` : `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
   return {ok: true, number, ...read};
 }
 

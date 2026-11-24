@@ -215,7 +215,7 @@ test('the sheet variant\'s cleanup: when the untitled document will not close be
   const {lane, ops} = untitledOnTop('sheet.new');
   const {result, steps} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, lane, ops, cell: sheetCells()});
   assert.equal(result.complete, true, JSON.stringify(result.problems));
-  assert.match(rowOf(result, SHEET).invalid, /text was not typed \(not sent\)/);
+  assert.match(rowOf(result, SHEET).invalid, /text was not typed \(the key guard did not send it\)/);
   const tags = calls.map(c => tagOf(c.code)).filter(Boolean);
   assert.equal(tags.filter(t => t === 'sheet.cleanup').length, 1, 'the cleanup sent once, from TextEdit in front');
   const activations = matrixSteps(steps, 'step').filter(a => a[1] === 'activate').map(a => a[2]);

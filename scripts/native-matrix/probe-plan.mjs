@@ -16,7 +16,7 @@ import {FINDER_TYPING_NAME} from '../repl-parity/scenes-mac.mjs';
 import {INTERVENTION_DEBOUNCE_MS} from './live-device.mjs';
 import {prelude} from './matrix-cells.mjs';
 import {elementLines, focusedIndexOf, lineOfIndex, parentIndexOf, sha256Hex, valueOfIndex} from './matrix-text.mjs';
-import {FOCUS_REASONS, TEXT_FIELDS, TYPED} from './plan.mjs';
+import {FOCUS_REASONS, PANEL_UP, TEXT_FIELDS, TYPED} from './plan.mjs';
 
 const j = JSON.stringify;
 
@@ -199,14 +199,28 @@ for (const end = Date.now() + 5000; inFront(ax) && Date.now() < end;) ax = await
 const title = windowTitleOf(ax);
 globalThis.__sheetDoc = inFront(ax) || panel(ax) ? null : title;
 return {opened: typeof globalThis.__sheetDoc === "string" && globalThis.__sheetDoc.length > 0};`);
-export const SHEET_TYPED = 'cua sheet variant';
+// A capitalised sentence of dictionary words, as the method rows type (./plan.mjs TYPED): TextEdit's autocorrection has
+// nothing to rewrite. Pilot C-2 typed "cua sheet variant", a lower-case first word outside the dictionary, and both lanes
+// read back something else (scripts/accept/textedit.mjs: TextEdit capitalises such a word as typing continues).
+export const SHEET_TYPED = 'The sheet variant is typed here.';
+// The untitled document typed into. What it read leaves as {length, hash, expectedLength, foldEqual (equal ignoring
+// case), prefix (the text so far is a prefix of the one sent)} and the front it saw ({untitled, panel, saveSheet,
+// focusedIsField}: whether a panel served by the panel service was up instead, ruling 1196 B), never the text.
+// -> {typed: true, readBack, front} | {typed: false, reason, readBack?, front?}.
 export const SHEET_TYPE_CELL = cell(`${prelude('textedit')}
 // cua-matrix-cell: sheet.type
 let ax = await observe();
 if (windowTitleOf(ax) !== globalThis.__sheetDoc) return {typed: false, reason: "the untitled document is not TextEdit's front window"};
 await __app.typeText(${j(SHEET_TYPED)});
 ax = await observe();
-return {typed: plain(valueOfIndex(ax, ${TEXT_FIELDS.textedit}) ?? "") === ${j(SHEET_TYPED)}};`);
+const __index = ${TEXT_FIELDS.textedit};
+const front = {untitled: windowTitleOf(ax) === globalThis.__sheetDoc, panel: panel(ax), saveSheet: ${PANEL_UP.savePanel}, focusedIsField: __index !== null && focusedIndexOf(ax) === __index};
+if (__index === null) return {typed: false, reason: "the untitled document's text view is not in the text after typing", readBack: null, front};
+const __value = plain(valueOfIndex(ax, __index) ?? ""), __sent = ${j(SHEET_TYPED)};
+const readBack = {length: __value.length, hash: sha256Hex(__value), expectedLength: __sent.length, foldEqual: __value.toLowerCase() === __sent.toLowerCase(), prefix: __sent.startsWith(__value)};
+if (__value === __sent) return {typed: true, readBack, front};
+const how = __value === "" ? "read back empty" : readBack.foldEqual ? "same length, equal ignoring case" : readBack.prefix ? "a prefix of it" : __value.length === __sent.length ? "same length, other characters" : "another length";
+return {typed: false, reason: "the untitled document's text read back differently: " + how + (front.untitled ? "" : "; its window was no longer TextEdit's front one") + (front.panel || front.saveSheet ? "; a panel was up" : ""), readBack, front};`);
 export const sheetOpenCell = ({at}) => scheduledActCell('textedit', {at, act: 'await __app.pressKey("super+w");', tag: 'sheet.open'});
 export const sheetFollowCell = ({followAt}) => cell(`${prelude('textedit')}
 // cua-matrix-cell: sheet.follow

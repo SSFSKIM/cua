@@ -276,8 +276,9 @@ async function sheetAttempt(ctx, {lead, id, key, span}) {
   const typed = await keys(SHEET_TYPE_CELL, ['typeText']);
   alertCheck(ctx, `after ${id} typing`);
   if (!typed?.ok || typed.value?.typed !== true) {
+    const untyped = untypedRow(ctx, typed);
     await closeUntitled(ctx, keys);
-    return span.end({invalid: `the untitled document's text was not typed (${typed?.error ?? typed?.value?.reason ?? 'not sent'})`});
+    return span.end(untyped);
   }
   const preMs = lead ?? SHEET_PRE_MS;
   let before = null, opening = null;
@@ -340,6 +341,18 @@ async function closeUntitled(ctx, keys) {
   throw new Stop(`the sheet variant's untitled document could not be closed: TextEdit's scene document is not in front (behind the user window: ${cleanupSeen(behind)}; `
     + `with TextEdit in front: ${front?.ok ? cleanupSeen(there) : `not activated, ${front?.reason ?? 'no answer'}`})`);
 }
+// The untitled document's typing that did not read back (pilot C-2: both lanes, both cells): the cell's reason, what it
+// read (./probe-plan.mjs SHEET_TYPE_CELL: lengths, hash, case-folded equality, the front it saw) and the device's own
+// reading of the front then (its front and key apps, the front window's owner: bundle ids, the run's own by pid), taken
+// before any cleanup, as the row's `outcome.typing`. A typing the key guard never sent says so.
+function untypedRow(ctx, typed) {
+  const r = read(ctx, null, {frontKey: true, windowOrder: true});
+  const top = Array.isArray(r?.windowOrder) ? r.windowOrder[0] ?? null : null;
+  const value = typed?.value ?? null;
+  return {invalid: `the untitled document's text was not typed (${typed ? typed.error ?? value?.reason ?? 'the cell gave no reason' : 'the key guard did not send it'})`,
+    outcome: {typing: {...(value && 'readBack' in value ? {readBack: value.readBack} : {}), ...(value?.front ? {front: value.front} : {}),
+      device: {front: r?.frontKey?.front ?? null, key: r?.frontKey?.key ?? null, topWindow: top ? {owned: top.owned === true, ...(top.owned ? {pid: top.pid} : {}), bundleId: top.bundleId ?? null, layer: top.layer ?? null} : null}}}};
+}
 const cleanupSeen = r => (!r ? 'not sent' : !r.ok ? `the cell failed: ${String(r.error ?? '').slice(0, 160)}` : `front: ${r.value?.front ?? 'unknown'}, sheet ${r.value?.closed === false ? 'open' : 'closed'}`);
 
 // ---- intervention fires ---------------------------------------------------------------------------------------------
@@ -355,12 +368,34 @@ async function drivenInFront(ctx, span, scene) {
   const prepared = span.add(await ctx.lane.js(emptyFieldCell(scene)));
   const problem = failed(prepared, 'the preparation') ?? (prepared.value?.ready ? null : `not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (problem) return {invalid: problem};
-  const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
-  if (!window) return {invalid: `${scene}'s window was not in front`};
+  const {window, reads, last} = await sceneWindowInFront(ctx, scene);
+  if (!window) return {invalid: `${scene}'s window was not in front after ${reads} reads: ${frontText(last)}`};
   const f0 = read(ctx, focusOf(window), {frontKey: true});
   if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the document focused and empty', focus: f0.focus ?? null};
   return {window, readings: {apps: [app], activate: activationOf(ctx, app), before: keyReading(f0)}};
 }
+// The scene's window as the top one, read until it is, FRONT_READS reads FRONT_READ_MS apart: a window that covers it
+// for a moment (an input method's indicator by the caret, a completion bubble; pilot C-2's vendor rows read no TextEdit
+// window on top after the sheet variant) passes, one that stays is named. -> {window, reads, last: the last reading,
+// with its window order}.
+export const FRONT_READS = 4, FRONT_READ_MS = 250;
+async function sceneWindowInFront(ctx, scene) {
+  let last = null, window = null, reads = 0;
+  for (; reads < FRONT_READS && !window; reads++) {
+    if (reads) await ctx.sleep(FRONT_READ_MS);
+    last = read(ctx, null, {frontKey: true, windowOrder: true});
+    window = userWindowOf(last?.reading, ctx.records[scene].pid);
+  }
+  return {window, reads, last};
+}
+// What stood in front, from a reading with its window order: the front app and the top window's owner, bundle ids
+// (the run's own windows as such).
+function frontText(r) {
+  const top = Array.isArray(r?.windowOrder) ? r.windowOrder[0] ?? null : null;
+  const owner = !top ? 'unread' : top.owned ? `the run's own (pid ${top.pid})` : `${top.bundleId ?? 'an unnamed app'}'s (layer ${top.layer ?? '?'})`;
+  return `the front app ${r?.frontKey?.front ?? 'unread'}, the top window ${owner}`;
+}
+
 // An attempt's front/key readings, the one after its act read now.
 const readingsAfter = (ctx, readings) => ({...readings, after: readKey(ctx)});
 // A typing act on the scene in front, between two alert checks. -> the act's result, or null when the guard skipped.
@@ -466,7 +501,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   alertCheck(ctx, `before ${id} typing`);
   const typed = await keys(SHEET_TYPE_CELL, ['typeText']);
   alertCheck(ctx, `after ${id} typing`);
-  if (!typed?.ok || typed.value?.typed !== true) return unprepared(`the untitled document's text was not typed (${typed?.error ?? typed?.value?.reason ?? 'not sent'})`);
+  if (!typed?.ok || typed.value?.typed !== true) return span.end(untypedRow(ctx, typed), {cleanup});
   const sheet = await keys(SAVE_SHEET_OPEN_CELL, ['super+s']);
   if (!sheet?.ok || sheet.value?.opened !== true) return unprepared(`the Save sheet did not open (${sheet?.error ?? sheet?.value?.reason ?? 'not sent'})`);
   const destination = await keys(SAVE_SHEET_DESTINATION_CELL, ['super+shift+g', 'typeText', 'Return']);

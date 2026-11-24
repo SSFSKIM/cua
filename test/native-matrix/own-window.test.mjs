@@ -56,6 +56,20 @@ test('C-3\'s sequence: the sheet variant\'s typing, its cleanup and the held fix
   }
 });
 
+// C-3's save-sheet diagnostic stopped alike: its untitled document's cleanup held by the capture alert, the reset was
+// refused ("not the scene window 456"). The same document, the same reading.
+test('the Save sheet intervention\'s untitled document: its cleanup and the held fixture\'s reset read for it and go through', async () => {
+  for (const engine of ['vendor', 'cua']) {
+    const te = textEdit({holdCleanup: true});
+    const {result} = await runWith({engine, plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: te.cell, ops: te.ops});
+    assert.equal(result.complete, true, `${engine}: ${result.problems.join('; ')}`);
+    assert.ok(!(result.meta.alertGuards ?? []).some(g => g.cause === 'keyWindow'), `${engine}: ${JSON.stringify(result.meta.alertGuards)}`);
+    assert.deepEqual(result.meta.fixturesHeld?.map(f => [f.row, f.reset]), [['textedit/intervention.saveSheet', true]], engine);
+    assert.deepEqual(result.meta.ownWindows, [{owner: 'textedit/intervention.saveSheet', scene: 'textedit', number: UNTITLED}], engine);
+    assert.equal(te.state().untitled, false, 'the untitled document closed');
+  }
+});
+
 test('without its number the run\'s own document refuses, as C-3 showed: the typing and the cleanup unsent, the reset blocked', async () => {
   // The same TextEdit with the window list not told apart (no new window seen): nothing recorded, the guard reads as before.
   const te = textEdit();

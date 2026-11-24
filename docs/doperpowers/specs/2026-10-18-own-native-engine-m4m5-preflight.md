@@ -264,6 +264,8 @@ witnesses for macOS 27, which the owner's Macs run.
 
 **Finder's chrome.** A lane's Finder scenes toggle Finder's sidebar, status bar and path bar. Those are Finder-wide preferences, so on the MacBook the owner's own open Finder windows may redraw with them while the lane runs. The harness never closes or moves those windows. The teardown restores each preference and reads it back, and if a read-back misses, it names the key, the owner's value and the command that restores it (ruling 1181). The first MacBook lane reads one of the owner's Finder windows before and after it runs, and the owner is told this at O1. The owner also should not open a Finder window while a lane runs: `down` would count it as left behind and fail the lane loudly with "close it".
 
+**The owner's input sources.** The harness never changes the owner's input sources (ruling 1188). Every input-source or HIToolbox write (per-context input, selecting, saving or probing a source) runs only on a GitHub-hosted runner, and refuses anywhere else before touching anything. On the MacBook a lane only reads them. Rows that need a source or setting the owner doesn't have end NO VERDICT `ownerInput`, naming what they needed. The mid-switch, composition and per-context rows never run there. The report counts these rows, so the owner's sitting shows what their machine left unjudged. The hosted runs enable ABC and Korean 2-Set themselves (ruling 1189), so acceptance 3 and 4's input rows are judged there.
+
 | | What | When | Minutes | What it proves that hosted cannot |
 |---|---|---|---|---|
 | **O0** | May a kit write TCC rows on a GitHub-hosted runner, never on a Mac of the owner's? | **Answered yes** (ruling 1111; Decision Log, 2026-11-23) | done | – |

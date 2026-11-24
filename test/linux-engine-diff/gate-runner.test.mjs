@@ -12,7 +12,11 @@ import { after, test } from 'node:test';
 // its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
 import './fixture-scope.mjs';
 
-import { GateRefused, RUN71_TMPDIR, checkCheckout, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir, zeroStepProblems } from '../../scripts/linux-engine-gate/gate.mjs';
+import { GateRefused, RUN71_TMPDIR, checkCheckout, defaultsFor, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir, usesVendorBuilds, zeroStepProblems } from '../../scripts/linux-engine-gate/gate.mjs';
+import { NATIVE_LINUX_CASES, nativeLinuxCaseIds, parityVerdict } from '../../scripts/linux-engine-gate/parity-verdict.mjs';
+import { defaultFixtureDir, fixturePaths } from '../../scripts/linux-engine-diff/vendor-fixture.mjs';
+import { homedir } from 'node:os';
+import { LANE_CHANGES, storedCuaLane } from './parity-run-fixture.mjs';
 import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
@@ -166,7 +170,7 @@ test('the runner starts nothing without the harness\'s X client, while the host 
   writeFileSync(candidate, 'x');
   const out = fresh('out');
   const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out]);
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate };
   await assert.rejects(runStep(a, { ...deps, xprobe: '/nowhere/xprobe' }), /the harness's X client is not built: cargo build --release/);
   await assert.rejects(runStep(a, { ...deps, held: () => true }), /held for sittings/);
   await assert.rejects(runStep(a, { ...deps, loadRunning: () => true }), /stress-ng is running/);
@@ -179,12 +183,12 @@ test('the runner starts nothing without the harness\'s X client, while the host 
 test('a step\'s directory carries its label: its name, its README and its step.json, release gate or development run', () => {
   const out = fresh('out');
   const gate = parseGateArgs(['print', 'V3', '--candidate', PATHS.candidate, '--out', out]);
-  printStep(gate, { root: ROOT, git: cleanGit() });
+  printStep(gate, { root: ROOT, vendorFixture: fixtureOk(), git: cleanGit() });
   const gateDir = join(out, 'V3.release-gate');
   assert.match(readFileSync(join(gateDir, 'README.md'), 'utf8'), /^# V3 \(release gate\)\n\n\*\*release gate\.\*\*/);
   assert.equal(JSON.parse(readFileSync(join(gateDir, 'step.json'), 'utf8')).label, 'release gate');
   const dev = parseGateArgs(['print', 'D2', '--candidate', PATHS.candidate, '--out', out, '--dev', '--pilot', '2']);
-  const command = printStep(dev, { root: ROOT, git: cleanGit(' M x\n') });
+  const command = printStep(dev, { root: ROOT, vendorFixture: fixtureOk(), git: cleanGit(' M x\n') });
   const devDir = join(out, 'D2.development-run.pilot');
   const readme = readFileSync(join(devDir, 'README.md'), 'utf8');
   assert.match(readme, /^# D2 \(development run, not a release gate, pilot\)/);
@@ -202,16 +206,18 @@ test('--list prints every step\'s minutes, display and command, and the totals p
   assert.match(text, new RegExp(`total ${t.all} min .*per display: :0 ${t.display[':0']} min, private ${t.display.private} min; per load: idle ${t.load.idle} min, gate-windows ${t.load['gate-windows']} min, load2 ${t.load.load2} min`));
 });
 
-test('the facade suites join the gate after the private drag steps: parity, baseline, linux-native and linux-device-mode, each listed', () => {
+test('the facade suites join the gate after the private drag steps: parity, linux-native and linux-device-mode, each listed; R2 is out (M6b)', () => {
   const names = STEPS.map((s) => s.name);
   const suites = STEPS.filter((s) => s.kind === 'suite');
-  assert.deepEqual(suites.map((s) => [s.name, s.args[0]]), [['R1', 'parity'], ['R2', 'baseline'], ['R3', 'accept'], ['R4', 'device']]);
+  // R2 compared a vendor lane with a cua lane, and the vendor's Linux engine is gone (#171 M6b, its pre-flight §1.3)
+  assert.deepEqual(suites.map((s) => [s.name, s.args[0]]), [['R1', 'parity'], ['R3', 'accept'], ['R4', 'device']]);
+  assert.ok(!names.includes('R2'));
   assert.ok(suites.every((s) => s.display === 'own' && s.load === 'idle' && names.indexOf(s.name) > names.indexOf('D5')));
   const text = listText(parseGateArgs(['--list']), ROOT);
   for (const s of suites) assert.match(text, new RegExp(`^${s.name}\\s+${s.minutes} min\\s+own\\s+idle\\s+.*\\n\\s+.*gate\\.mjs run ${s.name} `, 'm'));
   assert.deepEqual(suiteEnv({ candidate: '/s/cua-engine', dir: '/o/R1.release-gate', gate: true, logs: '/tmp/l', device: 'cua-171' }), { ENGINE: 'candidate', ENGINE_BIN: '/s/cua-engine', OUT: '/o/R1.release-gate/run', LOGS: '/tmp/l', LABEL: 'counted', DEVICE: 'cua-171' });
   assert.equal(suiteEnv({ candidate: '/c', dir: '/d', gate: false, logs: '/tmp/l', device: 'cua-171' }).LABEL, 'pilot');
-  assert.equal(stepScript(stepNamed('R2')), SUITES_SCRIPT);
+  assert.equal(stepScript(stepNamed('R1')), SUITES_SCRIPT);
 });
 
 test("a suite step runs the suites runner's part with the candidate as ENGINE_BIN, its out and logs labelled in the step's directory", async () => {
@@ -223,7 +229,7 @@ test("a suite step runs the suites runner's part with the candidate as ENGINE_BI
   writeFileSync(candidate, 'x');
   const out = fresh('out');
   const a = parseGateArgs(['run', 'R3', '--candidate', candidate, '--out', out, '--dev', '--pilot', '2']);
-  const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate });
+  const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate });
   assert.equal(exit, 0);
   const dir = join(out, 'R3.development-run.pilot');
   assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), `part=accept engine=candidate ${candidate} out=${dir}/run label=pilot`);
@@ -260,17 +266,119 @@ test('--pinned <home> takes the engine its cua install placed, as acceptance on 
   assert.throws(() => parseGateArgs(['check', '--pinned', ACC, '--dev']), /check is the pinned rule/);
 });
 
-test("the vendor paths follow the architecture, the pinned home's runtime when one is named; the device too, unless the environment names it", () => {
+test("the vendor builds come from the architecture's comparator fixture, never from a cua home; --vendor-fixture names another; the device follows the architecture unless the environment names it", () => {
+  // #171 M6b (its pre-flight §4.4): defaultsFor takes no cua home, so no step can be pointed at one
+  assert.deepEqual(defaultsFor('x64', '/home/some/.local/share/cua'), defaultsFor('x64'), 'a second argument names nothing');
+  assert.ok(Object.values(defaultsFor('x64')).every((v) => !String(v).includes('/runtimes/')));
   const arm = parseGateArgs(['print', 'V1', '--pinned', '/runs/m5/home-arm64', '--out', '/o'], { arch: 'arm64', env: {} });
+  assert.equal(arm.vendorFixture, defaultFixtureDir('arm64'));
+  assert.equal(arm.vendorFixture, join(homedir(), '.local/share/cua-171/vendor-arm64-pinned'));
+  assert.equal(arm.vendor, fixturePaths(arm.vendorFixture, 'arm64').vendor);
+  assert.equal(arm.vendor, join(arm.vendorFixture, 'extracted/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'));
+  assert.equal(arm.vendorJs, join(arm.vendorFixture, 'extracted/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky'));
+  for (const key of ['vendor', 'vendorJs']) {
+    assert.doesNotMatch(arm[key], /\/runtimes\//, `${key}: no cua home's runtimes/`);
+    assert.ok(!arm[key].startsWith('/runs/m5/home-arm64'), `${key}: not the pinned home's`);
+  }
   for (const key of ['vendor', 'newest', 'vendorJs']) assert.doesNotMatch(arm[key], /x64/, `${key}: ${arm[key]}`);
-  assert.equal(arm.vendor, '/runs/m5/home-arm64/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64');
-  assert.equal(arm.vendorJs, '/runs/m5/home-arm64/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky');
-  assert.match(arm.newest, /deb-26\.1023\/extracted\/.*\/sky_linux_arm64$/);
+  assert.match(arm.newest, /deb-26\.1023\/extracted\/.*\/sky_linux_arm64$/, 'the newest build, named by its own path outside the fixture');
   assert.equal(arm.device, 'cua-171-arm64');
-  const x64 = parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o'], { arch: 'x64', env: { DEVICE: 'cua-bench' } });
-  assert.match(x64.vendor, /\/\.local\/share\/cua\/runtimes\/26\.928\.40906-linux-x64\/.*\/sky_linux_x64$/, 'without a pinned home, the default home\'s runtime, as M4 ran');
+  const x64 = parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', '--vendor-fixture', '/f/x64'], { arch: 'x64', env: { DEVICE: 'cua-bench' } });
+  assert.equal(x64.vendorFixture, '/f/x64');
+  assert.equal(x64.vendor, '/f/x64/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64');
   assert.equal(x64.device, 'cua-bench');
-  assert.equal(parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', '--vendor', '/v/mine'], { arch: 'arm64', env: {} }).vendor, '/v/mine', 'a flag still wins');
+  // the fixture is the only way: no flag names a vendor build or client by path
+  for (const flag of ['--vendor', '--vendor-js']) assert.throws(() => parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', flag, '/v/mine'], { arch: 'x64', env: {} }), /unknown argument/, flag);
+  assert.equal(parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', '--newest', '/n/sky_linux_x64'], { arch: 'x64', env: {} }).newest, '/n/sky_linux_x64');
+});
+
+test('the steps that run a vendor build or the client take the fixture; the facade suites, the settle and the engine stop do not', () => {
+  const uses = STEPS.filter(usesVendorBuilds).map((s) => s.name);
+  for (const name of ['V1', 'V5', 'Z0', 'D1', 'FB', 'E1', 'P1', 'L1', 'L5', 'K1']) assert.ok(uses.includes(name), name);
+  for (const name of ['R1', 'R3', 'R4', 'S1', 'ES', 'F1a', 'H1', 'C1', 'K3', 'L4d']) assert.ok(!uses.includes(name), name);
+});
+
+/** A fixture check that answers as a checked fixture would, and records that it was asked. */
+const fixtureOk = (asked = []) => ({ dir, arch }) => {
+  asked.push({ dir, arch });
+  return { ...fixturePaths(dir, arch), binarySha256: 'ab'.repeat(32), serviceSha256: 'cd'.repeat(32), entry: { tar: { sha256: 'ef'.repeat(32) }, treeList: { sha256: '01'.repeat(32) } } };
+};
+
+test('a step that runs a vendor build checks the fixture before it starts: a refused fixture refuses the step and writes nothing; a checked one is in the record', async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate };
+  const out = fresh('out');
+  const refusedFixture = () => {
+    throw new GateRefused('the extracted fixture /f is not its list: 1 changed: cua_node/x');
+  };
+  let started = false;
+  const display = async () => {
+    started = true;
+    return { code: 0, clean: true };
+  };
+  const a = parseGateArgs(['run', 'FB', '--candidate', candidate, '--out', out, '--dev', '--vendor-fixture', '/f'], { arch: 'x64', env: {} });
+  await assert.rejects(runStep(a, { ...deps, vendorFixture: refusedFixture, privateDisplay: display }), /not its list/);
+  assert.equal(started, false);
+  assert.deepEqual(readdirSync(out), [], 'no step directory');
+  const asked = [];
+  let seen;
+  const exit = await runStep(a, { ...deps, vendorFixture: fixtureOk(asked), privateDisplay: async ({ args }) => {
+    seen = args;
+    return { code: 0, clean: true };
+  } });
+  assert.equal(exit, 0);
+  assert.deepEqual(asked, [{ dir: '/f', arch: 'x64' }]);
+  assert.equal(seen[seen.indexOf('--vendor-js') + 1], fixturePaths('/f', 'x64').vendorJs);
+  const record = JSON.parse(readFileSync(join(out, 'FB.development-run', 'step.json'), 'utf8'));
+  assert.deepEqual(record.vendor_fixture, { dir: '/f', arch: 'x64', tar_sha256: 'ef'.repeat(32), tree_list_sha256: '01'.repeat(32), vendor: fixturePaths('/f', 'x64').vendor, vendor_sha256: 'ab'.repeat(32), vendor_js: fixturePaths('/f', 'x64').vendorJs, service_sha256: 'cd'.repeat(32) });
+  // a suite step asks for none
+  const root = fresh('root');
+  mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
+  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\nexit 0\n');
+  const none = [];
+  await runStep(parseGateArgs(['run', 'R3', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, root, vendorFixture: fixtureOk(none) });
+  assert.deepEqual(none, []);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M6b (its pre-flight §1.3, finding 11): R1 is the cua lane alone, by its own verdict: the run's exit status, the
+// native suite's 34 cases complete, both text cases positive, and the engine the home's cua-engine under the worker
+
+test("R1's verdict: green only for a lane that exited 0 with all 34 cases, both text cases positive and the home's engine answering", () => {
+  assert.equal(NATIVE_LINUX_CASES, 34);
+  assert.equal(nativeLinuxCaseIds().length, 34);
+  const pass = parityVerdict({ ...storedCuaLane(), exit: 0 });
+  assert.deepEqual(pass.problems, []);
+  assert.equal(pass.pass, true);
+  assert.deepEqual([pass.cases, pass.covered], [34, 34]);
+  const reds = {
+    'a failed run': [{ ...storedCuaLane(), exit: 1 }, /the run exited 1/],
+    'no exit status': [{ ...storedCuaLane(), exit: undefined }, /exit status was not given/],
+    '33 cases': [{ ...LANE_CHANGES.short(storedCuaLane()), exit: 0 }, /33 cases, not the native suite's 34/],
+    'a text case not positive': [{ ...LANE_CHANGES.text(storedCuaLane()), exit: 0 }, /native\/app\/typetext: not positive/],
+    'another engine under the worker': [{ ...LANE_CHANGES.vendor(storedCuaLane()), exit: 0 }, /sky_linux_x64 \(vendor\) answered/],
+    'an engine no home installed': [{ ...LANE_CHANGES.elsewhere(storedCuaLane()), exit: 0 }, /\/tmp\/built\/cua-engine is not a cua home's installed engine/],
+    'an incomplete run': [{ ...LANE_CHANGES.incomplete(storedCuaLane()), exit: 0 }, /the run is not complete \(Task cleanup failed\)/],
+    'a vendor lane': [(({ meta, rows }) => ({ meta: { ...meta, engine: 'vendor' }, rows, exit: 0 }))(storedCuaLane()), /the lane ran the vendor engine, not cua's/],
+  };
+  for (const [what, [input, pattern]] of Object.entries(reds)) {
+    const verdict = parityVerdict(input);
+    assert.equal(verdict.pass, false, what);
+    assert.ok(verdict.problems.some((p) => pattern.test(p)), `${what}: ${verdict.problems.join('; ')}`);
+  }
+  // the stored lane's cases each ran in a scratch home of their own, each that home's installed engine
+  assert.ok(pass.engines.length > 1 && pass.engines.every((e) => e.endsWith('/engine/linux/cua-engine')), pass.engines.join(', '));
+  // on a candidate the lane's engine is the named one, and only it
+  const candidate = storedCuaLane();
+  for (const entry of candidate.meta.engineAnswered) {
+    entry.expected = '/c/real/cua-engine';
+    entry.observed = entry.observed.map((o) => ({ ...o, exe: '/c/real/cua-engine' }));
+  }
+  candidate.meta.engineBin = '/c/cua-engine';
+  assert.deepEqual(parityVerdict({ ...candidate, exit: 0, engineBin: '/c/cua-engine', engineReal: '/c/real/cua-engine' }).problems, []);
+  assert.match(parityVerdict({ ...candidate, exit: 0, engineBin: '/c/cua-engine', engineReal: '/c/other' }).problems.join('; '), /\/c\/real\/cua-engine answered, not the candidate \/c\/other/);
+  assert.match(parityVerdict({ ...storedCuaLane(), exit: 0, engineBin: '/c/cua-engine' }).problems.join('; '), /the run names engine none, not the candidate \/c\/cua-engine/);
 });
 
 test('a pinned step passes the home\'s engine with --pinned to every harness step, and runs under its own run name and label', () => {
@@ -327,7 +435,7 @@ test("a pinned suite step runs the M5 runner's part with no engine in its enviro
   const before = process.env.CUA_LINUX_ENGINE_BIN;
   delete process.env.CUA_LINUX_ENGINE_BIN;
   try {
-    const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: join(home, 'engine', 'linux', 'cua-engine') });
+    const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: join(home, 'engine', 'linux', 'cua-engine') });
     assert.equal(exit, 0);
   } finally {
     if (before !== undefined) process.env.CUA_LINUX_ENGINE_BIN = before;
@@ -339,14 +447,14 @@ test("a pinned suite step runs the M5 runner's part with no engine in its enviro
 
 test('a pinned step refuses a home with no engine, naming the install, and refuses before anything when the rule refuses', async () => {
   const out = fresh('out');
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: '/' };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: '/' };
   const a = parseGateArgs(['run', 'FB', '--pinned', '/nowhere/home', '--out', out], { arch: 'x64', env: {} });
   await assert.rejects(runStep(a, deps), /no engine at \/nowhere\/home\/engine\/linux\/cua-engine: .*CUA_HOME=\/nowhere\/home node bin\/cua\.mjs install --engine/);
   assert.deepEqual(readdirSync(out), []);
 });
 
 // T1's fix wave (the design session's ruling 708): a pinned step's children get the run home as CUA_HOME and the
-// installed engine itself, never the check's copy; an R2 step's unproved series are its record
+// installed engine itself, never the check's copy
 
 /** A run home with an engine, and a fake pinned rule that stores a copy as candidate.mjs does. */
 function pinnedFixture() {
@@ -374,7 +482,7 @@ test("a pinned facade step runs the installed engine itself, with CUA_HOME the r
     Object.assign(seen, { args, env });
     return { code: 0, clean: true };
   };
-  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: engine, prepare, pinned, privateDisplay });
+  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: engine, prepare, pinned, privateDisplay });
   assert.equal(exit, 0);
   assert.deepEqual(seen.prepared, { source: engine, gate: 'pinned' }, 'the rule checked the home\'s engine');
   assert.equal(seen.args[seen.args.indexOf('--engine') + 1], engine, 'the installed engine, not the copy');
@@ -382,20 +490,17 @@ test("a pinned facade step runs the installed engine itself, with CUA_HOME the r
   assert.equal(seen.env.CUA_HOME, home);
 });
 
-test("a pinned suite step: the installed engine, no ENGINE_BIN, CUA_HOME the run home; R2's unproved series in its README and step.json", async () => {
+test('a pinned suite step: the installed engine, no ENGINE_BIN, CUA_HOME the run home', async () => {
   const { home, engine, prepare, pinned } = pinnedFixture();
   const root = fresh('root');
   mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
-  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\necho "engine=$ENGINE ${ENGINE_BIN-unset} home=$CUA_HOME" > "$OUT/seen"\nmkdir -p "$OUT/baseline" && echo "UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples" > "$OUT/baseline/unproved.txt"\n');
+  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\necho "engine=$ENGINE ${ENGINE_BIN-unset} home=$CUA_HOME" > "$OUT/seen"\n');
   const out = fresh('out');
-  const a = parseGateArgs(['run', 'R2', '--pinned', home, '--out', out], { arch: 'x64', env: {} });
-  const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: engine, prepare, pinned });
+  const a = parseGateArgs(['run', 'R1', '--pinned', home, '--out', out], { arch: 'x64', env: {} });
+  const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: engine, prepare, pinned });
   assert.equal(exit, 0);
-  const dir = join(out, 'R2.pinned-release');
+  const dir = join(out, 'R1.pinned-release');
   assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), `engine=installed unset home=${home}`);
-  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
-  assert.deepEqual(record.unproved, ['UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples']);
-  assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /- unproved \(declared gaps, not passes\): 1\n  - UNPROVED \(a declared gap, not a pass; ruling 9\): click/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -440,7 +545,7 @@ test("a pinned pilot's facade step: the rule runs on the home's engine, the inst
     Object.assign(seen, { args, env });
     return { code: 0, clean: true };
   };
-  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: engine, prepare, pinned, privateDisplay });
+  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: engine, prepare, pinned, privateDisplay });
   assert.equal(exit, 0);
   assert.deepEqual(seen.prepared, { source: engine, gate: 'pinned-dev' }, 'the pinned rule, inside the step');
   assert.equal(seen.args[seen.args.indexOf('--engine') + 1], engine, 'the installed engine, not the copy');
@@ -454,7 +559,7 @@ test("a pinned pilot's facade step: the rule runs on the home's engine, the inst
   assert.equal(readFileSync(join(dir, 'stdout.log'), 'utf8').split('\n')[0], 'development run on the pinned release, not acceptance, never counted');
 });
 
-test("a pilot step's record lists what it left unjudged, from the harness's end row or summary row, and from R2's list", async () => {
+test("a pilot step's record lists what it left unjudged, from the harness's end row or summary row", async () => {
   const candidate = join(fresh('c'), 'cua-engine');
   writeFileSync(candidate, 'x');
   const out = fresh('out');
@@ -462,7 +567,7 @@ test("a pilot step's record lists what it left unjudged, from the harness's end 
     mkdirSync(join(dir, 'run'), { recursive: true });
     writeFileSync(join(dir, 'run', 'results.jsonl'), `${JSON.stringify({ run: 'r', kind: 'meta' })}\n${JSON.stringify(row)}\n`);
   };
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate };
   // the harness writes its rows; the display wrapper's stand-in writes the row the run would end with
   const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
   const exit = await runStep(a, { ...deps, privateDisplay: async ({ dir }) => {
@@ -479,14 +584,6 @@ test("a pilot step's record lists what it left unjudged, from the harness's end 
     return { code: 0, clean: true };
   } });
   assert.deepEqual(JSON.parse(readFileSync(join(out, 'FB.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['chrome-input move cua']);
-  // R2's pilot: the suites runner lists the series only a top-up could decide, and takes none
-  const root = fresh('root');
-  mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
-  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\nmkdir -p "$OUT/baseline" && echo "UNJUDGED (a pilot takes no top-up; not a pass): click" > "$OUT/baseline/unjudged.txt"\n');
-  await runStep(parseGateArgs(['run', 'R2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, root });
-  assert.deepEqual(JSON.parse(readFileSync(join(out, 'R2.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['UNJUDGED (a pilot takes no top-up; not a pass): click']);
-  const text = readFileSync(new URL(`../../${SUITES_SCRIPT}`, import.meta.url), 'utf8');
-  assert.match(text, /if \[ "\$c" -ne 0 \] && \[ -n "\$need" \] && \[ "\$LABEL" = pilot \]; then\n(.*\n){1,3}\s+exit 0\n\s+fi\n\s+if \[ "\$c" -ne 0 \] && \[ -n "\$need" \]; then\n\s+log "top-up for/, "a pilot's R2 ends before its top-up");
 });
 
 // #171 M5, T4's second round (rulings 721, 724): the end check runs where it always runs, after every step whatever
@@ -500,7 +597,7 @@ test("every step's record carries the end check, made after its process ended ho
   const root = fresh('tmp');
   const earlier = join(root, 'cua171-run-AdXsUJ');
   mkdirSync(earlier);
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
   // the step's harness died past its cleanup: its scratch stays, and so does another run's (one the start check let be,
   // its own test's: here a check that refuses nothing, as when that run had been running beside it under no lock)
   const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
@@ -570,7 +667,7 @@ test("a step refuses to start while the start check refuses what earlier runs le
   const out = fresh('out');
   const root = fresh('tmp');
   mkdirSync(join(root, 'cua171-run-NoMark'), { mode: 0o700 });
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') }, privateDisplay: async () => ({ code: 0, clean: true }) };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') }, privateDisplay: async () => ({ code: 0, clean: true }) };
   const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
   await assert.rejects(runStep(a, deps), (e) => e instanceof GateRefused && /the start check refuses to run: .*cua171-run-NoMark: .*no marker of the harness's/.test(e.message));
   assert.deepEqual(readdirSync(out), [], 'nothing of the step was written');
@@ -582,7 +679,7 @@ test("a step's record names its unclean end, from its run's end row and from wha
   writeFileSync(candidate, 'x');
   const out = fresh('out');
   const root = fresh('tmp');
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, vendorFixture: fixtureOk(), xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
   const rows = (dir, row) => {
     mkdirSync(join(dir, 'run'), { recursive: true });
     writeFileSync(join(dir, 'run', 'results.jsonl'), `${JSON.stringify(row)}\n`);
@@ -639,10 +736,10 @@ test('a :0 command whose scratch would leave its TMPDIR, or whose decoy bus coul
   // the printed command: refused, nothing written, under an out root as deep as the arm64 pilot's
   const deep = join(fresh('deep'), 'm5/pilot-arm64/out-zero-r1/and-deeper-than-that-for-the-test-of-the-decoys');
   const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', deep, '--dev']);
-  assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message));
+  assert.throws(() => printStep(a, { root: ROOT, vendorFixture: fixtureOk(), git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message));
   assert.equal(existsSync(deep), false, 'the refused print wrote nothing');
   // a private step takes no such check
-  assert.doesNotThrow(() => printStep(parseGateArgs(['print', 'D1', '--candidate', PATHS.candidate, '--out', deep, '--dev']), { root: ROOT, git: cleanGit() }));
+  assert.doesNotThrow(() => printStep(parseGateArgs(['print', 'D1', '--candidate', PATHS.candidate, '--out', deep, '--dev']), { root: ROOT, vendorFixture: fixtureOk(), git: cleanGit() }));
 });
 
 // Fix wave 1, minor: run71.sh takes the step directory through `realpath -m`, so the decoys lie under the resolved path.
@@ -657,7 +754,7 @@ test("a :0 step's decoy paths are measured where run71.sh puts them: through the
   symlinkSync(long, short);
   const a = parseGateArgs(['print', 'V5', '--candidate', PATHS.candidate, '--out', short, '--dev']);
   assert.ok(Buffer.byteLength(join(short, 'V5.development-run', 'decoy', 'session.sock')) <= 107, 'the lexical path fits');
-  assert.throws(() => printStep(a, { root: ROOT, git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
+  assert.throws(() => printStep(a, { root: ROOT, vendorFixture: fixtureOk(), git: cleanGit() }), (e) => e instanceof GateRefused && /decoy bus/.test(e.message) && e.message.includes(long));
 });
 
 // The hold canary and its regression cells in every release gate (task 117; rulings 897.3, 898.4, 899, 900): K1 on the

@@ -1,7 +1,7 @@
 // The facade suites' one runner (scripts/linux-engine-gate/suites.sh; #171 M5, T1 and its fix wave): its parts run here
 // with the harness commands they call faked (suites-fake-node.mjs, first on PATH as `node`), so what the runner itself
-// decides is seen: which engine the cua lanes are given, the pinned checks, the baseline's one top-up, its unproved
-// series kept in the record, and a parity part whose final cleanup failed failing. Display-free.
+// decides is seen: which engine the cua lanes are given, the pinned checks, R1's own verdict on the cua lane (#171 M6b),
+// and a parity part whose final cleanup failed failing. Display-free.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -46,14 +46,43 @@ function part(name, { engine = 'installed', engineBin, env = {}, counted = false
   return { status: result.status, stderr: result.stderr, calls: readFileSync(fakeLog, 'utf8').split('\n').filter(Boolean), out: join(dir, 'out') };
 }
 
-test('a parity part whose lanes and diff pass but whose final cleanup fails, fails; a diff failure keeps its own status', () => {
+// #171 M6b (its pre-flight §1.3, finding 11): R1 is the cua lane alone. No vendor lane runs and nothing is diffed; the
+// part's verdict is the lane's own (parity-verdict.mjs), and the cleanup runs whatever it said
+const cleanups = (r) => r.calls.filter((c) => /cleanup-prepared/.test(c)).length;
+
+test('R1: the cua lane alone, no vendor lane and no diff; a clean lane with a clean cleanup passes, its verdict kept', () => {
   const clean = part('inner-parity');
   assert.equal(clean.status, 0, clean.stderr);
-  const failed = part('inner-parity', { env: { FAKE_CLEANUP: '0,1' } });
-  assert.equal(failed.status, 1, 'the final cleanup failed: the part fails');
-  assert.ok(failed.calls.some((c) => / diff /.test(c)), 'the lanes and the diff ran');
-  const both = part('inner-parity', { env: { FAKE_DIFF: '3', FAKE_CLEANUP: '0,1' } });
-  assert.equal(both.status, 3, "the diff's failure is the part's");
+  const runs = clean.calls.filter((c) => /repl-parity\.mjs run /.test(c));
+  assert.equal(runs.length, 1, runs.join('\n'));
+  assert.match(runs[0], /--suite native --host cua --engine cua --out /);
+  assert.ok(!clean.calls.some((c) => /--engine vendor| diff /.test(c)), clean.calls.join('\n'));
+  const verdict = JSON.parse(readFileSync(join(clean.out, 'parity', 'verdict.json'), 'utf8'));
+  assert.deepEqual([verdict.pass, verdict.cases, verdict.covered, verdict.problems], [true, 34, 34, []]);
+  assert.deepEqual(verdict.text, { 'native/app/typetext': true, 'native/app/paste': true });
+});
+
+test('R1 negative control: a failed cua lane with a successful cleanup is red, and the cleanup still ran', () => {
+  const failed = part('inner-parity', { env: { FAKE_RUN: '1' } });
+  assert.equal(failed.status, 1, 'the lane exited 1: the part fails, though its cleanup passed');
+  assert.equal(cleanups(failed), 2, 'the cleanup before and the final one');
+  assert.match(JSON.parse(readFileSync(join(failed.out, 'parity', 'verdict.json'), 'utf8')).problems.join('; '), /the run exited 1/);
+});
+
+test("R1 is red for 33 cases, a text case that is not positive, another engine under the worker or one no home installed; the cleanup runs each time", () => {
+  for (const [change, pattern] of [['short', /33 cases/], ['text', /native\/app\/typetext: not positive/], ['vendor', /sky_linux_x64 \(vendor\) answered/], ['elsewhere', /not a cua home's installed engine/], ['incomplete', /not complete/]]) {
+    const r = part('inner-parity', { env: { FAKE_LANE: change } });
+    assert.equal(r.status, 1, change);
+    assert.equal(cleanups(r), 2, `${change}: the final cleanup ran`);
+    assert.match(JSON.parse(readFileSync(join(r.out, 'parity', 'verdict.json'), 'utf8')).problems.join('; '), pattern, change);
+  }
+});
+
+test('R1: a clean lane whose final cleanup fails is red; a red verdict keeps its own status over a failed cleanup', () => {
+  const failed = part('inner-parity', { env: { FAKE_CLEANUP: '0,3' } });
+  assert.equal(failed.status, 3, 'the final cleanup failed: the part fails');
+  const both = part('inner-parity', { env: { FAKE_RUN: '1', FAKE_CLEANUP: '0,3' } });
+  assert.equal(both.status, 1, "the verdict's failure is the part's");
 });
 
 // #171 M6a: a Linux home serves only once this cua's install has run in it, so the preparation may start from a home the
@@ -74,34 +103,9 @@ test('on the installed engine the parity lanes are named no engine and the prepa
   const candidate = part('inner-parity', { engine: 'candidate', engineBin: '/c/cua-engine' });
   assert.match(candidate.calls.find((c) => /run .*--engine cua/.test(c)), /--engine cua --engine-bin \/c\/cua-engine --out/);
   assert.ok(!candidate.calls.some((c) => /gate\.mjs check/.test(c)), 'a candidate is checked by gate.mjs, not here');
-});
-
-test("the baseline: one top-up when the comparison asks for it, the cua runs checked on the installed engine, the unproved series kept for the step's record", () => {
-  const r = part('inner-baseline', { env: { FAKE_COMPARE: 'topup,unproved' }, counted: true });
-  assert.equal(r.status, 0, r.stderr);
-  const cua = r.calls.filter((c) => /native-baseline\.mjs run .*--engine cua/.test(c));
-  assert.equal(cua.length, 6, 'three cua runs in the sitting and three in its top-up');
-  assert.ok(cua.every((c) => / --pinned-check /.test(c) && !/--engine-bin/.test(c)), cua.join('\n'));
-  assert.ok(r.calls.some((c) => /compare --engines .*--top-up-baseline .*baseline-topup\/cv --top-up-candidate .*baseline-topup\/cc/.test(c)));
-  assert.equal(readFileSync(join(r.out, 'baseline', 'unproved.txt'), 'utf8'), 'UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples\n');
-  // a candidate's cua runs name it and are not checked by the pinned rule; no top-up when the comparison passes
-  const c = part('inner-baseline', { engine: 'candidate', engineBin: '/c/cua-engine' });
-  assert.equal(c.status, 0, c.stderr);
-  const named = c.calls.filter((l) => /native-baseline\.mjs run .*--engine cua/.test(l));
-  assert.equal(named.length, 3);
-  assert.ok(named.every((l) => /--engine-bin \/c\/cua-engine/.test(l) && !/--pinned-check/.test(l)));
-  assert.equal(readFileSync(join(c.out, 'baseline', 'unproved.txt'), 'utf8'), '', 'none unproved');
-});
-
-test("a pilot's baseline takes no top-up (ruling 722): the series only it could decide are unjudged, listed for the record, and the part does not fail", () => {
-  const r = part('inner-baseline', { env: { FAKE_COMPARE: 'topup' } });
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.calls.filter((c) => /native-baseline\.mjs run .*--engine cua/.test(c)).length, 3, 'the sitting alone');
-  assert.ok(!r.calls.some((c) => /--top-up-baseline/.test(c)), 'no pooled comparison');
-  assert.equal(readFileSync(join(r.out, 'baseline', 'unjudged.txt'), 'utf8'), 'UNJUDGED (a pilot takes no top-up; not a pass): click\n');
-  // a failure that is not a series a top-up decides still fails a pilot: no TOP-UP NEEDED, the comparison's status
-  const failed = part('inner-baseline', { env: { FAKE_COMPARE: 'fail' } });
-  assert.notEqual(failed.status, 0);
+  // the verdict holds the lane to the candidate it named
+  assert.equal(candidate.status, 0, candidate.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(candidate.out, 'parity', 'verdict.json'), 'utf8')).engines, ['/c/cua-engine']);
 });
 
 // review finding 1: the pinned rule binds every home the suites make on both pinned modes, acceptance and a development
@@ -124,6 +128,15 @@ test("on the pinned rule a refusal in the suites' own homes stops the part befor
   const unchecked = part('inner-parity', { env: { FAKE_CHECK: '2' } });
   assert.equal(unchecked.status, 0);
   assert.ok(unchecked.calls.some((c) => /repl-parity\.mjs run /.test(c)));
+});
+
+test('the baseline part is gone with R2 (#171 M6b): the runner refuses it as an unknown part', () => {
+  for (const name of ['baseline', 'inner-baseline']) {
+    const r = part(name);
+    assert.equal(r.status, 2, name);
+    assert.match(r.stderr, new RegExp(`unknown part ${name}`));
+    assert.deepEqual(r.calls, [], 'nothing ran');
+  }
 });
 
 test('the runner refuses an ambient override, an installed engine given an ENGINE_BIN, a candidate without one, and an unknown ENGINE', () => {
@@ -156,7 +169,6 @@ test("the default selection refuses a candidate, an ambient CUA_NATIVE_ENGINE an
   assert.equal(part('inner-accept', { env: { SELECTION: 'default', CUA_NATIVE_ENGINE: 'cua' } }).status, 2);
   assert.equal(part('inner-accept', { env: { SELECTION: 'default', CUA_NATIVE_ENGINE: '' } }).status, 2, 'even empty');
   assert.equal(part('inner-parity', { env: { SELECTION: 'default' } }).status, 2);
-  assert.equal(part('inner-baseline', { env: { SELECTION: 'default' } }).status, 2);
   assert.equal(part('inner-accept', { env: { SELECTION: 'vendor' } }).status, 2);
   assert.equal(part('inner-fallback').status, 2, "the fallback part is the default selection's");
 });

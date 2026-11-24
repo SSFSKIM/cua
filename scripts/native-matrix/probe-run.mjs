@@ -75,10 +75,15 @@ async function resetHeldFixture(ctx) {
   if (failed instanceof AlertHeld) held.entry.blockedBy = failed.guard?.category ?? 'alert';
   if (!failed) return;
   const reason = String(failed.message ?? failed).slice(0, 300);
-  const message = `the ${held.scene} fixture ${held.entry.row} left (its cleanup held by the capture alert) could not be reset: ${reason}; the run stopped collecting evidence`;
+  const message = `the ${held.scene} fixture ${held.entry.row} left (its cleanup ${heldByText(held.heldBy)}) could not be reset: ${reason}; the run stopped collecting evidence`;
   if (held.entry.blockedBy) throw new ResetBlocked(message, {category: held.entry.blockedBy, detail: `the ${held.scene} fixture ${held.entry.row}'s reset was held (${reason})`});
   throw new Stop(message);
 }
+// The guard that held a fixture's cleanup, from the held cause's category (ruling 1219, s2: C-5's key-window refusal was
+// named the capture alert's).
+const heldByText = category => (category === 'keyWindow' ? 'refused by the key-window guard'
+  : category === 'unread' ? 'refused by the alert guard, its reading unread'
+  : category && category !== 'alert' ? `refused by the alert guard (${category})` : 'held by the capture alert');
 // A stop because a held fixture's reset was itself held by the alert or refused by the guard (`guard`: {category
 // 'alert' | 'unread', detail}): ./run.mjs runOnce records every sample its plan still had to take NO VERDICT by that
 // cause (recordUnrun), so none vanishes (T8e review, Minor 2).
@@ -138,7 +143,7 @@ async function sampledRows(ctx, base, attempt) {
       pushed.outcome = {...(pushed.outcome ?? {}), cleanupHeld: cleanupFailed.message};
       const entry = {row: pushed.id, sample: pushed.sample, scene: span.fixture?.scene ?? base.scene, reset: null};
       (ctx.meta.fixturesHeld ??= []).push(entry);
-      ctx.heldFixture = {scene: entry.scene, cleanup: out.cleanup, entry, row: pushed, key};
+      ctx.heldFixture = {scene: entry.scene, cleanup: out.cleanup, entry, row: pushed, key, heldBy: cleanupFailed.guard?.category ?? 'alert'};
       return pushed;
     }
     if (cleanupFailed) {

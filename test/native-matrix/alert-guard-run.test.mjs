@@ -192,6 +192,8 @@ test('a fixture whose cleanup the guard refused for an unread screen is kept blo
   const {result} = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', ops: alertsBy(() => null)});
   assert.equal(result.complete, false);
   assert.deepEqual(result.meta.fixturesHeld.map(f => [f.reset, f.blockedBy]), [[false, 'unread']]);
+  // The stop names the guard that held the cleanup (ruling 1219, s2), never the capture alert for every cause.
+  assert.ok(result.problems.some(p => /left \(its cleanup refused by the alert guard, its reading unread\) could not be reset/.test(p)), JSON.stringify(result.problems));
 });
 
 // ---- placement --------------------------------------------------------------------------------------------------------

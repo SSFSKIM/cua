@@ -338,7 +338,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     const mode = regime !== 'frontmost' ? 'own' : isCaretRow(id) ? 'reading' : 'reference';
     // Ruling 1168: a pointerdown row's pair has no verdict unless the vendor's count rose by exactly one.
     const reference = isPointerdownRow(id) ? pointerdownReference : null;
-    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), {...options('method')(id), reference})});
+    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), {...options('method')(id), reference, ownEffect: OWN_EFFECT_IDS.includes(id)})});
   }
   methods.sort((a, b) => a.id.localeCompare(b.id));
 

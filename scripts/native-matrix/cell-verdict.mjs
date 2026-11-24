@@ -104,11 +104,15 @@ const VERDICTS = ['worse', 'equal', 'better', 'honest', 'declared', 'shared'];
 // reason listed (`unreferenced`).
 // -> {verdict, vendor: {ok, valid, invalid}, cua: {…}, declared, shared: [sample], honest: [sample], routes, account,
 // differs?, unreferenced?: [{run, reason}]}.
-export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false, reference = null} = {}) {
+// `ownEffect`: a frontmost row judged by its own effect (./plan.mjs OWN_EFFECT_IDS): compared with the vendor's as any
+// reference row, but where the vendor's sample of the run was never run because its run stopped (ruling 1214), the cua
+// sample is judged on its own effect ('own') rather than left `vendorStopped`.
+export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required = 1, oracle = () => false, pairable = all, planned = unknown, acceptance = false, reference = null, ownEffect = false} = {}) {
   const vendorByRun = groupBy(vendorRows.filter(r => !causeOf(r) && pairable(runOf(r))), runOf);
   const held = r => !oracle(r) || r.interference?.ok === true;
   const fixed = mode === 'absolute' || mode === 'pressKey';
   const outcomes = new Map(), notes = new Map(), unreferenced = [];
+  const ownAfterStop = c => ownEffect && Boolean(stopOf(vendorRows, runOf(c)));
   const failed = (c, v) => {
     // A proven change of the user's value (the rows behind a user window) fails on its own: no departure, pair or
     // shared failure answers for it.
@@ -118,7 +122,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
       if (answered && !v) return noPair(vendorRows, c);
       if (answered && vendorAnsweredOk(v) && held(v) && held(c) && effect) return 'declared';
     }
-    if (mode === 'own' || acceptance) return 'worse';
+    if (mode === 'own' || acceptance || (!v && ownAfterStop(c))) return 'worse';
     if (!v) return noPair(vendorRows, c);
     if (passes(v)) return 'worse';
     if (sameFailure(v, c, {readBack: fixed})) return fixed ? 'shared' : 'equal';
@@ -138,7 +142,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
     if (unfit) { outcomes.set(c, 'reference'); unreferenced.push({run: runOf(c), reason: unfit}); continue; }
     // 'reading': a pair missing either side's reading has no verdict (ruling 1141), never a difference.
     if (mode === 'reading' && v && !(hasReading(v) && hasReading(c))) { outcomes.set(c, 'unread'); continue; }
-    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? noPair(vendorRows, c) : v && !passes(v) && mode !== 'pressKey' ? 'better'
+    if (passes(c)) outcomes.set(c, ['reference', 'pressKey', 'reading'].includes(mode) && !v ? (ownAfterStop(c) ? 'equal' : noPair(vendorRows, c)) : v && !passes(v) && mode !== 'pressKey' ? 'better'
       : mode === 'reading' && !sameEffect(v, c) ? 'worse' : 'equal');
     else outcomes.set(c, failed(c, v));
   }

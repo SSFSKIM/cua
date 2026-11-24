@@ -1136,3 +1136,21 @@ test('a cua sample whose only vendor pair was never run is never a failure of cu
   assert.ok(j.missing.includes(`method: ${CLICK} has no cua sample with a vendor sample to compare: the vendor's run stopped before it (${stop.reason}; after ${stop.after} (run 1, 2, 3))`), j.missing.join('\n'));
   assert.ok(!j.blocking.some(b => b.includes(CLICK)));
 });
+
+// The ownEffect cells (./plan.mjs OWN_EFFECT_IDS, the Save sheet's setValue.name) are compared with the vendor's as any
+// frontmost row, but after a vendor run that stopped before them they are judged on their own effect, as the controller's
+// rule for own-effect cells asks: a pass counts, a failure is worse.
+test('an ownEffect cell after the vendor\'s stop is judged on its own effect: a pass counted, a failure worse', async () => {
+  const {OWN_EFFECT_IDS} = await import('../../scripts/native-matrix/plan.mjs');
+  const id = OWN_EFFECT_IDS[0];
+  const row = (engine, sample, ok, extra = {}) => ({section: 'method', id, engine, sample, ok, regime: 'frontmost', ...extra});
+  const unrun = {invalid: 'not run: the run stopped: x', unrun: {reason: 'x', after: 'y'}};
+  const passing = judgeCell('reference', [row('vendor', 1, false, unrun)], [row('cua', 1, true)], {ownEffect: true});
+  assert.deepEqual(passing.account.cua.noVerdict, {});
+  assert.equal(passing.cua.valid, 1);
+  assert.equal(judgeCell('reference', [row('vendor', 1, false, unrun)], [row('cua', 1, false)], {ownEffect: true}).verdict, 'worse');
+  // Not an ownEffect cell: vendorStopped, no verdict.
+  assert.deepEqual(judgeCell('reference', [row('vendor', 1, false, unrun)], [row('cua', 1, true)]).account.cua.noVerdict, {vendorStopped: 1});
+  // A vendor sample merely invalid (no stop) leaves it unpaired, as ever.
+  assert.deepEqual(judgeCell('reference', [row('vendor', 1, false, {invalid: 'x'})], [row('cua', 1, true)], {ownEffect: true}).account.cua.noVerdict, {unpaired: 1});
+});

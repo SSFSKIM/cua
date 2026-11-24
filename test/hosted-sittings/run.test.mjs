@@ -12,9 +12,10 @@ import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, PROJECTION_WARN_MINUTES, rend
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
-async function run(p, exits = {}, {logs = {}, files = {}} = {}) {
+// `files`: what the disk holds when the sitting starts; `writes`: {stepId: {path: record}}, what a step writes as it runs.
+async function run(p, exits = {}, {logs = {}, files = {}, writes = {}} = {}) {
   const ran = [], kept = [], removed = [];
-  const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); return {exit: exits[s.id] ?? 0}; },
+  const report = await runSitting(p, {out: '/w/out', exec: async s => { ran.push(s.id); Object.assign(files, writes[s.id]); return {exit: exits[s.id] ?? 0}; },
     keep: (from, to) => kept.push([from, to]), readText: path => logs[path.split('/').at(-1).replace(/\.log$/, '')] ?? '',
     readJson: path => files[path] ?? null, exists: path => Object.hasOwn(files, path), remove: path => removed.push([path, ran.length]), now: () => 0, log: () => {}});
   return {report, ran, kept, removed};
@@ -207,7 +208,7 @@ const gated = () => plan([step('v1', 'run', {check: 'record', record: '/w/out/v1
   step('c1', 'run', {check: 'record', record: '/w/out/c1.json', needs: ['v1'], gate: {putBack: '/w/out/v1.json'}})]);
 test('C\'s chain: an incomplete run whose put-back held lets the next run start', async () => {
   const stopped = {complete: false, problems: ['stopped: the textedit fixture … could not be reset'], rows: [], meta: {}, putBack: HELD};
-  const {report, ran} = await run(gated(), {v1: 1}, {files: {'/w/out/v1.json': stopped, '/w/out/c1.json': {complete: true, rows: [], meta: {}, putBack: HELD}}});
+  const {report, ran} = await run(gated(), {v1: 1}, {writes: {v1: {'/w/out/v1.json': stopped}, c1: {'/w/out/c1.json': {complete: true, rows: [], meta: {}, putBack: HELD}}}});
   assert.deepEqual(ran, ['v1', 'c1']);
   assert.notEqual(statuses(report).v1, 'PASS', 'the stopped run keeps its own status');
 });
@@ -222,7 +223,7 @@ test('C\'s chain: a put-back that did not hold, or no record, skips the rest, na
     [{...HELD, steps: (({'input-source': _, ...rest}) => rest)(HELD.steps)}, /input-source: not recorded/],
   ];
   for (const [putBack, why] of broken) {
-    const {report, ran} = await run(gated(), {v1: 1}, {files: {'/w/out/v1.json': {complete: false, problems: [], rows: [], meta: {}, putBack}}});
+    const {report, ran} = await run(gated(), {v1: 1}, {writes: {v1: {'/w/out/v1.json': {complete: false, problems: [], rows: [], meta: {}, putBack}}}});
     assert.deepEqual(ran, ['v1'], String(why));
     assert.equal(statuses(report).c1, 'SKIP');
     assert.match(report.steps.find(s => s.id === 'c1').reason, why);
@@ -230,10 +231,29 @@ test('C\'s chain: a put-back that did not hold, or no record, skips the rest, na
   const none = await run(gated(), {v1: 1});
   assert.deepEqual(none.ran, ['v1']);
   assert.match(none.report.steps.find(s => s.id === 'c1').reason, /needs v1, which wrote no record/);
-  // A run never started (its own needs skipped it) gives the next nothing to start on, whatever an older file says.
+  // A run never started (its own needs skipped it) gives the next nothing to start on.
   const p = plan([step('v0', 'run'), step('v1', 'run', {check: 'record', record: '/w/out/v1.json', needs: ['v0']}),
     step('c1', 'run', {check: 'record', record: '/w/out/c1.json', needs: ['v1'], gate: {putBack: '/w/out/v1.json'}})]);
-  const skipped = await run(p, {v0: 1}, {files: {'/w/out/v1.json': {complete: true, putBack: HELD}}});
+  const skipped = await run(p, {v0: 1});
   assert.deepEqual(skipped.ran, ['v0']);
   assert.match(skipped.report.steps.find(s => s.id === 'c1').reason, /needs v1, which did not run/);
+});
+
+// Fix wave (review of the put-back gate): the gate releases the next run only on a record this sitting's run wrote. A
+// matrix invocation refuses an --out holding a result and leaves it there, so an older record at a gated path would
+// outlive a failed run and release the next one: the sitting refuses such an output directory before any step runs,
+// naming the record, and leaves it in place (past evidence is never deleted to authorize a new run).
+test('C\'s chain: an older record at a gated path refuses the sitting before any step runs, and is left in place', async () => {
+  const older = {complete: true, rows: [], meta: {}, putBack: HELD};
+  const files = {'/w/out/v1.json': older};
+  await assert.rejects(run(gated(), {v1: 2}, {files}), error => {
+    assert.match(error.message, /refused/);
+    assert.match(error.message, /\/w\/out\/v1\.json/);
+    assert.match(error.message, /new --out/);
+    return true;
+  });
+  assert.deepEqual(files, {'/w/out/v1.json': older}, 'the older record is kept as it was');
+  // Ungated records (the first run's own, a report) are not the gate's: their steps handle them as before.
+  const first = await run(gated(), {}, {files: {'/w/out/c1.json': older}, writes: {v1: {'/w/out/v1.json': older}}});
+  assert.deepEqual(first.ran, ['v1', 'c1']);
 });

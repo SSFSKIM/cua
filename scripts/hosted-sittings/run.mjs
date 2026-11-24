@@ -88,6 +88,11 @@ const checkOf = step => step.check ?? (step.kind === 'expect' ? 'expect' : 'exit
 export async function runSitting(plan, {out, exec = execStep, keep = (from, to) => { mkdirSync(dirname(to), {recursive: true}); copyFileSync(from, to); },
   readJson = readJsonFile, readText = readTextFile, exists = existsSync, remove = path => rmSync(path, {force: true}), now = Date.now,
   log = line => process.stderr.write(`${line}\n`), jobStartedMs = null, onStep = () => {}}) {
+  // A put-back gate reads a record its previous run wrote in this sitting: an older one at a gated path (an --out used
+  // before; a matrix run refuses such a directory and leaves its result there) would release the next run whatever this
+  // sitting's run did, so the sitting refuses it before any step, and deletes nothing.
+  const older = plan.steps.map(s => s.gate?.putBack).filter(path => path && exists(path));
+  if (older.length) throw new Error(`sitting ${plan.sitting} refused: ${older.join(', ')} already ${older.length === 1 ? 'holds' : 'hold'} a result from before this sitting: choose a new --out`);
   const done = new Map(), sittingStarted = now();
   // The wall time so far, after each step: the sitting's own and the job's (from `jobStartedMs`, the workflow's first
   // step, so setup counts), so a slowing runner shows in the log and the partial report before the job's limit ends it.

@@ -22,13 +22,13 @@ import {mkdirSync, writeFileSync, existsSync, rmSync, realpathSync} from 'node:f
 import {homedir, platform, arch} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createInterface} from 'node:readline';
 import {parseArgs} from 'node:util';
 import {descendants, classifyProcesses, socketHolders, sanitize} from './probe/lib.mjs';
 import {buildLaunch, createLaunchDirs, removeLaunchDirs} from '../src/runtime/launch.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {claimRunSession} from '../src/runtime/run-dir.mjs';
 import {SEATBELT_EXEC} from '../src/sandbox/seatbelt.mjs';
+import {jsonLine, lines} from '../src/repl-host/jsonl.mjs';
 
 const {values: opts} = parseArgs({options: {
   home: {type: 'string', default: process.env.CUA_HOME},
@@ -99,8 +99,8 @@ function startEchoBroker(socketPath, nonces) {
 function mcpClient(child, record) {
   let nextId = 0;
   const pending = new Map();
-  const send = msg => child.stdin.write(JSON.stringify(msg) + '\n');
-  createInterface({input: child.stdout}).on('line', line => {
+  const send = msg => child.stdin.write(jsonLine(msg));
+  lines(child.stdout).on('line', line => {
     let msg; try { msg = JSON.parse(line); } catch { record.nonJsonLines++; return; }
     if (msg.method === 'elicitation/create' && msg.id !== undefined) {
       record.elicitations.push(msg.params?.message ?? null);

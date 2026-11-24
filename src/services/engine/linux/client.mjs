@@ -29,6 +29,7 @@
 import {execFile, spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {heldRecordStdio} from './held-record.mjs';
+import {jsonLine} from '../../../repl-host/jsonl.mjs';
 
 export const MIN_ENGINE_VERSION = '0.4.4';
 const STDERR_TAIL = 8192;
@@ -149,7 +150,7 @@ export function createEngineClient({path, desktop = 'shared', env, versionTimeou
     proc.ref();
     return new Promise((resolve, reject) => {
       pending.set(id, {proc, command, resolve, reject});
-      proc.stdin.write(`${JSON.stringify({id, command, input})}\n`, 'utf8');
+      proc.stdin.write(jsonLine({id, command, input}), 'utf8');
     });
   }
 

@@ -28,8 +28,8 @@ import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, r
 import {Socket} from 'node:net';
 import {constants, tmpdir} from 'node:os';
 import {isAbsolute, join} from 'node:path';
-import {createInterface} from 'node:readline';
 import {LIFELINE_ENV} from './lifeline.mjs';
+import {jsonLine, lines} from './jsonl.mjs';
 
 const TAIL_LINES = 20;
 const TAIL_LINE_CHARS = 512;
@@ -362,7 +362,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   stdin?.on('error', () => {});
   stderr?.on('error', () => {}).setEncoding('utf8').on('data', chunk => tail.write(chunk));
   stdout?.on('error', () => {});
-  if (stdout) createInterface({input: stdout}).on('line', line => {
+  if (stdout) lines(stdout).on('line', line => {
     if (ended || !line.trim()) return;
     let message;
     try { message = JSON.parse(line); } catch { return; }
@@ -411,7 +411,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     get ended() { return ended; },
     send(message) {
       if (ended || stopping || !stdin?.writable) return false;
-      stdin.write(`${JSON.stringify(message)}\n`);
+      stdin.write(jsonLine(message));
       return true;
     },
     // Stops the child itself, a sandbox launcher, and nothing below it: what it runs goes on, and a signal to the

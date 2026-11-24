@@ -8,6 +8,7 @@ import {chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} 
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {HELPER_NAME, helperAsset, helperDir, helperFor, linuxCommand, linuxHelper, loadHelperPin, parseHelperPin, verifyHelper} from '../../src/sandbox/linux.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const PIN = {
@@ -77,7 +78,7 @@ test('linuxHelper: the placed helper under $CUA_HOME/sandbox/<upstreamTag>/ when
 
 test('linuxHelper refuses a missing helper and a helper whose hash differs from the pin, every time it is asked', t => {
   const root = home(t);
-  assert.throws(() => linuxHelper({home: root, arch: 'arm64', pin: PIN}), error => error.code === 'sandbox_unavailable' && /is not installed/.test(error.message) && /cua install/.test(error.hint));
+  assert.throws(() => linuxHelper({home: root, arch: 'arm64', pin: PIN}), error => error.code === 'sandbox_unavailable' && /is not installed/.test(error.message) && error.hint.includes(ownInstaller().command));
   const path = place(root, 'arm64-bin');
   assert.ok(linuxHelper({home: root, arch: 'arm64', pin: PIN}));
   writeFileSync(path, 'arm64-bin, tampered');
@@ -94,7 +95,7 @@ test('verifyHelper refuses the pinned bytes when they are not a regular executab
   const helper = {path, sha256: PIN.assets['linux-arm64'].sha256};
   assert.deepEqual(verifyHelper(helper), helper);
   chmodSync(path, 0o644);
-  assert.throws(() => verifyHelper(helper), error => error.code === 'sandbox_unavailable' && /is not an executable file/.test(error.message) && /cua install/.test(error.hint));
+  assert.throws(() => verifyHelper(helper), error => error.code === 'sandbox_unavailable' && /is not an executable file/.test(error.message) && error.hint.includes(ownInstaller().command));
   chmodSync(path, 0o755);
   assert.deepEqual(verifyHelper(helper), helper);
   const dir = join(root, 'not-a-file');

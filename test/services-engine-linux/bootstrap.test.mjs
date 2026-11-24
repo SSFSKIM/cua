@@ -7,6 +7,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {fakeLinuxEngine} from '../helpers/fake-linux-engine.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
+
+// The service's remedy: this cua's own installer by its absolute path, with --engine (F9; task 153).
+const REMEDY = `run \`${ownInstaller().command} --engine\``;
 
 const SERVICE = new URL('../../src/services/engine/linux/service.mjs', import.meta.url).href;
 const FACADE = new URL('../../src/cua-api/create-tinysky-alt.mjs', import.meta.url).href;
@@ -41,7 +45,7 @@ test('with an engine older than MIN_ENGINE_VERSION the facade\'s bootstrap compl
   const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const {code, result, stderr} = await bootstrap({CUA_ENGINE_BIN: engine.path});
   assert.equal(code, 0, stderr);
-  const sentence = 'cua-engine 0.3.0 is older than 0.4.4, which this cua needs; run cua install --engine';
+  const sentence = `cua-engine 0.3.0 is older than 0.4.4, which this cua needs; ${REMEDY}`;
   assert.deepEqual(result, {bootstrap: 'done', target: 'linux', getApp: 'function', refusals: [sentence, sentence, sentence], unhandled: []});
   assert.deepEqual(engine.spawns(), [], 'nothing was started, so nothing was sent');
 });
@@ -51,6 +55,6 @@ test('with an engine that cannot be started the facade\'s bootstrap completes an
   const missing = `${engine.dir}/absent`;
   const {code, result, stderr} = await bootstrap({CUA_ENGINE_BIN: missing});
   assert.equal(code, 0, stderr);
-  const sentence = `cua-engine at ${missing} could not be run (ENOENT); run cua install --engine`;
+  const sentence = `cua-engine at ${missing} could not be run (ENOENT); ${REMEDY}`;
   assert.deepEqual(result, {bootstrap: 'done', target: 'linux', getApp: 'function', refusals: [sentence, sentence, sentence], unhandled: []});
 });

@@ -1,30 +1,69 @@
-// Doctor on Linux (Phase F, #115 M3): the darwin helper and permission rows give way to display, accessibility.bus,
-// sandbox.userns and sandbox.launcher (the pinned helper); the IPC and signature rows say why they do not apply. The Linux host and every
-// system probe are injected, so this runs on any machine.
+// Doctor on Linux (Phase F, #115 M3; #171 M6a): the darwin helper and permission rows give way to display,
+// accessibility.bus, sandbox.userns and sandbox.launcher (the pinned helper). Since #171 M6a the runtime rows describe
+// cua's own runtime (the pre-flight's §4.5): `platform` names the release its record derives, `runtime.installed` every
+// common part (the module tree, Node and the sandbox helper) and the pointer, `runtime.modules` the tree's full check,
+// `runtime.node` the Node a session resolves (launch.mjs's own lookup) against its pin, and the vendor's tree is one
+// row, `runtime.vendor`, kept for CUA_NATIVE_ENGINE=vendor; every fail, and every warn for a part behind its pin, names
+// the remedy that repairs the home: what to move aside where an installer refuses to replace it, then this cua's own
+// installer by its absolute path (ruling 1110). The Linux host and every system probe are injected, so this runs on any
+// machine.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, realpathSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
-import {parsePin} from '../src/runtime/manifest.mjs';
+import {CuaError} from '../src/runtime/errors.mjs';
+import {RELEASES_DIR, linuxRelease, loadLinuxRuntime, ownInstaller, parsePin} from '../src/runtime/manifest.mjs';
 import {linuxDesktopChecks, sessionBusAddress} from '../src/runtime/linux-desktop.mjs';
 import {browsersFor, registerCuaHost} from '../src/chrome/registration.mjs';
 import {CUA_HOST_NAME, launcherPath} from '../src/chrome/extension.mjs';
+import {fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
 import {REPO, shortScratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
+const RECORD = loadLinuxRuntime({host: LINUX});
+const RELEASE = linuxRelease(RECORD, 'x64');
+const INSTALLER = `\`${ownInstaller().command}\``;
+const RELEASE_HINT = ownInstaller({release: RELEASE}).hint;
 const byName = report => Object.fromEntries(report.checks.map(c => [c.name, c]));
 const never = what => async () => { throw new Error(`${what} must not run on linux`); };
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const VENDOR_ROWS = ['runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'];
+const TREE = home => join(home, 'modules', RECORD.modules.lock);
+const NODE_BIN = (home, version = RECORD.node.version) => join(home, 'node', version, 'bin', 'node');
 
-async function linuxHome(t) {
+// A Linux home as `cua install` leaves it: cua's own module tree and Node, the pointer naming the derived release, and
+// the vendor's tree of a fixture pin (`pin`) beside them. Each part can be left out.
+async function linuxHome(t, {vendor = true, modules = true, node = RECORD.node.version, pointer = RELEASE, name = 'home'} = {}) {
   const s = shortScratch();
   t.after(s.cleanup);
   const archive = debFixture(s.dir);
   const pin = parsePin(linuxFixturePin({sha256: archive.sha256, length: archive.length}));
-  const home = join(s.dir, 'home');
-  await installRuntime({home, manifest: pin, archivePath: archive.deb, host: LINUX, tools: debTools(), verifySignatures: never('codesign')});
-  return {home, pin};
+  const home = join(s.dir, name);
+  mkdirSync(home, {recursive: true});
+  const real = realpathSync(home);
+  if (vendor) await installRuntime({home, manifest: pin, archivePath: archive.deb, host: LINUX, tools: debTools(), verifySignatures: never('codesign'), activate: false});
+  if (modules) fakeModuleTree(real, LINUX);
+  if (node) fakeManagedNode(real, LINUX, {version: node});
+  if (pointer) writeFileSync(join(real, 'current.json'), JSON.stringify({schema: 1, release: pointer}));
+  return {home: real, pin};
+}
+
+// Files added to one package of an installed tree, recorded as the install records them (its digest and file count;
+// native files with their size and hash), so the tree still verifies until a test changes one of them.
+function addToPackage(home, pkg, files) {
+  const root = TREE(home);
+  const record = JSON.parse(readFileSync(join(root, 'install.json'), 'utf8'));
+  const entry = record.packages.find(p => p.path === pkg);
+  const all = [{path: 'package.json', bytes: readFileSync(join(root, pkg, 'package.json'))}, ...Object.entries(files).map(([path, text]) => ({path, bytes: Buffer.from(text)}))];
+  for (const {path, bytes} of all) { mkdirSync(join(root, pkg, path, '..'), {recursive: true}); writeFileSync(join(root, pkg, path), bytes); }
+  const listed = all.map(({path, bytes}) => ({path, size: bytes.length, sha256: sha256(bytes)})).sort((a, b) => (a.path < b.path ? -1 : 1));
+  Object.assign(entry, {files: listed.length, digest: sha256(JSON.stringify(listed.map(f => [f.path, f.size, f.sha256])))});
+  for (const file of listed.filter(f => /\.node$/.test(f.path))) record.natives.push({path: `${pkg}/${file.path}`, size: file.size, sha256: file.sha256});
+  writeFileSync(join(root, 'install.json'), JSON.stringify(record, null, 2));
+  return root;
 }
 
 const DESKTOP_ROWS = [
@@ -32,27 +71,40 @@ const DESKTOP_ROWS = [
   {name: 'accessibility.bus', status: 'pass', detail: 'fixture'},
   {name: 'sandbox.userns', status: 'blocked', detail: 'fixture'},
 ];
+const DESKTOP_PASS = DESKTOP_ROWS.map(row => (row.name === 'sandbox.userns' ? {...row, status: 'pass'} : row));
 
 const pinnedHelper = ({home, arch}) => ({path: join(home, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox'), sha256: arch.padEnd(64, '0')});
+// cua's pinned engine installed: the selection's inputs, the inspection's facts and the capability report.
+const ENGINE_SHA = 'c'.repeat(64);
+const pinnedEngine = home => {
+  const path = join(home, 'engine', 'linux', 'cua-engine');
+  const pinned = {version: RECORD.engine.version, release: `linux-engine-v${RECORD.engine.version}`, sha256: ENGINE_SHA};
+  return {engine: {config: () => ({}), installed: () => ({path}), installedVersion: () => RECORD.engine.version},
+    inspectLinuxEngine: () => ({path, exists: true, executable: true, sha256: ENGINE_SHA, build: 'pinned', version: pinned.version, release: pinned.release, pinned, current: true}),
+    readLinuxCapabilities: async ({desktop}) => ({backend: 'x11', tree: 'at_spi', input: {background: true, desktop: true}, capture: {window: 'retained', desktop: true},
+      text: {paste: 'verified', literal: true}, desktop, version: pinned.version, build: 'fixture'})};
+};
 
-test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, the pinned sandbox helper, the secret store', async t => {
+// Doctor over `home`, with the Node resolved as a session resolves it (launch.mjs ownHostNode, over the fake managed
+// Node) and the helper's bytes check stubbed.
+const doctor = (home, pin, over = {}) => inspectRuntime({home, env: {DISPLAY: ':9'}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
+  inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
+  inspectLinux: async () => DESKTOP_PASS, inspectChrome: async () => [], inspectAgent: async () => [], linuxHelper: pinnedHelper, ...pinnedEngine(home), ...over});
+
+test('a healthy Linux install: cua\'s own runtime rows pass, the vendor\'s tree is one row, no darwin rows, the Linux desktop rows, the pinned sandbox helper, the secret store', async t => {
   const {home, pin} = await linuxHome(t);
-  const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
-    inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
-    inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS.map(row => (row.name === 'sandbox.userns' ? {...row, status: 'pass'} : row)); },
-    inspectChrome: async () => [], inspectAgent: async () => [], linuxHelper: pinnedHelper,
-    resolveOwnNode: () => '/opt/node-24/bin/node'});   // healthy includes a Node 24 for the own host, whatever runs the tests
+  const report = await doctor(home, pin);
   const rows = byName(report);
-  assert.equal(report.ok, true);
-  // This home holds the runtime, not cua's engine: since #171 M5 the Linux default is cua's engine, so a session here
-  // keeps the vendor's with a warning (engine_not_installed), and the engine row says so; nothing fails.
-  assert.equal(rows['repl.host'].status, 'warn');
-  assert.equal(rows.engine.status, 'warn');
-  assert.match(rows.engine.detail, /cua's engine is the default, but none is installed, .*\(engine_not_installed\)/);
-  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox', 'sandbox.launcher', 'sandbox.userns'])
-    assert.equal(rows[name]?.status, 'pass', name);
-  assert.equal(rows['runtime.ipc'].detail, 'not applicable on linux');
-  assert.match(rows['runtime.signatures'].detail, /archive hash is the trust root on linux/);
+  assert.equal(report.ok, true, JSON.stringify(report.checks.filter(c => c.status !== 'pass'), null, 1));
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.vendor', 'sandbox', 'sandbox.launcher', 'sandbox.userns', 'repl.host', 'engine'])
+    assert.equal(rows[name]?.status, 'pass', `${name}: ${rows[name]?.detail}`);
+  assert.equal(rows.platform.detail, `linux-x64: cua's own runtime ${RELEASE}`);
+  assert.equal(rows['runtime.installed'].detail, `cua's own runtime ${RELEASE} at ${TREE(home)}: its module tree, Node and sandbox helper are installed, and current.json names it, the last install that completed here`);
+  assert.match(rows['runtime.modules'].detail, /^the module tree at \S+ verifies: \d+ packages, each file's digest, and 0 native files by SHA-256$/);
+  assert.equal(rows['runtime.node'].detail, `the pinned Node ${RECORD.node.version} at ${NODE_BIN(home)}, its bytes the ones its install record names`);
+  assert.equal(rows['runtime.vendor'].detail, `the vendor's release ${pin.release} at ${join(home, 'runtimes', pin.release)}, kept for CUA_NATIVE_ENGINE=vendor: installed from its pinned archive (its length and SHA-256, the trust root on Linux), every layout path present, runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, linux-x64`);
+  for (const name of VENDOR_ROWS) assert.equal(rows[name], undefined, `${name} is folded into runtime.vendor`);
+  assert.deepEqual(report.runtime, {release: RELEASE, root: TREE(home), paths: {moduleDir: join(TREE(home), 'node_modules')}, parts: RECORD});
   assert.match(rows['sandbox.launcher'].detail, /the pinned helper .*\/sandbox\/rust-v0\.163\.0\/codex-linux-sandbox/);
   assert.equal(rows['helper.live'], undefined);
   assert.equal(rows['helper.permissions'], undefined);
@@ -60,7 +112,272 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*no network \(the trusted services do, so the computer-use helper reaches the X display and the session bus\)/);
   assert.equal(rows['secrets.helper'], undefined);
   assert.equal(rows['secrets.store'].status, 'pass', 'Linux has the same file store');
-  assert.equal(summarize(report), 'passive runtime checks pass; see WARN lines (warn: repl.host, engine)');
+  assert.equal(summarize(report), 'passive runtime checks pass');
+});
+
+test('a home with cua\'s own runtime and no vendor tree gets the own rows, and runtime.vendor skips', async t => {
+  const {home, pin} = await linuxHome(t, {vendor: false});
+  const rows = byName(await doctor(home, pin));
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node']) assert.equal(rows[name].status, 'pass', `${name}: ${rows[name].detail}`);
+  for (const name of VENDOR_ROWS) assert.equal(rows[name], undefined, name);
+  assert.equal(rows['runtime.vendor'].status, 'skip');
+  assert.equal(rows['runtime.vendor'].detail, `the vendor's release ${pin.release} is not installed here; only CUA_NATIVE_ENGINE=vendor needs it, and ${INSTALLER} installs it beside cua's own runtime`);
+});
+
+test('runtime.installed: no module tree fails; a pointer naming the vendor\'s release, another runtime or nothing warns; each names the installer', async t => {
+  const missing = await linuxHome(t, {modules: false});
+  const failed = byName(await doctor(missing.home, missing.pin))['runtime.installed'];
+  assert.equal(failed.status, 'fail');
+  assert.ok(failed.detail.startsWith(`cua's Linux runtime ${RELEASE} is not installed in ${missing.home}: its module tree `), failed.detail);
+  assert.ok(failed.detail.includes(INSTALLER), failed.detail);
+  assert.equal(byName(await doctor(missing.home, missing.pin))['runtime.modules'].status, 'skip');
+
+  for (const [pointer, words] of [['0.0.1-linux-x64', 'the vendor\'s release 0.0.1-linux-x64, which an older cua\'s install wrote'],
+    ['cua-linux-x64-e0.0.1-n24.0.0-s0.1.0-m000000000000', 'another cua\'s runtime, cua-linux-x64-e0.0.1-n24.0.0-s0.1.0-m000000000000'], [null, 'no release']]) {
+    const {home, pin} = await linuxHome(t, {pointer});
+    const row = byName(await doctor(home, pin))['runtime.installed'];
+    assert.equal(row.status, 'warn', String(pointer));
+    assert.equal(row.detail, `sessions resolve cua's own runtime ${RELEASE} (${TREE(home)}), but current.json names ${words}: no install of this cua has completed here, so a part may be missing or another install's; run ${INSTALLER}`);
+  }
+});
+
+// Fix wave 1: runtime.installed is every common part, not the tree and the pointer alone.
+test('runtime.installed: a tree and a pointer without Node or the helper fail, naming each missing part; a disabled sandbox needs no helper', async t => {
+  const noNode = await linuxHome(t, {node: null});
+  const row = byName(await doctor(noNode.home, noNode.pin))['runtime.installed'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.startsWith(`cua's own runtime ${RELEASE} is not whole at ${TREE(noNode.home)}: its Node: cua's Linux runtime is not installed in ${noNode.home}: its Node is not installed (not installed)`), row.detail);
+  assert.ok(row.detail.endsWith(`; runtime.node and sandbox.launcher name each part's remedy, and ${INSTALLER} installs what is absent`), row.detail);
+
+  const {home, pin} = await linuxHome(t);
+  const noHelper = byName(await doctor(home, pin, {linuxHelper: undefined}))['runtime.installed'];
+  assert.equal(noHelper.status, 'fail');
+  assert.match(noHelper.detail, /: its sandbox helper: cua's Linux sandbox helper \S+ is not installed \(ENOENT\)/);
+  const disabled = byName(await doctor(home, pin, {linuxHelper: undefined, env: {DISPLAY: ':9', CUA_SHIM_SANDBOX: 'disabled'}}))['runtime.installed'];
+  assert.equal(disabled.status, 'warn');
+  assert.match(disabled.detail, /its sandbox helper is not installed, which CUA_SHIM_SANDBOX=disabled does not run/);
+});
+
+// Fix wave 1: what an installer refuses to replace is named, to be moved aside, before the installer.
+test('runtime.installed: a module tree cua did not install, at the lock\'s path, is named to be moved aside', async t => {
+  const {home, pin} = await linuxHome(t);
+  rmSync(join(TREE(home), 'install.json'));
+  const row = byName(await doctor(home, pin))['runtime.installed'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.includes(`${TREE(home)} is there, and is not a module tree cua installed for this lock and host; it is never replaced in place`), row.detail);
+  assert.ok(row.detail.endsWith(`; stop any \`cua serve\` using it, move ${TREE(home)} aside, then ${RELEASE_HINT}`), row.detail);
+});
+
+// Fix wave 2: one classification of the pointer's path for doctor and install (manifest.mjs pointerObstruction): only a
+// file cua wrote, or nothing, is current.json; a directory or a link there, to a pointer or to nothing, is named to be
+// moved aside, in the words install refuses it with.
+test('runtime.installed: a current.json that is a directory or a link is named to be moved aside, as install names it, and doctor goes on', async t => {
+  const cases = {
+    'a directory': home => mkdirSync(join(home, 'current.json')),
+    'a link': home => { writeFileSync(join(home, 'pointer.json'), JSON.stringify({schema: 1, release: RELEASE})); symlinkSync(join(home, 'pointer.json'), join(home, 'current.json')); },
+    'a link to nothing': home => symlinkSync(join(home, 'gone.json'), join(home, 'current.json')),
+  };
+  for (const [name, lay] of Object.entries(cases)) {
+    const {home, pin} = await linuxHome(t, {pointer: null});
+    lay(home);
+    const report = await doctor(home, pin);
+    const row = byName(report)['runtime.installed'];
+    assert.equal(row.status, 'warn', name);
+    const kind = name === 'a directory' ? 'a directory' : 'a link';
+    assert.ok(row.detail.endsWith(`, but ${join(home, 'current.json')} is ${kind}, not a file cua wrote, and no install replaces it: move ${join(home, 'current.json')} aside, then ${RELEASE_HINT}`), `${name}: ${row.detail}`);
+    assert.ok(byName(report).engine, 'the rows after it are there');
+  }
+});
+
+// Fix wave 2: runtime.installed asks what a session asks of the tree (manifest.mjs resolveRuntime's check), so a
+// recorded tree missing a native file is not whole there either.
+test('runtime.installed: a recorded tree that sessions refuse (a native file gone) fails, as the session refuses it', async t => {
+  const {home, pin} = await linuxHome(t);
+  const root = addToPackage(home, 'node_modules/classic-level', {'prebuilds/linux-x64/classic-level.node': 'ELF-native-code'});
+  rmSync(join(root, 'node_modules/classic-level/prebuilds/linux-x64/classic-level.node'));
+  const rows = byName(await doctor(home, pin));
+  assert.equal(rows['runtime.installed'].status, 'fail');
+  assert.match(rows['runtime.installed'].detail, /classic-level\.node/);
+  assert.ok(rows['runtime.installed'].detail.includes(RELEASE_HINT), rows['runtime.installed'].detail);
+  assert.equal(rows['runtime.modules'].status, 'fail', 'the full check still names what differs');
+});
+
+test('runtime.modules: a file altered inside the tree fails, naming it and the installer with the release', async t => {
+  const {home, pin} = await linuxHome(t);
+  writeFileSync(join(TREE(home), 'node_modules', 'sharp', 'package.json'), '{"altered": true}\n');
+  const rows = byName(await doctor(home, pin));
+  assert.equal(rows['runtime.modules'].status, 'fail');
+  // its manifest is another size, which the full check names too (task 156, fix wave 2)
+  assert.match(rows['runtime.modules'].detail, /does not verify: node_modules\/sharp's files are not the ones installed; node_modules\/sharp\/package\.json is \d+ bytes, recorded as \d+; stop any `cua serve` using it, remove \S+, then run /);
+  assert.ok(rows['runtime.modules'].detail.includes(INSTALLER), rows['runtime.modules'].detail);
+  assert.ok(rows['runtime.modules'].detail.includes(`which may not be ${RELEASE}`), rows['runtime.modules'].detail);
+});
+
+// §5.1: a JavaScript file altered inside a package, and a native file removed, truncated or altered, every package.json
+// intact: the full check catches each.
+test('runtime.modules: a changed JavaScript file, and a native file removed, truncated or altered, each fail', async t => {
+  const cases = {
+    'a JavaScript file altered': root => writeFileSync(join(root, 'node_modules/classic-level/index.js'), 'module.exports = "altered";\n'),
+    'a native file removed': root => rmSync(join(root, 'node_modules/classic-level/prebuilds/linux-x64/classic-level.node')),
+    'a native file truncated': root => truncateSync(join(root, 'node_modules/classic-level/prebuilds/linux-x64/classic-level.node'), 3),
+    'a native file altered': root => writeFileSync(join(root, 'node_modules/classic-level/prebuilds/linux-x64/classic-level.node'), 'ELF-but-other'),
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const {home, pin} = await linuxHome(t);
+    const root = addToPackage(home, 'node_modules/classic-level', {'index.js': 'module.exports = {};\n', 'prebuilds/linux-x64/classic-level.node': 'ELF-native-code'});
+    assert.equal(byName(await doctor(home, pin))['runtime.modules'].status, 'pass', `${name}: the tree verifies before`);
+    change(root);
+    const row = byName(await doctor(home, pin))['runtime.modules'];
+    assert.equal(row.status, 'fail', name);
+    assert.match(row.detail, /classic-level/, name);
+    assert.ok(row.detail.includes(INSTALLER), name);
+  }
+});
+
+test('runtime.node: the pinned Node passes; one behind the pin warns naming both and the installer; CUA_NODE warns when it resolves and fails when it does not; none fails naming the installer', async t => {
+  const behind = await linuxHome(t, {node: '24.0.0'});
+  const warned = byName(await doctor(behind.home, behind.pin))['runtime.node'];
+  assert.equal(warned.status, 'warn');
+  assert.equal(warned.detail, `the installed Node 24.0.0 at ${NODE_BIN(behind.home, '24.0.0')} runs sessions here, behind this cua's pinned ${RECORD.node.version}: ${INSTALLER} installs the pinned one`);
+
+  const {home, pin} = await linuxHome(t);
+  const node = realpathSync(process.execPath);
+  const override = byName(await doctor(home, pin, {env: {DISPLAY: ':9', CUA_NODE: process.execPath}}))['runtime.node'];
+  assert.equal(override.status, 'warn');
+  assert.equal(override.detail, `CUA_NODE=${process.execPath} (${node}) runs sessions here in place of the pinned Node ${RECORD.node.version}, a named override`);
+  // The real lookup refuses what CUA_NODE names when it cannot run it: the row fails with that sentence, its correction.
+  const gone = byName(await doctor(home, pin, {env: {DISPLAY: ':9', CUA_NODE: '/nonexistent/node'}}))['runtime.node'];
+  assert.equal(gone.status, 'fail');
+  assert.match(gone.detail, /^cua's own REPL host needs Node 24 or later, and CUA_NODE names \/nonexistent\/node, which is not found: set CUA_NODE to the absolute path of a Node 24 or later, or unset CUA_NODE/);
+
+  const none = await linuxHome(t, {node: null});
+  const failed = byName(await doctor(none.home, none.pin))['runtime.node'];
+  assert.equal(failed.status, 'fail');
+  assert.ok(failed.detail.startsWith(`cua's Linux runtime is not installed in ${none.home}: its Node is not installed (not installed); `), failed.detail);
+  assert.ok(failed.detail.includes(INSTALLER), failed.detail);
+
+  // Bytes that are not the ones its record names are never run, and never replaced in place: the pinned version's
+  // directory is named to be moved aside first.
+  writeFileSync(NODE_BIN(home), '#!/bin/sh\necho v99.0.0\n');
+  chmodSync(NODE_BIN(home), 0o755);
+  const altered = byName(await doctor(home, pin))['runtime.node'];
+  assert.equal(altered.status, 'fail');
+  assert.match(altered.detail, /is not the binary its install record names\)/);
+  assert.ok(altered.detail.endsWith(`; it is never repaired in place: stop any \`cua serve\` using it, move ${join(home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), altered.detail);
+});
+
+// Fix wave 2: whatever node-install refuses to replace is named, before the installer: a Node pointer that is not a file,
+// a pinned version's path that is not its recorded install.
+test('runtime.node: a Node pointer that is not a file, or a pinned path that is not its recorded install, is named to be moved aside', async t => {
+  const pointed = await linuxHome(t);
+  const nodePointer = join(pointed.home, 'node', 'current.json');
+  rmSync(nodePointer);
+  mkdirSync(nodePointer);
+  const row = byName(await doctor(pointed.home, pointed.pin))['runtime.node'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.endsWith(`; it is never repaired in place: stop any \`cua serve\` using it, move ${nodePointer} aside, then ${RELEASE_HINT}`), row.detail);
+
+  const occupied = await linuxHome(t, {node: null});
+  mkdirSync(join(occupied.home, 'node'));
+  writeFileSync(join(occupied.home, 'node', RECORD.node.version), 'not a Node install');
+  const blocked = byName(await doctor(occupied.home, occupied.pin))['runtime.node'];
+  assert.equal(blocked.status, 'fail');
+  assert.ok(blocked.detail.endsWith(`move ${join(occupied.home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), blocked.detail);
+});
+
+// The recorded bytes without their execute bit: node-install keeps that tree and refuses it (its version probe fails),
+// so the installer alone repairs nothing; the mode fix, or the version's directory to move aside, comes first.
+test('runtime.node: a managed bin/node that lost its execute bit names the mode fix, or its version directory to move aside, before the installer', async t => {
+  const {home, pin} = await linuxHome(t);
+  chmodSync(NODE_BIN(home), 0o644);
+  const row = byName(await doctor(home, pin))['runtime.node'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.endsWith(`; ${NODE_BIN(home)} is not executable, and the installer never repairs it in place: restore its mode with \`chmod 755 ${NODE_BIN(home)}\`, `
+    + `or stop any \`cua serve\` using it, move ${join(home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), row.detail);
+});
+
+// The mode fix is a command to paste: a home whose path a shell would split has it quoted as one argument, as the
+// installer's own command is (task 156, fix wave 2).
+test('runtime.node: the mode fix quotes a managed Node path with a space or a quote as one shell argument', async t => {
+  const {home, pin} = await linuxHome(t, {name: 'it\'s a home'});
+  chmodSync(NODE_BIN(home), 0o644);
+  const row = byName(await doctor(home, pin))['runtime.node'];
+  const quoted = `'${NODE_BIN(home).replaceAll('\'', '\'\\\'\'')}'`;
+  assert.ok(row.detail.includes(`restore its mode with \`chmod 755 ${quoted}\``), row.detail);
+});
+
+test('runtime.vendor: a damaged tree fails with its recovery; a runtimes/ that is a file, or a link to nothing, fails naming it', async t => {
+  const {home, pin} = await linuxHome(t);
+  rmSync(join(home, 'runtimes', pin.release, 'install.json'));
+  const damaged = byName(await doctor(home, pin))['runtime.vendor'];
+  assert.equal(damaged.status, 'fail');
+  assert.ok(damaged.detail.startsWith(`the vendor's release ${pin.release} in ${home} is damaged: `), damaged.detail);
+  assert.ok(damaged.detail.includes(`remove ${join(home, 'runtimes', pin.release)}, then run ${INSTALLER}`), damaged.detail);
+
+  rmSync(join(home, 'runtimes'), {recursive: true});
+  writeFileSync(join(home, 'runtimes'), 'not a directory');
+  const blocked = byName(await doctor(home, pin))['runtime.vendor'];
+  assert.equal(blocked.status, 'fail');
+  assert.equal(blocked.detail, `the vendor's release ${pin.release} in ${home} is damaged: ${join(home, 'runtimes')} is not a directory, so no release can be installed under it; `
+    + `stop any \`cua serve\` using it, remove ${join(home, 'runtimes')}, then run ${INSTALLER} (or ${INSTALLER.slice(0, -1)} --archive <ChatGPT deb>\` with the pinned archive)`);
+  assert.doesNotMatch(blocked.detail, new RegExp(`runtimes/${pin.release.replaceAll('.', '\\.')}`));
+
+  // A link that leads nowhere looks absent to a lookup, but blocks the install all the same.
+  rmSync(join(home, 'runtimes'));
+  symlinkSync(join(home, 'gone'), join(home, 'runtimes'));
+  const dangling = byName(await doctor(home, pin))['runtime.vendor'];
+  assert.equal(dangling.status, 'fail');
+  assert.ok(dangling.detail.includes(`${join(home, 'runtimes')} is not a directory, so no release can be installed under it`), dangling.detail);
+  assert.ok(dangling.detail.includes(`remove ${join(home, 'runtimes')}, then run ${INSTALLER}`), dangling.detail);
+});
+
+// Fix wave 1: a vendor pin this checkout cannot parse fails the vendor's row alone; the own rows and the rest of doctor
+// stand.
+test('runtime.vendor: vendor pins that cannot be loaded fail that row alone', async t => {
+  const {home} = await linuxHome(t);
+  const report = await doctor(home, null, {pins: undefined, loadPins: () => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); }});
+  const rows = byName(report);
+  assert.equal(rows['runtime.vendor'].status, 'fail');
+  assert.equal(rows['runtime.vendor'].detail, `release pin x.json: unknown field "y"; restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}; only CUA_NATIVE_ENGINE=vendor needs the vendor's tree`);
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
+});
+
+// Fix wave 2: a pins directory the filesystem refuses is a pin error like any other, kept in the vendor's row, and in the
+// selection of a session that asks for the vendor's engine.
+test('runtime.vendor: a pins directory that cannot be read fails that row alone, naming the pins to restore; a vendor selection refuses with it', async t => {
+  const {home} = await linuxHome(t);
+  const unreadable = () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); };
+  const rows = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable}));
+  assert.equal(rows['runtime.vendor'].status, 'fail');
+  assert.ok(rows['runtime.vendor'].detail.startsWith(`the vendor's release pins at ${RELEASES_DIR} cannot be read (ENOENT); restore ${RELEASES_DIR} as this cua's checkout ships it, then run ${INSTALLER}`), rows['runtime.vendor'].detail);
+  for (const name of ['platform', 'runtime.installed', 'runtime.modules', 'runtime.node', 'runtime.leftovers', 'repl.host', 'engine']) assert.notEqual(rows[name]?.status, 'fail', `${name}: ${rows[name]?.detail}`);
+
+  const vendor = byName(await doctor(home, null, {pins: undefined, loadPins: unreadable, env: {DISPLAY: ':9', CUA_NATIVE_ENGINE: 'vendor'}}));
+  assert.equal(vendor['runtime.vendor'].status, 'fail');
+  assert.ok(vendor.engine, 'doctor reaches the engine row');
+});
+
+test('sandbox.launcher: a helper not placed fails, naming the installer', async t => {
+  const {home, pin} = await linuxHome(t);
+  const row = byName(await doctor(home, pin, {linuxHelper: undefined}))['sandbox.launcher'];
+  assert.equal(row.status, 'fail');
+  assert.match(row.detail, /^cua's Linux sandbox helper \S+\/sandbox\/rust-v[\d.]+\/codex-linux-sandbox is not installed \(ENOENT\)/);
+  assert.ok(row.detail.includes(`; run ${INSTALLER} to place the pinned helper`), row.detail);
+  assert.doesNotMatch(row.detail, /`cua install`/);
+});
+
+test('repl.host keeps the refusal\'s remedy', async t => {
+  const {home, pin} = await linuxHome(t, {node: null});
+  const row = byName(await doctor(home, pin))['repl.host'];
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.includes(`its Node is not installed (not installed); run ${INSTALLER}`), row.detail);
+});
+
+test('platform: a checkout whose record and pins disagree fails and stops there', async t => {
+  const {home, pin} = await linuxHome(t);
+  const report = await doctor(home, pin, {linuxRuntime: () => { throw new CuaError('invalid_pin', 'the Linux runtime record x has node.version 1.2.3, and its pin y has version 24.22.0', {hint: 'the record repeats its pins: change node.version with y'}); }});
+  assert.equal(report.ok, false);
+  assert.deepEqual(report.checks, [{name: 'platform', status: 'fail', detail: 'the Linux runtime record x has node.version 1.2.3, and its pin y has version 24.22.0; the record repeats its pins: change node.version with y'}]);
 });
 
 // #115 M3: every scoped or default launch on Linux runs under cua's pinned helper, which needs bubblewrap and user

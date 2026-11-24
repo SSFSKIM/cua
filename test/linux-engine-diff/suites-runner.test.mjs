@@ -56,6 +56,16 @@ test('a parity part whose lanes and diff pass but whose final cleanup fails, fai
   assert.equal(both.status, 3, "the diff's failure is the part's");
 });
 
+// #171 M6a: a Linux home serves only once this cua's install has run in it, so the preparation may start from a home the
+// run names (PARITY_HOME, prepare --home) in place of the account's default one; without it, nothing names a home.
+test('the parity preparation starts from PARITY_HOME when it is set, and names no home otherwise', () => {
+  const named = part('inner-parity', { env: { PARITY_HOME: '/run/source home' } });
+  assert.equal(named.status, 0, named.stderr);
+  assert.ok(named.calls.some((c) => /^scripts\/repl-parity\.mjs prepare --device cua-171 --commit \S+ --native-only --home \/run\/source home$/.test(c)), named.calls.join('\n'));
+  const unnamed = part('inner-parity');
+  assert.ok(unnamed.calls.some((c) => /^scripts\/repl-parity\.mjs prepare --device cua-171 --commit \S+ --native-only$/.test(c)), unnamed.calls.join('\n'));
+});
+
 test('on the installed engine the parity lanes are named no engine and the prepared home is checked; on a candidate, the candidate is named', () => {
   const installed = part('inner-parity');
   assert.ok(installed.calls.some((c) => /gate\.mjs check --pinned \/fake\/prepared-home$/.test(c)), installed.calls.join('\n'));

@@ -1,0 +1,17 @@
+2026-11-23T22:57:45Z == fallback head f41546d082714bf9bea87a82b30f570ef62d755e label counted device cua-171 engine installed selection default dirty=no
+2026-11-23T22:58:17Z run home /Users/new/.local/share/cua-171/t8/reg/logs/fallback/home installed
+2026-11-23T22:58:17Z fallback home none: shaped exit 0 {"kind":"none","engine":null,"record":null,"verifiedVersion":null}
+2026-11-23T22:58:18Z fallback home none: probe exit 0
+2026-11-23T22:58:50Z run home /Users/new/.local/share/cua-171/t8/reg/logs/fallback/home installed
+2026-11-23T22:58:51Z fallback home previous: shaped exit 0 {"kind":"previous","engine":{"sha256":"f1513e79f4efdb3dd950e108fec05ce59b090926907a3071ee65ca3899d4921f","build":"pinned","version":"0.4.3"},"record":{"version":"0.4.3","sha256":"f1513e79f4efdb3dd950e108fec05ce59b090926907a3071ee65ca3899d4921f"},"verifiedVersion":"0.4.3"}
+2026-11-23T22:58:52Z fallback home previous: probe exit 0
+2026-11-23T22:59:25Z run home /Users/new/.local/share/cua-171/t8/reg/logs/fallback/home installed
+2026-11-23T22:59:26Z fallback home released: shaped exit 0 {"kind":"released","engine":{"sha256":"751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca","build":"pinned","version":"0.4.0"},"record":{"version":"0.4.0","sha256":"751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"},"verifiedVersion":"0.4.0"}
+2026-11-23T22:59:27Z fallback home released: probe exit 0
+2026-11-23T22:59:59Z run home /Users/new/.local/share/cua-171/t8/reg/logs/fallback/home installed
+2026-11-23T23:00:00Z fallback home older: shaped exit 0 {"kind":"older","engine":{"sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60","build":"pinned","version":"0.3.0"},"record":{"version":"0.3.0","sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60"},"verifiedVersion":"0.3.0"}
+2026-11-23T23:00:00Z fallback home older: probe exit 0
+2026-11-23T23:00:48Z run home /Users/new/.local/share/cua-171/t8/reg/logs/fallback/home installed
+2026-11-23T23:00:49Z fallback home unrecorded: shaped exit 0 {"kind":"unrecorded","engine":{"sha256":"5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60","build":"unknown","version":null},"record":{"version":"0.4.4","sha256":"eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca"},"verifiedVersion":null}
+2026-11-23T23:00:50Z fallback home unrecorded: probe exit 0
+2026-11-23T23:00:50Z == fallback exit 0

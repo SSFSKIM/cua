@@ -1,0 +1,2 @@
+install exit 0
+{"ok":true,"release":"cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d","sessions":{"browser":true,"computer":true,"engine":"cua","alternate":{"engine":"vendor","override":"CUA_NATIVE_ENGINE=vendor","opens":true},"why":{}},"vendor":{"release":"26.928.40906-linux-x64"},"engine":{"version":"0.4.4"}}

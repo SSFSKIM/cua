@@ -3,8 +3,13 @@
 // the capability report read on every start, requests by id, the restart rule, an engine that exits or writes garbage.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {renameSync} from 'node:fs';
 import {MIN_ENGINE_VERSION, createEngineClient, engineVersionOf, isOlder} from '../../src/services/engine/linux/client.mjs';
 import {fakeLinuxEngine} from '../helpers/fake-linux-engine.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
+
+// The service's remedy: this cua's own installer by its absolute path, with --engine (F9; task 153).
+const REMEDY = `run \`${ownInstaller().command} --engine\``;
 
 const client = (t, engine, options = {}) => {
   const made = createEngineClient({path: engine.path, ...options});
@@ -26,17 +31,17 @@ test('MIN_ENGINE_VERSION is 0.4.4 (#487); versions read from the --version line 
 test('an engine older than MIN_ENGINE_VERSION is refused before it is started, with the sentence naming the remedy', async t => {
   const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.4.3 (ba5b043834ce)'});
   const made = client(t, engine);
-  await assert.rejects(made.request('list_windows', {}), {message: 'cua-engine 0.4.3 is older than 0.4.4, which this cua needs; run cua install --engine'});
+  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.3 is older than 0.4.4, which this cua needs; ${REMEDY}`});
   await assert.rejects(made.capabilities(), {message: /^cua-engine 0\.4\.3 is older than 0\.4\.4/});
   assert.deepEqual(engine.spawns(), [], 'no server was started');
 });
 
 test('an engine whose version cannot be read, or that cannot run, is refused before anything is sent', async t => {
   const garbled = fakeLinuxEngine(t, {version: 'hello'});
-  await assert.rejects(client(t, garbled).request('list_windows', {}), {message: `cua-engine at ${garbled.path} printed no version this cua recognizes ("hello"); run cua install --engine`});
+  await assert.rejects(client(t, garbled).request('list_windows', {}), {message: `cua-engine at ${garbled.path} printed no version this cua recognizes ("hello"); ${REMEDY}`});
   assert.deepEqual(garbled.spawns(), []);
   const missing = `${garbled.dir}/absent`;
-  await assert.rejects(client(t, {path: missing}).request('list_windows', {}), {message: `cua-engine at ${missing} could not be run (ENOENT); run cua install --engine`});
+  await assert.rejects(client(t, {path: missing}).request('list_windows', {}), {message: `cua-engine at ${missing} could not be run (ENOENT); ${REMEDY}`});
 });
 
 test('the engine starts as `server --desktop <mode>`, answers its capabilities first, then requests by increasing id; output is the JSON value', async t => {
@@ -82,6 +87,32 @@ test('restart: true ends that engine and fails what else was pending; the next r
   assert.equal(spawns.length, 2);
   assert.notEqual(spawns[0].pid, spawns[1].pid);
   assert.deepEqual(engine.requests().filter(r => r.pid === spawns[1].pid).map(r => r.command), ['capabilities', 'list_windows'], 'the fresh engine reports its capabilities first');
+});
+
+// #171 M6a (the pre-flight's §3.3, finding 15): a connection binds the engine's pathname, not its bytes, so an install
+// may replace the file between two starts. The minimum holds for whatever runs: each start checks the version of the
+// file now at the path before anything is sent to it.
+test('an engine replaced at its path between starts: the next start runs the file now there, and one below the minimum is refused before any request', async t => {
+  const restart = `export function answer(command) {
+    if (command === 'move') return {error: 'the X connection broke', restart: true};
+  }`;
+  // Three executables, each recording its own starts and requests beside itself; the client names the first one's path,
+  // and an install renames another over it, as placeLinuxEngine does.
+  const first = fakeLinuxEngine(t, {behaviour: restart});
+  const newer = fakeLinuxEngine(t, {version: 'cua-engine 9.0.0 (newer)', behaviour: restart});
+  const older = fakeLinuxEngine(t, {version: 'cua-engine 0.4.2 (older)', behaviour: restart});
+  const made = client(t, first);
+  await made.request('list_windows', {});
+  renameSync(newer.path, first.path);
+  await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
+  assert.equal((await made.request('list_windows', {})).length, 2);
+  assert.equal(first.spawns().length, 1, 'the file first at the path started once');
+  assert.equal(newer.spawns().length, 1, 'the next start ran the file now at the path');
+  renameSync(older.path, first.path);
+  await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
+  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.2 is older than 0.4.4, which this cua needs; ${REMEDY}`});
+  assert.deepEqual([older.spawns().length, older.requests().length], [0, 0], 'the older one is never started, and nothing is sent to it');
+  assert.equal(newer.spawns().length, 1);
 });
 
 test('an engine that exits fails what was pending with its exit status and the tail of its stderr; the next request restarts it', async t => {

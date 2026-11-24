@@ -1,0 +1,83 @@
+F10's credit check (#171 M6a T8, task 155), at H = f41546d082714bf9bea87a82b30f570ef62d755e, run 2026-11-23.
+
+$ git diff --stat linux-engine-v0.4.3 linux-engine-v0.4.4 -- native/linux-engine
+ native/linux-engine/Cargo.lock            |   2 +-
+ native/linux-engine/Cargo.toml            |   2 +-
+ native/linux-engine/README.md             |  18 ++-
+ native/linux-engine/src/drop_cursor.rs    |  25 +++
+ native/linux-engine/src/drop_settle.rs    |  54 ++++++-
+ native/linux-engine/src/engine.rs         |   5 +-
+ native/linux-engine/src/engine/handle.rs  | 175 +++++++++++++++-----
+ native/linux-engine/src/engine/pointer.rs | 261 ++++++++++++++++++++++++++++--
+ 8 files changed, 484 insertions(+), 58 deletions(-)
+
+$ git diff --stat linux-engine-v0.4.4 f41546d082714bf9bea87a82b30f570ef62d755e -- native/linux-engine
+(no output: H's engine sources are 0.4.4's)
+
+$ git show f41546d082714bf9bea87a82b30f570ef62d755e:runtime/engine/linux-engine.json
+{
+  "version": "0.4.4",
+  "release": "linux-engine-v0.4.4",
+  "assets": {
+    "x64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.4/cua-engine-0.4.4-linux-x64",
+      "sha256": "eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca"
+    },
+    "arm64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.4/cua-engine-0.4.4-linux-arm64",
+      "sha256": "f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e"
+    }
+  }
+}
+
+$ gh release view linux-engine-v0.4.4 --json assets --jq '.assets[] | "\(.name) \(.digest)"'
+cua-engine-0.4.4-linux-arm64 sha256:f54b2aeb8e00676a9f521410156c9bdd1b578e2308724013eef2eb6145c7da3e
+cua-engine-0.4.4-linux-x64 sha256:eff8befcf591b937c3b019f32a2b9e36b47d126ffb12b1c187dc18519e4d67ca
+SHA256SUMS sha256:4641c6d3f31d02c74f0ae18cef6bd3fb3f780989815678d81e6f0bceba2e90f9
+
+$ git diff da7585c3 f41546d082714bf9bea87a82b30f570ef62d755e -- src/services/engine/linux/
+diff --git a/src/services/engine/linux/client.mjs b/src/services/engine/linux/client.mjs
+index ba02d2494..749a2cdc6 100644
+--- a/src/services/engine/linux/client.mjs
++++ b/src/services/engine/linux/client.mjs
+@@ -7,7 +7,9 @@
+ // Chromium-family drag held until its page can take it, so a drag Chrome refused never answers as a plain one, and the
+ // hold's notice beside the ok; 0.4.3: a long Chrome drag and a Chrome source's drag-handle end released on a tail that
+ // refreshes Chrome's drop status at the path's end, for #459's drops on a position the path had left, which 0.4.2
+-// answered ok under load; a residual is measured and bounded, not zero), or one whose version line it cannot read;
++// answered ok under load; a residual is measured and bounded, not zero; 0.4.4: an Electron drop's settle rests its
++// press source's family's rest, where 0.4.3 rested the named window's, none for GTK 4, so its accept could answer for
++// a place the pointer had left, #487), or one whose version line it cannot read;
+ // nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends `capabilities` as the new process's
+ // first request, keeping that process's answer. A request may carry a check of the report, made against the process the request is then written to. Requests
+ // made while it starts wait for it, in call order.
+@@ -25,12 +27,20 @@
+ // The vendor's SkyLinuxTransport (@oai/sky 0.7.5 targets/linux/sky_linux_transport.js) is the reference; its sentences
+ // that name sky_linux name cua-engine here.
+ import {execFile, spawn} from 'node:child_process';
++import {fileURLToPath} from 'node:url';
+ import {heldRecordStdio} from './held-record.mjs';
+
+-export const MIN_ENGINE_VERSION = '0.4.3';
++export const MIN_ENGINE_VERSION = '0.4.4';
+ const STDERR_TAIL = 8192;
+ const VERSION_TIMEOUT_MS = 5000;
+-const REMEDY = 'run cua install --engine';
++// The remedy names this cua's own installer by its absolute path, with --engine, as src/runtime/installer.mjs's
++// ownInstaller spells it (#171 M6a, F9: a `cua` on PATH from another checkout installs that checkout's engine). It is
++// spelled here rather than imported: this module loads in the trusted worker, which refuses an import outside the
++// launch's trusted code paths, and src/runtime is none of them (test/services-engine-linux/trusted-load.test.mjs). The
++// service's tests hold the two spellings equal.
++const CUA_ENTRY = fileURLToPath(new URL('../../../../bin/cua.mjs', import.meta.url));
++const shellWord = word => /^[A-Za-z0-9_./:=@%+,-]+$/.test(word) ? word : `'${word.replaceAll('\'', '\'\\\'\'')}'`;
++const REMEDY = `run \`node ${shellWord(CUA_ENTRY)} install --engine\``;
+
+ // The version a `cua-engine --version` line names (`cua-engine 0.3.0 (9381f166e106)`), or null.
+ export function engineVersionOf(line) {
+
+Reading: 0.4.4's engine diff touches the drop settle and the handle end (pointer.rs, handle.rs, drop_settle.rs), a
+trait over the drop's cursor watch so #487's regression test can fake it (drop_cursor.rs), one call in engine.rs's
+stats-line test module, the version and the README; no text, clipboard or paste source.
+H's engine sources equal the 0.4.4 tag, and the pin's two hashes are the published 0.4.4 assets' digests. The
+service's diff from da7585c3 is only 0.4.4's MIN_ENGINE_VERSION (with its comment) and F9's remedy text. The credit
+to M5's item 6 evidence holds.

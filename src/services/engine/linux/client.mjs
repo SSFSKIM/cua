@@ -27,13 +27,21 @@
 // The vendor's SkyLinuxTransport (@oai/sky 0.7.5 targets/linux/sky_linux_transport.js) is the reference; its sentences
 // that name sky_linux name cua-engine here.
 import {execFile, spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {heldRecordStdio} from './held-record.mjs';
 import {jsonLine} from '../../../repl-host/jsonl.mjs';
 
 export const MIN_ENGINE_VERSION = '0.4.4';
 const STDERR_TAIL = 8192;
 const VERSION_TIMEOUT_MS = 5000;
-const REMEDY = 'run cua install --engine';
+// The remedy names this cua's own installer by its absolute path, with --engine, as src/runtime/installer.mjs's
+// ownInstaller spells it (#171 M6a, F9: a `cua` on PATH from another checkout installs that checkout's engine). It is
+// spelled here rather than imported: this module loads in the trusted worker, which refuses an import outside the
+// launch's trusted code paths, and src/runtime is none of them (test/services-engine-linux/trusted-load.test.mjs). The
+// service's tests hold the two spellings equal.
+const CUA_ENTRY = fileURLToPath(new URL('../../../../bin/cua.mjs', import.meta.url));
+const shellWord = word => /^[A-Za-z0-9_./:=@%+,-]+$/.test(word) ? word : `'${word.replaceAll('\'', '\'\\\'\'')}'`;
+const REMEDY = `run \`node ${shellWord(CUA_ENTRY)} install --engine\``;
 
 // The version a `cua-engine --version` line names (`cua-engine 0.3.0 (9381f166e106)`), or null.
 export function engineVersionOf(line) {

@@ -527,7 +527,7 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // `engine` are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
-  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot()}) {
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot(process.cwd(), {env, home})}) {
   let settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   if (mawsPaths.length) settings = settingsFrom(env, {devices: true, inAppBrowser: true});

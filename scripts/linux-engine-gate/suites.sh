@@ -22,10 +22,11 @@
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
 #   fallback  (installed, the default selection only) the fallback homes' probe, scripts/accept/linux-fallback.mjs, in
 #             five homes of the run's, each `cua install`ed and then shaped by fallback-home.mjs: none (no engine),
-#             previous (linux-engine-v0.4.2, the pin before this one), released (linux-engine-v0.4.0, the released
-#             plugin's), older (linux-engine-v0.3.0) and unrecorded (the current install.json beside 0.3.0's
-#             executable); each must keep the default on the vendor's engine, with doctor's warning, and answer one
-#             observation through it (the M5 pre-flight §3, F5 and F5a)                             (--session)
+#             previous (linux-engine-v0.4.3, main's pin before this one), released (linux-engine-v0.4.0, main's
+#             before M5), older (linux-engine-v0.3.0) and unrecorded (the current install.json beside 0.3.0's
+#             executable); in each the default must refuse cua's engine for the home's own reason, by doctor's engine
+#             row and by a refused open, with no session, each naming this cua's installer with --engine (the M6a
+#             pre-flight's F3; M5's homes kept the vendor's engine, its pre-flight §3, F5 and F5a)   (--session)
 # The fixtures' selection, SELECTION (the M5 pre-flight §3, "How the default is shown live"):
 #   explicit  (when unset) the accept and device parts name cua's engine, CUA_NATIVE_ENGINE=cua, as M4 ran them
 #   default   they name none: no CUA_NATIVE_ENGINE (one in the environment is refused) and no "engine" in the run home's
@@ -35,7 +36,9 @@
 # Environment: ENGINE (installed or candidate), ENGINE_BIN (candidate only), SELECTION (explicit or default), OUT (the
 # evidence directory), LOGS (the log directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home
 # the pinned rule refuses), PINNED_RULE (enforce: any home the pinned rule refuses stops its part, whatever LABEL says),
-# DEVICE (the declared Linux device the lanes run on). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
+# DEVICE (the declared Linux device the lanes run on), PARITY_HOME (optional: the cua home on the device the parity
+# preparation starts from, `prepare --home`, in place of the account's default home; since #171 M6a a Linux home serves
+# only once this cua's install has run in it). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
 # usage: suites.sh <part>      Run each part under the host lock (locked.sh), one at a time; gate.mjs runs R1-R4 so.
 set -u
 WT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -121,7 +124,7 @@ case "$part" in
   inner-parity)
     export CUA_PARITY_SCRATCH_PREFIX=cua-m5-
     node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > "$L/cleanup-before.out" 2>&1 || true
-    node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$SHA" --native-only > "$L/prepare.json" 2> "$L/prepare.err" || { log "prepare failed"; exit 1; }
+    node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$SHA" --native-only ${PARITY_HOME:+--home "$PARITY_HOME"} > "$L/prepare.json" 2> "$L/prepare.err" || { log "prepare failed"; exit 1; }
     PHOME=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ownedPreparation.home)' "$L/prepare.json")
     log "prepared home $PHOME on $(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(p.display,p.xSession.DBUS_SESSION_BUS_ADDRESS)' "$L/prepare.json")"
     if ! pinned_check "$PHOME" "$OUT/parity/pinned.txt"; then

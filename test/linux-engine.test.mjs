@@ -7,7 +7,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {chmodSync, closeSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildLinuxEngine, ENGINE_PIN_FILE, engineAsset, inspectLinuxEngine, installedLinuxEngine, linuxEnginePath, loadEnginePin, parseEnginePin, parseEngineVersion, readEngineRecord, verifiedLinuxEngineVersion} from '../src/runtime/linux-engine.mjs';
@@ -86,6 +86,35 @@ test('install fetches the pinned asset for the machine, verifies it, and places 
   const record = readEngineRecord(realpathSync(home));
   assert.deepEqual({...record, installedAt: 'x'}, {schema: 1, build: 'pinned', version: '0.1.0', release: 'linux-engine-v0.1.0', sha256: sha(ENGINE), source: PIN.assets.x64.url, installedAt: 'x'});
   assert.deepEqual(readdirSync(join(realpathSync(home), 'staging')), []);
+});
+
+// The session refuses an engine, a record or a directory that leads into the vendor's tree (src/runtime/launch.mjs), so
+// the installer neither writes through such a link nor takes what it leads to as installed: it names the link to move
+// aside, as the refusal does (#171 M6a, task 156).
+test('an engine, its record or its directory linked into the vendor\'s tree: install refuses, naming the link to move aside, and writes nothing there', async t => {
+  for (const name of ['cua-engine', 'install.json', '']) {
+    const {home} = setup(t);
+    const placed = await installLinuxEngine({home, pin: PIN, host: LINUX, fetch: serving(ENGINE)});
+    const real = realpathSync(home);
+    const own = join(real, 'engine', 'linux', name).replace(/\/$/, '');
+    const planted = join(real, 'runtimes', `planted-${name || 'linux'}`);
+    mkdirSync(join(real, 'runtimes'));
+    cpSync(own, planted, {recursive: true});
+    rmSync(own, {recursive: true});
+    symlinkSync(planted, own);
+    const before = readdirSync(join(real, 'runtimes'), {recursive: true}).map(entry => [entry, statSync(join(real, 'runtimes', entry)).mtimeMs]);
+    for (const pin of [PIN, pinFor('0.2.0', NEWER)]) {
+      await assert.rejects(installLinuxEngine({home, pin, host: LINUX, fetch: serving(pin === PIN ? ENGINE : NEWER)}), error => {
+        assert.equal(error.code, 'target_occupied', error.message);
+        assert.match(error.message, /vendor's tree/);
+        assert.ok(error.hint.startsWith(`move ${own} aside, then run \`node `) && error.hint.endsWith(' install --engine`'), error.hint);
+        return true;
+      }, `${name || 'the directory'} at ${pin.version}`);
+    }
+    assert.deepEqual(readdirSync(join(real, 'runtimes'), {recursive: true}).map(entry => [entry, statSync(join(real, 'runtimes', entry)).mtimeMs]), before, 'nothing written there');
+    assert.equal(lstatSync(own).isSymbolicLink(), true, 'the link is left');
+    assert.ok(placed.changed);
+  }
 });
 
 test('a placed pinned engine makes install a no-op; its mode or a lost record is restored without a download', async t => {

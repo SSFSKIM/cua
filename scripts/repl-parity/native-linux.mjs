@@ -4,6 +4,7 @@
 import {readFileSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
 import {laneEngineProblem} from './engine-answered.mjs';
+import {vendorReleaseOf} from './vendor-release.mjs';
 
 export const NATIVE_LINUX_EXPECTED_FILE = new URL('./expected/native-linux.json', import.meta.url);
 export const TEXT_CASES = Object.freeze(['native/app/typetext', 'native/app/paste']);
@@ -32,10 +33,13 @@ export function validateNativeLinuxExpected(file, defects = vendorDefects()) {
   }
   return file;
 }
+// A run's vendor release (#171 M6a), the one lookup declarations and the vendor engine's defects are matched by.
+export {vendorReleaseOf};
 // The declarations a diff of two runs applies (M5's T4): those whose vendor defect names the runs' vendor runtime release,
 // so each architecture's runs are held to its own declarations, never to another's. An architecture with none yet has its
 // vendor failures reported as differences: the diff fails closed until they are measured and declared.
 export function declarationsFor(file, runtimeRelease, defects = vendorDefects()) {
+  if (typeof runtimeRelease !== 'string') return [];
   return file.declarations.filter(d => defects.find(v => v.id === d.vendorDefect)?.runtimeRelease === runtimeRelease);
 }
 export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(readFileSync(NATIVE_LINUX_EXPECTED_FILE, 'utf8')));
@@ -56,5 +60,8 @@ export function checkEnginePair(a, b, {declarations = []} = {}) {
   if (a.device !== b.device) throw new Error(`the runs are on two devices (${a.device}, ${b.device})`);
   if (a.commit !== b.commit) throw new Error(`the runs were prepared at two commits (${a.commit}, ${b.commit}): one sitting is one preparation`);
   if (a.harnessCommit !== b.harnessCommit) throw new Error('the runs\' cells came from two controller commits: the same cells run on both engines');
-  if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two vendor runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);
+  for (const [meta, side] of [[a, 'first'], [b, 'second']])
+    if (vendorReleaseOf(meta) === null) throw new Error(`the ${side} run records no vendor release its connections bear out (vendorRelease ${JSON.stringify(meta.vendorRelease)} on runtime ${meta.runtimeRelease}): its vendor engine's release is unknown`);
+  if (vendorReleaseOf(a) !== vendorReleaseOf(b)) throw new Error(`the runs served two vendor runtimes (${vendorReleaseOf(a)}, ${vendorReleaseOf(b)})`);
+  if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);
 }

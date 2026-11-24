@@ -8973,6 +8973,12 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     another part (raw, a false FAIL). The parity test's action writes into its own temp directory.
   Date/Author: 2026-11-23, cursor235's builder for #526.
 
+
+- Decision (2026-11-23, from #171 M6a; the Linux design session's ruling 1110): the ModuleTree that M6 here describes (N L204) is built in #171's M6a for Linux, and this M6 reuses it.
+  - Its interface: `loadModuleLock`, `moduleClosure`, `installModuleTree`, `readModuleTree`, `checkModuleTree`, `verifyModuleTree` (src/runtime/module-tree.mjs), with `provenance.json` keyed by target. darwin is added as a target with no schema change.
+  - **One departure from N L204:** it isn't installed by `npm ci`. cua fetches each tarball of the closure itself and checks its length and SHA-512 against a lock authenticated at pin time against the vendor archive's `.pnpm/lock.yaml` (`scripts/modules-pin.mjs`). The managed Node carries no npm, and cua controls what a tarball may write.
+  - See `docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md` (§4.2, F1) and the Linux spec's Decision Log (M6a).
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

@@ -11,6 +11,8 @@
 //   node/                 the pinned Node cua's own REPL host runs on, and its pointer (src/runtime/managed-node.mjs)
 //   sandbox/<tag>/        Linux: the pinned sandbox helper, codex-linux-sandbox (src/sandbox/linux.mjs)
 //   engine/linux/         Linux: cua's own engine, cua-engine, and its install record (src/runtime/linux-engine.mjs; #171)
+//   modules/<lock>/       the ModuleTree: the packages cells import and classic-level, one tree per lock hash, with its
+//                         install.json payload record (src/runtime/module-tree.mjs; #171 M6a)
 //   run/<session>/        per-connection working directory and private endpoints
 //   kernel/<session>/     Linux under the default sandbox mode: the confined kernel's working directory, with tmp/ (its
 //                         TMPDIR), outside run/, which is denied to it whole (src/runtime/launch.mjs kernelDir)
@@ -46,6 +48,7 @@ export function homeLayout(home) {
     node: join(home, 'node'),
     sandbox: join(home, 'sandbox'),
     engine: join(home, 'engine'),
+    modules: join(home, 'modules'),
     run: join(home, 'run'),
     kernel: join(home, 'kernel'),
   };

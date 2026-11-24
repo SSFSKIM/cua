@@ -2791,8 +2791,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Ruling 993's bar is not waived: 0.4.5's reach must pass L4d.
     - 0.4.4 ships with L4d recorded as FAIL, because it strictly reduces wrong answers (#487 fails open, #488 fails closed).
 
-- Decision (2026-11-23, #558, ruling 1178, `fix/558-linux-escapes` from cf02ca3c5): **the Linux facade's renderer
-  escapes every line break inside an element's text with macOS's rule, where the vendor escapes only CR, LF and tab
+- Decision (2026-11-23, #558, rulings 1178 and 1186, `fix/558-linux-escapes` from cf02ca3c5): **the Linux facade's
+  renderer escapes every line break inside an element's text with macOS's rule, where the vendor escapes only CR, LF and tab
   (a declared departure); a pending drag notice is escaped the same way; and `linux-engine.md` says how the tree shows
   them.**
   - Why. #526 (the native engine spec's Decision Log, rulings 1175 and 1177) closed on macOS the path by which a page's,
@@ -2816,13 +2816,19 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - the Linux state has no header (no window title or app name line) and no trailer (no focused element and no
       selected text), so there is no fence for #552's class to close. `listApps()` and `listWindows()` return objects,
       not tree lines.
-  - One definition. `escapeLineBreaks` moved from `src/services/engine/render.mjs` to `src/cua-api/line-breaks.mjs`,
-    which both renderers import (`render.mjs` re-exports it). Not the reverse: the kernel, which renders Linux trees,
-    reads only `src/cua-api` and `docs/cua-api` under a scoped profile, the Linux default. The trusted worker that runs
-    the macOS engine service imports only from the launch's trusted code paths; cua's own host trusts `src/cua-api`
-    already, and the macOS vendor host now trusts it beside `src/services/engine` whenever the sky wrapper is
-    registered (`src/runtime/launch.mjs`; `test/services-sky-trust.test.mjs` loads the engine service under exactly a
-    vendor-host launch's paths, and fails without it).
+  - Two copies, not one (ruling 1186, replacing the branch's first shared definition). The Linux facade prints with
+    `src/cua-api/line-breaks.mjs`, used by the Linux renderer and `bind-linux-app.mjs`; `src/services/engine/render.mjs`
+    keeps its own `escapeLineBreaks`, byte-identical to main's. One shared module could live only in `src/cua-api`: the
+    kernel, which renders Linux trees, reads only `src/cua-api` and `docs/cua-api` under a scoped profile, the Linux
+    default. But the macOS engine service runs in a trusted worker that imports only from the launch's trusted code
+    paths, and on the macOS vendor host those do not include `src/cua-api`. The first version added it there
+    (`launch.mjs`), and the review's one finding (P2) was that this made every facade module importable by that worker.
+    The design session ruled the copy instead: no wider trust, and no change to `launch.mjs` while M6a, which rewrites
+    it, heads to its pull request. `launch.mjs` and the vendor host's trusted paths are main's
+    (`test/runtime-launch.test.mjs` asserts no `src/cua-api` entry there, with or without the sky wrapper);
+    `test/services-engine-render.test.mjs` asserts that the two copies print every Basic Multilingual Plane character
+    alike, each covered break, a backslash and an ordinary character among them, and that `render.mjs` imports only from
+    its own directory.
   - Declared. The facade scenarios declare the departure (`differs`, citing this entry), so the vendor differential
     (`test/cua-api/facade-vendor.test.mjs`) requires the records to differ, and pin that LF, CR, tab and a backslash
     still print as the vendor's. No Linux golden, oracle or engine-diff check depended on the raw form
@@ -2835,8 +2841,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     reads it after `core.md`, under either engine (the surface inventory's "Table 3 amendment (2026-11-23, #558,
     ruling 1178)").
   - M6a. It renders Linux tree text only through this `describe()`: `origin/m6a-final-fix` (d08d8c219) leaves
-    `src/cua-api` as main has it, and cua-engine answers a JSON tree, not text. Its `launch.mjs` keeps the
-    `registered.sky && !linux` line this entry changes.
+    `src/cua-api` as main has it, and cua-engine answers a JSON tree, not text. This entry leaves `launch.mjs` as main
+    has it (ruling 1186), so M6a's rewrite of it meets nothing here.
   Date/Author: 2026-11-23, cursor235's builder for #558.
 
 ## Outcomes & Retrospective

@@ -30,6 +30,7 @@
 import {BACKGROUND_PAIRINGS, SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
 import {POINTERDOWN_SWITCH} from './fixtures/electron-fixture.mjs';
 import {POINTERDOWN} from './fixtures/scene-page.mjs';
+import {settleRead} from './settle-read.mjs';
 
 export const METHODS = Object.freeze(['getAXState', 'listApps', 'click', 'drag', 'paste', 'performSecondaryAction', 'pressKey', 'scroll', 'selectText', 'setValue', 'typeText']);
 // The facade's names against the engine's (the summary prints the engine's, the spec's 11).
@@ -318,6 +319,9 @@ export const PANEL_UP = Object.freeze({openPanel: 'panel(ax)', savePanel: '(/ID:
 // of the runner's matches; the search field's and the Save sheet's name field's.
 export const PANEL_SEARCH = 'CUAMATRIXPANEL';
 export const SAVE_PANEL_NAME = 'CUAMATRIXNAME';
+// What the Save sheet's setValue writes (ruling 1204): a fixed fixture string, neither the sheet's own name nor the
+// typing case's token.
+export const SAVE_PANEL_VALUE = 'CUAMATRIXVALUE';
 // The Open panel's search field: a text field whose line names a search (its role word, placeholder or description).
 const SEARCH_FIELD = 'elementLines(ax).find(l => /^(?:search )?(?:text field|search field)\\b/.test(l.content) && /search|검색/i.test(l.content))?.index ?? null';
 // The Save sheet's name field (ID saveAsNameTextField, as #212's report names it).
@@ -385,10 +389,34 @@ for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await o
 return {ok: !panel(ax) && inFront(ax), outcome: {closed: !panel(ax), documentInFront: inFront(ax)}};`},
 ];
 
+// The Save sheet's name written through the lane's own facade (ruling 1204): pilot C-3's vendor setValue("") on the name
+// field returned without throwing while the next observation still read the old value. The fixed string, which the
+// prepare checks the field does not already hold, is written, then read back by the settle (./settle-read.mjs) until
+// it reads the string or holds still. The outcome: whether setValue returned (`returnedOk`), each read's time with its
+// value's length and first characters (fixture text), the settle's length, and the final value's length, hash and
+// first characters; `failure` names a write that returned while the field read as it was before.
+const panelSetValue = (target, kase, field, value, what) => ({method: 'setValue', case: kase, expect: 'outcome', regimes: ['frontmost'],
+  prepare: `const ax = await observe();
+if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
+const index = ${field};
+if (index === null) return {ready: false, reason: "the field is not in the text"};
+const before = plain(valueOfIndex(ax, index) ?? "");
+if (before === ${j(value)}) return {ready: false, reason: "the field already holds the string to write"};
+__m.index = index; __m.before = {length: before.length, hash: sha256Hex(before)};
+return {ready: true};`,
+  act: `await __app.setValue(__m.index, ${j(value)});`,
+  check: `${settleRead({find: field, done: `__value === ${j(value)}`})}
+const written = __value === ${j(value)}, hash = sha256Hex(__value), returnedOk = __m.threw === null;
+const unchanged = hash === __m.before.hash;
+return {ok: written, outcome: {written, returnedOk, unchanged, length: __value.length, hash, prefix: __value.slice(0, 16), settleMs: Math.round(__last - __from),
+  reads: __trail.map(r => ({ms: r.ms, length: r.value.length, prefix: r.value.slice(0, 16)})), ...(__late ? {late: true} : {}),
+  ...(!written && returnedOk && unchanged ? {failure: "setValue returned ok, the field did not change"} : {})}};`});
+
 // The Save sheet of an untitled document (⌘N, then ⌘S: ./panels.mjs), never saved: no Return is sent.
 const savePanel = [
   panelEscape('savePanel', 'typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc', 'the Save sheet'),
   panelTyping('savePanel', 'name', NAME_FIELD, SAVE_PANEL_NAME, 'the Save sheet'),
+  panelSetValue('savePanel', 'name', NAME_FIELD, SAVE_PANEL_VALUE, 'the Save sheet'),
 ];
 
 // ---- Finder -------------------------------------------------------------------------------------------------------------
@@ -707,8 +735,8 @@ export const NOT_APPLICABLE = Object.freeze({
   },
   openPanel: Object.fromEntries(['listApps', 'drag', 'paste', 'performSecondaryAction', 'scroll', 'selectText', 'setValue']
     .map(method => [method, 'the Open panel is observed, searched for a token no file matches, closed by Escape and by its Cancel; it lists the owner\'s files, so nothing in its listing is selected, scrolled or written'])),
-  savePanel: Object.fromEntries(METHODS.filter(m => !['pressKey', 'typeText'].includes(m))
-    .map(method => [method, 'the Save sheet\'s cells are its Escape and its name field\'s typing (ruling 1196); it is never saved'])),
+  savePanel: Object.fromEntries(METHODS.filter(m => !['pressKey', 'typeText', 'setValue'].includes(m))
+    .map(method => [method, 'the Save sheet\'s cells are its Escape, its name field\'s typing (ruling 1196) and its name field\'s setValue (ruling 1204); it is never saved'])),
   windowless: Object.fromEntries(METHODS.filter(m => m !== 'getAXState')
     .map(method => [method, 'an app with no window refuses its observation, so no element exists for any other method'])),
 });

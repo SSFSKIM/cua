@@ -9,7 +9,7 @@ import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
-import {CASES, casesOf, FOCUS_REASONS, focusVerdict, PANEL_SEARCH, SAVE_PANEL_NAME} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, casesOf, FOCUS_REASONS, focusVerdict, PANEL_SEARCH, SAVE_PANEL_NAME, SAVE_PANEL_VALUE} from '../../scripts/native-matrix/plan.mjs';
 import {stripCause} from '../../scripts/native-matrix/panels.mjs';
 import {runWith} from './run-doubles.mjs';
 
@@ -348,15 +348,15 @@ test('the Save sheet: one untitled document, a sheet opened per case and placed 
   assert.equal(result.complete, true, result.problems.join('; '));
   assert.deepEqual(validateCellResult(result), []);
   const rows = result.rows.filter(r => r.section === 'method');
-  assert.deepEqual(rows.map(r => r.id), ['savePanel/frontmost/pressKey.escape', 'savePanel/frontmost/typeText.name']);
+  assert.deepEqual(rows.map(r => r.id), ['savePanel/frontmost/pressKey.escape', 'savePanel/frontmost/typeText.name', 'savePanel/frontmost/setValue.name']);
   assert.equal(calls.filter(c => c.code.includes('cua-matrix-cell: sheet.new')).length, 1, 'one untitled document');
-  assert.equal(calls.filter(c => c.code.includes('cua-matrix-cell: savesheet.open')).length, 2, 'a sheet per case');
+  assert.equal(calls.filter(c => c.code.includes('cua-matrix-cell: savesheet.open')).length, 3, 'a sheet per case');
   const cleanup = calls.findIndex(c => c.code.includes('cua-matrix-cell: sheet.cleanup'));
   assert.ok(cleanup > calls.findLastIndex(c => c.code.includes('cua-matrix-cell: savesheet.open')), 'the untitled document closed after the cases');
   assert.deepEqual(dev.placed, []);
-  assert.equal(result.meta.placement.panel.length, 2);
+  assert.equal(result.meta.placement.panel.length, 3);
   assert.ok(result.meta.placement.panel.every(p => p.target === 'savePanel' && p.number === 994 && p.inStrip === true && p.moved === false));
-  assert.deepEqual(result.rows.filter(r => r.section === 'speed').map(r => r.id).sort(), ['textedit/method.savePanel.pressKey.escape', 'textedit/method.savePanel.typeText.name']);
+  assert.deepEqual(result.rows.filter(r => r.section === 'speed').map(r => r.id).sort(), ['textedit/method.savePanel.pressKey.escape', 'textedit/method.savePanel.setValue.name', 'textedit/method.savePanel.typeText.name']);
 });
 
 // Review finding 1: a Save sheet is an AXSheet child of its document in AX. The device answered that it found it as
@@ -367,7 +367,7 @@ test('a Save sheet placed through its parent document: recorded via the parent, 
   const plan = {id: 'test', frontmost: ['savePanel'], speed: false, finding: false, background: [], launch: []};
   const {result} = await runWith({plan, cell: dev.cell, ops: dev.ops});
   assert.equal(result.complete, true, result.problems.join('; '));
-  assert.equal(dev.placed.length, 2);
+  assert.equal(dev.placed.length, 3);
   for (const p of result.meta.placement.panel) {
     assert.deepEqual([p.target, p.via, p.resized, p.readBack, p.moved, p.inStrip], ['savePanel', 'parent', undefined, rect(342, 80, 480, 220), true, true]);
     assert.equal(p.ax.kind, 'sheet');
@@ -394,6 +394,7 @@ test('no panel cell sends Return or Enter, types a line break, or presses Save o
       assert.equal(acted(calls, 'await __app.pressKey("Escape");'), 2, `${what}: the Open panel's and the Save sheet's Escape`);
       assert.equal(acted(calls, `typeText(${JSON.stringify(PANEL_SEARCH)})`), 1, `${what}: the search typing`);
       assert.equal(acted(calls, `typeText(${JSON.stringify(SAVE_PANEL_NAME)})`), 1, `${what}: the name typing`);
+      assert.equal(acted(calls, `setValue(__m.index, ${JSON.stringify(SAVE_PANEL_VALUE)})`), 1, `${what}: the name's setValue (ruling 1204)`);
       for (const {code} of calls) for (const commit of COMMITS) assert.doesNotMatch(code, commit, what);
     }
   }
@@ -401,7 +402,8 @@ test('no panel cell sends Return or Enter, types a line break, or presses Save o
 
 // The same cells executed against a stand-in TextEdit whose panel records every key, text, value, selection and click it
 // is sent: the openers, each case's prepare, act and check, and the harness's close cells. Nothing but the opening keys
-// and Escape is pressed, nothing but the two tokens typed, nothing written, and only the panel's fields and its Cancel
+// and Escape is pressed, nothing but the two tokens typed, nothing written but the setValue case's fixture string into
+// the name field (ruling 1204), and only the panel's fields and its Cancel
 // are clicked.
 const AsyncFunction = (async () => {}).constructor;
 async function runCell(text, apps) {
@@ -474,7 +476,7 @@ test('the panel cells executed against a stand-in TextEdit press, type, write an
   await standInCases(stand);
   assert.deepEqual([...new Set(sent.keys)].sort(), ['Escape', 'super+s']);
   assert.deepEqual([...new Set(sent.texts)].sort(), [PANEL_SEARCH, SAVE_PANEL_NAME].sort(), 'both typing cases typed their token');
-  assert.deepEqual(sent.values, [], 'nothing written');
+  assert.deepEqual(sent.values, [[2, SAVE_PANEL_VALUE]], 'nothing written but the setValue case\'s string, into the name field');
   assert.ok(sent.clicks.every(i => [1, 2, 3].includes(i)), `only the fields and Cancel: ${JSON.stringify(sent.clicks)}`);
   assert.ok(sent.texts.every(t => !/[\r\n]/.test(t)));
 });
@@ -488,7 +490,8 @@ test('a Save sheet name field no value write empties: its name selected whole by
   assert.equal(name.prepare.ready, true, JSON.stringify(name.prepare));
   assert.deepEqual(name.check.outcome, {readBack: true, length: SAVE_PANEL_NAME.length, up: true});
   assert.equal(name.check.ok, true);
-  assert.deepEqual(stand.sent.values, []);
+  // The typing case wrote nothing (the setValue case's own write is its own).
+  assert.deepEqual(stand.sent.values, [[2, SAVE_PANEL_VALUE]]);
   // The field focused and its name selected by the prepare (the click deselects what AppKit selected at the opening).
   assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
   assert.deepEqual(name.prepare.prepared, ['field selected']);
@@ -505,7 +508,7 @@ test('the name\'s text selected in another control, the name field unfocused: th
   let prepare;
   try {
     await runCell(SAVE_SHEET_OPEN_CELL, apps);
-    prepare = (await runCell(caseCells('savePanel', CASES.savePanel.find(c => c.case === 'name')).prepare, apps)).value;
+    prepare = (await runCell(caseCells('savePanel', CASES.savePanel.find(c => c.method === 'typeText' && c.case === 'name')).prepare, apps)).value;
   } finally { delete globalThis.__sheetDoc; delete globalThis.__m; }
   // The selection was asked of the name field itself, never taken from the trailer.
   assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
@@ -514,6 +517,24 @@ test('the name\'s text selected in another control, the name field unfocused: th
   assert.match(focusVerdict(prepare.focus, {focusedIndex: 4}).problem, /^the field could not be given the focus/, 'cua: another control focused');
   assert.equal(focusVerdict({index: 2, trailer: 'focused'}, null).problem, null);
   assert.deepEqual(stand.sent.texts, []);
+});
+// Ruling 1204: the Save sheet's name written through the facade and read back by the settle. A write that takes passes,
+// its reads timed; one that returns while the field keeps its value (pilot C-3's reading) fails and says so.
+test('the Save sheet\'s setValue.name: a write that takes passes; one that returns while the field keeps its value fails, named', async () => {
+  const took = (await standInCases(standInTextEdit({saveName: 'Untitled'}))).find(r => r.case === 'setValue.name');
+  assert.equal(took.prepare.ready, true, JSON.stringify(took.prepare));
+  assert.equal(took.check.ok, true, JSON.stringify(took.check));
+  const o = took.check.outcome;
+  assert.deepEqual([o.written, o.returnedOk, o.unchanged, o.length, o.prefix, o.failure], [true, true, false, SAVE_PANEL_VALUE.length, SAVE_PANEL_VALUE, undefined]);
+  assert.match(o.hash, /^[0-9a-f]{64}$/);
+  assert.ok(o.reads.length >= 1 && o.reads.every(r => Number.isInteger(r.ms) && Number.isInteger(r.length)) && o.reads.at(-1).prefix === SAVE_PANEL_VALUE, JSON.stringify(o.reads));
+  assert.ok(Number.isInteger(o.settleMs) && o.settleMs < 500);
+  const kept = (await standInCases(standInTextEdit({saveName: 'Untitled', writes: false}))).find(r => r.case === 'setValue.name');
+  const k = kept.check.outcome;
+  assert.equal(kept.check.ok, false);
+  assert.deepEqual([k.written, k.returnedOk, k.unchanged, k.prefix, k.failure], [false, true, true, 'Untitled', 'setValue returned ok, the field did not change']);
+  // The settle waited for the value to hold still before judging it.
+  assert.ok(k.settleMs >= 500 && k.reads.length > 1, JSON.stringify(k));
 });
 test('a field whose value the prepare cannot select whole is not prepared, by a reason that says so, nothing typed', async () => {
   const stand = standInTextEdit({saveName: 'Untitled'});

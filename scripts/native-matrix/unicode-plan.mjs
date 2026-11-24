@@ -25,6 +25,7 @@ import {NOT_JUDGED} from './not-judged.mjs';
 import {emptyField, fieldCheck} from './probe-plan.mjs';
 import {sha256Hex} from './matrix-text.mjs';
 import {TEXT_FIELDS, TYPED} from './plan.mjs';
+import {SETTLE_CAP_MS, SETTLE_STABLE_MS, settleRead} from './settle-read.mjs';
 
 const j = JSON.stringify;
 export {ABC, KOREAN_2SET};
@@ -80,31 +81,12 @@ export function unicodeCase({field, method, string}) {
 }
 
 // The pressKey row's read-back (ruling 1197): a field's accessibility value can trail the input method composing its
-// keys (pilot C-2's vendor read ㄱ for r k in Chrome and Electron, 가 in TextEdit), so the field is read until it holds the
-// expected text or has read the same for SETTLE_STABLE_MS, never past SETTLE_CAP_MS after the first read, SETTLE_POLL_MS
-// apart; the same cell on both lanes. The last reading is judged as ./probe-plan.mjs fieldCheck's one is, and the outcome
-// adds how many reads it took (`reads`) and how long after the first the last was taken (`settleMs`).
-export const SETTLE_STABLE_MS = 500;
-export const SETTLE_CAP_MS = 2_000;
-const SETTLE_POLL_MS = 100;
-// The clock is monotonic and starts when the first read completes; no read starts once the cap has passed, and one that
-// returns after it is not taken (`late`): the last value read inside the cap is judged.
+// keys (pilot C-2's vendor read ㄱ for r k in Chrome and Electron, 가 in TextEdit), so the field is read until it settles
+// (./settle-read.mjs, the same cell on both lanes). The last reading is judged as ./probe-plan.mjs fieldCheck's one is,
+// and the outcome adds how many reads it took (`reads`) and how long after the first the last was taken (`settleMs`).
+export {SETTLE_CAP_MS, SETTLE_STABLE_MS};
 const settledFieldCheck = (scene, expected) => `const __want = ${j(sha256Hex(expected))};
-let __value = null, __from = null, __since = null, __last = null, __reads = 0, __late = false;
-for (;;) {
-  const ax = await observe();
-  const __at = performance.now();
-  // A read that returned after the cap is not taken: the last value read inside it is judged.
-  if (__from !== null && __at - __from > ${SETTLE_CAP_MS}) { __late = true; break; }
-  __last = __at; __from ??= __last; __reads++;
-  const __index = ${TEXT_FIELDS[scene]};
-  if (__index === null) return {invalid: "the field is not in the text"};
-  const __now = plain(valueOfIndex(ax, __index) ?? "");
-  if (__now !== __value) { __value = __now; __since = __last; }
-  if (sha256Hex(__value) === __want || __last - __since >= ${SETTLE_STABLE_MS} || __last - __from >= ${SETTLE_CAP_MS}) break;
-  await new Promise(done => setTimeout(done, ${SETTLE_POLL_MS}));
-  if (performance.now() - __from >= ${SETTLE_CAP_MS}) break;
-}
+${settleRead({find: TEXT_FIELDS[scene], done: 'sha256Hex(__value) === __want'})}
 const __hash = sha256Hex(__value);
 const exact = __hash === __want;
 return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: Math.round(__last - __from), ...(__late ? {late: true} : {})}};`;

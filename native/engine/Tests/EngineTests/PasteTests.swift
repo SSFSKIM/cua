@@ -1733,7 +1733,11 @@ extension PasteActivationTests {
   /// Return's 0x24). `before` runs on the engine first (another holder's activation). The meta it answered with.
   private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
                              onKeyDown: @escaping (CGKeyCode) -> Void = { _ in }, keyboard: pid_t? = nil,
-                             reread: (() throws -> pid_t)? = nil, deadlineMs: Int64 = 60_000,
+                             reread: (() throws -> KeyTarget)? = nil, deadlineMs: Int64 = 60_000,
+                             effectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
+                             intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
+                             keyTargetReads: KeyTargetReads = .live(),
+                             prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
@@ -1749,12 +1753,15 @@ extension PasteActivationTests {
     }
     system.windowPlacement = { _, _ in (Self.chromeFrame, 41) }
     let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
-                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
-                        pasteboard: { pasteboard.access }, pasteActivation: system)
+                        intervention: intervention, screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: system, pasteEffectReading: effectReading,
+                        keyTargetReads: keyTargetReads)
     let context = ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: unixMilliseconds() + deadlineMs, lineage: nil)
     let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
-    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: keyboard ?? target,
-                                  guarding: .off(app: "TextEdit"), reread: reread)
+    let prepared = try prepare?(engine, app, context)
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target),
+                                  keyboard: prepared?.keyboard ?? keyboard ?? target,
+                                  guarding: prepared?.guarding ?? .off(app: "TextEdit"), reread: reread)
     try before(engine, system)
     var meta = InputMeta(context)
     var entered = 0
@@ -1845,7 +1852,7 @@ extension PasteActivationTests {
                               pasteboard: pasteboard, keyboard: before, reread: {
           rereads += 1
           activatedAtReread = seam.posts.contains { $0.kind == .appKit(1) }
-          return activatedAtReread ? after : before
+          return KeyTarget(pid: activatedAtReread ? after : before)
         })
         let label = "\(typed ? "type_text" : "paste"), \(before) then \(after)"
         XCTAssertEqual(rereads, 1, label)
@@ -1872,6 +1879,83 @@ extension PasteActivationTests {
       XCTAssertTrue(seam.posts.filter { $0.kind == .other }.isEmpty, "no key")
       XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the pasteboard untouched")
     }
+  }
+
+  /// Ruling 1207: the early read drives the panel's service for the app before the paste's lock and activation, so a key
+  /// the person types into the panel during the activation stops the paste before its ⌘V. The control: an event on a
+  /// process nobody drives is not recorded, and the paste goes on.
+  func testAPersonsKeyIntoTheEarlyReadServiceDuringTheActivationStopsThePaste() throws {
+    let service: pid_t = 990_009
+    let focused = AXUIElementCreateApplication(70_200)
+    var reads = KeyTargetReads.live(actualPid: nil)
+    reads.focused = { _ in focused }
+    reads.parent = { _, _ in nil }
+    reads.publicPid = { _ in self.target }
+    reads.actualPid = { _ in service }
+    reads.kind = { $0 == service ? .prohibited : .application }
+    reads.refuseForbidden = { _ in }
+    for registered in [true, false] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let monitor = InterventionMonitor(listenGranted: { true }, createsTap: false)
+      seam.onHold = { monitor.ledger.record(service, at: unixMilliseconds()) }  // the person's key into the panel
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      let paste = {
+        try self.pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                               intervention: monitor, keyTargetReads: reads) { engine, app, context in
+          let guarding = engine.interventionGuard(app: app, pid: self.target, requestApp: nil, connection: context.connection)
+          let application = AXUIElementCreateApplication(self.target)
+          let keyboard = registered ? try engine.earlyKeyTarget(application, pid: self.target, app: app, context: context)
+                                    : engine.keyboardTarget(application, fallback: self.target)
+          return (guarding, keyboard)
+        }
+      }
+      if registered {
+        XCTAssertThrowsError(try paste()) { XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened") }
+        XCTAssertTrue(seam.posts.filter { $0.kind == .other }.isEmpty, "no key")
+      } else {
+        XCTAssertNoThrow(try paste(), "unseen without the early registration")
+        XCTAssertEqual(Set(seam.posts.filter { $0.kind == .other }.map(\.pid)), [service])
+      }
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored or untouched")
+    }
+  }
+
+  /// Ruling 1207: a deadline that passes during the effect baseline, after the activation and the check before setup,
+  /// refuses at the first key: nothing is keyed and the pasteboard is restored.
+  func testADeadlinePassedDuringThePastesBaselineRefusesAtTheFirstKey() {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var readings = 0
+      XCTAssertThrowsError(try pasteToItsEnd(typed ? "a\nb" : "x", typed: typed, seam: seam, connection: ConnectionState(id: 1, fd: -1),
+                                             pasteboard: pasteboard, deadlineMs: 150, effectReading: { _, _ in
+        readings += 1
+        if readings == 1 { usleep(300_000) }  // the baseline outlasts the request's deadline
+        return nil
+      })) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "timeoutReached")
+        XCTAssertTrue(($0 as? EngineError)?.message.hasPrefix(keysDeadlinePassed.message) == true, "\(($0 as? EngineError)?.message ?? "")")
+      }
+      XCTAssertGreaterThanOrEqual(readings, 1, "the baseline was read")
+      XCTAssertTrue(seam.posts.filter { $0.kind == .other }.isEmpty, "no key (\(typed))")
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored (\(typed))")
+    }
+  }
+
+  /// Ruling 1207: a paste whose read after the activation was cut off at the walk's time budget answers with the notice.
+  func testAPasteWhoseFinalReadWasCutOffCarriesTheNotice() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let meta = try pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 reread: { KeyTarget(pid: self.target, walkCutOff: true) })
+    XCTAssertTrue(meta.keyTargetCutOff)
+    XCTAssertEqual(keyInputResult(meta, note: nil, app: "TextEdit")["note"] as? String, keyTargetCutOffNotice(app: "TextEdit"))
   }
 
   /// Ruling 1206: a deadline that passes during the paste's activation refuses the paste before the pasteboard and any key.

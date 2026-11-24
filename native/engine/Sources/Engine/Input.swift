@@ -107,6 +107,8 @@ struct InputMeta {
   var fieldFocus: TextEntryFocusRecord?
   /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
   var note: String? = nil
+  /// #582 (ruling 1207): the keys' final read was cut off at the walk's time budget; their result carries the notice.
+  var keyTargetCutOff = false
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
   var coordinateClick: CoordinateClickRecord?
   /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
@@ -848,7 +850,7 @@ extension Engine {
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
       // The forbidden list on the keys' process before anything is touched; read again after any activation (below).
-      try signposted("pressKey.keyboardTarget") { try refuseForbiddenKeyTarget(application, pid: pid, deadline: context.deadline) }
+      try signposted("pressKey.keyboardTarget") { try earlyKeyTarget(application, pid: pid, app: app, context: context) }
       try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
         try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       }
@@ -860,13 +862,14 @@ extension Engine {
       let release = try forcedActivation(forced, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
-      let target = try signposted("pressKey.finalKeyTarget") { try finalKeyTarget(application, pid: pid, app: app, context: context) }
-      let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
+      let keys = try signposted("pressKey.finalKeyTarget") { try finalKeyTarget(application, pid: pid, app: app, context: context) }
+      meta.keyTargetCutOff = keys.walkCutOff
+      let poster = EventPoster.toProcess(keys.pid, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
       defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
       try refuseLateKeys(deadline: context.deadline)  // past the deadline nothing is posted late
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
-      return ["meta": meta.wire]
+      return keyInputResult(meta, note: nil, app: app.displayName)
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -898,7 +901,7 @@ extension Engine {
       try guarding.checkBeforePosting()
       // The forbidden list on the process the keys would reach comes before anything else is decided.
       let application = prepare(AXUIElementCreateApplication(pid))
-      try refuseForbiddenKeyTarget(application, pid: pid, deadline: context.deadline)
+      let early = try earlyKeyTarget(application, pid: pid, app: app, context: context)
       // Neither route reaches a minimized window (Minimized.swift); a concealed request is refused the same way.
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
 
@@ -913,7 +916,6 @@ extension Engine {
       case .paste:
         // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
         // The paste reads the keys' process again once its activation has run (`PasteTarget.reread`).
-        let early = keyboardTarget(application, fallback: pid, deadline: context.deadline)
         let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: early, guarding: guarding,
                                                          reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, selection: selection, settle: { self.recentKeys.settles(pid: pid) },
@@ -921,7 +923,7 @@ extension Engine {
                                        reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
                                          bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
                                        meta: &meta)
-        return pasteResult(meta, note: note)
+        return keyInputResult(meta, note: note, app: app.displayName)
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {
@@ -931,7 +933,9 @@ extension Engine {
       let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
       // #582 (ruling 1206): the keys go to the process serving the focused element once the activation has run.
-      let target = try finalKeyTarget(application, pid: pid, app: app, context: context)
+      let keys = try finalKeyTarget(application, pid: pid, app: app, context: context)
+      meta.keyTargetCutOff = keys.walkCutOff
+      let target = keys.pid
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       var posted = false
       let initialSource = currentInputSourceID()
@@ -954,9 +958,7 @@ extension Engine {
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
                           meta: &meta)
       // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
-      var result: [String: Any] = ["meta": meta.wire]
-      if let note = meta.note { result["note"] = note }
-      return result
+      return keyInputResult(meta, note: meta.note, app: app.displayName)
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }

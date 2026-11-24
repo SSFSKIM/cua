@@ -62,9 +62,11 @@ let keyTargetWalkBudgetMs: Double = 250
 /// at each, the actual pid (`actualPid`, nil passes the element over) and its process's kind (`.unknown` passes it over
 /// too). The first element that classifies ends the walk: its pid when the process is prohibited-policy and not the
 /// app's, else nil (the keys stay with the app). A parent is read only when it will be inspected, and only while
-/// `leftMs` (the walk's time left) is positive; `parent` is given that time to bound its read. No answer by then is nil.
+/// `leftMs` (the walk's time left) is positive; `parent` is given that time to bound its read. No answer by then is nil,
+/// and `cutOff` is told: the walk stopped at its time, not at an answer or the chain's end.
 func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (Element, Double) -> Element?, actualPid: (Element) -> pid_t?,
-                                 kind: (pid_t) -> OwningProcessKind, leftMs: () -> Double = { .infinity }, maxDepth: Int = 300) -> pid_t? {
+                                 kind: (pid_t) -> OwningProcessKind, leftMs: () -> Double = { .infinity }, maxDepth: Int = 300,
+                                 cutOff: () -> Void = {}) -> pid_t? {
   var current = focused
   var depth = 0
   while true {
@@ -77,7 +79,11 @@ func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (El
     }
     guard depth < maxDepth else { return nil }
     let left = leftMs()
-    guard left > 0, let next = parent(current, left) else { return nil }
+    guard left > 0 else {
+      cutOff()
+      return nil
+    }
+    guard let next = parent(current, left) else { return nil }
     current = next
     depth += 1
   }
@@ -88,10 +94,10 @@ func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (El
 /// no `actualPid` (the symbol absent) the walk is not made.
 func keyboardTarget<Element>(focused: Element?, appPid: pid_t, publicOwner: (Element) -> pid_t, parent: (Element, Double) -> Element?,
                              actualPid: ((Element) -> pid_t?)?, kind: (pid_t) -> OwningProcessKind,
-                             leftMs: () -> Double = { .infinity }) -> pid_t {
+                             leftMs: () -> Double = { .infinity }, cutOff: () -> Void = {}) -> pid_t {
   guard let focused else { return appPid }
   if let actualPid, let remote = remoteViewKeyOwner(of: focused, appPid: appPid, parent: parent, actualPid: actualPid, kind: kind,
-                                                    leftMs: leftMs) {
+                                                    leftMs: leftMs, cutOff: cutOff) {
     return remote
   }
   return publicOwner(focused)
@@ -124,14 +130,36 @@ struct KeyTargetReads {
   }
 
   /// The process keyboard events for `application` (the app `appPid`'s application element) go to, the walk given
-  /// `budgetMs` from now.
-  func target(_ application: AXUIElement, appPid: pid_t, budgetMs: Double = keyTargetWalkBudgetMs) -> pid_t {
+  /// `budgetMs` from now, and whether the walk was cut off at that time.
+  func target(_ application: AXUIElement, appPid: pid_t, budgetMs: Double = keyTargetWalkBudgetMs) -> KeyTarget {
     let cutoff = now() + budgetMs
-    return keyboardTarget(focused: focused(application), appPid: appPid, publicOwner: { owner in
+    var cutOff = false
+    let pid = keyboardTarget(focused: focused(application), appPid: appPid, publicOwner: { owner in
       let pid = publicPid(owner)
       return pid > 0 ? pid : appPid
-    }, parent: parent, actualPid: actualPid, kind: kind, leftMs: { cutoff - now() })
+    }, parent: parent, actualPid: actualPid, kind: kind, leftMs: { cutoff - now() }, cutOff: { cutOff = true })
+    return KeyTarget(pid: pid, walkCutOff: cutOff)
   }
+}
+
+/// Where keys go, and whether the walk that chose it was cut off at its time (the keys then go where main sent them).
+struct KeyTarget: Equatable {
+  let pid: pid_t
+  var walkCutOff = false
+}
+
+/// The notice a model reads when the walk was cut off at its time budget and the keys went to the app (ruling 1207).
+func keyTargetCutOffNotice(app: String) -> String {
+  "The check for a remote-view panel (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to \(app) and may not have reached such a panel. Observe the app with get_app_state before relying on them."
+}
+
+/// A key input's result (press_key, type_text, paste): the input meta and the note a model reads, the method's own and
+/// then the cut-off walk's notice when the keys' final read was cut off (`InputMeta.keyTargetCutOff`), joined by a space.
+func keyInputResult(_ meta: InputMeta, note: String?, app: String) -> [String: Any] {
+  var result: [String: Any] = ["meta": meta.wire]
+  let notes = [note, meta.keyTargetCutOff ? keyTargetCutOffNotice(app: app) : nil].compactMap { $0 }
+  if !notes.isEmpty { result["note"] = notes.joined(separator: " ") }
+  return result
 }
 
 /// The request's deadline passed before its keys were sent (ruling 1206): refused, never posted late.
@@ -148,24 +176,34 @@ extension Engine {
   /// service when the vendor's walk finds one (#582), else the public owner of the app's focused element, else the app
   /// (`pid`). The walk is bounded by `keyTargetWalkBudgetMs` and by the request's deadline when one is given.
   func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t, deadline: Int64? = nil) -> pid_t {
+    keyTarget(application, fallback: pid, deadline: deadline).pid
+  }
+
+  /// `keyboardTarget`'s answer with whether its walk was cut off at its time budget.
+  func keyTarget(_ application: AXUIElement, fallback pid: pid_t, deadline: Int64? = nil) -> KeyTarget {
     let left = deadline.map { Double($0 - unixMilliseconds()) } ?? .infinity
     return keyTargetReads.target(application, appPid: pid, budgetMs: min(keyTargetWalkBudgetMs, left))
   }
 
   /// Before anything is touched (ruling 1206): the keys' process as it reads now, refused when a forbidden process serves
-  /// it. The keys themselves go to `finalKeyTarget`'s answer.
-  func refuseForbiddenKeyTarget(_ application: AXUIElement, pid: pid_t, deadline: Int64) throws {
-    try keyTargetReads.refuseForbidden(keyboardTarget(application, fallback: pid, deadline: deadline))
+  /// it, else driven for the app by the intervention detector from now on (ruling 1207), so a person's key into it while
+  /// the action waits for its lock or activation stops the action. The keys themselves go to `finalKeyTarget`'s answer.
+  @discardableResult
+  func earlyKeyTarget(_ application: AXUIElement, pid: pid_t, app: ResolvedApp, context: ExecutionContext) throws -> pid_t {
+    let target = keyboardTarget(application, fallback: pid, deadline: context.deadline)
+    try keyTargetReads.refuseForbidden(target)
+    actionTargets(target, app: app, connection: context.connection)
+    return target
   }
 
   /// The keys' process once any activation has run, read again just before the first key event (ruling 1206: an
   /// activation can move focus between a document and its Open or Save panel, so a read before it can name the wrong
-  /// process): refused when a forbidden process serves it, then driven for the app by the intervention detector. The
-  /// activation itself stays the app's.
-  func finalKeyTarget(_ application: AXUIElement, pid: pid_t, app: ResolvedApp, context: ExecutionContext) throws -> pid_t {
-    let target = keyboardTarget(application, fallback: pid, deadline: context.deadline)
-    try keyTargetReads.refuseForbidden(target)
-    actionTargets(target, app: app, connection: context.connection)
+  /// process): refused when a forbidden process serves it, then driven for the app as well. Only this read's process gets
+  /// the keys. The activation itself stays the app's.
+  func finalKeyTarget(_ application: AXUIElement, pid: pid_t, app: ResolvedApp, context: ExecutionContext) throws -> KeyTarget {
+    let target = keyTarget(application, fallback: pid, deadline: context.deadline)
+    try keyTargetReads.refuseForbidden(target.pid)
+    actionTargets(target.pid, app: app, connection: context.connection)
     return target
   }
 }

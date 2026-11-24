@@ -145,8 +145,9 @@ const PER_CALL = {
 const PERMISSIONS = new Set(['accessibility', 'screenRecording']);
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
-// a keyed type_text into a password field confirmed by its length alone, #414), and its bound.
-const NOTED_METHODS = new Set(['paste', 'type_text', 'click', 'scroll']);
+// a keyed type_text into a password field confirmed by its length alone, #414; keys whose remote-view panel check was
+// cut off at its time budget, on press_key, type_text and paste, #582), and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text', 'press_key', 'click', 'scroll']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,

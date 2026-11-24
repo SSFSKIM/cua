@@ -165,10 +165,10 @@ final class KeyTargetTests: XCTestCase {
     XCTAssertEqual(engine(.live()).status(ConnectionState(id: 1, fd: -1))["actualPid"] as? Bool, exported)
   }
 
-  /// The hosted runner's canary: GitHub's macOS still exports the symbol. Skipped anywhere else, where its absence is
-  /// the fallback's case, not a failure.
+  /// The hosted runner's canary: GitHub's macOS still exports the symbol. Skipped anywhere else (a self-hosted runner sets
+  /// GITHUB_ACTIONS too, so the runner's environment decides), where its absence is the fallback's case, not a failure.
   func testTheHostedMacOSExportsTheSymbol() throws {
-    try XCTSkipUnless(ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", "the canary runs on GitHub's hosted runner only")
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted", "the canary runs on GitHub's hosted runner only")
     XCTAssertNotNil(ActualPid.resolved, "\(ActualPid.symbol) is exported by this macOS")
   }
 
@@ -195,14 +195,14 @@ final class KeyTargetTests: XCTestCase {
     let tree = FakeAXTree(app: app, service: service)
     let keys = engine(tree.reads)
     tree.focus.index = 3  // the document's window: the app's
-    XCTAssertNoThrow(try keys.refuseForbiddenKeyTarget(tree.application, pid: app, deadline: unixMilliseconds() + 60_000))
+    XCTAssertNoThrow(try keys.earlyKeyTarget(tree.application, pid: app, app: textEdit, context: context()))
     tree.focus.index = 0  // the activation brought the panel's list into focus
-    XCTAssertEqual(try keys.finalKeyTarget(tree.application, pid: app, app: textEdit, context: context()), service)
+    XCTAssertEqual(try keys.finalKeyTarget(tree.application, pid: app, app: textEdit, context: context()).pid, service)
 
     tree.focus.index = 0
-    XCTAssertNoThrow(try keys.refuseForbiddenKeyTarget(tree.application, pid: app, deadline: unixMilliseconds() + 60_000))
+    XCTAssertNoThrow(try keys.earlyKeyTarget(tree.application, pid: app, app: textEdit, context: context()))
     tree.focus.index = 3  // and back to the document
-    XCTAssertEqual(try keys.finalKeyTarget(tree.application, pid: app, app: textEdit, context: context()), app)
+    XCTAssertEqual(try keys.finalKeyTarget(tree.application, pid: app, app: textEdit, context: context()).pid, app)
   }
 
   /// A forbidden process on either read refuses: the early one before anything is touched, the final one after the
@@ -213,11 +213,11 @@ final class KeyTargetTests: XCTestCase {
     reads.refuseForbidden = { if $0 == self.service { throw EngineError(name: "appForbidden", "forbidden") } }
     let keys = engine(reads)
     tree.focus.index = 0
-    XCTAssertThrowsError(try keys.refuseForbiddenKeyTarget(tree.application, pid: app, deadline: unixMilliseconds() + 60_000)) {
+    XCTAssertThrowsError(try keys.earlyKeyTarget(tree.application, pid: app, app: textEdit, context: context())) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "appForbidden", "the early read")
     }
     tree.focus.index = 3
-    XCTAssertNoThrow(try keys.refuseForbiddenKeyTarget(tree.application, pid: app, deadline: unixMilliseconds() + 60_000))
+    XCTAssertNoThrow(try keys.earlyKeyTarget(tree.application, pid: app, app: textEdit, context: context()))
     tree.focus.index = 0
     XCTAssertThrowsError(try keys.finalKeyTarget(tree.application, pid: app, app: textEdit, context: context())) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "appForbidden", "the final read")
@@ -236,6 +236,53 @@ final class KeyTargetTests: XCTestCase {
 
     tree.focus.index = nil
     XCTAssertEqual(engine(tree.reads).keyboardTarget(tree.application, fallback: app), app)
+  }
+
+  /// Ruling 1207: both reads drive their process for the app (the early one before the lock and activation, so a key
+  /// the person types into the panel meanwhile is seen), and only the final read's gets the keys.
+  func testBothReadsDriveTheirProcessForTheApp() throws {
+    let tree = FakeAXTree(app: app, service: service)
+    let keys = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                      intervention: InterventionMonitor(listenGranted: { true }, createsTap: false), screenLocked: { false },
+                      keyTargetReads: tree.reads)
+    let context = context()
+    _ = keys.interventionGuard(app: textEdit, pid: app, requestApp: nil, connection: context.connection)
+    tree.focus.index = 0
+    XCTAssertEqual(try keys.earlyKeyTarget(tree.application, pid: app, app: textEdit, context: context), service)
+    XCTAssertEqual(context.connection.interventionProcesses[textEdit.key], [app, service], "the early owner is driven")
+    XCTAssertTrue(keys.intervention.ledger.isDriven(service))
+  }
+
+  /// The walk reports a stop at its time (`walkCutOff`), and only that: not an answer, not the chain's end.
+  func testTheTargetSaysWhenItsWalkWasCutOff() {
+    let tree = FakeAXTree(app: app, service: service)
+    tree.actual[0] = gone
+    var clock = 0.0
+    var reads = tree.reads
+    let parent = reads.parent
+    reads.now = { clock }
+    reads.parent = { element, left in clock += 300; return parent(element, left) }
+    XCTAssertEqual(reads.target(tree.application, appPid: app), KeyTarget(pid: service, walkCutOff: false), "the first read answers")
+    tree.actual[1] = gone
+    clock = 0
+    XCTAssertEqual(reads.target(tree.application, appPid: app), KeyTarget(pid: app, walkCutOff: true), "cut off after one read")
+    clock = 0
+    var quick = tree.reads
+    quick.now = { clock }
+    XCTAssertEqual(quick.target(tree.application, appPid: app), KeyTarget(pid: app, walkCutOff: false), "the app's window ends it in time")
+  }
+
+  /// Ruling 1207: a key input whose final read was cut off carries the notice in its note, the text a model reads (the
+  /// service puts a press_key's, type_text's or paste's note in the tool result), after the method's own note.
+  func testACutOffWalkPutsItsNoticeInTheReply() {
+    var meta = InputMeta(context())
+    XCTAssertNil(keyInputResult(meta, note: nil, app: "TextEdit")["note"])
+    XCTAssertEqual(keyInputResult(meta, note: "own", app: "TextEdit")["note"] as? String, "own")
+    meta.keyTargetCutOff = true
+    let notice = "The check for a remote-view panel (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to TextEdit and may not have reached such a panel. Observe the app with get_app_state before relying on them."
+    XCTAssertEqual(keyInputResult(meta, note: nil, app: "TextEdit")["note"] as? String, notice)
+    XCTAssertEqual(keyInputResult(meta, note: "own", app: "TextEdit")["note"] as? String, "own " + notice)
+    XCTAssertNotNil(keyInputResult(meta, note: nil, app: "TextEdit")["meta"])
   }
 
   private let textEdit = ResolvedApp(appPath: "/System/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)

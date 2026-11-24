@@ -964,11 +964,11 @@ extension Engine {
     }, meta: &meta)
   }
 
-  /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
-  /// not the app (F §5.7's targetForKeyboardEvent), else the app.
+  /// The process keyboard events go to, press_key's, type_text's (both routes) and paste's alike: a remote-view panel's
+  /// service when the vendor's walk finds one (#582, KeyTarget.swift), else the public owner of the app's focused
+  /// element, else the app (`pid`).
   func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
-    guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return pid }
-    return ownerPid(of: focused, fallback: pid)
+    keyTargetReads.target(application, appPid: pid)
   }
 
   /// The source check before every event and after the last (the spec's Design, "Text"): a switch mid-request stops it

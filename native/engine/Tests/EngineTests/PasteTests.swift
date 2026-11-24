@@ -1732,7 +1732,7 @@ extension PasteActivationTests {
   /// (type_text's, which its read-back reads, #361), and `onKeyDown` runs at each key down with its key code (⌘V's 0x09,
   /// Return's 0x24). `before` runs on the engine first (another holder's activation). The meta it answered with.
   private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
-                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in },
+                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in }, keyboard: pid_t? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
@@ -1752,7 +1752,7 @@ extension PasteActivationTests {
                         pasteboard: { pasteboard.access }, pasteActivation: system)
     let context = ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: unixMilliseconds() + 60_000, lineage: nil)
     let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
-    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: keyboard ?? target,
                                   guarding: .off(app: "TextEdit"))
     try before(engine, system)
     var meta = InputMeta(context)
@@ -1799,6 +1799,30 @@ extension PasteActivationTests {
       XCTAssertFalse(delivery.raiseLeft, label)
       XCTAssertNotNil(meta.wire["delivery"], "on the wire as a pointer action's (\(label))")
       XCTAssertEqual(meta.activationGuardMs, 10, "the activation's guard settles on one sample when a delivery guard follows (\(label))")
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored (\(label))")
+    }
+  }
+
+  /// #582: with the keys' target a remote-view panel's service (`PasteTarget.keyboard`, not the app), every ⌘V and Return
+  /// goes to the service while the paste's activation (subtypes 1 and 2, its click) stays the app's, on paste and on
+  /// type_text's paste route alike; nothing is refused for the service not being the frontmost app.
+  func testThePastesKeysGoToTheRemoteViewServiceAndItsActivationToTheApp() throws {
+    let service: pid_t = 990_009
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      let meta = try pasteToItsEnd(typed ? "a\nb" : "x", typed: typed, seam: seam, connection: ConnectionState(id: 1, fd: -1),
+                                   pasteboard: pasteboard, keyboard: service)
+      let label = typed ? "type_text" : "paste"
+      let keys = seam.posts.filter { $0.kind == .other }
+      XCTAssertFalse(keys.isEmpty, label)
+      XCTAssertEqual(Set(keys.map(\.pid)), [service], "every key event to the service (\(label))")
+      let activation = seam.posts.filter { $0.kind != .other }
+      XCTAssertFalse(activation.isEmpty, label)
+      XCTAssertEqual(Set(activation.map(\.pid)), [target], "the activation's events to the app (\(label))")
+      XCTAssertNil(meta.pointerRefusal, label)
       XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored (\(label))")
     }
   }

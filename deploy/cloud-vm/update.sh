@@ -41,7 +41,9 @@ say() { printf 'update.sh: %s\n' "$*"; }
 fail() { printf 'update.sh: %s\n' "$*" >&2; exit 1; }
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30)
 vm() { ssh "${ssh_opts[@]}" "$target" "$1"; }
-q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }   # one word for the VM's shell
+# One word for the VM's shell. The quotes are variables: bash before 4.3 (macOS's /bin/bash is 3.2) reads quotes
+# written inside a double-quoted pattern replacement differently.
+q() { local sq="'" esc="'\\''"; printf "'%s'" "${1//$sq/$esc}"; }
 heads_name_c() { local heads; heads="$(vm "git bundle list-heads $1")" && grep -q "^$C " <<<"$heads"; }   # a VM bundle's heads name C
 sha256() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1"; else sha256sum "$1"; fi | cut -d' ' -f1; }
 

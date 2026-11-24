@@ -403,7 +403,8 @@ const remoteCalls = vm => vm.calls().filter(call => /^(ssh|scp) /.test(call));
 
 test('update.sh resolves the ref once, checks the VM\'s source, installs the script by its hash, sets CUA_REF to the commit, runs it and checks HEAD, in that order', {skip: noJq}, async t => {
   const {vm, ids} = await deployed(t);
-  const run = vm.update(ids.operator, ['--ref', 'main']);
+  // under the quoting rules of bash before 4.3, as an operator's macOS /bin/bash (3.2) has them
+  const run = vm.update(ids.operator, ['--ref', 'main'], {BASH_COMPAT: '42'});
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const order = [
     /^ssh \. \/etc\/cua-provision\.conf && /,

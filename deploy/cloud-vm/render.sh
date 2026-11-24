@@ -2,15 +2,12 @@
 # Print the cloud-init user data for a cua device VM (cloud-init.yaml with its parameters filled in), for any provider
 # that takes user data. create-hetzner.sh uses it; on another provider, pass its output as the server's user data.
 #
-#   deploy/cloud-vm/render.sh [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>]
-#       [--relay wss://<relay>/ws] [--extension hosted|store] [--extension-url https://<host>/ext/update.xml]
+#   deploy/cloud-vm/render.sh [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--relay wss://<relay>/ws]
+#       [--extension hosted|store] [--extension-url https://<host>/ext/update.xml]
 #
-# --deb: the vendor's deb, which only CUA_NATIVE_ENGINE=vendor needs (#171 M6a). `none` (default) fetches and waits for
-# nothing: the VM installs cua's own runtime, and its cua install only tries the pin's URL for the vendor's tree. The
-# others ask for that tree, after cua's own runtime is in place: `pin` downloads the pin's official URL on the VM; an
-# https URL downloads a mirror instead; a local file means the operator copies it to the VM's
-# /var/cache/cua/upload.deb (create-hetzner.sh --deb does), and the VM waits for it. Either way the VM checks the bytes
-# against the pin's sha256 before installing.
+# Render from a checkout of the ref the VM provisions (or of one with the same cua-provision.sh): the VM's provisioner
+# stops before installing anything unless it is byte for byte the provisioner of the commit it checks out. The
+# template provisions cua 0.30.0 or later, which installs no ChatGPT package, so --deb is refused (#171 M6b).
 # --repo: the repository the VM clones (default https://github.com/SSFSKIM/cua); a local file is a git bundle holding
 # --ref (`git bundle create cua.bundle <ref>`, for a ref that is not pushed) that the operator copies to the VM's
 # /var/cache/cua/cua.bundle (create-hetzner.sh --repo does), and the VM waits for it.
@@ -19,16 +16,16 @@
 # Chrome Web Store listing.
 set -euo pipefail
 
-user=cua ref=main deb=none relay='' repo=https://github.com/SSFSKIM/cua
+user=cua ref=main relay='' repo=https://github.com/SSFSKIM/cua
 extension=hosted extension_url=https://178-104-102-73.sslip.io/ext/update.xml
-usage() { echo "usage: $0 [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
+usage() { echo "usage: $0 [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
 while (($#)); do
   (($# >= 2)) || usage
   case "$1" in
     --user) user="$2" ;;
     --ref) ref="$2" ;;
     --repo) repo="$2" ;;
-    --deb) deb="$2" ;;
+    --deb) echo "render.sh takes no --deb: the VM's cua (0.30.0 or later) installs its own runtime and no ChatGPT package" >&2; exit 2 ;;
     --relay) relay="$2" ;;
     --extension) extension="$2" ;;
     --extension-url) extension_url="$2" ;;
@@ -42,12 +39,6 @@ plain_https='^https://[A-Za-z0-9._:/@%+~=-]+$'
 [[ -z "$relay" || "$relay" =~ ^wss://[A-Za-z0-9._:/@%-]+$ ]] || { echo "not a wss:// relay URL: $relay" >&2; exit 2; }
 [[ "$extension" == hosted || "$extension" == store ]] || { echo "--extension is hosted or store: $extension" >&2; exit 2; }
 [[ "$extension_url" =~ $plain_https ]] || { echo "not a plain https URL: $extension_url" >&2; exit 2; }
-case "$deb" in
-  none|pin) ;;
-  https://*) [[ "$deb" =~ $plain_https ]] || { echo "not a plain https URL: $deb" >&2; exit 2; } ;;
-  *) [[ -f "$deb" ]] || { echo "--deb is neither none, pin, an https URL nor a file: $deb" >&2; exit 2; }
-     deb=upload ;;
-esac
 case "$repo" in
   https://*) [[ "$repo" =~ $plain_https ]] || { echo "not a plain https URL: $repo" >&2; exit 2; } ;;
   *) [[ -f "$repo" ]] || { echo "--repo is neither an https URL nor a git bundle file: $repo" >&2; exit 2; }
@@ -58,7 +49,6 @@ here="$(cd "$(dirname "$0")" && pwd)"
 conf="CUA_USER='$user'
 CUA_REF='$ref'
 CUA_REPO='$repo'
-CUA_DEB='$deb'
 CUA_RELAY='$relay'
 CUA_EXTENSION='$extension'
 CUA_EXTENSION_URL='$extension_url'

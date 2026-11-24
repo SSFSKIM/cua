@@ -7,7 +7,7 @@ import {execFile, spawn} from 'node:child_process';
 import {hostname} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
-import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
+import {OLD_PROVISIONER_CLAUSE, loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installMacosEngine, installRuntime, useRuntime} from './runtime/install.mjs';
 import {installLinux} from './runtime/linux-install.mjs';
 import {VENDOR_ENGINE_RETIRED_IN} from './runtime/launch.mjs';
@@ -190,9 +190,10 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     'engine-sign': {type: 'string'}, 'sign-wait': {type: 'string'}, 'modules-dir': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
   for (const [flag, given] of [['--sandbox-helper', values['sandbox-helper'] !== undefined], ['--modules-dir', values['modules-dir'] !== undefined]])
     if (given && platform !== 'linux') throw new UsageError(`install takes ${flag} on Linux only`);
-  // #171 M6b (§3.5): Linux has no vendor archive or release to take.
+  // #171 M6b (§3.5): Linux has no vendor archive or release to take. A cloud VM's provisioner from before 0.30.0 is
+  // what still passes --archive, so the error names its successor (§3.6).
   if ((values.archive !== undefined || values.release !== undefined) && platform === 'linux')
-    throw new UsageError(`install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua ${VENDOR_ENGINE_RETIRED_IN}, no ChatGPT package`);
+    throw new UsageError(`install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua ${VENDOR_ENGINE_RETIRED_IN}, no ChatGPT package; ${OLD_PROVISIONER_CLAUSE}`);
   if (values.engine && platform !== 'linux' && platform !== 'darwin') throw new UsageError('install takes --engine on macOS and Linux only');
   if ((values['engine-sign'] !== undefined || values['sign-wait'] !== undefined) && platform !== 'darwin')
     throw new UsageError('install takes --engine-sign and --sign-wait on macOS only (the Linux engine is not signed)');

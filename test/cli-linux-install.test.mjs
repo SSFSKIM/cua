@@ -286,7 +286,8 @@ test('--archive and --release are usage errors on Linux, before anything is inst
     const {calls, deps} = installers(home);
     const run = await cli(['install', ...args], deps);
     assert.equal(run.status, 2, args[0]);
-    assert.ok(run.stderr.startsWith('cua: install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua 0.30.0, no ChatGPT package\n'), run.stderr);
+    // §3.6: an old cloud VM provisioner is what still passes --archive, so the error ends naming its successor
+    assert.ok(run.stderr.startsWith('cua: install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua 0.30.0, no ChatGPT package; a cloud VM\'s provisioner that asks for one is replaced with `deploy/cloud-vm/update.sh`\n'), run.stderr);
     assert.deepEqual(calls, []);
     assert.deepEqual(readdirSync(home), []);
   }

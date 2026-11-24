@@ -67,7 +67,7 @@ import {findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cel
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {closePanel, closeUntitledDocument, openPanelOf, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
+import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
@@ -317,6 +317,11 @@ async function runOnce(options, io) {
       // A held fixture's reset the alert held, or the guard refused (./probe-run.mjs resetHeldFixture; T8e review, Minor
       // 2): its samples after are NO VERDICT by that cause too, never missing.
       recordUnrun(ctx, plan, error.guard, 'a held fixture could not be reset');
+    } else if (error instanceof PanelCloseStopped) {
+      // The key guard stopped a panel's close (./panels.mjs): its samples after are recorded, NO VERDICT by the guard's
+      // cause, its message naming what the device's cancel then left.
+      meta.panelCloseStop = {cause: error.guard.category, detail: error.guard.detail, device: error.device};
+      recordUnrun(ctx, plan, error.guard, 'the key guard stopped a panel\'s close');
     } else if (error instanceof PanelStuck) {
       // A panel nothing closed (./panels.mjs closePanel, ruling 1195): its samples after are recorded, invalid by it.
       recordUnrun(ctx, plan, null, error.message);

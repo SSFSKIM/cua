@@ -159,6 +159,17 @@ export function tagOpening(ctx, from, opening) {
 // A stop because a panel stayed open whatever closed it: ./run.mjs records every sample its plan still had to take with
 // this cause (recordUnrun), alike on both lanes.
 export class PanelStuck extends Stop {}
+// The key guard stopped a panel's close (KeyGuardStop): its message and cause kept (`guard`: {category, detail}, as
+// ./run.mjs recordUnrun marks the samples after it), and what the device's cancel then left (`device`: closed, open or
+// unread).
+export class PanelCloseStopped extends PanelStuck {
+  constructor(stop, device) {
+    const after = device === 'closed' ? 'the device\'s cancel then closed the panel' : device === 'unread' ? 'the device\'s cancel then left the panel unread' : 'the device\'s cancel then left the panel open';
+    super(`${stop.message}; ${after}`);
+    this.guard = {category: stop.category ?? 'invalid', detail: `${stop.message}; ${after}`};
+    this.device = device;
+  }
+}
 
 // The panel closed after its case (see the header). `from`: the first row of this opening, so a close that did not take
 // marks that opening's rows. After the background pairing the user window (Finder's) is in front, where the key guard
@@ -217,11 +228,15 @@ export async function closePanel(ctx, target, {from = ctx.rows.length, activateF
     record.steps.push(click);
     if (closedBy(click)) return done();
   }
+  // The opening's rows say nothing, by the most specific cause: the key guard's stop (an unread front `unread`, a readable
+  // other front `invalid`), a refusal's own category, the capture alert holding Escape (`alert`, the click after it merely
+  // ineffective), else `invalid`.
   const refused = click?.refused ?? escape.refused ?? null;
   const name = PANEL_NAMES[target];
-  const mark = guardStop ? {cause: 'invalid', detail: `the ${name}'s Escape was not sent: ${guardStop.message}`}
+  const mark = guardStop ? {cause: guardStop.category ?? 'invalid', detail: `the ${name}'s Escape was not sent: ${guardStop.message}`}
     : refused ? {cause: refused.cause, detail: `the ${name}'s close was refused (${refused.detail}): Escape did not close it`}
-      : {cause: 'invalid', detail: `neither Escape nor the ${name}'s Cancel click closed it`};
+      : escape.held ? {cause: 'alert', detail: `the capture alert held the ${name}'s Escape, and its Cancel click did not close it`}
+        : {cause: 'invalid', detail: `neither Escape nor the ${name}'s Cancel click closed it`};
   record.rowsMarked = markOpening(ctx, from, mark);
   const ax = {step: 'device', windows: []};
   record.steps.push(ax);
@@ -242,7 +257,9 @@ export async function closePanel(ctx, target, {from = ctx.rows.length, activateF
   } else ax.device = state;
   ax.closed = state === 'closed';
   if (ax.closed) done();
-  if (guardStop) throw guardStop;
+  // The key guard's stop is kept, and with it what the device's cancel then left: the run records every sample after it
+  // by the guard's cause (./run.mjs recordUnrun).
+  if (guardStop) throw new PanelCloseStopped(guardStop, state);
   if (ax.closed) return;
   throw new PanelStuck(state === 'unread'
     ? `TextEdit's ${name} could not be read after its close: the device's window list was unread, so whether it stayed open is unknown`

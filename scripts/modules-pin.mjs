@@ -81,6 +81,7 @@ export function parseProvenanceRecord(json, {file} = {}) {
   exactKeys(json.archive, ['format', 'url', 'length', 'sha256'], `${where}.archive`);
   if (json.archive.format !== 'deb') invalid(`${where}.archive.format`, 'must be "deb"');
   let url;
+  if (typeof json.archive.url !== 'string') invalid(`${where}.archive.url`, 'must be a string');
   try { url = new URL(json.archive.url); } catch { invalid(`${where}.archive.url`, 'not a URL'); }
   if (url.protocol !== 'https:') invalid(`${where}.archive.url`, 'must be https');
   if (!Number.isSafeInteger(json.archive.length) || json.archive.length <= 0) invalid(`${where}.archive.length`, 'must be a positive integer');

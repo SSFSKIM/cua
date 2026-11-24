@@ -7,7 +7,8 @@
 //   2. no pin, and no parser for one: a Linux host has no release pin, and each record, as it is and as it was before
 //      the trim, is refused by the pin parser;
 //   3. recorded: node:fs, fs.promises and node:child_process wrapped (./helpers/vendor-tree-recorder.mjs) and fetch
-//      logged, install, doctor and launch run for a Linux host under no engine setting, `cua` and `vendor`. No path
+//      logged, install (served its assets, under engine.json's `vendor` too, placing every part), doctor and launch run
+//      for a Linux host under no engine setting, `cua` and `vendor`. No path
 //      under runtime/provenance/ is touched and no record's URL is asked for. Launch touches nothing under the home's
 //      runtimes/; install and doctor touch there only what the vendor tree's report touches alone (§3.4). The negative
 //      control is the script's own reader, which the same recorder sees opening both records.
@@ -15,7 +16,7 @@ import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {join, relative} from 'node:path';
+import {dirname, join, relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
 import {RELEASES_DIR, loadPins, parsePin, resolveRuntime, selectPin} from '../src/runtime/manifest.mjs';
@@ -25,12 +26,14 @@ import {installLinux} from '../src/runtime/linux-install.mjs';
 import {installModuleTree} from '../src/runtime/module-tree.mjs';
 import {installNode} from '../src/runtime/node-install.mjs';
 import {retiredTrees} from '../src/runtime/retired-tree.mjs';
+import {engineSettingsPath} from '../src/runtime/engine-sign.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {loadProvenanceRecords} from '../scripts/modules-pin.mjs';
 import {scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {RETIRED, plantRetiredRelease} from './fixtures/retired-release.mjs';
 import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree, moduleHostOf} from './fixtures/own-linux-runtime.mjs';
+import {servedArchives} from './fixtures/linux-install-archives.mjs';
 import {inVendorTree, startRecording, within} from './helpers/vendor-tree-recorder.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -115,11 +118,12 @@ test('no pin, and no parser for one: a Linux host has no release pin, and each r
 
 // ---- 3. recorded ----
 
-// Runs `fn` under the recorder, with globalThis.fetch logging every URL and answering none -> {value, error, seen, urls}.
-async function recordedRun(fn) {
+// Runs `fn` under the recorder, with globalThis.fetch logging every URL and answering it with `answer`'s response, by
+// default none -> {value, error, seen, urls}.
+async function recordedRun(fn, answer = () => null) {
   const urls = [];
   const fetch = globalThis.fetch;
-  globalThis.fetch = async url => { urls.push(String(url)); return new Response('not served', {status: 404}); };
+  globalThis.fetch = async (url, init) => { urls.push(String(url)); return (await answer(String(url), init)) ?? new Response('not served', {status: 404}); };
   const recording = startRecording();
   let value, error, seen;
   try { value = await fn(); } catch (caught) { error = caught; } finally {
@@ -160,25 +164,56 @@ function recordedHome(t) {
   return h;
 }
 
-// Install whole, with the real installers held to a Linux host (the suite also runs on macOS) and fetch the logging one.
-const installOf = ({home, user}, setting) => installLinux({values: {}, home, env: {HOME: user, ...setting}, host: LINUX,
-  installModules: options => installModuleTree({...options, host: moduleHostOf(LINUX)}),
-  installHelper: options => installSandboxHelper({...options, host: LINUX}),
-  installNode: options => installNode({...options, host: LINUX}),
-  installEngine: options => installLinuxEngine({...options, host: LINUX})});
+// Install whole, with the real installers held to a Linux host (the suite also runs on macOS), the pins of `archives`
+// (fixtures/linux-install-archives.mjs servedArchives) and fetch the logging one, which serves their bytes.
+const fetched = (url, init) => globalThis.fetch(url, init);
+const installOf = ({home, user}, setting, archives) => installLinux({values: {}, home, env: {HOME: user, ...setting}, host: LINUX,
+  installModules: options => installModuleTree({...options, host: moduleHostOf(LINUX), fetch: fetched, lock: archives.modules.lock, provenance: archives.modules.provenance}),
+  installHelper: options => installSandboxHelper({...options, pin: archives.helper, host: LINUX, fetch: fetched}),
+  installNode: options => installNode({...options, host: LINUX, fetch: fetched}), nodePins: () => [archives.nodePin],
+  installEngine: options => installLinuxEngine({...options, host: LINUX, fetch: fetched}), enginePin: () => archives.enginePin});
+const serving = archives => (url, init) => {
+  const bytes = archives.serve[url];
+  return bytes ? new Response(bytes, {headers: {'content-length': String(bytes.length)}}) : archives.modules.fetch(url, init);
+};
+// The engine settings an install meets: none, `cua` and the vendor's by the variable, and the vendor's by engine.json.
+const INSTALL_SETTINGS = {
+  'no setting': {env: {}},
+  '`cua`': {env: {CUA_NATIVE_ENGINE: 'cua'}},
+  'the variable `vendor`': {env: {CUA_NATIVE_ENGINE: 'vendor'}, retired: true},
+  '`vendor` in engine.json': {env: {}, file: {engine: 'vendor'}, retired: true},
+};
+const LANES = ['modules', 'sandboxHelper', 'node', 'engine'];
 const doctorOf = ({home, user}, setting) => inspectRuntime({home, env: {HOME: user, DISPLAY: ':9', ...setting}, host: LINUX, verifySignatures: () => assert.fail('codesign'),
   inspectHelper: () => assert.fail('the native socket helper'), inspectSecrets: async () => ({dir: '/nowhere', exists: false}),
   inspectLinux: async () => [], inspectChrome: async () => [], inspectAgent: async () => [], readLinuxCapabilities: async () => null});
 
-test('recorded: install, in an empty home and over a recorded release, under each setting, reads no record and asks for no record\'s URL', async t => {
-  for (const [label, setting] of Object.entries(SETTINGS)) {
+test('recorded: a whole install, in an empty home and over a recorded release, under each setting, places every part from the assets it is served, reads no record and asks for no record\'s URL', async t => {
+  const archives = servedArchives(t);
+  for (const [label, {env, file, retired}] of Object.entries(INSTALL_SETTINGS)) {
     for (const [kind, make] of [['an empty home', emptyHome], ['a recorded release', recordedHome]]) {
       const h = make(t);
+      if (file) {
+        const settings = engineSettingsPath({HOME: h.user});
+        fs.mkdirSync(dirname(settings), {recursive: true});
+        fs.writeFileSync(settings, JSON.stringify(file));
+      }
       const yardstick = await reportsOwn(h.home);
-      const {error, seen, urls} = await recordedRun(() => installOf(h, setting));
+      const {value, error, seen, urls} = await recordedRun(() => installOf(h, env, archives), serving(archives));
       const what = `${kind}, ${label}`;
       assert.equal(error, undefined, `${what}: ${error?.stack}`);
-      assert.ok(seen.length > 0 && urls.length > 0, `${what}: the recorder saw the install's own reads and fetches`);
+      for (const lane of LANES) assert.ok(value.report[lane].changed === true && !value.report[lane].failed, `${what}, ${lane}: ${JSON.stringify(value.report[lane])}`);
+      if (retired) {
+        // every part placed, then the vendor selection refused, its sentence ending as an install's (the pre-flight's §2.2)
+        assert.equal(value.ok, false, what);
+        assert.equal(value.error?.code, 'engine_retired', `${what}: ${JSON.stringify(value.error)}`);
+        assert.ok(value.error.message.endsWith('; the install otherwise completed'), `${what}: ${value.error.message}`);
+      } else {
+        assert.equal(value.ok, true, `${what}: ${JSON.stringify(value.error)}`);
+      }
+      assert.deepEqual(value.report.retired.map(tree => tree.release), kind === 'an empty home' ? [] : [RETIRED.x64.release], what);
+      const served = new Set([...Object.keys(archives.serve), ...Object.values(archives.modules.lock.packages).map(entry => entry.resolved).filter(Boolean)]);
+      assert.ok(urls.length > 0 && urls.every(url => served.has(url)), `${what}: only the served assets were asked for: ${urls.filter(url => !served.has(url))}`);
       assert.deepEqual(touchesRecords(seen), [], what);
       assert.deepEqual(askedRecords(urls), [], what);
       assert.deepEqual(own(inVendorTree(seen, h.home)), yardstick, `${what}: under runtimes/, only the report's own`);

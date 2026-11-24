@@ -234,6 +234,7 @@ test('the reader is strict: exactly the record\'s keys, each in its form, and a 
     'a zip': {...good, archive: {...good.archive, format: 'zip'}},
     'http': {...good, archive: {...good.archive, url: 'http://example.invalid/x.deb'}},
     'not a URL': {...good, archive: {...good.archive, url: 'chatgpt.deb'}},
+    'a URL in a list': {...good, archive: {...good.archive, url: [good.archive.url]}},
     'a short hash': {...good, archive: {...good.archive, sha256: 'abc'}},
     'a length of 0': {...good, archive: {...good.archive, length: 0}},
     'an absolute lockfile': {...good, lockfile: `/${LOCK_IN_DEB}`},

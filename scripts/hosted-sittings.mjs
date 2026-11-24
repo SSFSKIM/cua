@@ -30,7 +30,7 @@
 //       set stage by stage, a relaunch at each, the product's answers recorded to <file>, which the sitting's check judges
 //       (scripts/hosted-sittings/onboarding-judge.mjs). Exit 0 every stage ran, 1 the run stopped (recorded), 2 refused.
 import {spawnSync} from 'node:child_process';
-import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -88,7 +88,10 @@ async function runCommand(sitting, values) {
     // sitting the job's limit cuts short still leaves each finished step's wall time in the uploaded artifact.
     jobStartedMs: jobStartedOf(process.env), onStep: entry => {
       finished.push(entry);
-      writeFileSync(join(out, 'sitting.md'), renderSitting({...plan, steps: finished, verdict: 'IN PROGRESS', exit: '-', wall: entry.wall}));
+      // Written whole, then renamed over the last, so the artifact never holds a half-written report.
+      const partial = join(out, '.sitting.md.partial');
+      writeFileSync(partial, renderSitting({...plan, steps: finished, verdict: 'IN PROGRESS', exit: '-', wall: entry.wall}));
+      renameSync(partial, join(out, 'sitting.md'));
     }});
   const parts = [renderSitting(report)];
   if (plan.counts.length) {

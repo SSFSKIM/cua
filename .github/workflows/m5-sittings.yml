@@ -88,6 +88,10 @@ jobs:
       FORM: ${{ inputs.form }}
       FLIPPED: ${{ inputs.flipped }}
     steps:
+      # The job's start, first, so every report's wall time counts the whole job against its limit (run.mjs JOB_LIMIT_MINUTES).
+      - name: Job start
+        shell: bash
+        run: echo "M5_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
@@ -100,7 +104,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          echo "M5_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
           git log -1 --format='sitting %H %s'
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) sitting=$SITTING form=$FORM flipped=$FLIPPED"
           npm ci --no-audit --no-fund

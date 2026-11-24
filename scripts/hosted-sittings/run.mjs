@@ -87,7 +87,8 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
     }
     entry.wall = wall();
     log(`hosted-sittings: ${plan.sitting} ${step.id}: ${entry.status}${entry.reason ? ` (${entry.reason})` : ''}; ${wallText(entry.wall)}`);
-    onStep(entry);
+    // The progress report is best effort: a failure to publish it is logged and never stops the sitting or its cleanup.
+    try { onStep(entry); } catch (error) { log(`hosted-sittings: ${plan.sitting} ${step.id}: the progress report was not written (${error.code ?? error.message})`); }
   }
   const steps = [...done.values()];
   const counted = steps.filter(s => !s.expected);
@@ -116,8 +117,8 @@ export function renderSitting(report) {
   const why = [expected && `${counted(expected, 'judge')} gave the expected NO VERDICT`, pending && `${counted(pending, 'step')} pending`].filter(Boolean).join(', ');
   const out = [`## Sitting ${report.sitting.toUpperCase()} (${report.form}): ${report.title}`, '',
     unproved ? `Would prove: ${report.proves}. This pilot proves none of it: ${why}.` : `Proves: ${report.proves}.`, '',
-    '| step | kind | status | exit | time | sitting so far | note |', '|---|---|---|---|---|---|---|'];
-  for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms), s.wall ? minutes(s.wall.sittingMs) : '-'].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
+    '| step | kind | status | exit | time | sitting so far | job so far | note |', '|---|---|---|---|---|---|---|---|'];
+  for (const s of report.steps) out.push(`| ${[s.id, s.kind, s.status, s.exit ?? '-', seconds(s.ms), s.wall ? minutes(s.wall.sittingMs) : '-', s.wall?.jobMs != null ? minutes(s.wall.jobMs) : '-'].join(' | ')} |${s.reason ? ` ${String(s.reason).replaceAll('|', '\\|')} ` : ' '}|`);
   const count = status => report.steps.filter(s => s.status === status).length;
   out.push('', `**${unproved ? 'PILOT COMPLETED WITHOUT ACCEPTANCE PROOF' : report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
   if (report.wall) out.push('', `Wall time: ${wallText(report.wall)}${report.wall.jobMs === null ? ` (the job's start unread; its limit is ${JOB_LIMIT_MINUTES} min)` : ''}.`);

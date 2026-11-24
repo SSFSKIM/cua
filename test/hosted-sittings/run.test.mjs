@@ -83,8 +83,8 @@ test('the report renders as the job summary: one line a step, its status, exit a
   const {report} = await run(plan([step('a'), step('b', 'run', {needs: ['a']})]), {a: 1});
   const text = renderSitting(report);
   assert.match(text, /^## Sitting X \(full\): a test sitting$/m);
-  assert.match(text, /^\| a \| run \| FAIL \| 1 \| 0 s \| 0 min \| \|$/m);
-  assert.match(text, /^\| b \| run \| SKIP \| - \| - \| 0 min \| needs a, which did not pass \|$/m);
+  assert.match(text, /^\| a \| run \| FAIL \| 1 \| 0 s \| 0 min \| - \| \|$/m);
+  assert.match(text, /^\| b \| run \| SKIP \| - \| - \| 0 min \| - \| needs a, which did not pass \|$/m);
   assert.match(text, /^\*\*FAIL\*\* \(exit 1\)/m);
 });
 
@@ -99,8 +99,16 @@ test('the wall time so far: each step carries the sitting\'s and the job\'s, log
   assert.deepEqual(seen, [['a', {sittingMs: 25 * 60000, jobMs: 35 * 60000}], ['b', {sittingMs: 50 * 60000, jobMs: 60 * 60000}]]);
   assert.ok(lines.some(l => /x b: PASS; the sitting 50 min so far, the job 60 min of its 360$/.test(l)), lines.join('\n'));
   const text = renderSitting(report);
-  assert.match(text, /^\| b \| run \| PASS \| 0 \| 1500 s \| 50 min \| \|$/m);
+  assert.match(text, /^\| b \| run \| PASS \| 0 \| 1500 s \| 50 min \| 60 min \| \|$/m);
   assert.match(text, /^Wall time: the sitting 50 min so far, the job 60 min of its 360\.$/m);
+  // A progress report that cannot be written is logged and the sitting goes on to its cleanup and verdict.
+  const cleanup = step('cleanup', 'cleanup', {needs: ['a']});
+  const kept = [];
+  const broken = await runSitting(plan([step('a'), cleanup]), {out: '/w/out', exec: async () => ({exit: 0}), keep: () => {}, readText: () => '', readJson: () => null,
+    exists: () => false, remove: () => {}, now: () => 0, log: line => kept.push(line), onStep: () => { throw Object.assign(new Error('disk full'), {code: 'ENOSPC'}); }});
+  assert.deepEqual(broken.steps.map(s => [s.id, s.status]), [['a', 'PASS'], ['cleanup', 'PASS']]);
+  assert.equal(broken.verdict, 'PASS');
+  assert.ok(kept.some(l => /a: the progress report was not written \(ENOSPC\)/.test(l)), kept.join('\n'));
   // Without the job's start, the sitting's alone, the limit named.
   const bare = await runSitting(plan([step('a')]), {out: '/w/out', exec: async () => ({exit: 0}), keep: () => {}, readText: () => '', readJson: () => null,
     exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
@@ -111,8 +119,8 @@ test('the limit the report names is the sitting job\'s timeout in the workflow, 
   const workflow = readFileSync(new URL('../../.github/workflows/m5-sittings.yml', import.meta.url), 'utf8');
   const sittingJob = workflow.slice(workflow.indexOf('    strategy:'));
   assert.equal(Number(/timeout-minutes: (\d+)/.exec(sittingJob)?.[1]), JOB_LIMIT_MINUTES);
-  const prerequisites = sittingJob.slice(sittingJob.indexOf('- name: Prerequisites'));
-  assert.ok(prerequisites.indexOf('M5_JOB_STARTED=$(date +%s)') < prerequisites.indexOf('npm ci'), 'recorded before anything slow');
+  const firstStep = sittingJob.slice(sittingJob.indexOf('    steps:\n')).split('\n      - ')[1];
+  assert.match(firstStep, /M5_JOB_STARTED=\$\(date \+%s\)/, 'the job records its start in its first step, before checkout');
   assert.equal(jobStartedOf({M5_JOB_STARTED: '1700000000'}), 1700000000000);
   for (const bad of [undefined, '', 'soon', '1.5']) assert.equal(jobStartedOf({M5_JOB_STARTED: bad}), null);
 });

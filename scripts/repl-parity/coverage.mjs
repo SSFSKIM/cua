@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {testReporterEnv} from '../accept/lib.mjs';
+import {npmTestPattern} from '../test-shard.mjs';
 const repository=fileURLToPath(new URL('../../',import.meta.url));
 export const unitProofKey=proof=>`${proof.file}#${proof.name}`;
 export function rowCovered(row,executableCases,passedUnitProofs=new Set()){
@@ -16,8 +17,8 @@ const escaped=text=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 export function verifyUnitProofs(rows,{root=repository}={}){
  const proofs=new Map(rows.filter(row=>row.unitProof).map(row=>[unitProofKey(row.unitProof),row.unitProof]));
  if(!proofs.size)return new Set();
- const script=JSON.parse(readFileSync(resolve(root,'package.json'),'utf8')).scripts?.test;
- const pattern=/^node --test ["']?([^"'\s]+)["']?$/.exec(script??'')?.[1];
+ // The one reading of npm test: CI's shards (scripts/test-shard.mjs) run the files of this same pattern.
+ const pattern=npmTestPattern(root);
  if(!pattern)throw new Error('Cannot establish referenced unit proof inclusion in npm test');
  const discovered=new Set(globSync(pattern,{cwd:root}).map(file=>resolve(root,file)));
  const passed=new Set();

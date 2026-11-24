@@ -11,14 +11,26 @@ setup:
   install: npm ci
   fetch_depth: 0      # browser-parity and repl-parity tests read committed evidence revisions
 gates:
-  # npm test, then the Linux engine harness's suite again through its cleanup check (test/linux-engine-diff/
-  # suite-check.mjs: no process or scratch directory of a run left behind; #171 task 47). npm test keeps its plain
-  # form, which scripts/repl-parity/coverage.mjs reads. The engine's Swift unit suite (test/native-engine-units.test.mjs)
-  # skips itself when the run also selected engine-swift (CI_KIT_GATES), which runs the same suite.
-  - name: test
-    run: npm test && npm run test:linux-engine-diff
+  # npm test, as two jobs: on GitHub's slower hosted macOS machines the suite alone takes 11 to 14 minutes (2026-11-24,
+  # 16 runs; the faster machines take 5), and seats wait on it several times a day. scripts/test-shard.mjs runs
+  # `node --test --test-shard=<index>/<total>` on the pattern of package.json's `test` script (the plain
+  # `node --test "<pattern>"` form, which scripts/repl-parity/coverage.mjs reads too), so Node selects the files and
+  # the two shards run what npm test runs, each file once, and a shard that selects no file fails. Neither gate has
+  # `paths` or `on`: every run selects both, and the verdict needs both (test/test-shard.test.mjs holds this file to
+  # that). The engine's Swift unit suite
+  # (test/native-engine-units.test.mjs, in whichever shard its place in the sorted list gives it) skips itself when the
+  # run also selected engine-swift (CI_KIT_GATES), which runs the same suite. test-2 then runs the Linux engine
+  # harness's suite again through its cleanup check (test/linux-engine-diff/suite-check.mjs: no process or scratch
+  # directory of a run left behind; #171 task 47).
+  - name: test-1
+    run: node scripts/test-shard.mjs 1/2
     lane: hosted-macos
-    timeout: 30
+    timeout: 20
+    env: {CUA_ENGINE_UNITS_GATE: engine-swift}
+  - name: test-2
+    run: node scripts/test-shard.mjs 2/2 && npm run test:linux-engine-diff
+    lane: hosted-macos
+    timeout: 20
     env: {CUA_ENGINE_UNITS_GATE: engine-swift}
   - name: plugin
     lane: hosted-macos
@@ -52,8 +64,8 @@ gates:
       swift test --package-path native/engine --scratch-path "$ENGINE_HOME/Library/Application Support/cua/engine/build"
       swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-control" -Xswiftc -DCUA_CONTROL_NO_INERT_CLICK
     # The engine's source, and the Node that builds, signs and checks its bundle: the engine commands, the CLI around
-    # them and the plist writer the assembler imports. The `test` gate leaves the unit suite to this gate whenever a run
-    # selects both: keep this gate's `swift test` unfiltered and its image the same as `test`'s.
+    # them and the plist writer the assembler imports. The test shards leave the unit suite to this gate whenever a run
+    # selects it: keep this gate's `swift test` unfiltered and its image the same as theirs.
     paths:
       - "native/engine/**"
       - "src/runtime/**"

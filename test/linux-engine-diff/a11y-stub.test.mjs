@@ -346,7 +346,7 @@ test('the stand-in is a node process of its own on the bus address, so the suite
 });
 
 // The design session's preference (task 48): the stand-in answers on a bus beside the person's, so its tests run in CI.
-// ci-kit's `test` gate runs on hosted macOS, where there is no dbus-daemon; the `harness-dbus` gate runs them on Ubuntu
+// ci-kit's test shards run on hosted macOS, where there is no dbus-daemon; the `harness-dbus` gate runs them on Ubuntu
 // with dbus installed and CUA171_DBUS_TESTS=required, where a missing tool fails them.
 test("ci-kit's harness-dbus gate installs dbus and runs the stand-in's tests through the cleanup check, requiring the bus", () => {
   const config = readFileSync(join(REPO, '.github', 'ci-kit.yml'), 'utf8');

@@ -192,7 +192,7 @@ test('legacy and local doubles still copy synchronously and never invoke an inst
 // module tree's tarballs included (--modules-dir), and the fresh home is checked by resolving it to the source's release.
 const LINUX={platform:'linux',arch:'x64'};
 const MODULE_CACHE={file:'alpha-1.0.0.tgz',bytes:Buffer.from('module fixture')};
-const LINUX_PINS={...PINS,modules:{dir:'modules',packages:[{file:MODULE_CACHE.file,archive:{url:`https://registry.npmjs.org/alpha/-/${MODULE_CACHE.file}`,length:MODULE_CACHE.bytes.length,integrity:'sha512-unchecked-by-the-cache'}}]}};
+const LINUX_PINS={node:PINS.node,modules:{dir:'modules',packages:[{file:MODULE_CACHE.file,archive:{url:`https://registry.npmjs.org/alpha/-/${MODULE_CACHE.file}`,length:MODULE_CACHE.bytes.length,integrity:'sha512-unchecked-by-the-cache'}}]}};
 async function linuxFixture(t){
  const {fakeManagedNode,fakeModuleTree}=await import('../fixtures/own-linux-runtime.mjs');
  const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-managed-linux-'))),source=join(root,'source'),user=join(root,'user');
@@ -213,10 +213,11 @@ async function linuxFixture(t){
 test('the managed Linux preparation: the source\'s own runtime, installed from the cache with its module tarballs, the fresh home resolved',async t=>{
  const {resolveRuntime}=await import('../../src/runtime/manifest.mjs');
  const {source,release,installed,inspect,archives,ambient}=await linuxFixture(t);let invocation;
- const scratch=prepareCapabilityHome({...LINUX,source,ambient,archives,inspect,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);}});
+ const scratch=prepareCapabilityHome({...LINUX,source,ambient:{...ambient,CUA_NATIVE_ENGINE:'vendor'},archives,inspect,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);}});
  t.after(()=>scratch.cleanup());
  const cache=archiveCacheDir(source);
- assert.deepEqual(invocation[1],['bin/cua.mjs','install','--archive',join(cache,'r1-linux-x64.deb'),'--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz'),'--modules-dir',join(cache,'modules')]);
+ assert.deepEqual(invocation[1],['bin/cua.mjs','install','--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz'),'--modules-dir',join(cache,'modules')],'no vendor archive on Linux since #171 M6b');
+ assert.equal('CUA_NATIVE_ENGINE' in invocation[2].env,false,'a Linux install names no engine, the ambient vendor selection included (#171 M6b)');
  assert.equal(invocation[2].env.CUA_HOME,scratch.dir);assert.equal(invocation[2].env.CUA_NODE,undefined);
  assert.equal(scratch.release,release);
  assert.equal(resolveRuntime({home:scratch.dir,host:LINUX}).release,release);

@@ -2,17 +2,27 @@
 // (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; Decision Log M1b.2): on Linux no js
 // result attests its engine, so the harness reads the trusted worker's child itself, by its executable
 // (/proc/<pid>/exe, never its command line). A lane is sound only when the engine it requested answered, at the
-// executable the lane names (the vendor tree's sky_linux_<arch> on the vendor lane; the installed or named
-// cua-engine on the cua lane), as the trusted worker's child, and nothing else did; from M3 each engine must also run
-// behind its own lane's service (the worker's CUA_SKY_SERVICE: @oai/sky's, or cua's own Linux service). Used on the device by
+// executable the lane names (the installed or named cua-engine on the cua lane), as the trusted worker's child, and
+// nothing else did; from M3 each engine must also run behind its own lane's service (the worker's CUA_SKY_SERVICE:
+// @oai/sky's, or cua's own Linux service). Since #171 M6b no Linux lane expects the vendor's engine, which cua 0.30.0
+// removed from Linux: a vendor lane has no expected engine, and the vendor's sky_linux stays nameable (engineKind) so a
+// cua lane it answers fails, and a stored vendor lane is still judged. Used on the device by
 // test/repl-parity/serve-native.mjs and scripts/native-baseline/linux.mjs, and judged on the controller.
 import * as nodeFs from 'node:fs';
 import {basename, join} from 'node:path';
 import {Writable} from 'node:stream';
-import {vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
 import {linuxEnginePath} from '../../src/runtime/linux-engine.mjs';
+import {VENDOR_ENGINE_RETIRED_IN} from '../../src/runtime/launch.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
+
+// The Linux vendor lanes' refusal (#171 M6b): each facade harness's, naming where its last vendor lanes are stored and
+// the judge that still reads them. macOS's vendor lanes are untouched.
+const EVIDENCE = 'docs/evidence/2026-10-28-own-linux-engine';
+const retiredLane = (suite, stored, judge) => `${suite}'s vendor engine lane on Linux is gone: cua ${VENDOR_ENGINE_RETIRED_IN} removed the vendor's engine from Linux. Its last vendor lanes are stored in ${stored}, which ${judge} still judges; run the cua lane, --engine cua`;
+export const LINUX_VENDOR_LANE_RETIRED = retiredLane("repl-parity's native suite",
+  `${EVIDENCE}/m6a/x64/regression/parity/vendor (M6a, beside cua's engine 0.4.4) and ${EVIDENCE}/m5/{x64,arm64}/out/R1.pinned-release (M5)`, '`repl-parity.mjs diff`');
+export const LINUX_VENDOR_BASELINE_RETIRED = retiredLane('native-baseline', `${EVIDENCE}/m5/{x64,arm64}/out/R2.pinned-release (M5)`, '`native-baseline.mjs compare --engines`');
 // The parent every answering engine must have: src/repl-host/trusted-worker.mjs, which spawns it.
 export const TRUSTED_WORKER = 'trusted-worker.mjs';
 // The launcher shim (#171 M4 T7b fix 4, src/repl-host/kernel-child.mjs LAUNCHER_SHIM): on cua's lane the supervisor
@@ -121,14 +131,12 @@ export function engineWitness(output, {record, sample}) {
 }
 
 // The executable a lane's engine must run from, in the cua home `home` the lane serves -> {requested, expected (its real
-// path, or null), error}: the vendor lane's is the sky_linux_<arch> of the home's vendor tree, found as the vendor
-// selection finds it (`runtime`, by default manifest.mjs vendorLinuxRuntime: the host's pinned vendor release, never
-// the pointer, which on Linux names cua's own runtime since #171 M6a); the cua lane's is `engineBin`
-// (CUA_LINUX_ENGINE_BIN, --engine-bin) when named, else the engine installed in the home. A lane whose executable
-// cannot be found has none expected, which engineAnsweredProblem refuses whatever answered. Device side.
-export function expectedEngine({engine, home, engineBin, runtime = () => vendorLinuxRuntime({home}), fs = nodeFs}) {
+// path, or null), error}: the cua lane's is `engineBin` (CUA_LINUX_ENGINE_BIN, --engine-bin) when named, else the
+// engine installed in the home; the vendor lane has none since #171 M6b (LINUX_VENDOR_LANE_RETIRED). A lane whose
+// executable cannot be found has none expected, which engineAnsweredProblem refuses whatever answered. Device side.
+export function expectedEngine({engine, home, engineBin, fs = nodeFs}) {
   try {
-    if (engine === 'vendor') return {requested: engine, expected: fs.realpathSync(runtime().paths.skyLinuxBin), error: null};
+    if (engine === 'vendor') return {requested: engine, expected: null, error: LINUX_VENDOR_LANE_RETIRED};
     const path = engineBin ?? linuxEnginePath(fs.realpathSync(home));
     try { return {requested: engine, expected: fs.realpathSync(path), error: null}; }
     catch { return {requested: engine, expected: null, error: engineBin ? `the named engine ${path} does not exist` : `no engine is installed at ${path}`}; }

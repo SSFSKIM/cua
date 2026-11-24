@@ -9,7 +9,9 @@ import {SESSION_KEYS, sessionEnvironment} from '../repl-parity/devices.mjs';
 import {ENGINES} from './engine.mjs';
 import {join} from 'node:path';
 import {homeLayout, readPointer} from '../../src/runtime/layout.mjs';
-import {resolveRuntime, vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
+import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {linuxEnginePath} from '../../src/runtime/linux-engine.mjs';
+import {realpathSync} from 'node:fs';
 
 export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
@@ -116,20 +118,23 @@ export function xDisplayFacts(text) {
   return {pixels: `${size[1]} x ${size[2]}`, resolution: `${size[1]} x ${size[2]}`, scale: 1, depth: Number(/depth of root window:\s+(\d+)/.exec(text)?.[1] ?? NaN) || null};
 }
 
-// The runtime a serve in the cua home `home` uses, as the preflight reports it -> {release, runtimeRoot, runtimeError?}.
-// On Linux (#171 M6a) `release` is what cua's own runtime resolves to there (manifest.mjs resolveRuntime; the pointer
-// records and selects nothing), null with `runtimeError` when it does not resolve, and `runtimeRoot` the root of the
-// vendor tree (manifest.mjs vendorLinuxRuntime), which the vendor engine's sky_linux runs from and the Linux helpers'
-// classification calls the pinned runtime, null when it is absent. Elsewhere the pointer's release and its tree.
+// The runtime a serve in the cua home `home` uses, as the preflight reports it. On Linux (#171 M6a) -> {release,
+// homeEngine, runtimeError?}: `release` is what cua's own runtime resolves to there (manifest.mjs resolveRuntime; the
+// pointer records and selects nothing), null with `runtimeError` when it does not resolve, and `homeEngine` the home's
+// engine by its real path (its lookup path while there is none), which the Linux helpers' classification names as the
+// run home's (./linux.mjs classifyLinuxHelpers); since #171 M6b no vendor tree is read. Elsewhere -> {release,
+// runtimeRoot}: the pointer's release and its tree.
 export function servedRuntime({home, host = {platform: process.platform, arch: process.arch}}) {
   if (host.platform !== 'linux') {
     const release = readPointer(home);
     return {release, runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null};
   }
-  let release = null, runtimeError, runtimeRoot = null;
+  let release = null, runtimeError;
   try { release = resolveRuntime({home, host}).release; } catch (error) { runtimeError = error.message; }
-  try { runtimeRoot = vendorLinuxRuntime({home, host}).root; } catch { /* no vendor tree: no sky_linux is the pinned runtime's */ }
-  return {release, runtimeRoot, ...(runtimeError === undefined ? {} : {runtimeError})};
+  const engine = linuxEnginePath(home);
+  let homeEngine = engine;
+  try { homeEngine = realpathSync(engine); } catch { /* none installed: its lookup path, which no process runs from */ }
+  return {release, homeEngine, ...(runtimeError === undefined ? {} : {runtimeError})};
 }
 
 // One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve (and, given `node`, the
@@ -164,12 +169,12 @@ import {ownNodeFacts} from './scripts/repl-parity/provenance.mjs';
 const sh = (c, a, env) => { try { return execFileSync(c, a, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, ...(env ? {env} : {})}).trim(); } catch { return ''; } };
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } };
 const ownNodePath = ${JSON.stringify(ownNode ?? null)};
-const home = defaultHome(), {release, runtimeRoot, runtimeError} = servedRuntime({home}), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
+const home = defaultHome(), {release, runtimeRoot, homeEngine, runtimeError} = servedRuntime({home}), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
 const common = {
   platform: process.platform, node: process.version, arch: arch(), hostname: hostname(), cpu: {model: cpus()[0]?.model || arch(), count: cpus().length}, uptime: sh('uptime', []),
   commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release, ...(runtimeError ? {runtimeError} : {}),
   handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', id.host + '@' + id.version, '${surface}@${PROTOCOL_VERSION}.json'),
-  runtimeRoot,
+  runtimeRoot, ...(homeEngine ? {homeEngine} : {}),
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
   ownNode: ownNodePath === null ? ownNodeFacts(process.env, {home}) : {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null},

@@ -48,6 +48,8 @@ export class AttestedConnections {
     return client;
   }
   addObservations(observations,prefix){if(!observations.connections.length)return;validateAttestations({host:this.host,complete:true,...observations});for(const connection of observations.connections)this.externalConnections.push(`${prefix}/${connection}`);for(const a of observations.hostAttestations)this.hostAttestations.push({...a,connection:`${prefix}/${a.connection}`});}
+  // The connection a client opened by this pool is recorded as (connection-<n>), or null for one it did not open.
+  connectionOf(client){return this.clients.find(c=>c.client===client)?.connection??null;}
   metadata(){return {connections:[...this.clients.map(c=>c.connection),...this.externalConnections],hostAttestations:this.hostAttestations};}
   // Every connection is closed before a failed one is reported, so one failure leaves no other serve running.
   async close(){const failed=[];for(const {client,connection} of this.clients){const status=await client.close();if(status.code!==0)failed.push(`${connection} (${status.code??status.signal})`);}if(failed.length)throw new Error(`Harness connection cleanup failed: ${failed.join(', ')}`);}

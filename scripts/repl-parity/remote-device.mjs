@@ -28,12 +28,14 @@ function ownership(e){
 }
 // The scratch user HOME is the cua home's sibling, never inside it (../harness-home.mjs).
 const scratchEnvironment=home=>({HOME:userHomeBeside(home),CUA_HOME:home,CHROME_CONFIG_HOME:join(userHomeBeside(home),'.config'),XDG_CONFIG_HOME:join(userHomeBeside(home),'.config')});
-// The checkout's CLI in the scratch home. Its install acquires only: pinned to the vendor engine, so `cua install` never
-// builds an engine under the scratch HOME (#117 M4); every other command keeps the session's selection.
-export function endpointCli(home,args,{file,nodeOverride,ambient=process.env,run=execFileSync}={}){
+// The checkout's CLI in the scratch home. Its install acquires only: on macOS pinned to the vendor engine, so `cua
+// install` never builds an engine under the scratch HOME (#117 M4); on Linux, where cua 0.30.0 refuses that selection
+// (#171 M6b), it names no engine, an ambient one included. Every other command keeps the session's selection.
+export function endpointCli(home,args,{file,nodeOverride,ambient=process.env,run=execFileSync,platform=process.platform}={}){
  const fd=file?openSync(file,'wx',0o600):undefined;
- const acquisition=args[0]==='install'?{CUA_NATIVE_ENGINE:'vendor'}:{};
- try{return run(process.execPath,['bin/cua.mjs',...args],{env:nodeEnvironment({...ambient,...scratchEnvironment(home),...acquisition},nodeOverride),encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
+ const env={...ambient,...scratchEnvironment(home)};
+ if(args[0]==='install'){if(platform==='linux')delete env.CUA_NATIVE_ENGINE;else env.CUA_NATIVE_ENGINE='vendor';}
+ try{return run(process.execPath,['bin/cua.mjs',...args],{env:nodeEnvironment(env,nodeOverride),encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
  catch(error){throw new Error(`Remote cua ${args.slice(0,2).join(' ')} failed (${error.status??error.code}); inspect privately on device`);}
  finally{if(fd!==undefined)closeSync(fd);}
 }

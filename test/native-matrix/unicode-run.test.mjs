@@ -98,7 +98,18 @@ test('a composition the user window did not show, or a per-context context that 
     return a[0] === 'read' && out.focus && out.focus.valueHash === sha256Hex('ㄱ') ? {...out, focus: {...out.focus, valueHash: sha256Hex('r')}} : out;
   }}});
   assert.ok(noComposition.result.rows.filter(r => r.condition === 'composing').every(r => /no composition in progress/.test(r.invalid)));
-  assert.ok(noComposition.result.rows.filter(r => r.condition === 'perContext').every(r => /did not read Korean afterwards/.test(r.invalid)), 'the dry context reads Latin when brought back');
+  // What the field read instead is named (pilot C-2: composing@textedit's rows said only that the jamo was not read).
+  assert.ok(noComposition.result.rows.filter(r => r.condition === 'composing').every(r => /\(it read the probe's raw key, uncomposed\)$/.test(r.invalid)));
+  assert.equal(noComposition.result.meta.unicode.readings.find(r => r.when === 'composing@textedit').read, 'raw key');
+  // A context that did not read Korean back: NO VERDICT `venue`, naming the read-back (pilot C-2 and the mini alike: the
+  // preference read on, the context read ABC after its reactivation), never a sample counted against an engine.
+  const perContext = noComposition.result.rows.filter(r => r.condition === 'perContext');
+  assert.ok(perContext.length > 0);
+  for (const r of perContext) {
+    assert.match(r.venueInput, /^the per-context preference read on, but the driven scene's context did not read Korean after its reactivation \(the source read com\.apple\.keylayout\.ABC/);
+    assert.equal(r.invalid, r.venueInput);
+    assert.equal(sampleCause(r).category, 'venue');
+  }
   // The second composing row's act changes the user's field.
   let acts = 0, disturbed = false;
   const run = await runWith({plan: {...plan, unicode: {fields: ['chrome'], conditions: ['composing']}}, cellName: 'korean',

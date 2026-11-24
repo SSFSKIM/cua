@@ -196,6 +196,15 @@ async function behindUserPrepared(ctx, field, user) {
   return {userWindow};
 }
 
+// What the user window's field read after the composition's key, told by its hash (pilot C-2's composing@textedit rows
+// said only that the jamo was not read).
+const COMPOSED_READ = Object.freeze({jamo: 'it read the composed jamo', 'raw key': 'it read the probe\'s raw key, uncomposed',
+  empty: 'it read empty', unread: 'the focus probe read no value', other: 'it read other text'});
+function composedRead(hash) {
+  if (hash === null) return 'unread';
+  return {[sha256Hex(COMPOSITION.composed)]: 'jamo', [sha256Hex(COMPOSITION.key)]: 'raw key', [EMPTY_HASH]: 'empty'}[hash] ?? 'other';
+}
+
 // A Hangul composition in progress in the user window (the probe's ANSI r under the Korean source, established with the
 // user window in front), read back by the
 // focus probe as the composed jamo; then the rows behind it, each also requiring the user's field to keep that value.
@@ -217,8 +226,9 @@ async function composingRows(ctx, field, rows) {
     if (reads) await ctx.sleep(SETTLE_READ_MS);
     composed = read(ctx, focusOf(userWindow)).focus?.valueHash ?? null;
   }
-  ctx.meta.unicode.readings.push({when: `composing@${user}`, scheduled: started?.scheduled ?? null, posted: !probeProblem(finished?.answer), composed: composed === jamo, reads});
-  const problem = probeProblem(finished?.answer) ?? (composed === sha256Hex(COMPOSITION.composed) ? null : 'the user window\'s field did not read the composed jamo after the probe\'s key');
+  const got = composedRead(composed);
+  ctx.meta.unicode.readings.push({when: `composing@${user}`, scheduled: started?.scheduled ?? null, posted: !probeProblem(finished?.answer), composed: composed === jamo, read: got, reads});
+  const problem = probeProblem(finished?.answer) ?? (composed === jamo ? null : `the user window's field did not read the composed jamo after the probe's key (${COMPOSED_READ[got]})`);
   if (problem) { for (const r of rows) invalidRow(ctx, r, `no composition in progress: ${problem}`); return; }
   let disturbed = false;
   for (const r of rows) {
@@ -287,7 +297,13 @@ async function perContextRows(ctx, field, rows) {
   ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, perContext: on, drivenKorean: korean, userLatin: latin, heldAfter: held, reads,
     current: after?.current ?? null, layout: after?.layout ?? null});
   const readBack = `the source read ${after?.current ?? 'nothing'}, the layout ${after?.layout ?? 'nothing'}`;
-  if (!held) for (const row of done) if (!row.invalid) Object.assign(row, {ok: false, invalid: `the driven scene's context did not read Korean afterwards (${readBack}): the condition is not shown to have held`});
+  // Pilot C-2 and the mini alike read the preference on and the context ABC after its reactivation: a context that does
+  // not hold is the venue's, never a sample against an engine (NO VERDICT `venue`). A scene that did not come back to the
+  // front read nothing: invalid.
+  const marks = back?.ok === true
+    ? venueInputMarks(`the per-context preference read on, but the driven scene's context did not read Korean after its reactivation (${readBack}, ${reads} reads): the condition did not hold on this venue`)
+    : {ok: false, invalid: 'the driven scene was not brought back to the front to read its context: the condition is not shown to have held'};
+  if (!held) for (const row of done) if (!row.invalid) Object.assign(row, marks);
 }
 
 // The mid-switch row: the Latin source, the field's scene in front, a long keyed typeText, and the probe's switch to

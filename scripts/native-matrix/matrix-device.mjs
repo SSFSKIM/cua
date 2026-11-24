@@ -42,6 +42,11 @@
 //   panel state --run <dir> --window <number>
 //       the known panel's window read from the window list, no write, anywhere -> {answer: {state: closed | open |
 //       unread}, at}: what decides each step of a panel's close (./panels.mjs closePanel)
+//   panel element --run <dir> --window <number> --element focused|search
+//       the frame of the known panel's focused element (in that window) or its search field, read by the same helper
+//       with no write -> {answer: {found, frame, inWindow, pid}, at} (`frame` null when unread): where a key case's
+//       input lands when its panel could not be placed in the strip (./steps.mjs elementGuardCause; ruling 1203's
+//       fallback). Hosted only -> {answer: {frame: null, refused}, at} off a runner
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -249,7 +254,7 @@ export function sceneKeyWindow(scene, io, own = null) {
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, moved by the frame probe and read
 // back; or for a panel (`openPanel`, `savePanel`) the panel's window numbered `window` (panelWindowOf), moved by the
-// harness's own AX helper (./panel-ax.swift: AXSize then AXPosition, never the engine under test, whose probe moves Finder
+// harness's own AX helper (./panel-ax.swift: AXPosition alone, never the engine under test, whose probe moves Finder
 // windows only) and read back from the window list, the frame the alert guard reads (rulings 1195, 1196).
 // io: {state(), probe(args), screen(), panelAx(args), env?, platform?}. -> {requested, readBack, matched, exitStatus,
 // pid?, ax?}. A move is a hosted-only write: off a GitHub-hosted runner (the device's own environment, process's by
@@ -309,6 +314,19 @@ export async function cancelPanel({window}, io) {
     state = panelState({window}, io).state;
   }
   return {found: ax?.found === true, via: ax?.via ?? null, pressed: ax?.pressed ?? null, ...(ax?.kind ? {kind: ax.kind} : {}), closed: state === 'closed', state, pid: before.shown.ownerPid};
+}
+// The frame of an element of the known panel (ruling 1203's fallback: the panel clamped short of the strip, a key case's
+// input checked where it lands): `element` 'focused' (the app's focused element, in the panel's window) or 'search' (its
+// search field), read by the AX helper (./panel-ax.swift element), no write. Hosted only, as every helper command.
+// io: {state(), screen(), panelAx(args), env?, platform?}. -> {found, frame, inWindow, pid} | {frame: null, refused}.
+export function panelElement({window, element}, io) {
+  if (!['focused', 'search'].includes(element)) throw new Error('--element is focused or search');
+  const refused = moveRefusal(io, null);
+  if (refused) return {frame: null, refused: refused.refused};
+  const shown = panelWindowOf(io, window);
+  const ax = io.panelAx(['element', String(shown.ownerPid), rectArg(shown.bounds), element]);
+  const frame = ax?.frame && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(ax.frame[k])) ? ax.frame : null;
+  return {found: ax?.found === true, frame, inWindow: ax?.inWindow ?? null, pid: shown.ownerPid};
 }
 // The window list read with no write (allowed anywhere, as the alert guard's reads are): whether the known panel's
 // window is on screen (`open`), gone (`closed`), or the list was not read (`unread`), never gone for a list unread. The
@@ -726,6 +744,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'panel':
       if (positional[0] === 'cancel') return timed(() => cancelPanel({window: flags.window}, io));
       if (positional[0] === 'state') return timed(() => { const {state} = panelState({window: flags.window}, io); return {state}; });
+      if (positional[0] === 'element') return timed(() => panelElement({window: flags.window, element: flags.element}, io));
       throw new Error(USAGE);
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {

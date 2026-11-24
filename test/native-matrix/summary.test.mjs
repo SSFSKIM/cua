@@ -725,6 +725,20 @@ test('ruling 1188: a row the owner\'s input source did not allow is NO VERDICT o
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /`ownerInput`/, 'named only when a row has it');
 });
 
+// Ruling 1203: a pointer cell a hosted runner left unsent, its Open panel clamped short of the strip, is NO VERDICT
+// `ownerSitting`, counted per side and per cell.
+test('ruling 1203: a row left to the owner\'s sitting is NO VERDICT ownerSitting, counted per side and per cell', () => {
+  const cause = 'left to the owner\'s sitting, unsent: the Open panel\'s window 994 stood at 0,80 880x448';
+  const left = (rows, run) => (run === 3 ? set(CLICK, {ok: false, ownerSitting: cause, invalid: cause})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: left}, cua: {axMs: 40, tweak: left}});
+  const row = j.methods.find(x => x.id === CLICK);
+  assert.deepEqual([row.verdict, row.account.vendor.noVerdict, row.account.cua.noVerdict], ['no-verdict', {ownerSitting: 1}, {ownerSitting: 1}]);
+  const text = renderSummary(j);
+  assert.match(text, /`ownerSitting` \(the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203\): cua 1, vendor 1;/);
+  assert.ok(text.includes('| ownerSitting 1 | ownerSitting 1 | no |'), text);
+  assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /`ownerSitting`/, 'named only when a row has it');
+});
+
 test('ruling 1189: a row whose source the runner could not enable is NO VERDICT venue, counted per side and per cell', () => {
   const cause = 'the runner\'s setup could not enable com.apple.keylayout.ABC (TISEnableInputSource did not read it back as enabled and selectable in TIS\'s list; ruling 1189): the row needs it, and is never run under the US layout';
   const venued = (rows, run) => (run === 2 ? set(CLICK, {ok: false, venueInput: cause, invalid: cause})(rows) : rows);

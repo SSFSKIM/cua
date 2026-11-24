@@ -144,3 +144,21 @@ test('place for a Save sheet the helper resolved as an AXSheet: the parent moved
     assert.deepEqual([out.answer.readBack, out.answer.ax.kind, out.answer.ax.parentPosition], [landed, 'sheet', 0]);
   });
 });
+
+// Ruling 1203's fallback: the frame of the element a key case's input lands on, read by the AX helper with no write.
+test('panel element: the focused element\'s or the search field\'s frame read by the helper; refused off a hosted runner', async () => {
+  await withRun(async dir => {
+    const asked = [];
+    const field = rect(560, 96, 220, 22);
+    const io = {...HOSTED, screen: () => ({windows: [DOCUMENT, panelOf(rect(0, 80, 880, 448))], displays: [rect(0, 0, 1920, 1080)]}),
+      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 2, kind: 'window', element: args[3], inWindow: args[3] === 'focused' ? true : null, frame: field, walked: 9}; }};
+    for (const element of ['focused', 'search']) {
+      const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', element], {io});
+      assert.deepEqual(out.answer, {found: true, frame: field, inWindow: element === 'focused' ? true : null, pid: 300}, element);
+    }
+    assert.deepEqual(asked, [['element', '300', '0,80,880,448', 'focused'], ['element', '300', '0,80,880,448', 'search']]);
+    await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'cancel'], {io}), /focused or search/);
+    const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), screen: () => assert.fail('nothing read')};
+    assert.deepEqual((await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused'], {io: off})).answer, {frame: null, refused: MOVE_REFUSED_OFF_HOSTED});
+  });
+});

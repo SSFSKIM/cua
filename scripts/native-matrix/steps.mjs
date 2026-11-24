@@ -5,7 +5,7 @@
 // problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {keyWindowCause, recordKeyWindowReading} from '../hosted-sittings/alert-guard.mjs';
+import {keyWindowCause, overlaps, recordKeyWindowReading} from '../hosted-sittings/alert-guard.mjs';
 import {guardCause, PANEL_SERVICE, recordKeyUnread, sceneOfCell, sendsPointer} from './alert-guard.mjs';
 import {caretOutcome, caretPrepared} from './caret.mjs';
 import {CAPTURE_ALERT_PROCESS} from './live-checks.mjs';
@@ -185,7 +185,12 @@ function keyWindowGuard(ctx, r, key) {
 // the harness cell's key or else the row the cell is for); else AlertGuarded, the cell unsent.
 export function guardLane(ctx, lane) {
   return {...lane, js: async (code, timeoutMs) => {
-    if (sendsPointer(code)) {
+    if (sendsPointer(code) && ctx.elementGuard) {
+      // A key case's pointer cell under ruling 1203's fallback (the search typing's click on its field).
+      const r = read(ctx, null, {frontKey: true, alertBounds: true});
+      const cause = elementGuardCause(ctx, 'search', r);
+      if (cause) refuse(ctx, cause, keyReading(r));
+    } else if (sendsPointer(code)) {
       const scene = sceneOfCell(code), owned = keyWindowScene(ctx, scene);
       const r = read(ctx, null, {frontKey: true, alertBounds: true, keyWindow: owned});
       const reading = keyReading(r), cause = guardCause(r?.alertBounds ?? null, reading, {scenes: scene ? [scene] : null});
@@ -207,9 +212,11 @@ export function guardLane(ctx, lane) {
 // -> the cell's answer, or null when it was not sent.
 export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const owned = keyWindowScene(ctx, scene);
-  const r = front?.frontKey && (!owned || front.ownKey) ? front : read(ctx, null, {frontKey: true, keyWindow: owned});
+  const elementGuard = kind === 'row' && ctx.elementGuard;
+  const r = !elementGuard && front?.frontKey && (!owned || front.ownKey) ? front : read(ctx, null, {frontKey: true, keyWindow: owned, alertBounds: Boolean(elementGuard)});
   const seenKey = keyReading(r);
   if (seenKey.key === CAPTURE_ALERT_PROCESS && seenKey.front !== CAPTURE_ALERT_PROCESS) refuse(ctx, guardCause(null, {key: seenKey.key}), seenKey);
+  if (elementGuard) { const cause = elementGuardCause(ctx, 'focused', r); if (cause) refuse(ctx, cause, seenKey); }
   if (owned) keyWindowGuard(ctx, r, key);
   // The key not read: the cell goes unguarded against the alert holding the key (the key-cell premise), counted under its
   // span's key (meta.keyUnread; a row's `row:<index>`, which the hosted counts map to the row's cell).
@@ -233,6 +240,37 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
   }
   if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${keys.join(', ')} not sent: the front is not one of the run\'s windows${seen === 'unreadable' ? ': it was unread' : ''} (#162); the run stopped`, seen === 'unreadable' ? 'unread' : 'invalid');
   return null;
+}
+
+// Ruling 1203's fallback (./panels.mjs placePanel: the Open panel's negative x clamped, the panel short of the strip):
+// a key case's cells are checked where their input lands, not on the whole panel. `element` 'focused' (where a key
+// lands: the panel's focused element) or 'search' (the search field its typing's prepare clicks), its frame read on the
+// device (./matrix-device.mjs panel element) beside the alert windows' bounds in `r` (the guard's read). Refused when the
+// capture alert holds the front or the key, when an alert overlaps that frame (`alert`), or when either was not read
+// (`unread`). Each check is kept in meta.elementGuards ({beforeRow, element, frame, cause?}). -> {category, detail} | null.
+const ELEMENT_NAMES = Object.freeze({focused: 'focused element', search: 'search field'});
+const isRect = r => Boolean(r) && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(r[k]));
+const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
+export function elementGuardCause(ctx, element, r) {
+  const name = `the Open panel's ${ELEMENT_NAMES[element]}`;
+  const check = {beforeRow: ctx.rows.length, element, frame: null};
+  (ctx.meta.elementGuards ??= []).push(check);
+  const held = guardCause({alerts: [], windows: []}, keyReading(r));
+  const alerts = r?.alertBounds?.alerts;
+  let cause = held;
+  if (!cause && (!Array.isArray(alerts) || alerts.some(a => !isRect(a?.bounds)))) cause = {category: 'unread', detail: `the alert windows' bounds were not read, so ${name} could not be checked against them`};
+  if (!cause) {
+    let answer = null;
+    try { answer = device(ctx, ['panel', 'element', '--window', String(ctx.elementGuard.window), '--element', element]); } catch (error) {
+      if (error instanceof Stop) throw error;
+    }
+    check.frame = isRect(answer?.frame) ? answer.frame : null;
+    const hit = check.frame && alerts.find(a => overlaps(a.bounds, check.frame));
+    cause = !check.frame ? {category: 'unread', detail: `${name} was not read${answer?.inWindow === false ? ': the focused element is not in the panel' : answer?.refused ? `: ${answer.refused}` : ''}`}
+      : hit ? {category: 'alert', detail: `alert window ${hit.number ?? '?'} (${rectText(hit.bounds)}) overlaps ${name} (${rectText(check.frame)})`} : null;
+  }
+  if (cause) check.cause = cause.category;
+  return cause;
 }
 
 // The user window in front, and its app key, again before an act: read (front, key and the window order with it), and

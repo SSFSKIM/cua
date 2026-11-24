@@ -376,6 +376,20 @@ test('the read-back of a panel the run resized: the row carries the resize and t
   assert.doesNotMatch(renderReadBack(readBackRows([{step: 'matrix-cua-1', record: matrix(rect(22, 60, 800, 760))}], venue)), /^\|.*resized/m);
 });
 
+// Ruling 1203: the panel moved at its own size, its right edge at the strip's: the row plans the frame the run asked, not
+// the venue's saved frame; a panel the system clamped says the fallback took it.
+test('the read-back of a panel placed at a negative x plans the frame asked; a clamped one names the fallback', () => {
+  const venue = venueRecord({alerts: ALERTS, displays: [DISPLAY], placed: hostedFrames(ALERTS, [DISPLAY]), textEdit: null});
+  const centred = rect(520, 162, 880, 448), asked = rect(-58, 80, 880, 448);
+  const placed = (readBack, extra = {}) => ({complete: true, meta: {placement: {alerts: [], scenes: {}, panel: [
+    {beforeRow: 3, target: 'openPanel', opening: 'openPanel/frontmost/getAXState.panel', number: 994, from: centred, to: asked, readBack, matched: true, moved: true, ...extra}]}}});
+  const rows = readBackRows([{step: 'matrix-cua-1', record: placed(asked, {inStrip: true})}, {step: 'matrix-vendor-1', record: placed(rect(0, 80, 880, 448), {inStrip: false, fallback: 'clamped'})}], venue);
+  assert.deepEqual(rows[0], {step: 'matrix-cua-1', window: 'panel:openPanel/frontmost/getAXState.panel', planned: asked, actual: asked, overlap: false});
+  const md = renderReadBack(rows);
+  assert.match(md, /^\| matrix-cua-1 \| panel:openPanel\/frontmost\/getAXState\.panel \| -58,80 880x448 \| -58,80 880x448 \| no \|$/m);
+  assert.match(md, /^\| matrix-vendor-1 \| panel:openPanel\/frontmost\/getAXState\.panel \| -58,80 880x448 \| 0,80 880x448, x clamped: ruling 1203's fallback \(its pointer cells left to the owner's sitting\) \| yes \|$/m);
+});
+
 // Ruling 1168's pointerdown pair ("Pointer target" and "Pointer downs", fixtures/scene-page.mjs POINTERDOWN_INLINE) sits
 // inline after Apply. The page has no stylesheet, so the user agent lays it out from the content area's top left, the
 // same in any window wide enough for its lines; the mini's golden tree (Chrome at 1000x760 with an infobar under its

@@ -15,7 +15,8 @@ import {runWith} from './run-doubles.mjs';
 
 const rect = (x, y, width, height) => ({x, y, width, height});
 const ALERTS = [rect(893, 244, 260, 364), rect(830, 188, 260, 348)];
-const CENTRED = rect(520, 162, 880, 448), STRIP = rect(22, 80, 800, 448), SCENE = rect(22, 80, 700, 600);
+// STRIP: where ruling 1203 places the centred panel, at its own size, its right edge at the strip's (822 - 880 = -58).
+const CENTRED = rect(520, 162, 880, 448), STRIP = rect(-58, 80, 880, 448), SCENE = rect(22, 80, 700, 600);
 const withList = a => (a.includes('--with') ? a[a.indexOf('--with') + 1].split(',') : []);
 const isGuardRead = a => a[0] === 'read' && withList(a).includes('alert-bounds');
 const flag = (a, name) => a[a.indexOf(`--${name}`) + 1];
@@ -32,12 +33,15 @@ const sent = (calls, test) => calls.some(c => test(c.code));
 // the device's window list unread at every `panel state`; `listed`: whether the panel's window shows in the guard's
 // reading at all; `claims`: the harness Escape's answer whatever happened (a lane's word the device may contradict);
 // `afterCase`: what a case's act does to the world (`recentre`: the panel back over the alerts; `foreign`: another
-// app's window in front); `sheet`: the helper answering that it found a Save sheet as an AXSheet child.
+// app's window in front); `sheet`: the helper answering that it found a Save sheet as an AXSheet child; `clamps`: the
+// system keeping a moved panel's x at 0 or more; `drifts`: each move's read-back x off the asked one, in turn (none
+// after them); `elements`: the frames the device reads for the panel's focused element and search field.
 const OTHER_FRONT = {pid: 999, bundleId: 'com.example.other', owned: false};
 function panelDevice({moves = true, escape = true, click = true, ax = true, alerts = ALERTS, savePanel = false, unread = false, listed = true, twin = false, claims = null,
-  afterCase = null, sheet = false} = {}) {
+  afterCase = null, sheet = false, clamps = false, drifts = [], elements = {}} = {}) {
   let open = false, at = CENTRED, foreign = false;
-  const placed = [], cancelled = [], states = [];
+  const placed = [], cancelled = [], states = [], elementReads = [];
+  const drift = [...drifts];
   const cell = code => {
     if (code.includes('__m.threw = null')) { if (afterCase === 'recentre') at = CENTRED; if (afterCase === 'foreign' || afterCase === 'unread') foreign = afterCase; }
     if (code.includes('pressKey("super+o")') || code.includes('cua-matrix-cell: savesheet.open')) { open = true; at = savePanel === true ? rect(240, 100, 480, 200) : savePanel || CENTRED; return {opened: true}; }
@@ -52,22 +56,30 @@ function panelDevice({moves = true, escape = true, click = true, ax = true, aler
     if (a[0] === 'place' && ['openPanel', 'savePanel'].includes(flag(a, 'scene'))) {
       const [x, y, width, height] = flag(a, 'frame').split(',').map(Number);
       placed.push(a);
-      if (moves) at = sheet ? {x, y, width: at.width, height: at.height} : {x, y, width, height};
+      if (moves) at = sheet ? {x, y, width: at.width, height: at.height} : {x: clamps ? Math.max(0, x) : x + (drift.shift() ?? 0), y, width, height};
       return {answer: {requested: {x, y, width, height}, readBack: at, matched: moves, exitStatus: null, pid: 300, ax: {trusted: true, found: true, size: sheet ? null : 0, position: sheet ? null : 0, readBack: at, ...(sheet ? {kind: 'sheet', parentPosition: 0} : {})}}, at: [1, 2]};
     }
     // The device's reading of the panel's window (`panel state`), and its AX cancel.
     if (a[0] === 'panel' && a[1] === 'state') { states.push(a); return {answer: {state: unread ? 'unread' : open ? 'open' : 'closed'}, at: [1, 2]}; }
+    if (a[0] === 'panel' && a[1] === 'element') { elementReads.push(flag(a, 'element')); return {answer: {found: true, frame: elements[flag(a, 'element')] ?? null, inWindow: true, pid: 300}, at: [1, 2]}; }
     if (a[0] === 'panel') { cancelled.push(a); if (ax) open = false; return {answer: {found: true, via: 'cancelButton', pressed: 0, closed: !open, state: open ? 'open' : 'closed', pid: 300}, at: [1, 2]}; }
     const out = base(a);
     if (!isGuardRead(a)) return foreign && a[0] === 'read' && out.reading ? {...out, reading: {...out.reading, frontmost: foreign === 'unread' ? null : OTHER_FRONT}} : out;
     return {...out, alertBounds: {...out.alertBounds, alerts: alerts.map((bounds, i) => ({number: 59 + i, layer: 8, bounds})),
       windows: [...out.alertBounds.windows.map(w => ({...w, bounds: SCENE})), ...(open && listed ? [{scene: 'textedit', number: 994, recorded: false, bounds: at}, ...(twin ? [{scene: 'textedit', number: 995, recorded: false, bounds: rect(300, 300, 500, 300)}] : [])] : [])]}};
   };
-  return {cell, ops: {matrix}, placed, cancelled, states};
+  return {cell, ops: {matrix}, placed, cancelled, states, elementReads};
 }
 const PANEL_PLAN = {id: 'test', frontmost: ['openPanel'], speed: true, finding: false, background: [{driven: 'openPanel', user: 'finder'}], launch: []};
 const panelRows = result => result.rows.filter(r => r.section === 'method' && r.target === 'openPanel');
 
+// Ruling 1203: a panel's left part may stand off the display; the part on it must still be clear.
+test('the strip takes a panel at a negative x: its on-screen part from x 0, its right edge at the strip\'s', () => {
+  assert.equal(stripCause(rect(-58, 72, 880, 448), ALERTS), null, 'C-3\'s panel at -58');
+  assert.match(stripCause(rect(-57, 72, 880, 448), ALERTS), /outside the strip/, 'one point past the edge');
+  assert.match(stripCause(rect(-58, 10, 880, 448), ALERTS), /outside the strip/, 'under the menu bar');
+  assert.match(stripCause(rect(-900, 80, 880, 448), ALERTS), /outside the strip/, 'nothing of it on the display');
+});
 test('the strip: left of every alert by the margin, below the menu bar; with no alert every frame is in it', () => {
   assert.equal(stripCause(rect(22, 80, 800, 448), ALERTS), null);
   assert.match(stripCause(CENTRED, ALERTS), /outside the strip clear of the alerts \(x 0-822/);
@@ -76,7 +88,7 @@ test('the strip: left of every alert by the margin, below the menu bar; with no 
   assert.equal(stripCause(CENTRED, []), null);
 });
 
-test('the Open panel opened over the alerts is moved into the strip by the device, one opening per case, its cells sent and judged on both lanes', async () => {
+test('the Open panel opened over the alerts is moved into the strip by the device at its own size, its right edge at the strip\'s, one opening per case, its cells sent and judged on both lanes', async () => {
   for (const engine of ['vendor', 'cua']) {
     const calls = [];
     const dev = panelDevice();
@@ -86,11 +98,12 @@ test('the Open panel opened over the alerts is moved into the strip by the devic
     // One opening per frontmost case and one for the background pairing, each moved by the device to the strip's frame.
     const openings = casesOf('openPanel', 'frontmost').length + 1;
     assert.equal(dev.placed.length, openings, engine);
-    for (const a of dev.placed) assert.deepEqual([flag(a, 'scene'), flag(a, 'window'), flag(a, 'frame')], ['openPanel', '994', '22,80,800,448']);
+    // Ruling 1203: x = 822 - 880, from the width read before the move; no other size asked.
+    for (const a of dev.placed) assert.deepEqual([flag(a, 'scene'), flag(a, 'window'), flag(a, 'frame')], ['openPanel', '994', '-58,80,880,448']);
     assert.equal(result.meta.placement.panel.length, openings);
-    for (const p of result.meta.placement.panel) assert.deepEqual([p.target, p.number, p.from, p.readBack, p.moved, p.inStrip], ['openPanel', 994, CENTRED, STRIP, true, true]);
-    // Ruling 1199: the 880-wide panel was resized as well as moved, and its record says so.
-    for (const p of result.meta.placement.panel) assert.deepEqual(p.resized, {from: CENTRED, to: STRIP});
+    for (const p of result.meta.placement.panel) assert.deepEqual([p.target, p.number, p.from, p.to, p.readBack, p.moved, p.inStrip], ['openPanel', 994, CENTRED, STRIP, STRIP, true, true]);
+    // Its size read back unchanged: nothing says resized, and no fallback was taken.
+    for (const p of result.meta.placement.panel) assert.deepEqual([p.resized, p.fallback, p.corrected], [undefined, undefined, undefined]);
     // Its cells ran, none refused by the guard, none NO VERDICT venue.
     for (const row of panelRows(result)) assert.deepEqual([row.alertGuard, row.venueInput], [undefined, undefined], `${engine} ${row.id}`);
     assert.ok(sent(calls, HARNESS_CANCEL) === false, 'Escape closed every opening: no harness Cancel click');
@@ -351,7 +364,7 @@ test('a Save sheet placed through its parent document: recorded via the parent, 
   assert.equal(result.complete, true, result.problems.join('; '));
   assert.equal(dev.placed.length, 2);
   for (const p of result.meta.placement.panel) {
-    assert.deepEqual([p.target, p.via, p.resized, p.readBack, p.moved, p.inStrip], ['savePanel', 'parent', undefined, rect(22, 80, 480, 220), true, true]);
+    assert.deepEqual([p.target, p.via, p.resized, p.readBack, p.moved, p.inStrip], ['savePanel', 'parent', undefined, rect(342, 80, 480, 220), true, true]);
     assert.equal(p.ax.kind, 'sheet');
   }
   assert.ok(result.rows.filter(r => r.section === 'method').every(r => r.venueInput === undefined));
@@ -480,6 +493,69 @@ test('a field whose value the prepare cannot select whole is not prepared, by a 
   assert.match(name.prepare.reason, /^the field's value could not be selected whole/);
   assert.ok(!stand.sent.texts.includes(SAVE_PANEL_NAME));
 });
+// The move's own drift (pilot C-3 read 81,73 back for 80,80): a read-back one point past the strip's edge is moved once
+// more by that point, and the entry says so.
+test('a read-back past the strip\'s edge by the move\'s drift is moved once more by that much, then in the strip', async () => {
+  const dev = panelDevice({drifts: [1]});
+  const plan = {...PANEL_PLAN, frontmost: ['openPanel'], background: [], speed: false};
+  const {result} = await runWith({plan: {...plan, only: undefined}, cell: dev.cell, ops: dev.ops});
+  const first = result.meta.placement.panel[0];
+  assert.deepEqual(dev.placed.slice(0, 2).map(a => flag(a, 'frame')), ['-58,80,880,448', '-59,80,880,448']);
+  assert.deepEqual([first.corrected, first.readBack, first.inStrip], [{first: rect(-57, 80, 880, 448), to: rect(-59, 80, 880, 448)}, rect(-59, 80, 880, 448), true]);
+  assert.ok(result.meta.placement.panel.slice(1).every(p => p.corrected === undefined && p.inStrip));
+});
+
+// Ruling 1203's fallback: the system clamps the panel's negative x (read back at 0), so no move puts it in the strip. Its
+// key cases run, each cell checked against the frame of the element its input lands on; its pointer cases go to the
+// owner's sitting, unsent; its observation runs.
+const FIELD = rect(560, 96, 220, 22), UNDER_ALERT = rect(840, 200, 40, 22);
+const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
+test('a clamped panel takes the fallback: its key cells clear of the alerts run, its click cells go to the owner\'s sitting, unsent', async () => {
+  for (const engine of ['vendor', 'cua']) {
+    const calls = [];
+    const dev = panelDevice({clamps: true, elements: {focused: FIELD, search: FIELD}});
+    const {result} = await runWith({engine, plan: PANEL_PLAN, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
+    assert.equal(result.complete, true, `${engine}: ${result.problems.join('; ')}`);
+    assert.deepEqual(validateCellResult(result), []);
+    for (const p of result.meta.placement.panel) assert.deepEqual([p.readBack, p.inStrip, p.fallback], [rect(0, 80, 880, 448), false, 'clamped'], engine);
+    const rows = Object.fromEntries(panelRows(result).map(r => [r.id, r]));
+    // The key cases and the observation ran and were judged: no mark of the guard, the venue or the owner's sitting.
+    for (const id of ['openPanel/frontmost/typeText.search', 'openPanel/frontmost/pressKey.escape', 'openPanel/frontmost/getAXState.panel', 'openPanel/background/getAXState.panel@finder']) {
+      assert.deepEqual([rows[id].alertGuard, rows[id].venueInput, rows[id].ownerSitting], [undefined, undefined, undefined], `${engine} ${id}`);
+    }
+    assert.ok(sent(calls, CASE_ESCAPE), 'the judged Escape was sent');
+    assert.ok(calls.some(c => c.code.includes(`typeText(${JSON.stringify(PANEL_SEARCH)})`)), 'the judged search typing was sent');
+    // The search typing's click on its field checked on the field, its keys on the focused element; Escape's on the focused element.
+    assert.deepEqual(dev.elementReads, ['search', 'focused', 'focused'], engine);
+    assert.ok(result.meta.elementGuards.every(g => g.cause === undefined && g.frame.x === FIELD.x));
+    // The click cases: NO VERDICT ownerSitting, their act never sent; their timing row with them.
+    for (const id of ['openPanel/frontmost/click.cancel', 'openPanel/background/click.cancel@finder']) {
+      assert.equal(sampleCause({...rows[id], hosted: true}).category, 'ownerSitting', `${engine} ${id}`);
+      assert.match(rows[id].ownerSitting, /left to the owner's sitting, unsent: the Open panel's window 994 stood at 0,80 880x448: its x clamped at 0 or more where -58 was asked/);
+    }
+    assert.ok(!calls.some(c => c.code.includes('__m.threw = null') && c.code.includes('await __app.click(__m.index)')), 'no click case\'s act was sent');
+    assert.equal(sampleCause(result.rows.find(r => r.section === 'speed' && r.id === 'textedit/method.panel.click.cancel')).category, 'ownerSitting');
+  }
+});
+test('under the fallback a key cell whose element an alert overlaps, or whose element is unread, is refused unsent', async () => {
+  for (const [elements, category] of [[{focused: UNDER_ALERT, search: FIELD}, 'alert'], [{search: FIELD}, 'unread']]) {
+    const calls = [];
+    const dev = panelDevice({clamps: true, elements});
+    const {result} = await runWith({plan: {...PANEL_PLAN, background: []}, env: HOSTED, calls, cell: dev.cell, ops: dev.ops});
+    const escape = panelRows(result).find(r => r.id === 'openPanel/frontmost/pressKey.escape');
+    assert.equal(escape.alertGuard?.cause, category, JSON.stringify(escape));
+    if (category === 'alert') assert.match(escape.alertGuard.detail, /overlaps the Open panel's focused element \(840,200 40x22\)/);
+    assert.ok(!sent(calls, CASE_ESCAPE), 'the judged Escape was not sent');
+  }
+});
+test('off a hosted runner no fallback is taken: nothing is moved, nothing left to the owner\'s sitting', async () => {
+  const dev = panelDevice({clamps: true, alerts: []});
+  const {result} = await runWith({plan: PANEL_PLAN, cell: dev.cell, ops: dev.ops});
+  assert.ok(result.meta.placement.panel.every(p => p.fallback === undefined));
+  assert.ok(panelRows(result).every(r => r.ownerSitting === undefined));
+  assert.deepEqual(dev.elementReads, []);
+});
+
 // Re-review, finding 4: two windows that both qualify for one opening do not tell which is the panel. On a hosted runner
 // the placement is recorded ambiguous, nothing is moved, and the case and its timing are NO VERDICT venue, unsent; the
 // close still covers both candidates.

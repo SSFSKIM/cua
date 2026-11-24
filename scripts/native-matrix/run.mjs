@@ -65,14 +65,14 @@ import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
-import {findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cells.mjs';
+import {caseCells, findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
-import {guardCause} from './alert-guard.mjs';
+import {guardCause, sendsPointer} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKeyAt, skippedReadings, step, Stop,
   guardLane, guardRow, noteGuard} from './steps.mjs';
@@ -606,7 +606,7 @@ async function panelCases(ctx, target, plan) {
       if (opened?.skipped) caseRows(ctx, target, 'frontmost', {frontKey: opened.skipped, ...opened.held}, null, [c]);
       else if (opened?.problem) caseRows(ctx, target, 'frontmost', {invalid: opened.problem}, null, [c]);
       else if (opened?.venue) caseRows(ctx, target, 'frontmost', venueInputMarks(opened.venue), null, [c]);
-      else await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
+      else await panelCase(ctx, target, 'frontmost', c, {speed: plan.speed});
       if (ctx.panelOpen) await closePanel(ctx, target, {from});
     } finally { tagOpening(ctx, from, opening); }
   }
@@ -616,7 +616,24 @@ async function panelCases(ctx, target, plan) {
 // Every frontmost case's timing row (./manifest.mjs: one per case and run), for a case that ended before it was timed
 // (not prepared, its act not sent, its opening skipped or outside the strip): the case row's own marks, so the sample is
 // NO VERDICT by the same cause, never missing (pilot C-2's vendor `chrome/method.drag.select`).
-const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'panelClose', 'error', 'opening']);
+const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'ownerSitting', 'panelClose', 'error', 'opening']);
+
+// A panel's case on its opening. Under ruling 1203's fallback (ctx.panelFallback, ./panels.mjs placePanel: the Open panel
+// clamped short of the strip on a hosted runner) a case whose act sends a pointer event is left to the owner's sitting,
+// unsent (NO VERDICT `ownerSitting`, ./front-key.mjs); a key case runs with the alert guard narrowed to the element its
+// input lands on (ctx.elementGuard, ./steps.mjs elementGuardCause); any other case (the panel's observation) runs as
+// ever.
+const ownerSittingMarks = detail => ({ok: false, ownerSitting: detail, invalid: detail});
+async function panelCase(ctx, target, regime, c, options = {}) {
+  const fallback = ctx.panelFallback;
+  if (!fallback) return caseRow(ctx, target, regime, c, options);
+  if (sendsPointer(caseCells(target, c).act)) {
+    return caseRows(ctx, target, regime, ownerSittingMarks(`left to the owner's sitting, unsent: ${fallback.detail}; a pointer cell on it could land under an alert`), options.user ?? null, [c]);
+  }
+  if (!c.keys) return caseRow(ctx, target, regime, c, options);
+  ctx.elementGuard = fallback;
+  try { return await caseRow(ctx, target, regime, c, options); } finally { ctx.elementGuard = null; }
+}
 function fillTimings(ctx, target, plan) {
   if (!plan.speed || plan.onlyMeasures) return;
   const timed = new Set(ctx.rows.filter(r => r.section === 'speed' && r.sample === ctx.n).map(r => r.id));
@@ -659,7 +676,7 @@ async function pairingRows(ctx, {driven, user}, from) {
     const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
     if (skipped) caseRows(ctx, driven, 'background', {frontKey: skipped}, user);
     else if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
-    else for (const c of casesOf(driven, 'background')) await caseRow(ctx, driven, 'background', c, {user, userWindow});
+    else for (const c of casesOf(driven, 'background')) await panelCase(ctx, driven, 'background', c, {user, userWindow});
   } finally {
     if (driven === 'windowless') quitLaunched(ctx);
   }

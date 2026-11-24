@@ -6,14 +6,20 @@
 // capture alerts, so the alert guard refused every pointer cell on it in pilot C-2. On a GitHub-hosted runner each
 // opening's window, told from TextEdit's windows read just before the opening key (macOS 27 lists the panel under
 // TextEdit's pid) or as the panel service's own, is moved into the strip left of the alerts (stripCause) by the
-// harness's device side (./matrix-device.mjs place, ./panel-ax.swift: AXSize then AXPosition, never the engine under
-// test), to the venue's panel frame, and read back from the window list. A panel already in the strip is not moved.
-// Each opening is kept in meta.placement.panel ({beforeRow, target, number, from, to?, resized?: {from, to} (ruling 1199:
-// the frame asked is another size, so the panel was resized as well as moved), readBack?, matched?, ax?, moved, inStrip,
-// reason?}, or {beforeRow, target, unread | found: false}); a read-back that misses the strip makes the case
-// on that opening NO VERDICT `venue`, naming where it stood; so does, on a hosted runner, a placement it could not prove
-// (the list unread or no window found, after a few reads), the case unsent. A Save sheet the helper finds as an AXSheet
-// child of its document is placed by moving the document (`via: 'parent'`), never resized. Each entry and each row of
+// harness's device side (./matrix-device.mjs place, ./panel-ax.swift: AXPosition, never the engine under test) at its own
+// size, its right edge at the strip's (ruling 1203: pilot C-3's panel service kept the Open panel 880x448 whatever size
+// was asked, so x = 822 - 880 = -58 on the runner, from the width read before the move, its left part off the display),
+// and read back from the window list; a read-back past the strip's edge by the move's own drift (C-3 read 81,73 for
+// 80,80) is moved once more by that much. A panel already in the strip is not moved. Each opening is kept in
+// meta.placement.panel ({beforeRow, target, number, from, to?, corrected?, resized?: {from, to} (the read-back's size not
+// the window's before the move), readBack?, matched?, ax?, moved, inStrip, fallback?, reason?}, or {beforeRow, target,
+// unread | found: false}); a read-back that misses the strip makes the case on that opening NO VERDICT `venue`, naming
+// where it stood; so does, on a hosted runner, a placement it could not prove (the list unread or no window found, after
+// a few reads), the case unsent. The Open panel whose negative x the system clamped (read back at x 0 or more) takes
+// ruling 1203's fallback instead (`fallback: 'clamped'`, ctx.panelFallback): its key cases run, the alert guard reading
+// the frame of the element their input lands on (./steps.mjs elementGuardCause), and its pointer cases are left to the
+// owner's sitting, unsent (NO VERDICT `ownerSitting`, ./run.mjs). A Save sheet the helper finds as an AXSheet child of its
+// document is placed by moving the document (`via: 'parent'`). Each entry and each row of
 // the opening carries its id (`opening`: the case's row id, or `<target>/background@<user>`), by which the lanes'
 // placements are paired. Off a hosted runner nothing is moved: the device refuses it.
 //
@@ -41,27 +47,25 @@ const rectText = r => `${r.x},${r.y} ${r.width}x${r.height}`;
 const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
 const frameArg = f => [f.x, f.y, f.width, f.height].join(',');
 
-// Why a frame stands outside the strip clear of the alerts (ruling 1169's x 0-822 on the runner): on the display's left,
-// below the menu bar, its right edge at least ALERT_MARGIN left of every alert, overlapping none. With no alert on
-// screen (off a hosted runner) every frame is in it. -> null, or why not.
+// The strip's right edge: ALERT_MARGIN left of the leftmost alert (822 on the runner).
+const stripEdge = rects => Math.min(...rects.map(r => r.x)) - ALERT_MARGIN;
+// Why a frame stands outside the strip clear of the alerts (ruling 1169's x 0-822 on the runner): its right edge at least
+// ALERT_MARGIN left of every alert, below the menu bar, its part on the display (from x 0, the runner's one display's
+// left edge: ruling 1203 lets a panel's left part stand off it) overlapping no alert. With no alert on screen (off a
+// hosted runner) every frame is in it. -> null, or why not.
 export function stripCause(frame, alerts) {
   const rects = (alerts ?? []).filter(isRect);
   if (!rects.length) return null;
-  const edge = Math.min(...rects.map(r => r.x)) - ALERT_MARGIN;
-  if (frame.x >= 0 && frame.y >= MENU_BAR && frame.x + frame.width <= edge && !rects.some(r => overlaps(r, frame))) return null;
+  const edge = stripEdge(rects);
+  const shown = frame.x >= 0 ? frame : {...frame, x: 0, width: frame.x + frame.width};
+  if (shown.width > 0 && frame.y >= MENU_BAR && frame.x + frame.width <= edge && !rects.some(r => overlaps(r, shown))) return null;
   return `it stood at ${rectText(frame)}, outside the strip clear of the alerts (x 0-${edge}, below the menu bar)`;
 }
 
-// Where a panel outside the strip is moved: the venue's panel frame (ruling 1169: 80,80 720x440 on the runner, the
-// strip's), or, with no venue record, the panel's own size at the hosted scenes' origin (Finder's, 22,80), narrowed to
-// end at the strip's edge.
-export const STRIP_ORIGIN = Object.freeze({x: 22, y: 80});
-function panelFrame(ctx, from, alerts) {
-  const venue = ctx.meta.venue?.frames?.openPanel;
-  if (isRect(venue)) return {x: venue.x, y: venue.y, width: venue.width, height: venue.height};
-  const edge = Math.min(...alerts.filter(isRect).map(r => r.x)) - ALERT_MARGIN;
-  return {...STRIP_ORIGIN, width: Math.min(from.width, edge - STRIP_ORIGIN.x), height: from.height};
-}
+// Where a panel outside the strip is moved (ruling 1203): at its own size (`from`, the window list's reading before the
+// move), its right edge at the strip's, at the hosted scenes' top (Finder's y, 80).
+export const STRIP_TOP = 80;
+const stripFrame = (from, alerts) => ({x: stripEdge(alerts.filter(isRect)) - from.width, y: STRIP_TOP, width: from.width, height: from.height});
 
 // The TextEdit windows on screen before an opening key, by number (the guard's reading), or null when unread.
 function windowsBefore(ctx) {
@@ -89,6 +93,7 @@ export async function openPanelOf(ctx, target, apps, opening) {
   if (!opened.ok || !opened.value?.opened) return {problem: `the ${PANEL_NAMES[target]} did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
   // TextEdit's focused window is the panel until closePanel: no key-window check meanwhile (./steps.mjs keyWindowScene).
   ctx.panelOpen = target;
+  ctx.panelFallback = null;
   const venue = await placePanel(ctx, target, known, opening);
   return venue ? {venue} : null;
 }
@@ -133,16 +138,27 @@ async function placePanel(ctx, target, known, opening) {
     ctx.panelWindows.push(w.number);
     const entry = {beforeRow, target, opening, number: w.number, from: w.bounds};
     let at = w.bounds;
+    let clamped = false;
     if (stripCause(at, alerts)) {
-      const to = panelFrame(ctx, w.bounds, alerts);
-      let answer;
-      try { answer = device(ctx, ['place', '--scene', target, '--window', String(w.number), '--frame', frameArg(to)]); } catch (error) { answer = {error: String(error.message).slice(0, 200)}; }
+      const to = stripFrame(w.bounds, alerts);
+      const move = frame => { try { return device(ctx, ['place', '--scene', target, '--window', String(w.number), '--frame', frameArg(frame)]); } catch (error) { return {error: String(error.message).slice(0, 200)}; } };
+      let answer = move(to);
       if (isRect(answer?.readBack)) at = answer.readBack;
-      // Ruling 1199: a move that also asks another size (the system's 880-wide panel never fits the strip) says so. A
-      // Save sheet the helper found as an AXSheet child takes no size of its own: its parent was moved to place it
-      // (`via: 'parent'`), the sheet's frame read back, and nothing was resized.
+      // The system kept x at 0 or more where a negative x was asked: no move puts the panel in the strip.
+      clamped = to.x < 0 && isRect(answer?.readBack) && answer.readBack.x >= 0;
+      // The move's own drift (pilot C-3: 81,73 read back for 80,80) past the strip's edge: once more, by that much.
+      const over = isRect(answer?.readBack) ? answer.readBack.x + answer.readBack.width - (to.x + to.width) : 0;
+      if (!clamped && over > 0 && answer.readBack.x > to.x && stripCause(at, alerts)) {
+        const again = {...to, x: to.x - over};
+        entry.corrected = {first: answer.readBack, to: again};
+        answer = move(again);
+        if (isRect(answer?.readBack)) at = answer.readBack;
+      }
+      // A Save sheet the helper found as an AXSheet child takes no position of its own: its parent was moved to place it
+      // (`via: 'parent'`) and the sheet's frame read back. Nothing is asked to change size; one that did says so.
       const sheet = answer?.ax?.kind === 'sheet';
-      const resized = !sheet && (to.width !== w.bounds.width || to.height !== w.bounds.height) ? {resized: {from: w.bounds, to}} : {};
+      const read = isRect(answer?.readBack) ? answer.readBack : null;
+      const resized = read && (read.width !== w.bounds.width || read.height !== w.bounds.height) ? {resized: {from: w.bounds, to: read}} : {};
       Object.assign(entry, {to, ...resized, ...(sheet ? {via: 'parent'} : {}), readBack: answer?.readBack ?? null, matched: answer?.matched === true, ...(answer?.ax ? {ax: answer.ax} : {}), ...(Number.isSafeInteger(answer?.pid) ? {pid: answer.pid} : {}),
         ...(answer?.refused ? {reason: `the move was refused: ${answer.refused}`} : answer?.error ? {reason: `the move failed: ${answer.error}`} : {})});
     }
@@ -150,7 +166,12 @@ async function placePanel(ctx, target, known, opening) {
     Object.assign(entry, {moved: !sameRect(at, w.bounds), inStrip: missed === null});
     if (missed) {
       entry.reason ??= missed;
-      venue ??= `the ${PANEL_NAMES[target]}'s window ${w.number} was not placed in the strip left of the capture alerts: ${missed}${entry.reason !== missed ? `; ${entry.reason}` : ''} (ruling 1195)`;
+      // Ruling 1203's fallback: the Open panel clamped short of the strip on a hosted runner; its cases run as the
+      // fallback allows (see the header), the opening not the venue's.
+      if (clamped && target === 'openPanel' && hosted) {
+        entry.fallback = 'clamped';
+        ctx.panelFallback = {target, window: w.number, frame: at, detail: `the ${PANEL_NAMES[target]}'s window ${w.number} stood at ${rectText(at)}: its x clamped at 0 or more where ${entry.to.x} was asked, so it could not be placed in the strip left of the capture alerts (ruling 1203)`};
+      } else venue ??= `the ${PANEL_NAMES[target]}'s window ${w.number} was not placed in the strip left of the capture alerts: ${missed}${entry.reason !== missed ? `; ${entry.reason}` : ''} (ruling 1195)`;
     }
     kept.push(entry);
   }
@@ -190,7 +211,7 @@ export class PanelCloseStopped extends PanelStuck {
 export async function closePanel(ctx, target, {from = ctx.rows.length, activateFirst = false} = {}) {
   const record = {beforeRow: ctx.rows.length, target, steps: [], closed: false};
   (ctx.meta.panelCloses ??= []).push(record);
-  const done = () => { record.closed = true; ctx.panelOpen = false; };
+  const done = () => { record.closed = true; ctx.panelOpen = false; ctx.panelFallback = null; };
   const known = ctx.panelWindows ?? [];
   // -> 'closed', 'open' or 'unread' as the device read the known windows, null when none is known.
   const deviceState = () => {

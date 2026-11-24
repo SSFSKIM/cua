@@ -329,14 +329,23 @@ export function readBackRows(records, venue) {
   const sceneDocument = window => view !== null && (window === 'textedit' || window.startsWith('textedit/'));
   const out = [];
   for (const {step, record} of records) {
-    const resizes = panelResizes(record);
+    const resizes = panelResizes(record), asked = panelAsked(record);
     for (const [window, actual] of Object.entries(sceneFrames(record))) {
       const kind = window.startsWith('panel:') ? 'openPanel' : /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
       if (!kind) continue;
-      const planned = kind === 'openPanel' ? venue?.frames?.openPanel ?? null : sceneDocument(window) ? `view ${view.width}x${view.height}, ${edge}` : `WidthInChars ${width}, ${edge}`;
-      out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual)), ...(resizes[window] ? {resized: resizes[window]} : {})});
+      // A panel the run moved: the frame it asked (ruling 1203: its own size, its right edge at the strip's).
+      const planned = kind === 'openPanel' ? asked[window]?.to ?? venue?.frames?.openPanel ?? null : sceneDocument(window) ? `view ${view.width}x${view.height}, ${edge}` : `WidthInChars ${width}, ${edge}`;
+      out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual)), ...(resizes[window] ? {resized: resizes[window]} : {}),
+        ...(asked[window]?.fallback ? {fallback: asked[window].fallback} : {})});
     }
   }
+  return out;
+}
+// The matrix's panel placements the run asked a frame for, by sceneFrames' keys. -> {key: {to, fallback?}}.
+function panelAsked(record) {
+  const panel = (record?.meta ?? record ?? {}).placement?.panel;
+  const out = {};
+  if (Array.isArray(panel)) panel.forEach((entry, i) => { if (entry?.to && standing(entry)) out[panelKey(entry, i)] = {to: entry.to, ...(entry.fallback ? {fallback: entry.fallback} : {})}; });
   return out;
 }
 // The matrix's panels resized as well as moved (ruling 1199; ../native-matrix/panels.mjs), by sceneFrames' keys.
@@ -353,7 +362,7 @@ export function renderReadBack(rows) {
   const text = v => (v === null ? 'unplanned' : typeof v === 'string' ? v : rectText(v));
   const size = r => `${r.width}x${r.height}`;
   // A panel the run resized to fit the strip says so beside where it stood, and whether its read-back has that size.
-  const actual = r => `${rectText(r.actual)}${r.resized ? `, resized from ${size(r.resized.from)} to ${size(r.resized.to)}${size(r.actual) === size(r.resized.to) ? '' : ', the size not read back'}` : ''}`;
+  const actual = r => `${rectText(r.actual)}${r.resized ? `, resized from ${size(r.resized.from)} to ${size(r.resized.to)}${size(r.actual) === size(r.resized.to) ? '' : ', the size not read back'}` : ''}${r.fallback ? `, x clamped: ruling 1203's fallback (its pointer cells left to the owner's sitting)` : ''}`;
   return [...head, 'Where each step\'s TextEdit windows and Open panels stood, against what the venue planned, and whether an alert the venue read overlapped them (the alert guard then refused the cells there). A panel the run resized as well as moved (ruling 1199) says so.', '',
     '| step | window | planned | actual | overlaps an alert |', '|---|---|---|---|---|',
     ...rows.map(r => `| ${r.step} | ${r.window} | ${text(r.planned)} | ${actual(r)} | ${r.overlap ? 'yes' : 'no'} |`), ''].join('\n');

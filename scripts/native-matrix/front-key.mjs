@@ -46,6 +46,7 @@ export const NO_VERDICT_CAUSES = Object.freeze({
   venue: 'the run\'s vendor and cua runs did not stand on one frame (ruling 1169): no sample of that run, on either side, is judged; or an input source the row selects that the runner\'s setup could not enable (ruling 1189), or a hosted runner\'s per-context preference read malformed, a baseline no restore could put back, so nothing was written',
   keyWindow: 'a click or key cell refused unsent because its scene\'s app did not hold the window the cell acts in as its own key window (ruling 1169\'s addition)',
   ownerInput: 'off a GitHub-hosted runner, the owner\'s input source or per-context preference was not the row\'s, and the harness never changes them there (ruling 1188)',
+  ownerSitting: 'a pointer cell on the Open panel a hosted runner left unsent, the panel\'s x clamped short of the strip left of the capture alerts: the owner\'s sitting judges it (ruling 1203)',
   invalid: 'the harness\'s own invalid reason',
   unmeasured: 'a speed or finding sample not measured (no numeric duration)',
   unpaired: 'no vendor sample with a verdict from the same eligible run (ruling 1116); for speed and finding, outside the complete run pairs',
@@ -97,11 +98,13 @@ export function frontKeyCause(frontKey, {hosted = false} = {}) {
 // not stand on one frame (`frameSplit`, which the judge tags, ./summary.mjs splitFrameRuns) is `venue` before anything
 // else: the pair was no measurement. A row whose input source or preference the owner's Mac did not allow
 // (`ownerInput`, ruling 1188), or whose source the runner could not enable (`venueInput`, `venue`, ruling 1189), was
-// never sent: that is its cause. -> {category, detail?} | null.
+// never sent: that is its cause; so was one a hosted runner left to the owner's sitting (`ownerSitting`, ruling 1203).
+// -> {category, detail?} | null.
 export function sampleCause(row) {
   if (row.frameSplit) return {category: 'venue', detail: `the run's pair did not stand on one frame (${row.frameSplit})`};
   if (row.venueInput) return {category: 'venue', detail: row.venueInput};
   if (row.ownerInput) return {category: 'ownerInput', detail: row.ownerInput};
+  if (row.ownerSitting) return {category: 'ownerSitting', detail: row.ownerSitting};
   if (row.alertHeld) return {category: 'alert', detail: `${row.alertHeld.front} in front at the key guard; ${row.alertHeld.keys.join(', ')} held`};
   if (row.alertGuard) return {category: row.alertGuard.cause, detail: `the alert guard: ${row.alertGuard.detail}`};
   // A row of a panel's opening whose close did not take (./panels.mjs closePanel, ruling 1195): by the refusal's cause,

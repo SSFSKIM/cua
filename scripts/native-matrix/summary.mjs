@@ -560,7 +560,10 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   // Ruling 1189: the rows an input source the runner could not enable left unjudged (and any frame split), per side.
   const venue = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.venue ?? 0), 0);
   const venued = venue('cua') + venue('vendor');
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1203: the Open panel's pointer cells a hosted runner left to the owner's sitting, per side.
+  const ownerSitting = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerSitting ?? 0), 0);
+  const sitting = ownerSitting('cua') + ownerSitting('vendor');
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}${sitting ? `; \`ownerSitting\` (the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203): cua ${ownerSitting('cua')}, vendor ${ownerSitting('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {

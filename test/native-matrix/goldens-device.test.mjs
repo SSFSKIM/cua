@@ -719,7 +719,9 @@ test('Finder frame samples never substitute another window or retain its metadat
   const rows = stepEvidence(file), frames = rows.filter(r => r.type === 'frame');
   assert.ok(frames.length >= 5);
   assert.ok(frames.every(r => r.bounds === null && r.status === 'missing'));
-  assert.doesNotMatch(JSON.stringify(rows), /private|999|"window":8/);
+  // Random UUIDs in the rows (run and scene ids) can hold "999" by chance (#444): strip them before looking for the pid.
+  const text = JSON.stringify(rows).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+  assert.doesNotMatch(text, /private|999|"window":8/);
 });
 
 test('a refused Finder pin journals its result and completed prefix before cleanup can remove scene state', async () => {

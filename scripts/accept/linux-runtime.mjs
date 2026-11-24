@@ -28,10 +28,10 @@
 //     display :0.
 import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync, closeSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
-import {dirname, join, resolve} from 'node:path';
+import {basename, dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {readPointer} from '../../src/runtime/layout.mjs';
@@ -137,15 +137,71 @@ export function partsSnapshot(home) {
   return {entries};
 }
 
+// The real path of `path`, or of its deepest existing ancestor with the rest appended: where a path that may not exist
+// yet would land.
+function landing(path) {
+  try { return realpathSync(path); } catch { const parent = dirname(path); return parent === path ? path : join(landing(parent), basename(path)); }
+}
+
 /**
- * Whether the driver may write and remove `<home>/.config/cua/engine.json` (E3): only in a user `home` (its real path)
- * inside the run directory `runDir` (its real path), which linux-runtime-env.sh made fresh, and only when no engine.json
- * is there yet. Anywhere else the file is someone else's, and the driver never touches it (fix wave 1, Critical).
+ * The engine.json E3 writes and removes (fix wave 2, Critical): `<home>/.config/cua/engine.json`, and only there. The
+ * guard is on the path itself: `home` a real directory whose real path is inside the run directory `runDir` (a real
+ * path); `.config` and `.config/cua` each absent or a real directory, never a link, by lstat; the file itself absent by
+ * lstat (a link, dangling or not, is a file that exists). It is checked when asked (`problems`), again just before the
+ * write, which creates the file with O_EXCL and O_NOFOLLOW, and again before the clean-up, which removes only the file
+ * this run created, by device, inode, change time and contents recorded at creation, reached through no link.
+ * -> {path, problems(), write(engine), clear()}
  */
-export function settingsHomeProblems({home, runDir, settingsExists}) {
-  if (!home) return ['HOME is unset: E3 writes engine.json only in the run\'s own user home'];
-  if (!home.startsWith(`${runDir}/`)) return [`HOME ${home} is not inside the run ${runDir}: E3 writes engine.json only in the run's own user home`];
-  return settingsExists ? [`${join(home, '.config', 'cua', 'engine.json')} exists: the run's user home holds no engine.json until E3 writes one`] : [];
+export function runSettings({home, runDir}) {
+  const config = home ? join(home, '.config') : null;
+  const dir = config ? join(config, 'cua') : null;
+  const path = dir ? join(dir, 'engine.json') : null;
+  let created = null;
+  const kind = at => { try { const st = lstatSync(at); return st.isSymbolicLink() ? 'link' : st.isDirectory() ? 'directory' : st.isFile() ? 'file' : 'other'; } catch (error) { return error.code ?? 'unreadable'; } };
+  // The ancestors: the home a real directory inside the run, each directory below it absent or real.
+  const ancestors = () => {
+    if (!home) return ['HOME is unset: E3 writes engine.json only in the run\'s own user home'];
+    if (kind(home) !== 'directory') return [`HOME ${home} is a ${kind(home)}, not a directory`];
+    if (!landing(home).startsWith(`${runDir}/`)) return [`HOME ${home} is not inside the run ${runDir}: E3 writes engine.json only in the run's own user home`];
+    for (const at of [config, dir]) {
+      const found = kind(at);
+      if (found === 'ENOENT') break;
+      if (found === 'link') return [`${at} is a symbolic link: E3 writes engine.json through no link`];
+      if (found !== 'directory') return [`${at} is a ${found}, not a directory`];
+    }
+    return [];
+  };
+  const leaf = () => { const found = kind(path); return found === 'ENOENT' ? [] : [`${path} exists (a ${found}): the run's user home holds no engine.json until E3 writes one`]; };
+  return {
+    path,
+    problems: () => { const above = ancestors(); return above.length ? above : leaf(); },
+    write(engine) {
+      const problems = [...ancestors(), ...(ancestors().length ? [] : leaf())];
+      if (problems.length) throw new Error(problems.join('; '));
+      for (const at of [config, dir]) if (kind(at) === 'ENOENT') mkdirSync(at, {mode: 0o700});
+      const again = ancestors();
+      if (again.length) throw new Error(again.join('; '));
+      const contents = `${JSON.stringify({engine})}\n`;
+      const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try {
+        writeFileSync(fd, contents);
+        // Its change time too: a file made later at the same path may be given the same inode number.
+        const st = fstatSync(fd, {bigint: true});
+        created = {dev: st.dev, ino: st.ino, ctimeNs: st.ctimeNs, contents};
+      } finally { closeSync(fd); }
+    },
+    clear() {
+      if (!created || ancestors().length) return;
+      let st;
+      try { st = lstatSync(path, {bigint: true}); } catch { created = null; return; }
+      if (!st.isFile() || st.dev !== created.dev || st.ino !== created.ino || st.ctimeNs !== created.ctimeNs) return;
+      let fd;
+      try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch { return; }
+      let same;
+      try { const opened = fstatSync(fd, {bigint: true}); same = opened.dev === created.dev && opened.ino === created.ino && opened.ctimeNs === created.ctimeNs && readFileSync(fd, 'utf8') === created.contents; } finally { closeSync(fd); }
+      if (same) { unlinkSync(path); created = null; }
+    },
+  };
 }
 
 // ---- what this checkout pins, for E0's fetch log ---------------------------------------------------------------------
@@ -346,15 +402,15 @@ async function main() {
   const vendorName = vendorReleaseFor(arch);
   const releases = Object.values(VENDOR_RELEASES);
   // engine.json of the run's user home, which E3 writes and removes once the preconditions verified the home is the
-  // run's own (settingsHomeProblems); until then, and in any other home, it is never touched.
-  const settingsPath = join(process.env.HOME ?? '', '.config', 'cua', 'engine.json');
+  // run's own (runSettings); until then, and in any other home, it is never touched.
+  const settings = runSettings({home: process.env.HOME, runDir: real(runDir)});
+  const settingsPath = settings.path ?? join(process.env.HOME ?? '', '.config', 'cua', 'engine.json');
   let settingsOwned = false;
   const writeSettings = engine => {
     if (!settingsOwned) throw new Error(`${settingsPath} is not the run's own: it is never written`);
-    mkdirSync(dirname(settingsPath), {recursive: true});
-    writeFileSync(settingsPath, `${JSON.stringify({engine})}\n`);
+    settings.write(engine);
   };
-  const clearSettings = () => { if (settingsOwned) rmSync(settingsPath, {force: true}); };
+  const clearSettings = () => settings.clear();
   const report = {driver: 'm6b-acceptance-13', leg: option('--leg') ?? null, arch, node: process.version, head: gitHead(REPO), release, installer, vendorRelease: vendorName,
     older: {path: older, commit: gitHead(older)}, phases, out: resolve(out), scratch, startedAt: new Date().toISOString(), cells: [], measured: {}};
   const say = line => process.stderr.write(`linux-runtime: ${line}\n`);
@@ -463,8 +519,14 @@ async function main() {
     if (!/^:\d+/.test(display) || /^:0(\.\d+)?$/.test(display)) problems.push(`the display ${JSON.stringify(display)} is not a private one`);
     if (process.env.CUA_NATIVE_ENGINE !== undefined) problems.push('CUA_NATIVE_ENGINE is set: the cells set it where they need it');
     if (process.env[FETCH_LOG] !== undefined) problems.push(`${FETCH_LOG} is set: the driver sets it for the installs it logs`);
+    // The wrapper's fresh, run-owned homes, enforced here too: CUA_HOME inside the run and not yet made; HOME inside the
+    // run, and its engine.json path through no link and not there (fix wave 2, Critical).
     if (!process.env.CUA_HOME) problems.push('CUA_HOME is unset: the empty home is the one linux-runtime-env.sh makes');
-    problems.push(...settingsHomeProblems({home: process.env.HOME && real(process.env.HOME), runDir: real(runDir), settingsExists: existsSync(settingsPath)}));
+    else {
+      if (!landing(process.env.CUA_HOME).startsWith(`${real(runDir)}/`)) problems.push(`CUA_HOME ${process.env.CUA_HOME} is not inside the run ${real(runDir)}`);
+      if (lstatKind(process.env.CUA_HOME) !== 'ENOENT') problems.push(`CUA_HOME ${process.env.CUA_HOME} already exists: the empty home must be fresh`);
+    }
+    problems.push(...settings.problems());
     for (const tool of ['strace', 'find', 'file']) if (spawnSync(tool, ['--version'], {encoding: 'utf8'}).error) problems.push(`${tool} is not installed`);
     const olderClean = spawnSync('git', ['-C', older, 'status', '--porcelain'], {encoding: 'utf8'});
     report.older.clean = olderClean.status === 0 && olderClean.stdout.trim() === '';
@@ -643,8 +705,10 @@ async function main() {
         check(cell, 'the trace shows no unlink, rename, write or exec under runtimes/: lstat, directory reads and one open of install.json',
           runtimesCallProblems(install2.summary, {home: facts.homes, releases, command: 'install'}));
         check(cell, 'nothing was fetched, and every part is as it was on disk', [...noFetchProblems(install2.log), ...snapshotProblems(parts2, partsSnapshot(home)).map(p => `a part: ${p}`)]);
-        const json2 = await r.cua('install-U2-json', ['install', '--json'], {env, minutes: 15, logged: true});
-        cell.runs.push({what: 'cua install --json from the same state, logged', ...projectExec(json2)});
+        const json2 = await r.cua('install-U2-json', ['install', '--json'], {env, minutes: 15, logged: true, traced: true, helper: facts.helper, homes: facts.homes});
+        cell.runs.push({what: 'cua install --json from the same state, logged and traced', ...projectExec(json2)});
+        check(cell, 'its trace too shows no unlink, rename, write or exec under runtimes/: lstat, directory reads and one open of install.json',
+          runtimesCallProblems(json2.summary, {home: facts.homes, releases, command: 'install'}));
         check(cell, 'from the same state, --json: every part changed: false, retired the one release with U1\'s exact bytes, nothing fetched',
           [...reinstallProblems({exit: json2.code, report: readJson(json2.out)}, {retired: [expectedTree]}), ...noFetchProblems(json2.log)]);
         check(cell, 'and on disk after it: runtimes/ and every part as before U2', [...snapshotProblems(before2, treeSnapshot(runtimesDir)), ...snapshotProblems(parts2, partsSnapshot(home)).map(p => `a part: ${p}`)]);

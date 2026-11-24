@@ -6,7 +6,7 @@
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {APPROVED_OLDER, CELLS, ENGINE_HINT_LITERAL, FIXTURE_STEPS, FORBIDDEN_ROWS, OUTDATED_ENGINE, VENDOR_RELEASES, boundaryProblems, controlProblems, doctorRefusalProblems, doctorRowsProblems,
@@ -16,7 +16,7 @@ import {APPROVED_OLDER, CELLS, ENGINE_HINT_LITERAL, FIXTURE_STEPS, FORBIDDEN_ROW
   vendorReleaseFor, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
 import {RETIRED_RELEASES} from '../src/runtime/retired-tree.mjs';
 import {loggedFetch, readFetchLog, READY} from '../scripts/accept/fetch-log.mjs';
-import {partsSnapshot, settingsHomeProblems} from '../scripts/accept/linux-runtime.mjs';
+import {partsSnapshot, runSettings} from '../scripts/accept/linux-runtime.mjs';
 import {summarizeTrace} from '../scripts/accept/linux-trace.mjs';
 import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
 
@@ -104,6 +104,14 @@ test('the cell table is the pre-flight\'s, in its order: the empty home\'s, the 
 
 // #171 M6b: the vendor's engine is retired on Linux. No cell expects it to answer: E3 and U0 judge its refusal, and
 // nothing finds the vendor's tree through a pin or the retired selection's lookup.
+// Fix wave 2, Important 3: each of U2's two installs is traced and judged by the call judge, so neither could change
+// runtimes/ and put it back between the snapshots.
+test('U2 traces both of its installs, and judges each one\'s calls under runtimes/', () => {
+  const driver = readFileSync(new URL('../scripts/accept/linux-runtime.mjs', import.meta.url), 'utf8');
+  for (const label of ['install-U2', 'install-U2-json']) assert.match(driver, new RegExp(`r\\.cua\\('${label}', \\[[^\\]]*\\], \\{[^}]*traced: true`), label);
+  for (const run of ['install2', 'json2']) assert.match(driver, new RegExp(`runtimesCallProblems\\(${run}\\.summary, \\{home: facts\\.homes, releases, command: 'install'\\}\\)`), run);
+});
+
 test('no cell runs the vendor\'s engine, and the driver reads no Linux pin and no vendor lookup', async () => {
   const source = f => readFileSync(new URL(`../scripts/accept/${f}`, import.meta.url), 'utf8');
   assert.deepEqual(Object.keys(FIXTURE_STEPS), ['linux-native', 'linux-text', 'linux-browser-only']);
@@ -166,12 +174,85 @@ test('negative control: the driver refusing to start leaves the caller\'s engine
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
-test('the driver writes engine.json only in a user home inside its own run directory', () => {
-  assert.deepEqual(settingsHomeProblems({home: '/r/run/user', runDir: '/r/run', settingsExists: false}), []);
-  assert.match(settingsHomeProblems({home: '/home/owner', runDir: '/r/run', settingsExists: false}).join('; '), /HOME \/home\/owner is not inside the run \/r\/run/);
-  assert.match(settingsHomeProblems({home: '/r/run-other/user', runDir: '/r/run', settingsExists: false}).join('; '), /is not inside the run/);
-  assert.match(settingsHomeProblems({home: undefined, runDir: '/r/run', settingsExists: false}).join('; '), /HOME is unset/);
-  assert.match(settingsHomeProblems({home: '/r/run/user', runDir: '/r/run', settingsExists: true}).join('; '), /engine\.json exists/);
+// Fix wave 2, Critical: the guard is on the path written and removed, not on HOME alone. Each case builds a run with
+// its user home, and a directory outside the run that a link may lead to; nothing there is ever written or removed.
+function settingsRun() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-settings-')));
+  const run = join(dir, 'run'), home = join(run, 'user'), outside = join(dir, 'outside');
+  mkdirSync(join(home, '.config'), {recursive: true});
+  mkdirSync(outside);
+  const listing = () => readdirSync(outside, {recursive: true}).sort();
+  return {dir, run, home, outside, listing};
+}
+
+test('the driver writes engine.json only in a home inside its run, through no link, and removes only the file it made', () => {
+  const t = settingsRun();
+  try {
+    const settings = runSettings({home: t.home, runDir: t.run});
+    assert.deepEqual(settings.problems(), []);
+    settings.write('vendor');
+    assert.equal(readFileSync(join(t.home, '.config', 'cua', 'engine.json'), 'utf8'), '{"engine":"vendor"}\n');
+    settings.clear();
+    assert.equal(existsSync(join(t.home, '.config', 'cua', 'engine.json')), false);
+    // Outside the run, or unset, it is never the driver's.
+    assert.match(runSettings({home: t.outside, runDir: t.run}).problems().join('; '), /is not inside the run/);
+    assert.match(runSettings({home: undefined, runDir: t.run}).problems().join('; '), /HOME is unset/);
+  } finally { rmSync(t.dir, {recursive: true, force: true}); }
+});
+
+test('negative control: a linked .config, a linked .config/cua or a dangling engine.json link: refused, and nothing outside the run written or removed', () => {
+  for (const [what, arrange, pattern] of [
+    ['a linked .config', t => { rmSync(join(t.home, '.config'), {recursive: true}); symlinkSync(t.outside, join(t.home, '.config')); }, /\.config is a symbolic link/],
+    ['a linked .config/cua', t => symlinkSync(t.outside, join(t.home, '.config', 'cua')), /\.config\/cua is a symbolic link/],
+    ['a dangling engine.json link', t => { mkdirSync(join(t.home, '.config', 'cua')); symlinkSync(join(t.outside, 'engine.json'), join(t.home, '.config', 'cua', 'engine.json')); }, /engine\.json exists \(a link\)/],
+  ]) {
+    const t = settingsRun();
+    try {
+      writeFileSync(join(t.outside, 'keep'), 'the owner\'s\n');
+      arrange(t);
+      const before = t.listing();
+      const settings = runSettings({home: t.home, runDir: t.run});
+      assert.match(settings.problems().join('; '), pattern, what);
+      assert.throws(() => settings.write('vendor'), pattern, what);
+      settings.clear();
+      assert.deepEqual(t.listing(), before, what);
+      assert.equal(readFileSync(join(t.outside, 'keep'), 'utf8'), 'the owner\'s\n', what);
+      if (what === 'a dangling engine.json link') assert.ok(lstatSync(join(t.home, '.config', 'cua', 'engine.json')).isSymbolicLink(), 'the link is left in place');
+    } finally { rmSync(t.dir, {recursive: true, force: true}); }
+  }
+});
+
+test('negative control: clean-up removes only the file this run made, by device, inode and contents, reached through no link', () => {
+  const t = settingsRun();
+  try {
+    const file = join(t.home, '.config', 'cua', 'engine.json');
+    // Replaced after the write by another file with the same contents: left in place.
+    let settings = runSettings({home: t.home, runDir: t.run});
+    settings.write('vendor');
+    renameSync(file, join(t.run, 'aside'));
+    writeFileSync(file, '{"engine":"vendor"}\n');
+    settings.clear();
+    assert.equal(readFileSync(file, 'utf8'), '{"engine":"vendor"}\n');
+    rmSync(file);
+    // The same file rewritten with other contents: left in place.
+    settings = runSettings({home: t.home, runDir: t.run});
+    settings.write('vendor');
+    writeFileSync(file, '{"engine":"cua"}\n');
+    settings.clear();
+    assert.equal(readFileSync(file, 'utf8'), '{"engine":"cua"}\n');
+    rmSync(file);
+    // The created file itself, reached after the write through a .config/cua now linked outside the run (a hard link
+    // there keeps its device and inode): nothing outside the run is removed.
+    settings = runSettings({home: t.home, runDir: t.run});
+    settings.write('vendor');
+    linkSync(file, join(t.outside, 'engine.json'));
+    renameSync(join(t.home, '.config', 'cua'), join(t.home, '.config', 'cua-moved'));
+    symlinkSync(t.outside, join(t.home, '.config', 'cua'));
+    settings.clear();
+    assert.equal(readFileSync(join(t.outside, 'engine.json'), 'utf8'), '{"engine":"vendor"}\n');
+    // A write through a .config/cua linked after the check is refused too.
+    assert.throws(() => runSettings({home: t.home, runDir: t.run}).write('vendor'), /symbolic link/);
+  } finally { rmSync(t.dir, {recursive: true, force: true}); }
 });
 
 const passed = fixture => ({fixture, status: 'PASS', steps: FIXTURE_STEPS[fixture].map(name => ({name, status: 'PASS'}))});
@@ -478,6 +559,13 @@ test('the preload logs every fetch: the URL asked, where it answered (no query k
       [READY, {event: 'asked', id: 1, url: 'u'}, {event: 'answered', id: 1, url: 'v', answered: 'v', status: 200, bytes: 1, complete: true}],
       [READY, {event: 'asked', id: 1, url: 'u'}, {event: 'answered', id: 1, url: 'u', answered: 'u', status: 200, bytes: 1, complete: true}, {event: 'failed', id: 1, url: 'u', error: 'x'}],
       [{event: 'asked', id: 1, url: 'u'}, READY],
+      // Fix wave 2, Minor: an answer with no status, no final URL or an invalid one is malformed, and a fetch that
+      // ended takes no second answer, whatever the first one held.
+      [READY, {event: 'asked', id: 1, url: 'https://a/u'}, {event: 'answered', id: 1, url: 'https://a/u', answered: 'https://a/u', status: null, bytes: 1, complete: true}],
+      [READY, {event: 'asked', id: 1, url: 'https://a/u'}, {event: 'answered', id: 1, url: 'https://a/u', status: 200, bytes: 1, complete: true}],
+      [READY, {event: 'asked', id: 1, url: 'https://a/u'}, {event: 'answered', id: 1, url: 'https://a/u', answered: 'not a url', status: 200, bytes: 1, complete: true}],
+      [READY, {event: 'asked', id: 1, url: 'https://a/u'}, {event: 'answered', id: 1, url: 'https://a/u', answered: 'https://a/u', status: 200, bytes: -1, complete: true}],
+      [READY, {event: 'asked', id: 1, url: 'https://a/u'}, {event: 'failed', id: 1, url: 'https://a/u', error: null}, {event: 'answered', id: 1, url: 'https://a/u', answered: 'https://a/u', status: 200, bytes: 1, complete: true}],
     ]) assert.equal(logOf(...bad), null, JSON.stringify(bad));
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
@@ -598,6 +686,19 @@ test('negative control: a trace with an unlink, a write, a rename, an exec, a fo
 
 // Fix wave 1, Important 1: a trace that is empty, holds no root command, holds lines the reader could not read or a
 // resumption of no call, or a summary missing its records, never passes a whole-trace judge.
+// Fix wave 2, Important 1: a call cut short before its return column is no call: it can never certify the record open.
+test('negative control: an open of install.json cut short after its flags, the exit line kept, is an unread line and not the read', () => {
+  const truncated = readsOfTree.map(l => (/install\.json", O_RDONLY/.test(l) ? `500   openat(AT_FDCWD</repo>, "${R6}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC` : l))
+    .filter(l => !/statx\(21</.test(l));
+  const summary = installTrace(truncated);
+  assert.equal(summary.whole.unreadLines, 1);
+  assert.equal(summary.whole.complete, false);
+  assert.match(runtimesCallProblems(summary, {home: H, releases: RELEASES, command: 'install'}).join('; '), /1 line it could not read.*install\.json was opened 0 times/);
+  // Nor does an open that returned no descriptor (`= ?`) count as the read.
+  const unknown = readsOfTree.map(l => (/install\.json", O_RDONLY/.test(l) ? `500   openat(AT_FDCWD</repo>, "${R6}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = ?` : l)).filter(l => !/statx\(21</.test(l));
+  assert.match(runtimesCallProblems(installTrace(unknown), {home: H, releases: RELEASES, command: 'install'}).join('; '), /install\.json was opened 0 times/);
+});
+
 test('negative control: an empty trace, another root command, an unread line, an orphan resumption or missing records fail every whole-trace judge', () => {
   const traceOf = lines => summarizeTrace(lines.join('\n'), {helper: '/h/helper', home: H, cwd: '/repo'});
   const judges = summary => ({tools: toolProblems(summary).join('; '), calls: runtimesCallProblems(summary, {home: H, releases: RELEASES, command: 'install'}).join('; '),
@@ -691,6 +792,15 @@ test('negative control: a worker, a helper, an engine server, a second probe, a 
   // Fix wave 1, Important 2: an engine run by execveat through its descriptor, a worker run as a relative script, and
   // an executable the trace cannot name are each caught.
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 607', `607   execveat(5<${H}/engine/linux/cua-engine>, "", ["x", "server"], 0x7ffd /* 0 vars */, AT_EMPTY_PATH) = 0`], [600, 607]), /engine 607 ran .*cua-engine server/);
+  // Fix wave 2, Important 2: a script relative to a directory the child chdir'd into resolves there.
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 614', '614   chdir("/repo/src/repl-host") = 0', '614   execve("/n/bin/node", ["node", "./trusted-worker.mjs"], 0x7ffd /* 9 vars */) = 0'], [600, 614]),
+    /trusted-worker 614 ran/);
+  assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 615', '615   chdir("src") = 0', '615   execve("/n/bin/node", ["node", "--no-warnings", "repl-host/kernel.mjs"], 0x7ffd /* 9 vars */) = 0'], [600, 615]),
+    /kernel 615 ran/);
+  // A relative script whose directory the trace never learned is not passed.
+  const lost = summarizeTrace(['600   execve("/usr/bin/node", ["node", "/repo/bin/cua.mjs", "serve"], 0x7ffd /* 9 vars */) = 0', '600   clone(child_stack=NULL, flags=SIGCHLD) = 616',
+    '616   execve("/n/bin/node", ["node", "worker.mjs"], 0x7ffd /* 9 vars */) = 0', ...ENDS([600, 616])].join('\n'), {helper: '/h/helper', home: H});
+  assert.match(execRoleProblems(lost, {helper: '/h/helper', command: 'serve'}).join('; '), /node with a script it cannot place 616/);
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 608', '608   execve("/n/bin/node", ["node", "src/repl-host/trusted-worker.mjs"], 0x7ffd /* 9 vars */) = 0'], [600, 608]), /trusted-worker 608 ran/);
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 609', '609   execve("cua-engine", ["cua-engine", "server"], 0x7ffd /* 9 vars */) = 0'], [600, 609]), /engine 609 ran .*\/repo\/cua-engine server/);
   assert.match(judged(['600   clone(child_stack=NULL, flags=SIGCHLD) = 610', '610   execveat(7, "", ["x"], 0x7ffd /* 0 vars */, AT_EMPTY_PATH) = 0'], [600, 610]), /an unnamed executable 610 ran x/);

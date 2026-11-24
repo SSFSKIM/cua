@@ -34,6 +34,11 @@ const FORKS = /^(?:clone3?|fork|vfork)\(/;
 const EXEC = /^execve(?:at)?\(/;
 const RESUMED = /^<\.\.\. (\w+) resumed>/;
 const RETURNED = /\)\s+=\s+(-?\d+)(?:\s|$)/;
+// A call's return column, whatever follows it (a number, -y's decoding, `?`): a line without one was cut short (fix
+// wave 2), and is read as no call at all.
+const RETURN_COLUMN = /\)\s+=\s+\S/;
+// The value a finished call returned, -y's decoding allowed after it; null when it returned none (`?`).
+const returnValue = call => { const m = [...call.matchAll(/\)\s+=\s+(-?\d+)/g)].at(-1); return m ? Number(m[1]) : null; };
 // --pidns-translation's note on a pid returned inside another PID namespace: `= 2 /* 1648650 in strace's PID NS */`.
 const TRANSLATED = /\)\s+=\s+-?\d+\s+\/\* (\d+) in strace's PID NS \*\//;
 const SERVE = /\/bin\/cua\.mjs", "serve"/;
@@ -250,7 +255,8 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
     const {paths, unresolved} = callPaths(name, call, p.cwd.path);
     if (paths.some(inRuntimes)) {
       p.runtimesCalls += 1;
-      p.files.push({name, kind: callKind(name, call), paths: paths.filter(inRuntimes), ok: !/\)\s+=\s+-1\s/.test(call)});
+      // ok only for a call that returned a value of zero or more: an open, a descriptor (fix wave 2).
+      p.files.push({name, kind: callKind(name, call), paths: paths.filter(inRuntimes), ok: (returnValue(call) ?? -1) >= 0});
     } else if (unresolved) p.unresolved += 1;
     if (watched && OPENS.has(name) && openedDescriptor(call)) for (const path of paths) if (watched.has(path)) p.opened.add(path);
     if (value === 0 && name === 'chdir') p.cwd.path = paths[0] ?? null;
@@ -263,7 +269,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
       // Every exec, done or attempted (a lookup along PATH attempts each directory's), with its argument vector and the
       // executable it named, resolved as the kernel resolves it (execveat's descriptor, a relative path against the
       // working directory); null when that cannot be read.
-      p.execList.push({program: execProgram(name, call, p.cwd.path), argv: execArgv(call), ok: value === 0});
+      p.execList.push({program: execProgram(name, call, p.cwd.path), argv: execArgv(call), cwd: p.cwd.path, ok: value === 0});
       return;
     }
     // exit ends this thread alone; exit_group ends its whole thread group.
@@ -291,7 +297,9 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         pending.delete(pid);
         // exit and exit_group were never kept pending (they end the thread), but strace may still print their end.
         if (!start) { if (!(/^exit(?:_group)?$/.test(resumed[1]) && p.ended)) unread.orphans += 1; return; }
-        return finish(pid, resumed[1], `${start}${call.slice(resumed[0].length)}`);
+        const whole = `${start}${call.slice(resumed[0].length)}`;
+        if (!RETURN_COLUMN.test(whole)) { unread.lines += 1; return; }
+        return finish(pid, resumed[1], whole);
       }
       if (call.endsWith('<unfinished ...>')) {
         const start = call.slice(0, -'<unfinished ...>'.length);
@@ -303,7 +311,8 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         return;
       }
       const name = /^(\w+)\(/.exec(call)?.[1];
-      if (name) finish(pid, name, call);
+      // A call with no return column was cut short: its operands and its outcome are unknown, so it is unread.
+      if (name && RETURN_COLUMN.test(call)) finish(pid, name, call);
       else unread.lines += 1;
     },
     summary() {
@@ -353,7 +362,7 @@ export function traceReader({helper, home, cwd = null, watch = null}) {
         }
         q.pendingFile = (q.pendingFile ?? 0) + 1;
         // An unfinished exec is an attempt.
-        if (EXEC.test(`${name}(`)) q.execList.push({program: execProgram(name, `${start})`, q.cwd.path), argv: execArgv(`${start})`), ok: null});
+        if (EXEC.test(`${name}(`)) q.execList.push({program: execProgram(name, `${start})`, q.cwd.path), argv: execArgv(`${start})`), cwd: q.cwd.path, ok: null});
       }
       pending.clear();
       const servedPids = [...procs.keys()].filter(inServe);

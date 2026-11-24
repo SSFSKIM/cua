@@ -84,6 +84,9 @@ export function readFetchLog(file) {
   }
   if (records[0]?.event !== READY.event) return null;
   const fetches = new Map();
+  // Whether each fetch has ended, kept apart from what its end carried (fix wave 2): a null status cannot reopen it.
+  const ended = new Set();
+  const isUrl = value => { try { return typeof value === 'string' && Boolean(new URL(value)); } catch { return false; } };
   for (const record of records.slice(1)) {
     if (record?.event === 'asked') {
       if (fetches.has(record.id) || typeof record.url !== 'string') return null;
@@ -91,9 +94,14 @@ export function readFetchLog(file) {
       continue;
     }
     const entry = fetches.get(record?.id);
-    if (!entry || record.url !== entry.url || entry.status !== null || entry.error !== null) return null;
-    if (record.event === 'answered') Object.assign(entry, {answered: record.answered, status: record.status, bytes: record.bytes, complete: record.complete});
-    else if (record.event === 'failed') entry.error = record.error ?? 'failed';
+    if (!entry || record.url !== entry.url || ended.has(record.id)) return null;
+    ended.add(record.id);
+    if (record.event === 'answered') {
+      // An answer names where it answered from, a real HTTP status, its bytes and whether its body ended.
+      if (!isUrl(record.answered) || !Number.isInteger(record.status) || record.status < 100 || record.status > 599
+        || !Number.isSafeInteger(record.bytes) || record.bytes < 0 || typeof record.complete !== 'boolean') return null;
+      Object.assign(entry, {answered: record.answered, status: record.status, bytes: record.bytes, complete: record.complete});
+    } else if (record.event === 'failed') entry.error = typeof record.error === 'string' && record.error ? record.error : 'failed';
     else return null;
   }
   return [...fetches.values()];

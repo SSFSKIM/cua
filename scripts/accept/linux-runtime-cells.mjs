@@ -372,9 +372,12 @@ export function runtimesCallProblems(summary, {home, releases, command, recordOp
 }
 
 // What a program an exec ran is, by role: an engine, the sandbox helper, bubblewrap, a REPL host process (by the
-// script Node runs, its path absolute or relative; a Node whose arguments are unread counts too), anything under a
-// runtimes/, or an executable the trace does not name; null for anything else (a shell, gzip, a probe).
+// script Node runs, resolved against the exec's working directory; a Node whose arguments are unread, or whose relative
+// script has no known directory, counts too), anything under a runtimes/, or an executable the trace does not name; null
+// for anything else (a shell, gzip, a probe).
 const ROLE_SCRIPT = /(^|\/)src\/repl-host\/([\w-]+)\.mjs$/;
+// An argument Node would load as a script: a path to a JavaScript module.
+const SCRIPT = /\.[cm]?js$/;
 function roleOf(e, {helper}) {
   if (!e.program) return 'an unnamed executable';
   const program = e.program;
@@ -385,7 +388,14 @@ function roleOf(e, {helper}) {
   if (/^node/.test(basename(program))) {
     // A Node whose arguments the trace did not print whole may be running the REPL host: it is never passed unread.
     if (!Array.isArray(e.argv)) return 'node with unread arguments';
-    for (const arg of e.argv) { const role = ROLE_SCRIPT.exec(arg)?.[2]; if (role) return role; }
+    for (const arg of e.argv.slice(1)) {
+      if (!SCRIPT.test(arg)) continue;
+      // A script operand is resolved against the working directory the exec ran in (fix wave 2): `./trusted-worker.mjs`
+      // run inside src/repl-host is the worker. One relative to an unknown directory is never passed.
+      if (!posix.isAbsolute(arg) && !e.cwd) return 'node with a script it cannot place';
+      const role = ROLE_SCRIPT.exec(posix.isAbsolute(arg) ? posix.normalize(arg) : posix.resolve(e.cwd, arg))?.[2];
+      if (role) return role;
+    }
   }
   return null;
 }

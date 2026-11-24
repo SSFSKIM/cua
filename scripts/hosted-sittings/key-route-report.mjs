@@ -75,7 +75,7 @@ function axSection(engine, ax) {
   // own. A reading made before the mirror (pilot C-4's: no cuaPublicPidTarget) held the public pid in cuaKeyboardTarget:
   // shown as the public one, the merged prediction unread.
   return [`### ${engine}'s lane: TextEdit pid ${ax.pid}`, '',
-    cells(['cua\'s keyboardTarget (native/engine/Sources/Engine/KeyTarget.swift:95, #582), predicted from the observed chain', 'the focused element\'s public AXUIElementGetPid owner (cua\'s target before #582)',
+    cells(['cua\'s keyboardTarget (native/engine/Sources/Engine/KeyTarget.swift:100, #582), predicted from the observed chain', 'the focused element\'s public AXUIElementGetPid owner (cua\'s target before #582)',
       'the focused element\'s ActualPid', 'the selected ancestor (the static reading\'s walk)', 'the static reading\'s rule']), '|---|---|---|---|---|',
     cells([...('cuaPublicPidTarget' in ax ? [pidText(ax.cuaKeyboardTarget), pidText(ax.cuaPublicPidTarget)] : ['unread (read before the mirror)', pidText(ax.cuaKeyboardTarget)]),
       pidText(ax.actualPid), selectedText(ax.selectedAncestor), pidText(ax.staticReadingTarget)]), '',

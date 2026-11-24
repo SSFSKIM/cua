@@ -369,7 +369,7 @@ test('the section: per engine the Escape\'s posted and receiving pids and the pa
   assert.match(md, /^\| 0 \| AXTextField \| 500 \| 700 \| com\.apple\.appkit\.xpc\.openAndSavePanelService \| prohibited \| yes \|$/m);
   // cua's keyboardTarget as merged by #582 (KeyTarget.swift), and in a column of its own the public AXUIElementGetPid
   // owner it posted to before (C-4's report printed that one as the keyboardTarget while the tap saw the service's pid).
-  assert.match(md, /^\| cua's keyboardTarget \(native\/engine\/Sources\/Engine\/KeyTarget\.swift:95, #582\), predicted from the observed chain \| the focused element's public AXUIElementGetPid owner \(cua's target before #582\) \| the focused element's ActualPid \| the selected ancestor \(the static reading's walk\) \| the static reading's rule \|$/m);
+  assert.match(md, /^\| cua's keyboardTarget \(native\/engine\/Sources\/Engine\/KeyTarget\.swift:100, #582\), predicted from the observed chain \| the focused element's public AXUIElementGetPid owner \(cua's target before #582\) \| the focused element's ActualPid \| the selected ancestor \(the static reading's walk\) \| the static reading's rule \|$/m);
   assert.match(md, /^\| 700 \| 500 \| 700 \| depth 0, pid 700 \| 700 \|$/m);
   assert.doesNotMatch(md, /Input\.swift:1014/);
   // Review of b12c7121a..2a2dd8dd6, finding 3: pilot C-4's own reading (key-route.json, cua's lane, trimmed), written

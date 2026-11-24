@@ -30,12 +30,14 @@ export function expectedSelection(row){
  // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
  if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
  if(macosComputer)return engineTable(row,availableNode);
- // Linux has no vendor host (#115 M3): an explicit one is refused and a missing Node refuses, never falling back.
+ // Linux has no vendor host (#115 M3): an explicit one is refused and a missing Node refuses, never falling back. Its
+ // Node (#171 M6a, F2a) is the managed one or a named override (`cuaNode`: CUA_NODE names a Node 24 or later); a Node 24
+ // running cua or on PATH counts for nothing, and without either the runtime is not installed.
  if(platform==='linux'){
   if(override==='vendor')return {error:'repl_host_refused'};
   const engine=surfaces.includes('computer')?linuxEngineTable(row):{status:'pass'};
   if(engine.error)return engine;
-  if(!availableNode)return {error:'repl_host_node'};
+  if(row.managedNode!==true&&row.cuaNode!==true)return {error:'runtime_not_installed'};
   return {host:'cua',reason:override==='cua'?'explicit':'linux',status:engine.status};
  }
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
@@ -44,15 +46,17 @@ export function expectedSelection(row){
  return {host:'cua',reason:'browser_only',status:'pass'};
 }
 // #171: a Linux computer session's engine, resolved before Node, never changes the host there; doctor's repl.host names
-// none and the result attests none (the engine row reports it). An unknown engine is refused, and cua's with none
-// installed: explicitly set, refused; the default's, the vendor engine with a warning. `installed` 'outdated' is an
-// engine older than this cua needs, or one whose record does not match it (#171 M5, F5): the default keeps the vendor
-// engine with a warning, while an explicit setting selects it (its first request is refused, not the selection).
-function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_LINUX_DEFAULT_ENGINE}){
+// none and the result attests none (the engine row reports it). An unknown engine is refused. Since M6a (F2, F3) the
+// default and an explicit setting refuse alike, at the open, and nothing falls back to the vendor's engine: cua's with
+// none installed (`installed` false), one older than this cua needs (`outdated`) or one no record of its bytes names
+// (`unrecorded`); the vendor's with its tree absent (`vendorTree` false; a home `cua install` made holds it).
+function linuxEngineTable({engine='unset',engineFrom='env',installed=false,vendorTree=true,defaultEngine=ORACLE_LINUX_DEFAULT_ENGINE}){
  if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
  const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine;
- if(selected==='cua'&&!installed)return set?{error:'engine_not_installed'}:{status:'warn'};
- if(selected==='cua'&&installed==='outdated'&&!set)return {status:'warn'};
+ if(selected==='vendor')return vendorTree?{status:'pass'}:{error:'engine_not_installed'};
+ if(!installed)return {error:'engine_not_installed'};
+ if(installed==='outdated')return {error:'engine_outdated'};
+ if(installed==='unrecorded')return {error:'engine_unrecorded'};
  return {status:'pass'};
 }
 // #117's table, its refusals in their order: an unknown engine, the host setting, the approved engine, Node. An explicit
@@ -128,7 +132,7 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  assert.equal(doctor.status,status);
 }
 const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[]),
- ...(r.engine?[`engine ${r.engine}${r.engineFrom==='settings'?' (engine.json)':''}`,r.installed?'installed':'not installed']:[])].join(', ');
+ ...(r.engine?[`engine ${r.engine}${r.engineFrom==='settings'?' (engine.json)':''}`,r.installed?(r.installed===true?'installed':r.installed):'not installed',...(r.vendorTree===false?['no vendor tree']:[])]:[])].join(', ');
 // Every failing row and check, by name; a lane that stopped early or recorded fewer rows than planned never passes.
 export function selectionVerdict(evidence){
  const failures=evidence.failures??[];

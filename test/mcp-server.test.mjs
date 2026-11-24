@@ -185,6 +185,27 @@ test('js calls carry the connection session, the task as turn ID and a distinct 
   assert.deepEqual(up1.params.arguments, {code: 'a'});
 });
 
+// #565: node:readline (Node 24 and later) ends a line at U+2028 and U+2029, so a raw one cut a message in two. The
+// client's request carrying both reaches the runtime whole, and the answer's line carries them escaped, so the
+// client's own line reader (Claude Code's is readline) reads it whole too.
+test('LS and PS in a request reach the runtime whole, and the response line carries them escaped', async () => {
+  const LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
+  const h = harness();
+  let written = '';
+  h.output.on('data', chunk => { written += chunk; });
+  await initialized(h);
+  const code = `nodeRepl.write("tab${LS}title${PS}")`;
+  const call = h.client.call('js', {code});
+  const up = await h.upstream.nextCall('js');
+  assert.equal(up.params.arguments.code, code);
+  h.upstream.text(up, `Inbox${LS}draft${PS}end`);
+  const response = await call.response;
+  assert.equal(textOf(response), `Inbox${LS}draft${PS}end`);
+  const line = written.split('\n').find(l => l.includes(`"id":${call.id},`));
+  assert.ok(line.includes('Inbox\\u2028draft\\u2029end'), line);
+  assert.equal(/[\u2028\u2029]/.test(written), false, 'no raw LS or PS in anything the server wrote');
+});
+
 test('image results get their real MIME type', async () => {
   const h = harness();
   await initialized(h);

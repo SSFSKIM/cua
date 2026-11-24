@@ -13,8 +13,8 @@
 // The native helper is started by the vendor through LaunchServices, never in this group. A descendant that starts
 // its own session escapes the group; teardown does not claim it.
 import {spawn, execFile} from 'node:child_process';
-import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
+import {jsonLine, lines} from '../repl-host/jsonl.mjs';
 
 const ANCHOR = fileURLToPath(new URL('./anchor.mjs', import.meta.url));
 const POLL_MS = 25;
@@ -69,7 +69,7 @@ export function spawnUpstream({command, args, env, cwd}, {
   anchor.stdin.on('error', () => {});
 
   const stdoutEnded = new Promise(resolve => anchor.stdout.once('close', resolve));
-  createInterface({input: anchor.stdout}).on('line', line => {
+  lines(anchor.stdout).on('line', line => {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch {
@@ -177,7 +177,7 @@ export function spawnUpstream({command, args, env, cwd}, {
     get launcherPid() { return launcherPid; },
     send(msg) {
       if (exitInfo || terminating || !anchor.stdin.writable) return false;
-      anchor.stdin.write(JSON.stringify(msg) + '\n');
+      anchor.stdin.write(jsonLine(msg));
       return true;
     },
     onMessage(fn) { onMessage = fn; },

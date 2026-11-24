@@ -20,6 +20,7 @@ import { createInterface } from 'node:readline';
 import { engineEnvironment } from './app-env.mjs';
 import { ENGINE_STATS_DIR, engineEntry, settleCounts, writeSettleCounts } from './settle-counts.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
+import { lines } from '../../src/repl-host/jsonl.mjs';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 
@@ -224,7 +225,9 @@ export class Engine {
       });
     }
     this.exited = new Promise((resolve) => this.child.once('exit', (code, signal) => resolve({ code, signal })));
-    createInterface({ input: this.child.stdout }).on('line', (line) => {
+    // LF only (src/repl-host/jsonl.mjs, #565): the engine writes a title's U+2028/U+2029 raw, where node:readline on
+    // Node 24+ would end the line
+    lines(this.child.stdout).on('line', (line) => {
       const at = now();
       let response;
       try {

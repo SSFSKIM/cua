@@ -1,0 +1,6 @@
+2026-11-23T22:53:06Z == accept head f41546d082714bf9bea87a82b30f570ef62d755e label counted device cua-171 engine installed selection default dirty=no
+2026-11-23T22:53:40Z run home /Users/new/.local/share/cua-171/t8/reg/logs/accept/home installed
+2026-11-23T22:53:46Z pinned check of /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua: exit 0, acceptance on the pinned release: /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/engine/linux/cua-engine
+2026-11-23T22:56:35Z scripts/accept/linux-native.mjs (selection default) exit 0
+2026-11-23T22:56:35Z engine watch: PASS (only /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/engine/linux/cua-engine, under the trusted worker; no sky_linux)
+2026-11-23T22:56:36Z == accept exit 0

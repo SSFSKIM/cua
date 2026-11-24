@@ -1,0 +1,3106 @@
+{
+ "driver": "m6a-acceptance-12",
+ "leg": "x64",
+ "arch": "x64",
+ "node": "v24.22.1",
+ "head": "37b40ad29b82d7c9cdf82ea108fa2ff6419097d5",
+ "release": "cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d",
+ "installer": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6a-t6/bin/cua.mjs install",
+ "older": {
+  "path": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6a-t6-older",
+  "commit": "0d19fdfadce47fc6ba88db180fb4845346c9be26",
+  "clean": true
+ },
+ "phases": [
+  "E",
+  "U"
+ ],
+ "out": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/artifact",
+ "scratch": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch",
+ "startedAt": "2026-11-23T19:49:34.456Z",
+ "cells": [
+  {
+   "cell": "E0",
+   "home": "empty",
+   "state": "-",
+   "step": "cua install at the head",
+   "passing": "exit 0; the tree, helper, Node and engine placed; the pointer the derived name; doctor's runtime.installed, runtime.modules, runtime.node and sandbox.launcher pass, its engine row the pinned version and hash behind service cua",
+   "checks": [
+    {
+     "name": "cua install exits 0, the pointer is the derived name, doctor passes the runtime's rows and the pinned engine",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "exit": 0,
+      "seconds": 35.2,
+      "doctorOk": true,
+      "rows": {
+       "platform": "pass",
+       "runtime.installed": "pass",
+       "runtime.modules": "pass",
+       "runtime.node": "pass",
+       "runtime.vendor": "pass",
+       "sandbox": "pass",
+       "sandbox.launcher": "pass",
+       "run.stale": "pass",
+       "runtime.leftovers": "pass",
+       "display": "pass",
+       "accessibility.bus": "pass",
+       "accessibility.enabled": "pass",
+       "sandbox.userns": "pass",
+       "secrets.store": "pass",
+       "secrets.project": "skip",
+       "repl.host": "pass",
+       "engine": "pass",
+       "chrome.route": "blocked",
+       "chrome.host.registered": "blocked",
+       "chrome.hosts.live": "blocked",
+       "maws.hosts": "skip",
+       "agent.installed": "skip",
+       "agent.running": "skip",
+       "agent.enrolled": "skip",
+       "agent.console": "skip",
+       "agent.relay": "skip"
+      }
+     }
+    }
+   ],
+   "runs": [],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E1",
+   "home": "empty",
+   "state": "vendor tree present",
+   "step": "the item 1 smoke and the item 6 witness, plain and under strace -f",
+   "passing": "every step passes; no sky_linux at any sample; the engine child the home's cua-engine; traced, no call of the serve's tree under runtimes/, with the kernel and the worker in the trace",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke under strace -f: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke under strace -f: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke under strace -f: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke under strace -f: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness under strace -f: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness under strace -f: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness under strace -f: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness under strace -f: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "03-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.3,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/03-smoke.out",
+     "watch": {
+      "samples": 3351,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3166886,
+        "starttime": "229565395",
+        "exe": null,
+        "skipped": "exiting"
+       },
+       {
+        "pid": 3166980,
+        "starttime": "229565457",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3166996,
+        "starttime": "229565469",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "04-smoke-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 181.8,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/04-smoke-traced.out",
+     "watch": {
+      "samples": 3599,
+      "maxSkyLinux": 0,
+      "engines": 3,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3170501,
+        "starttime": "229582417",
+        "exe": null,
+        "skipped": "exiting"
+       },
+       {
+        "pid": 3170562,
+        "starttime": "229582634",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3170566,
+        "starttime": "229582640",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3170595,
+        "starttime": "229582709",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     },
+     "trace": {
+      "file": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/04-smoke-traced.strace",
+      "processes": 162,
+      "serve": 3170507,
+      "workers": [
+       {
+        "pid": 3170583,
+        "underServe": true,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node"
+       }
+      ],
+      "helpers": [
+       3170542,
+       3170547,
+       3170567,
+       3170575
+      ],
+      "kernels": [
+       {
+        "pid": 3170548,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 332,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node"
+       }
+      ],
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "launched": [
+       "bwrap",
+       "supervisor",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "kernel",
+       "engine",
+       "engine",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "trusted-worker",
+       "engine",
+       "engine"
+      ]
+     }
+    },
+    {
+     "label": "05-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 22.6,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/05-witness.out",
+     "watch": {
+      "samples": 448,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3174231,
+        "starttime": "229600559",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3174250,
+        "starttime": "229600572",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "06-witness-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 56,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/06-witness-traced.out",
+     "watch": {
+      "samples": 1113,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3175872,
+        "starttime": "229602988",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3175934,
+        "starttime": "229603051",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     },
+     "trace": {
+      "file": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/06-witness-traced.strace",
+      "processes": 1040,
+      "serve": 3175800,
+      "workers": [
+       {
+        "pid": 3175883,
+        "underServe": true,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node"
+       }
+      ],
+      "helpers": [
+       3175851,
+       3175858,
+       3175873,
+       3175880
+      ],
+      "kernels": [
+       {
+        "pid": 3175859,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 329,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node"
+       }
+      ],
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "launched": [
+       "bwrap",
+       "supervisor",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "kernel",
+       "engine",
+       "engine",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "trusted-worker",
+       "engine",
+       "engine"
+      ]
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E2",
+   "home": "empty",
+   "state": "present",
+   "step": "the browser-only session, plain and traced; the loader",
+   "passing": "every step passes; each of the six selected entries the one named, in the module tree, and opened by the kernel in the traced run; the mapped natives the tree's; no engine process at any sample",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session under strace -f: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session under strace -f: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session under strace -f: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session under strace -f: the trace is whole, and one kernel of the serve's, on the managed Node, opened each selected entry and playwright's loaded ones after its exec; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/09-loader.out"
+     }
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "07-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.8,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/07-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 336,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    },
+    {
+     "label": "08-browser-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 21.4,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/08-browser-traced.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      },
+      "opened": [
+       {
+        "pid": 3178619,
+        "paths": [
+         "node_modules/playwright/index.mjs",
+         "node_modules/sharp/dist/index.mjs",
+         "node_modules/pixelmatch/index.js",
+         "node_modules/pngjs/lib/png.js",
+         "node_modules/jpeg-js/index.js",
+         "node_modules/classic-level/index.js",
+         "node_modules/playwright/index.js",
+         "node_modules/playwright-core/index.js"
+        ]
+       }
+      ]
+     },
+     "watch": {
+      "samples": 424,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     },
+     "trace": {
+      "file": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/08-browser-traced.strace",
+      "processes": 85,
+      "serve": 3178547,
+      "workers": [
+       {
+        "pid": 3178636,
+        "underServe": true,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node"
+       }
+      ],
+      "helpers": [
+       3178611,
+       3178618,
+       3178630,
+       3178635
+      ],
+      "kernels": [
+       {
+        "pid": 3178619,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 10513,
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/node/24.22.0/bin/node",
+        "opened": 8
+       }
+      ],
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "launched": [
+       "bwrap",
+       "supervisor",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "kernel",
+       "helper",
+       "bwrap",
+       "bwrap",
+       "bwrap",
+       "helper",
+       "trusted-worker"
+      ]
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E3",
+   "home": "empty",
+   "state": "runtimes/ moved out of the home",
+   "step": "E1 and E2, plain",
+   "passing": "as E1 and E2",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/13-loader.out"
+     }
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "10-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.4,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/10-smoke.out",
+     "watch": {
+      "samples": 3356,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3179281,
+        "starttime": "229612463",
+        "exe": null,
+        "skipped": "gone"
+       },
+       {
+        "pid": 3179356,
+        "starttime": "229612531",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3179375,
+        "starttime": "229612545",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "11-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 23,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/11-witness.out",
+     "watch": {
+      "samples": 457,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3184058,
+        "starttime": "229629423",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3184074,
+        "starttime": "229629435",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "12-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 17,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/12-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 337,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E4",
+   "home": "empty",
+   "state": "moved out",
+   "step": "a computer session with CUA_NATIVE_ENGINE=vendor, then with \"engine\": \"vendor\"",
+   "passing": "the open refused engine_not_installed, naming the installer; nothing launched; doctor's engine row fails with the sentence; a browser-only session with the variable set passes",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: the open is refused engine_not_installed, naming the installer",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: doctor's engine row fails with the sentence",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: the open is refused engine_not_installed, naming the installer",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: doctor's engine row fails with the sentence",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "open with CUA_NATIVE_ENGINE=vendor",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/14-open-vendor-env.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/14-open-vendor-env.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 2,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    },
+    {
+     "label": "open with \"engine\": \"vendor\" in engine.json",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/15-open-vendor-settings.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/15-open-vendor-settings.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 2,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    },
+    {
+     "label": "16-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.8,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/16-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 334,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E5",
+   "home": "empty",
+   "state": "moved back",
+   "step": "the vendor selection: list the apps, bind a harness gedit, read its tree; no input",
+   "passing": "the engine child this home's sky_linux behind the vendor service, no cua-engine; a cell's import from the module tree",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor selection lists the apps, binds the harness gedit and reads its tree; a cell's import loads from the module tree",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the engine child is this home's sky_linux behind the vendor service, and no cua-engine runs",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the rollback: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "17-rollback",
+     "exit": 0,
+     "signal": null,
+     "seconds": 17.3,
+     "fixture": "linux-text --read-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "list the apps",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id and read its tree",
+       "status": "PASS"
+      },
+      {
+       "name": "a cell's import still loads from the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/17-rollback.out",
+     "watch": {
+      "samples": 345,
+      "maxSkyLinux": 1,
+      "engines": 0,
+      "skyLinux": 1,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U0",
+   "home": "upgraded",
+   "state": "installed by the cua before M6a",
+   "step": "at the head, before any install: a session",
+   "passing": "refused runtime_not_installed, the vendor tree intact; the sentence names the head's own installer by absolute path and the derived release; doctor says the same",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the session at the head is refused runtime_not_installed, naming this cua's installer by absolute path and the derived release",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is intact: its install.json the same file, the release resolving, and doctor's runtime.vendor passing",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "doctor says the same: runtime.installed fails naming the installer and the release",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "open at the head",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/18-open-upgraded.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/18-open-upgraded.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 0,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U1",
+   "home": "upgraded",
+   "state": "-",
+   "step": "the older cua's cua install again",
+   "passing": "exit 0, nothing built; the session at the head refused as in U0, word for word; nothing launched",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the older cua's install exits 0 with all four of its parts changed: false, builds no module tree and keeps the vendor record",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/19-older-install-again.out"
+     }
+    },
+    {
+     "name": "the session at the head is refused as in U0, word for word",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "open at the head",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/20-open-upgraded-again.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/20-open-upgraded-again.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 0,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U2",
+   "home": "upgraded",
+   "state": "-",
+   "step": "the command U0 printed",
+   "passing": "the pointer from the vendor name to the derived one, both recorded; the tree placed; helper, Node and engine unchanged; the vendor tree's install.json the same file",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the printed command migrates the pointer, places the tree, leaves the shared parts and the vendor tree's install.json as they were",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "sandbox.launcher passes after the install",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "the printed command, --json",
+     "command": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6a-t6/bin/cua.mjs install --json",
+     "exit": 0,
+     "out": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/21-printed-install.out",
+     "expectChanged": {
+      "sandboxHelper": false,
+      "node": false,
+      "engine": false
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U3",
+   "home": "upgraded",
+   "state": "runtimes/ removed",
+   "step": "E1 and E2, plain",
+   "passing": "as E1 and E2",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/25-loader.out"
+     }
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "22-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.4,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/22-smoke.out",
+     "watch": {
+      "samples": 3354,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3191952,
+        "starttime": "229641361",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3191971,
+        "starttime": "229641373",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "23-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 22.4,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/23-witness.out",
+     "watch": {
+      "samples": 444,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3195139,
+        "starttime": "229658258",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3195156,
+        "starttime": "229658270",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "24-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.8,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/24-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 333,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U4",
+   "home": "upgraded",
+   "state": "removed",
+   "step": "E4",
+   "passing": "as E4",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: the open is refused engine_not_installed, naming the installer",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with CUA_NATIVE_ENGINE=vendor: doctor's engine row fails with the sentence",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: the open is refused engine_not_installed, naming the installer",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: nothing is launched, by the serve's trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "with \"engine\": \"vendor\" in engine.json: doctor's engine row fails with the sentence",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "a browser-only session with CUA_NATIVE_ENGINE=vendor: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "open with CUA_NATIVE_ENGINE=vendor",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/26-open-vendor-env.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/26-open-vendor-env.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 2,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    },
+    {
+     "label": "open with \"engine\": \"vendor\" in engine.json",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/27-open-vendor-settings.err",
+     "trace": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/27-open-vendor-settings.strace",
+     "launched": [],
+     "runtimes": {
+      "calls": 2,
+      "unresolved": 0,
+      "pending": 0,
+      "unended": 0,
+      "complete": true
+     }
+    },
+    {
+     "label": "28-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.8,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/28-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 333,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U5",
+   "home": "upgraded",
+   "state": "removed, and the pointer set back to the vendor name",
+   "step": "E1 and E2, plain",
+   "passing": "as E1 and E2",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the pointer is set back to the vendor name",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/32-loader.out"
+     }
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "29-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.4,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/29-smoke.out",
+     "watch": {
+      "samples": 3354,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3197545,
+        "starttime": "229664098",
+        "exe": null,
+        "skipped": "gone"
+       },
+       {
+        "pid": 3197608,
+        "starttime": "229664161",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3197624,
+        "starttime": "229664174",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "30-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 22.2,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/30-witness.out",
+     "watch": {
+      "samples": 441,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 3199912,
+        "starttime": "229681056",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 3199946,
+        "starttime": "229681068",
+        "exe": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "31-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.9,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/31-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 335,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  }
+ ],
+ "measured": {
+  "importsOlder": {
+   "base": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua/runtimes/26.928.40906-linux-x64/cua_node/lib",
+   "imported": {
+    "playwright": {
+     "code": null,
+     "message": "The requested module './index.js' does not provide an export named 'default'"
+    },
+    "sharp": {
+     "code": null,
+     "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+    },
+    "pixelmatch": "ok",
+    "pngjs": "ok",
+    "jpeg-js": "ok",
+    "classic-level": "ok"
+   },
+   "used": {
+    "playwright": "ok",
+    "sharp": "ok",
+    "classic-level": "ok"
+   },
+   "via": {
+    "playwright": "require",
+    "sharp": "require",
+    "classic-level": "import"
+   },
+   "natives": 3
+  },
+  "moduleStep": {
+   "seconds": 1.4,
+   "tarballBytes": 14250576,
+   "packages": 23,
+   "treeBytes": 39875835
+  },
+  "importsHere": {
+   "base": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+   "imported": {
+    "playwright": {
+     "code": null,
+     "message": "The requested module './index.js' does not provide an export named 'default'"
+    },
+    "sharp": {
+     "code": null,
+     "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+    },
+    "pixelmatch": "ok",
+    "pngjs": "ok",
+    "jpeg-js": "ok",
+    "classic-level": "ok"
+   },
+   "used": {
+    "playwright": "ok",
+    "sharp": "ok",
+    "classic-level": "ok"
+   },
+   "via": {
+    "playwright": "require",
+    "sharp": "require",
+    "classic-level": "import"
+   },
+   "natives": 3
+  },
+  "firstAnswerHere": {
+   "samples": [
+    746,
+    760,
+    759,
+    731,
+    798,
+    824,
+    810,
+    807,
+    759,
+    751,
+    741,
+    722,
+    781,
+    780,
+    791,
+    780,
+    803,
+    852,
+    787,
+    760
+   ],
+   "median": 780,
+   "min": 722,
+   "max": 852
+  },
+  "firstAnswerOlder": {
+   "samples": [
+    707,
+    707,
+    696,
+    807,
+    795,
+    711,
+    766,
+    776,
+    738,
+    777,
+    743,
+    714,
+    736,
+    711,
+    776,
+    731,
+    706,
+    715,
+    780,
+    741
+   ],
+   "median": 737,
+   "min": 696,
+   "max": 807
+  }
+ },
+ "preconditions": {
+  "display": ":99",
+  "sandbox": "(unset: scoped)",
+  "engine": null,
+  "problems": []
+ },
+ "environment": {
+  "pass": true,
+  "problems": [],
+  "rows": {
+   "display": "pass",
+   "accessibility.bus": "pass",
+   "accessibility.enabled": "pass",
+   "sandbox.userns": "pass"
+  }
+ },
+ "upgradedHome": {
+  "home": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/upgraded/cua",
+  "olderInstall": {
+   "exit": 0,
+   "seconds": 32.2,
+   "out": "/Users/new/.local/share/cua-171/m6a-t6/runs/pilot4-x64/scratch/01-older-install.out"
+  },
+  "vendorRelease": "26.928.40906-linux-x64",
+  "pinnedRelease": "26.928.40906-linux-x64",
+  "vendorRow": "pass",
+  "problems": []
+ },
+ "finishedAt": "2026-11-23T20:10:40.780Z",
+ "verdict": {
+  "pass": true,
+  "scope": "full",
+  "acceptance": true,
+  "cells": {
+   "E0": "PASS",
+   "E1": "PASS",
+   "E2": "PASS",
+   "E3": "PASS",
+   "E4": "PASS",
+   "E5": "PASS",
+   "U0": "PASS",
+   "U1": "PASS",
+   "U2": "PASS",
+   "U3": "PASS",
+   "U4": "PASS",
+   "U5": "PASS"
+  },
+  "missing": []
+ }
+}

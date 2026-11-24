@@ -179,9 +179,13 @@ test('--engine-sign alone selects nothing; on Linux --engine keeps its meaning a
   const linux = fixture(t, {platform: 'linux', env: {CUA_NATIVE_ENGINE: 'cua'}});
   linux.deps.installEngine = async () => { linux.events.push('linux engine'); return {path: '/fixture/cua-engine', version: '0.4.3', release: 'linux-engine-v0.4.3', sha256: BUILD, changed: true}; };
   linux.deps.enginePin = () => ({version: '0.4.3', release: 'linux-engine-v0.4.3'});
+  // cua's own runtime's module tree, stubbed as the helper is (#171 M6a: the Linux install places it first).
+  linux.deps.installModules = async () => { linux.events.push('modules'); return {root: '/fixture/modules', changed: false}; };
   const l = await invoke(linux.deps, ['--engine', '--json']);
   assert.equal(l.status, 0, l.stderr);
-  assert.deepEqual(linux.events, ['runtime', 'helper', 'linux engine']);
+  // On Linux the vendor's tree is the last lane, after cua's own runtime and engine (#171 M6a, src/runtime/linux-install.mjs);
+  // it runs only where the fixture's pin is one for this host's architecture, and its failure is not this test's.
+  assert.deepEqual(linux.events.filter(step => step !== 'runtime'), ['modules', 'helper', 'linux engine']);
   assert.equal(JSON.parse(l.stdout).engine.release, 'linux-engine-v0.4.3');
 });
 

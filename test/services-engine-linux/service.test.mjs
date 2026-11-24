@@ -8,6 +8,10 @@ import {createService, kernelReset as linuxKernelReset, LINUX_METHODS} from '../
 import {createSkyService, kernelReset as skyKernelReset} from '../../src/services/sky.mjs';
 import {ANIMATED_ACTION, ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
 import {fakeLinuxEngine, SHOT_BYTES, TREE, WINDOWS} from '../helpers/fake-linux-engine.mjs';
+import {ownInstaller} from '../../src/runtime/installer.mjs';
+
+// The service's remedy: this cua's own installer by its absolute path, with --engine (F9; task 153).
+const REMEDY = `run \`${ownInstaller().command} --engine\``;
 
 const W = WINDOWS[0];
 const JPEG_URL = `data:image/jpeg;base64,${SHOT_BYTES.toString('base64')}`;
@@ -50,7 +54,7 @@ test('setup answers the vendor\'s target and its 20 methods in order, starting t
 });
 
 test('an engine the service cannot drive: setup still answers the methods, every method then refuses with the sentence before anything is sent, and the next call retries', async t => {
-  const OLD = 'cua-engine 0.3.0 is older than 0.4.4, which this cua needs; run cua install --engine';
+  const OLD = `cua-engine 0.3.0 is older than 0.4.4, which this cua needs; ${REMEDY}`;
   const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const svc = service(t, old);
   assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS}, 'the facade gets its methods, never a rejected setup');
@@ -66,7 +70,7 @@ test('an engine the service cannot drive: setup still answers the methods, every
   const missing = `${old.dir}/absent`;
   const unspawnable = service(t, {path: missing});
   assert.deepEqual((await unspawnable.handleRpc({type: 'setup'})).methods, LINUX_METHODS);
-  await assert.rejects(execute(unspawnable, 'press_key', {key: 'a'}), {message: `cua-engine at ${missing} could not be run (ENOENT); run cua install --engine`});
+  await assert.rejects(execute(unspawnable, 'press_key', {key: 'a'}), {message: `cua-engine at ${missing} could not be run (ENOENT); ${REMEDY}`});
 
   const unconfigured = createService({env: {}});
   assert.deepEqual((await unconfigured.handleRpc({type: 'setup'})).methods, LINUX_METHODS);
@@ -84,7 +88,7 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
   // T8 (Decision Log, 2026-11-07, binding on T18): `animated_action` is new in 0.4.0, so a 0.3.0 engine answers an
   // element action with null, and GTK 4's and Qt's actions would settle as a plain element click. No fallback is built;
   // the version gate refuses that engine instead, before anything is sent and before the settler defers anything.
-  const OLD = 'cua-engine 0.3.0 is older than 0.4.4, which this cua needs; run cua install --engine';
+  const OLD = `cua-engine 0.3.0 is older than 0.4.4, which this cua needs; ${REMEDY}`;
   const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const events = [];
   const svc = service(t, old, {settler: recordingSettler(events)});
@@ -110,7 +114,7 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
 const CURRENT = 'cua-engine 0.4.4 (23f342178d94)';
 async function assertRefusedBeforeAnything(t, versionLine) {
   const found = versionLine.split(' ')[1];
-  const OLD = `cua-engine ${found} is older than 0.4.4, which this cua needs; run cua install --engine`;
+  const OLD = `cua-engine ${found} is older than 0.4.4, which this cua needs; ${REMEDY}`;
   const old = fakeLinuxEngine(t, {version: versionLine});
   const events = [];
   const svc = service(t, old, {settler: recordingSettler(events)});

@@ -20,8 +20,9 @@ import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
-import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
-import {engineLookup} from './linux-engine.mjs';
+import {helperFor, verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
+import {ownInstaller} from './installer.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
@@ -98,16 +99,20 @@ const within = (path, root) => {
 // launch $CUA_HOME/sandbox (`sandboxHelper`: the Linux helper, which runs outside every sandbox; writable, a cell could
 // swap what confines the next child, or plant a bubblewrap beside it). A Linux launch adds cua's engine (`engines`,
 // #171: $CUA_HOME/engine, and the canonical engine file a session runs, installed or CUA_LINUX_ENGINE_BIN's; the trusted worker
-// runs it as its child; writable, a cell could swap what reads every window and types into it). A Linux own-host launch adds the XDG
+// runs it as its child; writable, a cell could swap what reads every window and types into it), and cua's module trees
+// (`modules`, #171 M6a: $CUA_HOME/modules, the ModuleTree cells import from and cua's own CLI loads classic-level from
+// outside every sandbox; no trusted code, since nothing trusted imports from it, but writable, a cell could plant what
+// the next session's cells, or the CLI, load). A Linux own-host launch adds the XDG
 // applications directories of its environment (`applications`, src/repl-host/launch-services.mjs: launch_app starts
 // their desktop entries outside the sandbox; writable, a cell could plant one), whether they exist yet or not.
-export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, engines = [], applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, engines = [], modules, applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(sandboxHelper ? [{label: 'cua\'s sandbox helper', path: sandboxHelper}] : []),
   ...engines.filter(Boolean).map(path => ({label: 'cua\'s Linux engine', path})),
+  ...(modules ? [{label: 'cua\'s module trees', path: modules}] : []),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
   ...applications.map(path => ({label: 'the XDG applications directory launch_app starts entries from', path})),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
@@ -224,7 +229,7 @@ export function assertDenyListShape(list) {
 // (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its home's install staging
 // (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`), cua's Linux engine (`launch.engineRoot`,
 // and `launch.linuxEngine`'s canonical file, whatever its source, with any symbolic link on its lookup path lying in a
-// write root) or its deny list (`launch.denyRead`,
+// write root), its home's module trees (`launch.modulesRoot`) or its deny list (`launch.denyRead`,
 // except for its own run directory and session temp), whichever host it runs: a vendor session's cells must not choose
 // a later own host's Node, or what an install places, either.
 //
@@ -237,24 +242,30 @@ export function assertSandboxFits(mode, launch) {
   if (launch.compat) assertVendorLauncher(launch.env.CODEX_CLI_PATH);
   if (launch.denyRead) assertDenyListShape(launch.denyRead);
   if (mode !== 'scoped') return;
+  if (launch.modulesRoot) assertHomeRootsOutsideVendorTree(launch);   // a Linux launch
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
       managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
-      engines: [launch.engineRoot, launch.linuxEngine?.path],
+      engines: [launch.engineRoot, launch.linuxEngine?.path], modules: launch.modulesRoot,
       applications: launch.env.CUA_REPL_SANDBOX_HELPER ? xdgApplicationRoots(launch.env) : [],
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
-  conflicts.push(...engineLinkConflicts(launch.linuxEngine?.lookup, scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR})));
+  conflicts.push(...engineLinkConflicts(launch, scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR})));
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
 }
 
-// The symbolic links on the path cua's Linux engine was found by (src/runtime/linux-engine.mjs engineLookup) that lie
-// in a write root, where a cell could re-point one: each is a conflict, though the engine it leads to lies outside.
-// A link is compared by where it lies (its directory's real path and its name), never by its target.
-function engineLinkConflicts(lookup, writeRoots) {
-  if (!lookup) return [];
-  const links = engineLookup(lookup).links.map(link => join(realish(dirname(link)), basename(link)));
+// The symbolic links on the path cua's Linux engine was found by that lie in a write root, where a cell could re-point
+// one: each is a conflict, though the engine it leads to lies outside. A link is compared by where it lies (its
+// directory's real path and its name), never by its target. The links are the ones the selection's own resolution
+// followed (`launch.linuxEngine.links`, src/runtime/launch.mjs), carried here so nothing walks the lookup another way;
+// a selection that carries none (an injected one) has its lookup walked again by the same resolver, which keeps out of
+// the vendor's tree (src/runtime/vendor-tree.mjs).
+function engineLinkConflicts(launch, writeRoots) {
+  const engine = launch.linuxEngine;
+  if (!engine?.lookup) return [];
+  const links = (engine.links ?? outsideVendorTree(engine.lookup, launch.engineRoot ? dirname(launch.engineRoot) : undefined).links ?? [])
+    .map(link => join(realish(dirname(link)), basename(link)));
   const conflicts = [];
   for (const root of writeRoots.filter(r => r.path)) {
     const path = realish(root.path);
@@ -270,6 +281,43 @@ function assertVendorLauncher(path) {
     {hint: 'restore cua\'s checkout (bin/cua-codex-compat), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
 }
 
+// The Linux sandbox helper at `path` as every check and every launch takes it (#171 M6a; the pre-flight's §3.5): resolved
+// as the kernel resolves it and kept out of the vendor's tree of the real cua home `home` (outsideVendorTree), then
+// verified at that resolution (src/sandbox/linux.mjs verifyHelper) -> {path: the resolution, sha256}, the path a launch
+// names and runs. One that leads into the tree is refused before anything there is read (sandbox_unavailable), naming
+// the link to move aside (`context.blocking`), since the installer would take the place it leads to as the helper.
+export function guardedLinuxHelper({home, path, sha256, verifyHelper = verifyLinuxHelper}) {
+  return verifyHelper({path: helperOutsideVendorTree({home, path}), sha256});
+}
+// The helper's path as guardedLinuxHelper resolves it, before anything reads it -> its real path (or `path` as spelled,
+// where a part of it does not exist, for the check to report). Also what a confined launch's construction names the
+// helper by (launch.mjs), so a later launch of a connection, which repeats no preflight, refuses one that has become a
+// link into the tree since the open.
+export function helperOutsideVendorTree({home, path}) {
+  const at = typeof path === 'string' && isAbsolute(path) ? outsideVendorTree(path, home) : {};
+  if (at.lead) {
+    const blocking = at.links[0] ?? path;
+    fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: it is neither read nor run, and nothing was started`,
+      {hint: `move ${blocking} aside, then run \`${ownInstaller().command}\` to place the pinned helper`, context: {blocking}});
+  }
+  return at.real ?? path;
+}
+
+// The directories of a Linux launch's own cua home that the scoped preflight protects by their real paths (its managed
+// Node, staging, sandbox helper, engine and module trees): each is walked by the guard first, so one that is a link into
+// the vendor's tree is refused, naming that link, before anything resolves it there (#171 M6a, task 156).
+function assertHomeRootsOutsideVendorTree(launch) {
+  const home = dirname(launch.modulesRoot);
+  for (const root of [launch.managedNodeRoot, launch.stagingRoot, launch.sandboxHelperRoot, launch.engineRoot, launch.modulesRoot].filter(Boolean)) {
+    const at = outsideVendorTree(root, home);
+    if (at.lead) fail('sandbox_conflict', `${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the scoped sandbox protects it by its real path, which is not resolved there; nothing was started`,
+      {hint: `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``});
+  }
+}
+// The pinned helper `cua install` placed in the real cua home `home` for `arch`, as guardedLinuxHelper takes it: doctor's
+// sandbox.launcher row and install's readiness check it as a session does.
+export const installedLinuxHelper = ({home, arch}) => guardedLinuxHelper({home, ...helperFor({home, arch})});
+
 // Linux: cua's sandbox helper (src/sandbox/linux.mjs) confines both children of a scoped or default launch, so before
 // anything starts the launch's helper must be the pinned one (the bytes `cua install` placed, checked against the pin
 // again: `verifyHelper`), and bubblewrap must be able to create an unprivileged user namespace (`probe`, doctor's
@@ -279,7 +327,8 @@ function assertVendorLauncher(path) {
 export const SANDBOX_UNAVAILABLE_HINT = `${USERNS_REMEDY}; install bubblewrap if it is missing; or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`;
 export async function assertSandboxConfines(mode, {platform, launch, probe = bwrapUserns, verifyHelper = verifyLinuxHelper}) {
   if (mode === 'disabled' || platform !== 'linux') return;
-  verifyHelper({path: launch.env.CUA_REPL_SANDBOX_HELPER, sha256: launch.env.CUA_REPL_SANDBOX_HELPER_SHA256});
+  guardedLinuxHelper({home: launch.sandboxHelperRoot ? dirname(launch.sandboxHelperRoot) : undefined,
+    path: launch.env.CUA_REPL_SANDBOX_HELPER, sha256: launch.env.CUA_REPL_SANDBOX_HELPER_SHA256, verifyHelper});
   const found = await probe();
   if (found.status === 'pass') return;
   const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'

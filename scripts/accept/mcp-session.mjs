@@ -8,9 +8,10 @@ import {createInterface} from 'node:readline';
 // the exit (or by dispose) never keeps the caller alive.
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms).unref());
 
-// `detached`: the server in its own process group, out of reach of a terminal's signal to the caller's group.
-export function openSession({args, env, onServerRequest = () => ({action: 'decline'}), clientName = 'cua-accept', detached = false}) {
-  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env, ...(detached ? {detached: true} : {})});
+// `detached`: the server in its own process group, out of reach of a terminal's signal to the caller's group. `command`:
+// what runs `args` (this Node by default; acceptance 12's refusal cells run the serve under strace).
+export function openSession({args, env, onServerRequest = () => ({action: 'decline'}), clientName = 'cua-accept', detached = false, command = process.execPath}) {
+  const child = spawn(command, args, {stdio: ['pipe', 'pipe', 'pipe'], env, ...(detached ? {detached: true} : {})});
   const transcript = [];
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });

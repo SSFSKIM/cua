@@ -13,6 +13,8 @@ import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {claimRunSession} from '../src/runtime/run-dir.mjs';
 import {compatFiles, locateSettings, readSettings} from '../src/sandbox/compat-settings.mjs';
 import {fixturePin, linuxFixturePin, scratch, scratchUserHome} from './fixtures/runtime-fixture.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-0000000000c2';
 
@@ -43,6 +45,7 @@ test('the macOS vendor host names the compat executable and its Node; bin/ is tr
 
 test('Linux has no compat executable: its own host names no Codex CLI, compat Node or settings', t => {
   const {home, runtime} = runtimeOf(t, linuxFixturePin({arch: 'x64', sha256: 'a'.repeat(64), length: 1}));
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);   // a Linux computer session needs cua's engine since #171 M6a
   const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: ambient(t), resolveOwnNode: () => '/opt/node-24/bin/node'});
   assert.deepEqual([launch.env.CODEX_CLI_PATH, launch.env.CODEX_HOME, launch.env.CUA_COMPAT_NODE, launch.compat], [undefined, undefined, undefined, null]);
 });

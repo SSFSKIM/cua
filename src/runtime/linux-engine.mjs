@@ -11,14 +11,16 @@
 // decide what the engine is, never the record alone: the pinned asset's SHA-256 is the pinned engine whatever the
 // record says, and the record names an engine only while its SHA-256 is the file's (inspectLinuxEngine). `cua engine
 // build` places a local `cargo build --release` of the checkout the same way, recorded as `local` (buildLinuxEngine).
-import {accessSync, chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {accessSync, chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
-import {dirname, join, resolve} from 'node:path';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {findTool} from './tools.mjs';
+import {ownInstaller} from './installer.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const ENGINE_PIN_FILE = join(REPO_ROOT, 'runtime', 'engine', 'linux-engine.json');
@@ -104,27 +106,6 @@ export function executableFile(path) {
   try { return statSync(path).isFile() && (accessSync(path, constants.X_OK), true); } catch { return false; }
 }
 
-// How the absolute `path` is reached -> {real, links}: `real` its canonical path (every symbolic link on the way
-// followed, a missing tail kept as spelled), `links` where each of those links itself lies (its directory's real path
-// and its name), in the order followed. A launch names only `real`; the scoped preflight refuses `links` inside a
-// writable root, where a cell could re-point one before the next lookup (src/runtime/sandbox.mjs).
-export function engineLookup(path, depth = 0) {
-  if (depth > 40) fail('engine_not_installed', `${path}: too many levels of symbolic links`);
-  const links = [];
-  let current = '/';
-  for (const part of path.split('/').filter(Boolean)) {
-    const next = join(current, part);
-    let link = null;
-    try { if (lstatSync(next).isSymbolicLink()) link = readlinkSync(next); } catch { link = null; }
-    if (link === null) { current = next; continue; }
-    links.push(next);
-    const followed = engineLookup(resolve(current, link), depth + 1);
-    links.push(...followed.links);
-    current = followed.real;
-  }
-  return {real: current, links};
-}
-
 // The engine `cua install` or `cua engine build` placed in the cua home `home` -> {path, lookup}, or null when nothing a
 // session could execute is there: `path` its canonical path (what a launch names), `lookup` the home's engine path it
 // was found by. Nothing is read but the file's metadata: what the engine is, is doctor's (inspectLinuxEngine).
@@ -135,9 +116,9 @@ export function installedLinuxEngine({home}) {
 }
 
 // install.json in the cua home `home`, or null when it is absent or not a record this cua wrote.
-export function readEngineRecord(home) {
+export function readEngineRecord(home, file = recordPath(home)) {
   let record;
-  try { record = JSON.parse(readFileSync(recordPath(home), 'utf8')); } catch { return null; }
+  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
   const valid = isObject(record) && record.schema === 1 && BUILDS.includes(record.build) && typeof record.version === 'string' && VERSION.test(record.version)
     && typeof record.sha256 === 'string' && SHA256.test(record.sha256);
   return valid ? record : null;
@@ -156,10 +137,22 @@ export function writeEngineRecord(home, record) {
   }
 }
 
+// The engine, its record, or a directory above them in the real cua home `home`, that leads into the vendor's tree is
+// refused by every session (launch.mjs linuxEngineFor), so an install neither reads it as the installed engine nor
+// writes through it: target_occupied, naming the link to move aside first, as the session's refusal does (#171 M6a).
+export function assertEnginePathsOutsideVendorTree(home) {
+  for (const path of [linuxEnginePath(home), recordPath(home)]) {
+    const {lead, links} = outsideVendorTree(path, home);
+    if (lead) fail('target_occupied', `${path} leads to ${lead}, under the vendor's tree, and cua does not install its engine through it`,
+      {hint: `move ${links[0] ?? path} aside, then run \`${ownInstaller().command} --engine\``});
+  }
+}
+
 // Moves `staged` (a verified file in the home's staging directory, on the same volume) to the engine's path with one
 // rename, 0755 in a 0755 directory, then writes `record`. A running engine keeps the file it was started from. A
-// directory at the path is refused (target_occupied) and left as it is.
+// directory at the path is refused (target_occupied) and left as it is, and so is a link into the vendor's tree.
 export function placeLinuxEngine({home, staged, record}) {
+  assertEnginePathsOutsideVendorTree(home);
   const path = linuxEnginePath(home);
   mkdirSync(linuxEngineDir(home), {recursive: true, mode: 0o755});
   let existing = null;
@@ -177,16 +170,20 @@ export function placeLinuxEngine({home, staged, record}) {
 // file holds the pinned asset's bytes, else the record's build (`pinned` from another release, or `local`) while the
 // record's SHA-256 is the file's, else `unknown`; null when there is no file. `pinned` is this cua's pin for `arch`
 // ({version, release, sha256}) or null; `current` says the placed engine is exactly that.
-export function inspectLinuxEngine({home, arch, pin}) {
+export function inspectLinuxEngine({home, arch, pin, at}) {
   const real = realHome(home);
   const path = linuxEnginePath(real);
+  // `at` ({engine, record}: their resolved paths, null for one that does not resolve) reads the bytes and the record a
+  // caller already resolved and approved (launch.mjs's selection, which keeps them out of the vendor's tree), instead
+  // of resolving the home's paths again; `path` still names the home's engine path.
+  const bytesAt = at ? at.engine : path;
   const pinned = pin && ARCHES.includes(arch) ? {version: pin.version, release: pin.release, sha256: pin.assets[arch].sha256} : null;
   let bytes = null;
-  try { if (statSync(path).isFile()) bytes = readFileSync(path); } catch { bytes = null; }
-  const facts = {path, exists: bytes !== null, executable: bytes !== null && executableFile(path), sha256: bytes && sha256Of(bytes), build: null, version: null, release: null, pinned, current: false};
+  try { if (bytesAt && statSync(bytesAt).isFile()) bytes = readFileSync(bytesAt); } catch { bytes = null; }
+  const facts = {path, exists: bytes !== null, executable: bytes !== null && executableFile(bytesAt), sha256: bytes && sha256Of(bytes), build: null, version: null, release: null, pinned, current: false};
   if (!bytes) return facts;
   if (pinned && facts.sha256 === pinned.sha256) return {...facts, build: 'pinned', version: pinned.version, release: pinned.release, current: true};
-  const record = readEngineRecord(real);
+  const record = at ? (at.record ? readEngineRecord(real, at.record) : null) : readEngineRecord(real);
   if (record?.sha256 === facts.sha256) return {...facts, build: record.build, version: record.version, release: record.release ?? null};
   return {...facts, build: 'unknown'};
 }
@@ -196,8 +193,8 @@ export function inspectLinuxEngine({home, arch, pin}) {
 // install.json's while that record's SHA-256 is the file's; null when there is no file, or no record of it (absent,
 // unreadable, or another file's: placeLinuxEngine renames the file before it writes the record, so an interrupted
 // downgrade leaves an older engine beside a newer record). Reads the file whole, about 2 MB.
-export function verifiedLinuxEngineVersion({home, arch = process.arch, pin = pinOrNone()}) {
-  const facts = inspectLinuxEngine({home, arch, pin});
+export function verifiedLinuxEngineVersion({home, arch = process.arch, pin = pinOrNone(), at}) {
+  const facts = inspectLinuxEngine({home, arch, pin, at});
   return facts.exists && facts.build !== 'unknown' ? facts.version : null;
 }
 // This cua's pin, or none where it cannot be read: the record alone then names the version.

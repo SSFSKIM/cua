@@ -2,12 +2,15 @@
 # Print the cloud-init user data for a cua device VM (cloud-init.yaml with its parameters filled in), for any provider
 # that takes user data. create-hetzner.sh uses it; on another provider, pass its output as the server's user data.
 #
-#   deploy/cloud-vm/render.sh [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<local file>]
+#   deploy/cloud-vm/render.sh [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>]
 #       [--relay wss://<relay>/ws] [--extension hosted|store] [--extension-url https://<host>/ext/update.xml]
 #
-# --deb: `pin` (default) downloads the pin's official URL on the VM; an https URL downloads a mirror instead; a local
-# file means the operator copies it to the VM's /var/cache/cua/upload.deb (create-hetzner.sh --deb does), and the VM
-# waits for it. Either way the VM checks the bytes against the pin's sha256 before installing.
+# --deb: the vendor's deb, which only CUA_NATIVE_ENGINE=vendor needs (#171 M6a). `none` (default) fetches and waits for
+# nothing: the VM installs cua's own runtime, and its cua install only tries the pin's URL for the vendor's tree. The
+# others ask for that tree, after cua's own runtime is in place: `pin` downloads the pin's official URL on the VM; an
+# https URL downloads a mirror instead; a local file means the operator copies it to the VM's
+# /var/cache/cua/upload.deb (create-hetzner.sh --deb does), and the VM waits for it. Either way the VM checks the bytes
+# against the pin's sha256 before installing.
 # --repo: the repository the VM clones (default https://github.com/SSFSKIM/cua); a local file is a git bundle holding
 # --ref (`git bundle create cua.bundle <ref>`, for a ref that is not pushed) that the operator copies to the VM's
 # /var/cache/cua/cua.bundle (create-hetzner.sh --repo does), and the VM waits for it.
@@ -16,9 +19,9 @@
 # Chrome Web Store listing.
 set -euo pipefail
 
-user=cua ref=main deb=pin relay='' repo=https://github.com/SSFSKIM/cua
+user=cua ref=main deb=none relay='' repo=https://github.com/SSFSKIM/cua
 extension=hosted extension_url=https://178-104-102-73.sslip.io/ext/update.xml
-usage() { echo "usage: $0 [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<local file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
+usage() { echo "usage: $0 [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
 while (($#)); do
   (($# >= 2)) || usage
   case "$1" in
@@ -40,9 +43,9 @@ plain_https='^https://[A-Za-z0-9._:/@%+~=-]+$'
 [[ "$extension" == hosted || "$extension" == store ]] || { echo "--extension is hosted or store: $extension" >&2; exit 2; }
 [[ "$extension_url" =~ $plain_https ]] || { echo "not a plain https URL: $extension_url" >&2; exit 2; }
 case "$deb" in
-  pin) ;;
+  none|pin) ;;
   https://*) [[ "$deb" =~ $plain_https ]] || { echo "not a plain https URL: $deb" >&2; exit 2; } ;;
-  *) [[ -f "$deb" ]] || { echo "--deb is neither pin, an https URL nor a file: $deb" >&2; exit 2; }
+  *) [[ -f "$deb" ]] || { echo "--deb is neither none, pin, an https URL nor a file: $deb" >&2; exit 2; }
      deb=upload ;;
 esac
 case "$repo" in

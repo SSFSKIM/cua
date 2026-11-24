@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// The fallback homes of #171 M5 (the pre-flight's §3, F5 and F5a): a run home `cua install` made, shaped into one where
-// the default must keep the vendor's engine. Each is how a person's home can stand when cua is updated:
+// The fallback homes of #171 M5 (its pre-flight's §3, F5 and F5a): a run home `cua install` made, shaped into one with no
+// usable engine of cua's, where M5's default kept the vendor's engine and, since #171 M6a (F3), the default refuses every
+// computer session for the home's own reason (scripts/accept/linux-fallback.mjs probes that). Each is how a person's home
+// can stand when cua is updated:
 //   none        no cua engine: a home that never installed one (its engine and install.json removed)
-//   previous    linux-engine-v0.4.2, the pin just before this cua's: the newest engine below MIN_ENGINE_VERSION, a home
-//               that installed the last pin and was then updated; placed as `older` is
-//   released    linux-engine-v0.4.0, the engine the released plugin pins (main): the upgrade every home installed from
-//               a released cua meets; placed as `older` is
+//   previous    linux-engine-v0.4.3, the pin before this cua's (main's from M5, da7585c3, until 0.4.4's) and below
+//               MIN_ENGINE_VERSION: a home that installed the last released pin and was then updated; placed as `older` is
+//   released    linux-engine-v0.4.0, M4's release, main's pin before M5: a home installed from a released cua before
+//               0.29.0 and then updated; placed as `older` is
 //   older       linux-engine-v0.3.0, older than this cua needs, placed by cua's own install step from that release's
 //               pin, so its bytes are checked against the pin and its install.json is the one 0.3.0's install wrote
 //   unrecorded  the current install.json beside 0.3.0's executable: an interrupted downgrade (placeLinuxEngine renames
@@ -19,17 +21,18 @@ import {installLinuxEngine} from '../../src/runtime/install.mjs';
 import {homeLayout, realHome} from '../../src/runtime/layout.mjs';
 import {inspectLinuxEngine, linuxEngineDir, linuxEnginePath, loadEnginePin, parseEnginePin, readEngineRecord, verifiedLinuxEngineVersion} from '../../src/runtime/linux-engine.mjs';
 
-// linux-engine-v0.4.2's pin, as runtime/engine/linux-engine.json held it from fdacae86 until 0.4.3's (0710ebc1).
+// linux-engine-v0.4.3's pin, as runtime/engine/linux-engine.json held it on main from M5 (da7585c3) until 0.4.4's
+// (da927265).
 export const PREVIOUS_PIN = parseEnginePin({
-  version: '0.4.2',
-  release: 'linux-engine-v0.4.2',
+  version: '0.4.3',
+  release: 'linux-engine-v0.4.3',
   assets: {
-    x64: {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.2/cua-engine-0.4.2-linux-x64', sha256: 'a1314106a388167191670d38c0b67292617fe0f7e929f133ff7343b4a8a85a78'},
-    arm64: {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.2/cua-engine-0.4.2-linux-arm64', sha256: '25035ca1b4c8f2c4dd42568e570f54f5994da0f894a84c036d59eedc58f1092f'},
+    x64: {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.3/cua-engine-0.4.3-linux-x64', sha256: 'f1513e79f4efdb3dd950e108fec05ce59b090926907a3071ee65ca3899d4921f'},
+    arm64: {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.3/cua-engine-0.4.3-linux-arm64', sha256: 'dd74e19b44596f992dd120b13fbbe8021a7ca0af581c07496f5cee8f5edbcf1e'},
   },
 });
 // linux-engine-v0.4.0's pin, as runtime/engine/linux-engine.json held it from M4's release (78b4959c) until 0.4.1's
-// (df720b0d), and as the released plugin (main) still pins it.
+// (df720b0d); main pinned it until M5 (da7585c3).
 export const RELEASED_PIN = parseEnginePin({
   version: '0.4.0',
   release: 'linux-engine-v0.4.0',
@@ -80,7 +83,7 @@ export async function shapeFallbackHome({home, kind, olderPin = OLDER_PIN, relea
     record: record && {version: record.version, sha256: record.sha256}, verifiedVersion: verifiedLinuxEngineVersion({home: real, arch: host.arch, pin})};
 }
 
-// What each kind must read as, for the selection to keep the vendor's engine for that kind's reason.
+// What each kind must read as, for the selection to refuse cua's engine for that kind's reason.
 export function shapeProblem(shaped) {
   const {kind, engine, record, verifiedVersion} = shaped;
   if (kind === 'none') return engine === null ? null : 'an engine is still placed';

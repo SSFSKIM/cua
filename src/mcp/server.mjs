@@ -58,7 +58,6 @@
 // reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
 // (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
-import {createInterface} from 'node:readline';
 import {TaskLifecycle} from './task.mjs';
 import {openConnection} from './connection.mjs';
 import {projectRoot} from '../secrets/project.mjs';
@@ -75,6 +74,7 @@ import {runtimeIdleFrom} from './lazy-runtime.mjs';
 import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {approvalConnectionId, approvalMemory} from './approval-memory.mjs';
+import {jsonLine, lines} from '../repl-host/jsonl.mjs';
 
 // The request metadata that carries profiles_list's keys to the browser service, and the keys whose browser the
 // running runtime cannot reach (src/browser-service/browsers.mjs; not imported, so this process loads none of the
@@ -141,7 +141,7 @@ export function createServer({
   output.on('close', transportLost);
   const write = msg => {
     if (!transportOpen || output.destroyed || output.writableEnded) return;
-    output.write(JSON.stringify(msg) + '\n');
+    output.write(jsonLine(msg));
   };
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
@@ -398,10 +398,10 @@ export function createServer({
     upstream.send({...approvals.fromClient(pending.params, msg, pending.generation), id: pending.upstreamId});
   }
 
-  // readline re-emits an input error on its interface, where an unhandled one would throw out of the stream before
+  // The line reader re-emits an input error on itself, where an unhandled one would throw out of the stream before
   // the input's own listener runs; both lead to the same close.
   const inputFailed = () => close('eof');
-  createInterface({input}).on('line', line => {
+  lines(input).on('line', line => {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return respondError(null, -32700, 'Parse error'); }
@@ -531,7 +531,7 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // `engine` are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
-  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot()}) {
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot(process.cwd(), {env, home})}) {
   let settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   if (mawsPaths.length) settings = settingsFrom(env, {devices: true, inAppBrowser: true});

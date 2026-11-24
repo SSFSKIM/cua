@@ -128,3 +128,31 @@ test("a development run's engine X trace: a proxy a series, the engine's display
   assert.throws(() => parseArgs([...run, '--trace-engine']), /--trace-engine is a development run's/);
   assert.throws(() => parseArgs(['--experiment', 'dnd', '--vendor', '/v', '--cua', '/c', '--out', '/o', '--trace-engine']), /--trace-engine is a development run's/);
 });
+
+// #565 (ruling 1192): cua-engine writes a window title's U+2028/U+2029 raw (wire.rs to_line), and on Node 24+
+// node:readline ended a line there, so the answer came apart into two unparsable lines and its request went
+// unanswered. The harness reads the engine's stdout at LF only.
+const SEPARATORS = `#!${process.execPath}
+const { createInterface } = require('node:readline');
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const { id } = JSON.parse(line);
+  const title = 'Inbox' + String.fromCharCode(0x2028) + 'draft' + String.fromCharCode(0x2029) + 'end';
+  process.stdout.write(JSON.stringify({ id, ok: true, output: { windows: [{ id: 7, title }] } }) + '\\n');
+});
+`;
+
+test('a window title holding LS and PS comes back in one answer, with no parse error', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-engine-separators-'));
+  const bin = join(dir, 'fake-engine.cjs');
+  writeFileSync(bin, SEPARATORS);
+  chmodSync(bin, 0o700);
+  const engine = new Engine({ label: 'cua', bin }).start();
+  try {
+    const { response } = await engine.request('list_windows', {}, { timeoutMs: 5000 });
+    assert.equal(response.ok, true, response.error);
+    assert.deepEqual([...response.output.windows[0].title].map((c) => c.charCodeAt(0)), [...'Inbox\u2028draft\u2029end'].map((c) => c.charCodeAt(0)));
+  } finally {
+    await engine.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

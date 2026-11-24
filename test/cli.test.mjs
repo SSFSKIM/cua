@@ -12,6 +12,10 @@ function cua(args, home, extra = {}) {
   const env = {...process.env, CUA_HOME: home, ...extra};
   return spawnSync(process.execPath, [CLI, ...args], {env, encoding: 'utf8', timeout: 60_000});
 }
+// The real install takes the vendor's release first only on macOS: on Linux it takes cua's own runtime first, with
+// every step attempted (#171 M6a), which test/cli-linux-install.test.mjs proves with its installers stubbed, since here
+// they would reach the network.
+const VENDOR_FIRST = process.platform === 'linux' && 'on Linux install takes cua\'s own runtime first (test/cli-linux-install.test.mjs)';
 
 test('doctor --json on an empty home exits nonzero with structured checks and install guidance', {skip: !installedHomeSupported}, () => {
   const s = scratch();
@@ -24,7 +28,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     assert.equal(report.ok, false);
     const installed = report.checks.find(c => c.name === 'runtime.installed');
     assert.equal(installed.status, 'fail');
-    assert.match(installed.detail, /cua install/);
+    assert.match(installed.detail, process.platform === 'linux' ? / `node \S+\/bin\/cua\.mjs install`/ : /cua install/);  // Linux: this cua's own installer (#171 M6a)
     for (const c of report.checks) assert.ok(['pass', 'warn', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
     for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'])
       assert.equal(report.checks.find(c => c.name === name)?.status, 'skip', name);
@@ -36,7 +40,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
   } finally { s.cleanup(); }
 });
 
-test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: !installedHomeSupported}, () => {
+test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: !installedHomeSupported || VENDOR_FIRST}, () => {
   const s = scratch();
   try {
     const archive = join(s.dir, 'not-the-pin.zip');
@@ -51,7 +55,7 @@ test('install --archive with a file that is not the pinned archive fails classif
   } finally { s.cleanup(); }
 });
 
-test('install takes the runtime first: a runtime archive that is not the pin fails before any Node is fetched or placed', {skip: !installedHomeSupported}, () => {
+test('install takes the runtime first: a runtime archive that is not the pin fails before any Node is fetched or placed', {skip: !installedHomeSupported || VENDOR_FIRST}, () => {
   const s = scratch();
   try {
     const archive = join(s.dir, 'not-the-pin.zip');
@@ -109,7 +113,9 @@ test('the usage names the default home per platform: Application Support on macO
   assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
   assert.match(usageFor('linux'), /\[--node-archive <node tarball> \| --no-node\]/);
   assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run \(agent install carries those set into\n  the unit\):/m);
-  assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
+  // On Linux the deb is the vendor's lane, after cua's own runtime (#171 M6a).
+  assert.match(usageFor('linux'), /^  install \[--json\] +install cua's own runtime/m);
+  assert.match(usageFor('linux'), /^ +\[--archive <ChatGPT deb>\] \[--release <id>\] +happened before/m);
 });
 
 test('devices add, import, list and remove are listed on both platforms', async () => {

@@ -1,6 +1,9 @@
-// The launch record for one MCP connection's runtime: the relocated vendor `node` running the relocated `cua-repl`
-// entry, with an allowlisted environment built only from the resolved runtime, owned paths under CUA_HOME and the
-// caller's explicit services/secrets settings. Nothing is read from an installed desktop app or its plugin cache.
+// The launch record for one MCP connection's runtime, with an allowlisted environment built only from the resolved
+// runtime, owned paths under CUA_HOME and the caller's explicit services/secrets settings: on macOS the relocated vendor
+// `node` running the relocated `cua-repl` entry, or cua's own REPL host (below); on Linux cua's own host only, from cua's
+// own runtime (#171 M6a: the ModuleTree, the managed Node, the sandbox helper and cua's engine), the vendor's tree named
+// only by a CUA_NATIVE_ENGINE=vendor selection, which resolved it (linuxEngineFor). Nothing is read from an installed
+// desktop app or its plugin cache.
 //
 // Environment contract (everything else from the caller's environment is dropped, including every NODE_REPL_*,
 // SKY_*, BROWSER_USE_*, CUA_REPL_* and NODE_OPTIONS value, so an ambient override cannot redirect the runtime):
@@ -58,7 +61,8 @@
 //                                            nothing may open the vendor helper)
 //   OAI_SKY_LINUX_BIN                        computer surface, linux, the vendor engine selected: the relocated
 //                                            sky_linux helper, which the vendor service spawns as a child over stdio
-//                                            (pinned rather than resolved by the vendor)
+//                                            (pinned rather than resolved by the vendor), from the vendor's tree the
+//                                            selection resolved (its `vendor`), as is CUA_SKY_SERVICE then
 //   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to:
 //                                            the vendor's (@oai/sky/service), or with cua's engine selected
 //                                            (nativeEngineFor) cua's own: on macOS src/services/engine/service.mjs, on
@@ -118,8 +122,8 @@
 // NODE_REPL_DENIED_PATHS.
 //
 // cua's own REPL host (replHost `cua`, src/repl-host/supervisor.mjs) is launched instead as the Node ownHostNode resolves
-// (at least NODE_FLOOR: CUA_NODE, the Node `cua install` pins under $CUA_HOME/node, else the user's; never the vendor's
-// pinned Node) running the supervisor with --disable-sigusr1, under the same allowlist, surfaces, services and secrets
+// (at least NODE_FLOOR: CUA_NODE, the Node `cua install` pins under $CUA_HOME/node, else on macOS the user's; never the
+// vendor's pinned Node) running the supervisor with --disable-sigusr1, under the same allowlist, surfaces, services and secrets
 // settings, with the host's own settings under owned names in place of the vendor's NODE_REPL_ ones (no vendor
 // launcher, node_repl or vendor Node path is set). Its children's sandbox is cua's own (src/sandbox), with neither
 // CODEX_CLI_PATH nor CODEX_HOME:
@@ -138,8 +142,11 @@
 //   CUA_REPL_NODE_PATH                      the resolved Node the kernel runs on
 //   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), src/cua-api and docs/cua-api (the cua
 //                                            facade the banner imports and the documents it reads), then what
-//                                            NODE_REPL_TRUSTED_CODE_PATHS lists for the vendor; the scoped preflight
-//                                            protects these (src/runtime/sandbox.mjs trustedCodePathsOf)
+//                                            NODE_REPL_TRUSTED_CODE_PATHS lists for the vendor, but on Linux the module
+//                                            tree: cua's ModuleTree there is no trusted code, since nothing trusted
+//                                            imports from it; with the vendor's engine its tree's node_modules, which
+//                                            the vendor service imports from. The scoped preflight protects these
+//                                            (src/runtime/sandbox.mjs trustedCodePathsOf)
 //   CUA_REPL_TRUSTED_SERVICES                with services registered, as NODE_REPL_TRUSTED_SERVICES: what the trusted
 //                                            worker (src/repl-host/trusted-worker.mjs) loads; every service must lie
 //                                            inside a trusted code path by real path (sandbox.mjs
@@ -148,8 +155,9 @@
 //   CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000
 //   CUA_REPL_OWNED_GROUP=1                   the supervisor runs in the process group the proxy's anchor owns
 //                                            (src/mcp/upstream.mjs), so it may reap what a finished kernel left there
-//   CUA_REPL_NODE_MODULE_DIRS                the vendor module tree, where cells resolve package imports as the vendor
-//                                            launcher lets them
+//   CUA_REPL_NODE_MODULE_DIRS                the runtime's module tree, where cells resolve package imports as the vendor
+//                                            launcher lets them: on macOS the vendor's, on Linux cua's ModuleTree under
+//                                            either engine (#171 M6a, F5)
 //   CUA_REPL_JS_BANNER                       imports cua's own facade bootstrap (src/cua-api/bootstrap.mjs, by file
 //                                            URL), which installs `cua` (and `agent`) for the enabled surfaces
 //   CUA_REPL_UNTRUSTED_ENV_ALLOWLIST         CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV, as the vendor launcher adds
@@ -159,7 +167,8 @@
 //
 // The launch record also carries `managedNodeRoot`, <home>/node (the Node `cua install` places for the own host),
 // `stagingRoot`, <home>/staging (where install verifies what it places), and `sandboxHelperRoot`, <home>/sandbox (the
-// Linux helper `cua install` places, which runs outside every sandbox and re-executes itself inside one), which the
+// Linux helper `cua install` places, which runs outside every sandbox and re-executes itself inside one), and on Linux
+// `modulesRoot`, <home>/modules (the ModuleTree cells import from, and cua's own CLI loads classic-level from), which the
 // scoped preflight protects for either host (src/runtime/sandbox.mjs assertSandboxFits); none is in `env`.
 // A macOS vendor-host launch also carries `compat` ({home, sessionId, node}): createLaunchDirs writes the session's
 // compat settings from it (src/sandbox/compat-settings.mjs: <home>/state/compat/<sessionId>.json with the deny list and
@@ -178,19 +187,22 @@
 // (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
 import {accessSync, chmodSync, constants, mkdirSync, readFileSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {dirname, isAbsolute, join} from 'node:path';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
 import {defaultHome, homeLayout, realHome} from './layout.mjs';
-import {executableFile, installedLinuxEngine, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
-import {MIN_ENGINE_VERSION, isOlder} from '../services/engine/linux/client.mjs';
+import {spawnSync} from 'node:child_process';
+import {ENGINE_RECORD, executableFile, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
+import {MIN_ENGINE_VERSION, engineVersionOf, isOlder} from '../services/engine/linux/client.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {assertTrustedServicesContained} from './sandbox.mjs';
+import {assertTrustedServicesContained, helperOutsideVendorTree} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
-import {NODE_FLOOR, managedNode, nodeVersion} from './managed-node.mjs';
+import {NODE_FLOOR, NODE_RECORD_FILE, managedNode, nodeLayout, nodeVersion, readNodePointer} from './managed-node.mjs';
+import {ownInstaller, vendorLinuxRuntime} from './manifest.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
@@ -265,7 +277,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
   if (secretsProjectDir !== undefined && (typeof secretsProjectDir !== 'string' || !isAbsolute(secretsProjectDir) || !secretsDir)) fail('invalid_secrets_dir', 'the project secret store directory must be an absolute path beside the global one');
-  replHost ??= replHostFor({platform: runtime.manifest.platform, surfaces: enabled, ambient, home, resolveOwnNode});
+  replHost ??= replHostFor({platform: runtime.manifest.platform, arch: runtime.manifest.arch, surfaces: enabled, ambient, home, resolveOwnNode});
   const own = replHost.host === 'cua';
   const ownNode = own ? replHost.node : undefined;
   if (own && typeof ownNode !== 'string') throw new TypeError('buildLaunch: a cua selection carries the Node it resolved');
@@ -276,6 +288,14 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // cua's own host confines its children with cua's own sandbox (macOS: sandbox-exec; Linux: the pinned helper), and the
   // macOS vendor host through cua's compat executable. Linux has no vendor host (replHostFor).
   if (linux && !own) fail('repl_host_refused', 'the vendor host is retired on Linux (#115); only cua\'s own host launches there');
+  // The engine a Linux computer session drives, as its selection resolved it once (linuxEngineFor): cua's engine
+  // (`bin`), or the vendor's, whose tree the selection found (`vendor`: its helper, its service, and the modules that
+  // service imports, which are trusted with it). The launch never looks for the vendor's tree itself, so every launch of
+  // a connection, an idle relaunch too, runs what its open resolved (#171 M6a).
+  const linuxComputer = linux && enabled.includes('computer');
+  const linuxEngine = linuxComputer && replHost.engine?.engine === 'cua' ? replHost.engine.bin : null;
+  const vendorEngine = linuxComputer && !linuxEngine ? replHost.engine?.vendor : null;
+  if (linuxComputer && !linuxEngine && !vendorEngine) throw new TypeError('buildLaunch: a Linux computer selection carries the engine it resolved, cua\'s `bin` or the vendor\'s tree');
   const compat = !own;
   const cwd = join(owned.run, sessionId);
   const sessionTmp = join(cwd, 'tmp');
@@ -290,7 +310,10 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   env.TMPDIR = sessionTmp;
   if (linux) Object.assign(env, desktopSessionEnv(ambient));
-  const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, BIN_DIR] : [p.moduleDir, SANDBOX_DIR, BIN_DIR];
+  // On Linux the module tree is cua's ModuleTree, which cells import from and nothing trusted does, so it is no trusted
+  // code (it is protected all the same: modulesRoot). The vendor's service imports from its own tree.
+  const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, ...(linux ? [] : [p.moduleDir]), SANDBOX_DIR, BIN_DIR] : [p.moduleDir, SANDBOX_DIR, BIN_DIR];
+  if (vendorEngine) trustedCodePaths.push(vendorEngine.moduleDir);
   Object.assign(env, {PATH: FIXED_PATH}, denyRead ? {CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)} : {}, compat ? {CODEX_HOME: owned.codexHome} : {});
   Object.assign(env, own
     ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
@@ -312,7 +335,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     [names.codePaths]: trustedCodePaths.join(':'),
     [names.pipeTimeout]: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
+    ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled, sandbox) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
     ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
   // The engine a macOS computer session drives (nativeEngineFor): cua's own service and the approved bundle, on either
@@ -320,12 +343,11 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const cuaEngine = !linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.app : null;
   // On Linux cua's engine runs behind cua's own service (#171 M3), in the device mode the session resolves; the vendor
   // engine behind the vendor's service.
-  const linuxEngine = linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.bin : null;
   if (enabled.includes('computer')) {
     if (linux) {
       Object.assign(env, linuxEngine
         ? {CUA_SKY_SERVICE: LINUX_ENGINE_SERVICE, CUA_ENGINE_BIN: linuxEngine.path, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode}
-        : {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
+        : {OAI_SKY_LINUX_BIN: vendorEngine.bin, CUA_SKY_SERVICE: vendorEngine.service});
     } else {
       Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode,
         ...cursorEnv(cursor ?? cursorContext({env: ambient}))}
@@ -347,7 +369,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
-    engineRoot: linux ? owned.engine : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source} : null,
+    engineRoot: linux ? owned.engine : null, modulesRoot: linux ? owned.modules : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source, ...(linuxEngine.links ? {links: linuxEngine.links} : {})} : null,
     nativeEngine: linux || !enabled.includes('computer') ? null : cuaEngine ? {engine: 'cua', version: cuaEngine.engineVersion, build: cuaEngine.build}
       : {engine: 'vendor', version: bundleVersion(p.skyServiceApp), build: runtime.release},
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
@@ -378,10 +400,14 @@ export function removeLaunchDirs(launch) {
 
 // The own host's Linux sandbox settings: the pinned helper for this home and architecture (placed by `cua install`; its
 // bytes are checked by the connection's preflight and before each child, not here) and, with the computer surface, the
-// network for the trusted worker alone.
-function linuxSandboxEnv(home, arch, surfaces) {
+// network for the trusted worker alone. The helper is named by its path as the kernel resolves it, outside the vendor's
+// tree (outsideVendorTree), so the host checks and runs the file the preflight checked (sandbox.mjs guardedLinuxHelper).
+// A confined launch refuses one that leads into the tree here, at every launch, since a connection's later launches
+// repeat no preflight; a disabled one runs no helper, and keeps the spelling, which names nothing in the tree.
+function linuxSandboxEnv(home, arch, surfaces, sandbox) {
   const helper = helperFor({home, arch});
-  return {CUA_REPL_SANDBOX_HELPER: helper.path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
+  const path = sandbox === 'disabled' ? outsideVendorTree(helper.path, home).real ?? helper.path : helperOutsideVendorTree({home, path: helper.path});
+  return {CUA_REPL_SANDBOX_HELPER: path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
 }
 
 // The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for
@@ -390,10 +416,12 @@ function linuxSandboxEnv(home, arch, surfaces) {
 // resolved before Node and never changing the host).
 // On Linux it is always cua's own host (#115 M3, which closes #135): the vendor host there is retired, because its
 // node_repl ran JavaScript unconfined when its launcher failed at run time, and cua's sandbox does not serve it.
-// `resolveOwnNode` resolves the own host's Node (ownHostNode from `ambient` and `home` by default), asked at most once
-// and only when the selection would be cua's own host: a connection resolves its selection once, so its Node too.
-// `engine` reaches nativeEngineFor (its `config`, `installed` and `defaultEngine`, for tests); it too is asked only
-// for the computer surface (on macOS or Linux), once. Either host runs cua's browser service with the browser surface.
+// `resolveOwnNode` resolves the own host's Node (ownHostNode from `ambient`, `home`, `platform` and `arch` by default),
+// asked at most once and only when the selection would be cua's own host: a connection resolves its selection once, so
+// its Node too. `engine` reaches nativeEngineFor (its `config`, `installed`, `installedVersion`, `vendor` and
+// `defaultEngine`, for tests); it too is asked only for the computer surface (on macOS or Linux), once. `arch` is the
+// host's (the runtime's), whose vendor pin a Linux vendor selection resolves. Either host runs cua's browser service
+// with the browser surface.
 // CUA_REPL_HOST in `ambient`, the caller's original environment:
 //   vendor   the vendor host (`explicit`): the macOS rollback; Node is never asked for. Refused on Linux
 //            (repl_host_refused, naming why), never downgraded.
@@ -406,11 +434,12 @@ function linuxSandboxEnv(home, arch, surfaces) {
 //            `browser_only` for a macOS session with only the browser surface. That default needs a Node 24 or later:
 //            on macOS, where none resolves, the vendor host with `own_host_node_unavailable`, never a refused session
 //            (cua itself runs on Node 22); on Linux, which has no vendor host to fall back to, the session is refused
-//            (repl_host_node) with the remedy (`cua install` places the pinned Node 24).
+//            with the remedy: runtime_not_installed without the managed Node, naming this cua's own installer, which
+//            places it; repl_host_node for a CUA_NODE that cannot serve (ownHostNode).
 // The computer surface on macOS follows the engine × host table of the native engine's spec ("Engine selection, host
 // switch and retirement"; macosComputerHost below). Any other CUA_REPL_HOST is refused (invalid_repl_host), as is a
 // CUA_NODE that is not an absolute path wherever Node is asked for (invalid_setting).
-export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode = () => ownHostNode({ambient, home}), engine = {}}) {
+export function replHostFor({platform, arch = process.arch, surfaces, ambient, home, resolveOwnNode = () => ownHostNode({ambient, home, platform, arch}), engine = {}}) {
   const value = ambient.CUA_REPL_HOST;
   const requested = value === undefined || value === '' ? null : value;
   if (requested !== null && !REPL_HOSTS.includes(requested)) fail('invalid_repl_host', `CUA_REPL_HOST must be ${REPL_HOSTS.join(' or ')}`);
@@ -419,7 +448,7 @@ export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode =
   if (platform === 'darwin' && surfaces.includes('computer')) return macosComputerHost({requested, ambient, resolveOwnNode, engine});
   if (requested === 'vendor') return {host: 'vendor', reason: 'explicit'};
   // A Linux computer session's engine (#171), resolved before Node as on macOS; it never changes the host.
-  const linuxEngine = platform === 'linux' && surfaces.includes('computer') ? {engine: nativeEngineFor({env: ambient, platform, home, ...engine})} : {};
+  const linuxEngine = platform === 'linux' && surfaces.includes('computer') ? {engine: nativeEngineFor({env: ambient, platform, arch, home, ...engine})} : {};
   if (requested === 'cua') return {host: 'cua', reason: 'explicit', node: resolveOwnNode(), ...linuxEngine};
   const reason = platform === 'linux' ? 'linux' : 'browser_only';
   try {
@@ -459,7 +488,7 @@ function macosComputerHost({requested, ambient, resolveOwnNode, engine}) {
 
 // The engine a computer session drives when nothing selects one, per platform (#171 M5: one constant served both). On
 // macOS the vendor's until #117's M5 flips it to cua's (#192 decides it there). On Linux cua's since #171's M5, on the
-// owner's word: a home without one this cua can drive keeps the vendor's, with a warning (linuxEngineFor below).
+// owner's word: since M6a a home without one this cua can drive is refused, naming the installer (linuxEngineFor below).
 const DEFAULT_NATIVE_ENGINES = Object.freeze({darwin: 'vendor', linux: 'cua'});
 export const defaultNativeEngine = (platform = 'darwin') => DEFAULT_NATIVE_ENGINES[platform] ?? DEFAULT_NATIVE_ENGINES.darwin;
 const NATIVE_ENGINES = ['vendor', 'cua'];
@@ -478,18 +507,30 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // before the engine is installed. Status is `pass` otherwise. `env.HOME` locates engine.json and the approved engine, as
 // `cua engine` places them.
 //
-// On Linux (`platform` linux; #171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Selection) the same
-// setting, precedence, reasons and refusals select between the vendor's sky_linux and cua's own engine, which is
-// installed in the cua home `home` (src/runtime/linux-engine.mjs installedLinuxEngine, the default `installed`: {path}
-// or null). There is no host to refuse (cua's own host is the only one there). cua's engine carries `bin` {path,
-// source: 'installed' | 'override'}: CUA_LINUX_ENGINE_BIN in `env`, read only for cua's engine and only by the
-// harnesses, names an engine to run in place of the installed one (an absolute path to an executable file, else
-// refused: invalid_setting, engine_not_installed). The default takes the installed engine only when it is at least
-// MIN_ENGINE_VERSION, the oldest cua's Linux service drives, by `installedVersion` (verifiedLinuxEngineVersion: the
-// version its bytes bear out, never by running it; #171 M5, F5 and F5a); otherwise it keeps the vendor's engine with a
-// warning, reason `engine_outdated` (older) or `engine_unrecorded` (no record of the file says what it is), so an update
-// never selects an engine its first request would refuse. An explicit setting takes the installed engine whatever its
-// version, and the service refuses an older one at the first request, naming `cua install --engine`.
+// On Linux (`platform` linux; #171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Selection; M6a's
+// pre-flight, §3.3 and §3.4) the same setting, precedence and reasons select between the vendor's sky_linux and cua's own
+// engine, installed in the cua home `home` (src/runtime/linux-engine.mjs linuxEnginePath; `installed`, a seam, stands in
+// for its guarded lookup: {path} or null). There is no host to refuse (cua's own host is the only one there).
+//   cua's engine carries `bin` {path, lookup, source: 'installed' | 'override'}. Either selection, the default as an
+//   explicit setting, takes the installed engine only when it is at least MIN_ENGINE_VERSION, the oldest cua's Linux
+//   service drives, by `installedVersion` (verifiedLinuxEngineVersion: the version its bytes bear out, a pinned release's
+//   or a local build's, never by running it; F2): the pinned release, or one behind or ahead of the pin, of which doctor
+//   warns. Otherwise the open is refused, naming this cua's installer and --engine: engine_not_installed (none),
+//   engine_outdated (older) or engine_unrecorded (no record of the file says what it is). M5's fallback to the vendor's
+//   engine is gone (F3). CUA_LINUX_ENGINE_BIN in `env`, read only for cua's engine, names an engine to run in place of
+//   the installed one (an absolute path to an executable file, else refused: invalid_setting, engine_not_installed). Its
+//   version is read once at the open, by running the approved path's --version, and held to the same minimum
+//   (engine_outdated, engine_unrecorded; ruling 1110); the service checks it again at each start, as it does every
+//   engine's, which holds for a replacement at the path. Each override refusal gives the override's own fix, then the
+//   installer that restores the installed engine.
+//   The vendor's engine carries `vendor` {release, bin, service, moduleDir}: its tree, found once here by `vendor`
+//   (manifest.mjs vendorLinuxRuntime, for `home` and the host's `arch`), so that every launch of the connection takes it
+//   from the selection and none looks for it again. Its tree absent or damaged: engine_not_installed, naming the
+//   installer.
+//   No lookup of either engine is led into the vendor's tree (<home>/runtimes/): a CUA_LINUX_ENGINE_BIN that is, or
+//   leads, under it is invalid_setting, and an installed engine whose path, or whose install record's, leads there
+//   engine_not_installed, each refused before anything there is stat-ed, read or run (outsideVendorTree); what follows
+//   uses only the path the guard resolved.
 //
 // On macOS the same rule binds the approved engine (#117 M5, R4), at selection: it must be at least `minimumVersion`
 // (MIN_MACOS_ENGINE_VERSION, the oldest cua's macOS service drives, src/services/engine/client.mjs; the parameter is a seam
@@ -500,9 +541,9 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // (engine-minimum.mjs pendingEngine by default, files only): one at or above the minimum needs only `cua engine
 // approve`, else `cua install --engine` builds one first (ruling 1118; outdatedRemedy). An approved engine at or above
 // the minimum is driven whatever is pending. The service's client checks the minimum again at each connect.
-export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, pending,
+export function nativeEngineFor({env, platform = 'darwin', arch = process.arch, home, requestedHost = null, defaultEngine = defaultNativeEngine(platform), config = () => readEngineSettings({env}), installed, installedVersion, vendor, probeTimeoutMs, pending,
   minimumVersion = MIN_MACOS_ENGINE_VERSION}) {
-  if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion});
+  if (platform === 'linux') return linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor, probeTimeoutMs});
   installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
   pending ??= () => pendingEngine({dir: engineDirectory(env.HOME || homedir())});
   const setting = engineSetting(env, config, defaultEngine);
@@ -531,39 +572,89 @@ export function nativeEngineFor({env, platform = 'darwin', home, requestedHost =
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
 }
 
-function linuxEngineFor({env, home, defaultEngine, config, installed, installedVersion}) {
+function linuxEngineFor({env, arch, home, defaultEngine, config, installed, installedVersion, vendor = vendorLinuxRuntime, probeTimeoutMs}) {
   const setting = engineSetting(env, config, defaultEngine);
-  if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass'};
+  const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
+  if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass', vendor: vendorEngineTree(setting, vendor, cuaHome(), arch)};
+  const source = engineSource(setting.reason, 'cua');
+  const installer = ownInstaller();
   const override = env.CUA_LINUX_ENGINE_BIN;
   if (override !== undefined && override !== '') {
     if (!isAbsolute(override)) fail('invalid_setting', 'CUA_LINUX_ENGINE_BIN must be an absolute path');
-    if (!executableFile(override))
-      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${override}, which is not an executable file: build it (cargo build --release in native/linux-engine) or unset CUA_LINUX_ENGINE_BIN for the installed engine`);
-    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: canonicalEngine(override, 'override')};
+    // The override's own fix first, then the installer that restores the engine it stands in for (§3.4).
+    const restore = `, or unset CUA_LINUX_ENGINE_BIN for the installed engine, which \`${installer.command} --engine\` places`;
+    const refuse = (code, why, fix) => fail(code, `${code === 'invalid_setting' ? '' : `${source} selects cua's own engine, and `}CUA_LINUX_ENGINE_BIN names ${override}, which ${why}: ${fix}${restore}`, {hint: installer.hint});
+    const resolved = outsideVendorTree(override, cuaHome());
+    if (resolved.lead) refuse('invalid_setting', `${intoTree(override, resolved.lead)}, and no engine of cua's runs from the vendor's release`, `name an engine outside ${homeLayout(cuaHome()).runtimes}`);
+    // A path the kernel would refuse as written is refused, never reinterpreted into one that exists.
+    if (resolved.notDirectory) refuse('invalid_setting', unresolved(resolved), 'name the engine by a path that resolves as written');
+    const build = 'build it (cargo build --release in native/linux-engine)';
+    if (resolved.missing || !executableFile(resolved.real)) refuse('engine_not_installed', 'is not an executable file', build);
+    // Ruling 1110: below the minimum is refused at the open, the override's too; its version is read once, here, from
+    // the approved path. The service still checks whatever it starts (a replacement at the path).
+    const version = overrideVersion(resolved.real, probeTimeoutMs);
+    if (version === null) refuse('engine_unrecorded', 'answers --version with no version this cua recognizes', build);
+    if (isOlder(version, MIN_ENGINE_VERSION)) refuse('engine_outdated', `is ${version}, older than ${MIN_ENGINE_VERSION}, which this cua needs`, `${build} from this checkout`);
+    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: engineBin(resolved.real, override, 'override', resolved.links)};
   }
-  const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
-  const found = (installed ?? (() => installedLinuxEngine({home: cuaHome()})))();
-  if (!found) {
-    if (setting.reason !== 'default')
-      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and none is installed in this cua home (${linuxEnginePath(cuaHome())}): install it with \`cua install --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
-    return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
-  }
-  if (setting.reason === 'default') {
-    const version = (installedVersion ?? (() => verifiedLinuxEngineVersion({home: cuaHome()})))();
-    if (version === null) return {engine: 'vendor', reason: 'engine_unrecorded', status: 'warn'};
-    if (isOlder(version, MIN_ENGINE_VERSION)) return {engine: 'vendor', reason: 'engine_outdated', status: 'warn'};
-  }
-  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, lookup: found.lookup ?? found.path, source: 'installed'}};
+  const lookup = linuxEnginePath(cuaHome());
+  const record = join(dirname(lookup), ENGINE_RECORD);
+  const refuse = (code, why, first = '') => fail(code, `${source} selects cua's own engine, and ${why}: ${first}install this cua's engine with \`${installer.command} --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`, {hint: installer.hint});
+  // Every path the installed engine's lookup reads, the engine and its install record, resolved once and kept out of
+  // the tree; what follows (the executable check, the record and digest check, the launch, the preflight) uses only what
+  // these resolved. A link that leads there is named to be moved aside first: the installer refuses to install through
+  // it (install.mjs installLinuxEngine).
+  const [engineAt, recordAt] = [lookup, record].map(path => {
+    const resolved = outsideVendorTree(path, cuaHome());
+    if (resolved.lead) refuse('engine_not_installed', `${path === lookup ? 'the engine' : 'the install record of the engine'} installed in this cua home (${path}) ${intoTree(path, resolved.lead)}, which is no part of cua's`,
+      `move ${resolved.links[0] ?? path} aside, then `);
+    return resolved;
+  });
+  const found = installed ? installed() : engineAt.real && executableFile(engineAt.real) ? {path: engineAt.real, lookup, links: engineAt.links} : null;
+  if (!found) refuse('engine_not_installed', `none is installed in this cua home (${lookup})`);
+  const version = installedVersion ? installedVersion() : verifiedLinuxEngineVersion({home: cuaHome(), at: {engine: engineAt.real, record: recordAt.real ?? null}});
+  if (version === null) refuse('engine_unrecorded', `no record says what the engine installed in this cua home (${lookup}) is: its install.json is absent, unreadable or another file's`);
+  if (isOlder(version, MIN_ENGINE_VERSION)) refuse('engine_outdated', `the engine installed in this cua home (${lookup}) is ${version}, older than ${MIN_ENGINE_VERSION}, which this cua needs`);
+  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: engineBin(found.path, found.lookup ?? found.path, 'installed', found.links)};
 }
 
-// The engine as a launch names it -> {path, lookup, source}: `path` its canonical path, resolved once at selection
-// (installedLinuxEngine resolves the installed one), so every launch of the connection runs the file the scoped
-// preflight checked, never a link a cell could re-point; `lookup` the path it was found by, whose links the preflight
-// checks too (src/runtime/sandbox.mjs).
-function canonicalEngine(lookup, source) {
-  let path;
-  try { path = realpathSync(lookup); } catch (error) { fail('engine_not_installed', `cua's engine at ${lookup} cannot be resolved (${error.code ?? error.message})`); }
-  return {path, lookup, source};
+// The engine as a launch names it -> {path, lookup, source, links?}: `path` the executable the selection approved (its
+// resolution, the one that was checked), `lookup` the path it was found by, and `links` where the symbolic links on that
+// lookup lie, when there are any, which the scoped preflight refuses inside a write root without walking the lookup
+// again (src/runtime/sandbox.mjs).
+const engineBin = (path, lookup, source, links) => ({path, lookup, source, ...(links?.length ? {links} : {})});
+
+// The vendor's tree for a vendor selection -> {release, bin, service, moduleDir}, found by `vendor` (vendorLinuxRuntime)
+// for the real cua home `home` and `arch`. Its two refusals become the selection's, engine_not_installed, in the
+// setting's own words; an error raised before the lookup (a pin that does not parse, say) is its own.
+function vendorEngineTree(setting, vendor, home, arch) {
+  let tree;
+  try { tree = vendor({home, host: {platform: 'linux', arch}}); } catch (error) {
+    if (error?.code !== 'release_not_installed' && error?.code !== 'release_damaged') throw error;
+    const {release, home: at} = error.context;
+    const state = error.code === 'release_not_installed' ? `is not installed in ${at}` : `in ${at} is damaged: ${error.message.replace(/^.*? is damaged: /, '')}`;
+    fail('engine_not_installed', `${engineSource(setting.reason, 'vendor')} selects the vendor's engine, and its release ${release} ${state}`, {hint: error.hint, cause: error});
+  }
+  return {release: tree.release, bin: tree.paths.skyLinuxBin, service: tree.paths.skyVendorService, moduleDir: tree.paths.moduleDir};
+}
+
+// The refusal half for a path the walk could not follow as written.
+const unresolved = resolved => (resolved.notDirectory ? `cannot be opened as written: ${resolved.notDirectory} is not a directory` : `is not found (${resolved.missing})`);
+// Where `path` enters the vendor's tree, or null (outsideVendorTree's `lead`).
+export const vendorTreeLead = (path, home) => outsideVendorTree(path, home).lead ?? null;
+export {outsideVendorTree};
+// The sentence half that says where a path that entered the tree went.
+const intoTree = (path, lead) => (lead === resolve(path) ? 'lies under the vendor\'s tree' : `leads to ${lead}, under the vendor's tree`);
+
+// The version an engine override at its approved real path `path` answers to --version, or null. It is run with a fixed
+// PATH and nothing else of the caller's environment, as the service runs it, and killed outright at `timeoutMs`: a
+// child that ignored SIGTERM would otherwise hold the open, and every connection of this process, past the deadline.
+// Its first line is read exactly as the service reads it before each start (src/services/engine/linux/client.mjs
+// engineVersionOf), so no override is compatible at one boundary and unrecognised at the other.
+const VERSION_PROBE_MS = 5000;
+function overrideVersion(path, timeoutMs = VERSION_PROBE_MS) {
+  const run = spawnSync(path, ['--version'], {encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
+  return run.status === 0 ? engineVersionOf(run.stdout.split('\n')[0].trim()) : null;
 }
 
 // The device mode cua's engine runs in, on Linux (#171, Design "Device mode") and on macOS (#282) -> {mode: 'shared' |
@@ -617,13 +708,14 @@ function bundleVersion(appPath) {
   } catch { return null; }
 }
 
-// The Node cua's own REPL host runs on: the first of an explicit CUA_NODE (an absolute path), the Node `cua install`
-// placed in `home` (managed-node.mjs; a caller that names no home has none to try), the node running cua (`execPath`)
-// and the first `node` on the caller's PATH whose `--version` (`versionOf`) is at least NODE_FLOOR, as its real path,
-// which the launch can name in an environment whose PATH is fixed. None: refused (repl_host_node), naming every
-// candidate tried and its version, which the error also carries as `tried`. The vendor host's pinned Node is never a
-// candidate.
-export function ownHostNode({ambient, home, execPath = process.execPath, versionOf = nodeVersion}) {
+// The Node cua's own REPL host runs on, as its real path, which the launch can name in an environment whose PATH is
+// fixed. On macOS: the first of an explicit CUA_NODE (an absolute path), the Node `cua install` placed in `home`
+// (managed-node.mjs; a caller that names no home has none to try), the node running cua (`execPath`) and the first
+// `node` on the caller's PATH whose `--version` (`versionOf`) is at least NODE_FLOOR. None: refused (repl_host_node),
+// naming every candidate tried and its version, which the error also carries as `tried`. The vendor host's pinned Node
+// is never a candidate. On Linux (#171 M6a, F2 and F2a): linuxHostNode below.
+export function ownHostNode({ambient, home, platform = process.platform, arch = process.arch, execPath = process.execPath, versionOf = nodeVersion}) {
+  if (platform === 'linux') return linuxHostNode({ambient, home, arch, versionOf});
   const explicit = cuaNodeFrom(ambient);
   const managed = home === undefined ? null : managedNode(home);
   const tried = [];
@@ -637,6 +729,59 @@ export function ownHostNode({ambient, home, execPath = process.execPath, version
     tried.push(`${label} ${path} (${version ?? 'no readable version'})`);
   }
   throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and none was found: ${tried.join(', ')}; run \`cua install\` to install the pinned Node ${NODE_FLOOR} for it, set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later, or run cua with one (the vendor host's pinned Node is never used for it)`), {tried});
+}
+
+// The Linux host's Node: two candidates, each asked for only when its turn comes. CUA_NODE, the named override: never a
+// path that is, or leads, under the vendor's tree (invalid_setting, before anything there is touched, outsideVendorTree),
+// and else its resolved path, and only that, run once for its --version and returned, refused below NODE_FLOOR or absent
+// (repl_host_node). Else the managed Node `cua install` placed in `home` for this `arch`: every path its lookup reads
+// (the pointer, the version's install record, the binary) kept out of the tree before it is read, offered only while
+// its bytes are the ones its install record names (managedNode) and it can be executed, at or above NODE_FLOOR by that
+// record: at the pinned version or behind it (doctor warns), and not run to find out. Neither: the runtime is not
+// installed (runtime_not_installed), naming this cua's own installer, which places it. Each override refusal gives the
+// override's own fix, then that installer. The node running cua and `node` on PATH are no candidates here: nobody asked
+// for them (F2a).
+function linuxHostNode({ambient, home, arch, versionOf}) {
+  const real = home === undefined ? undefined : realHome(home);
+  const installer = ownInstaller();
+  const explicit = cuaNodeFrom(ambient);
+  if (explicit) {
+    // The override's own fix first, then the installer that restores the managed Node it stands in for (§3.4).
+    const restore = `, or unset CUA_NODE for the Node \`${installer.command}\` installs`;
+    const resolved = outsideVendorTree(explicit, real);
+    if (resolved.lead) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${intoTree(explicit, resolved.lead)}, and cua's own host never runs the vendor's Node: name a Node ${NODE_FLOOR} or later outside ${homeLayout(real).runtimes}${restore}`, {hint: installer.hint});
+    const refuse = why => { throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and CUA_NODE names ${explicit}, which ${why}: set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later${restore}`, {hint: installer.hint}), {tried: [`CUA_NODE ${explicit} (${why})`]}); };
+    // a path the kernel would refuse as written is refused, never reinterpreted into one that exists
+    if (resolved.notDirectory) fail('invalid_setting', `CUA_NODE names ${explicit}, which ${unresolved(resolved)}: name the Node by a path that resolves as written${restore}`, {hint: installer.hint});
+    if (resolved.missing) refuse('is not found');
+    // the approved path, and only it, is probed and run
+    const version = versionOf(resolved.real);
+    if (!version || Number(version.slice(1).split('.')[0]) < NODE_FLOOR) refuse(`answers ${version ?? 'no readable version'}`);
+    return resolved.real;
+  }
+  const missing = why => fail('runtime_not_installed', `cua's Linux runtime is not installed${real === undefined ? '' : ` in ${real}`}: its Node is not installed (${why})`, {hint: `${installer.hint}; or set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later`});
+  if (real === undefined) missing('no cua home was named');
+  // Every path the managed lookup reads, kept out of the tree before it is read: the pointer first, then, for the version
+  // it names, the install record and the binary (managedNode checks the directories on the way are no links).
+  const guard = path => {
+    const resolved = outsideVendorTree(path, real);
+    if (resolved.lead) missing(`${path} ${intoTree(path, resolved.lead)}, which is no part of cua's`);
+    return resolved;
+  };
+  const layout = nodeLayout(real);
+  guard(layout.pointer);
+  let pinned;
+  try { pinned = readNodePointer(real); } catch (error) { missing(error.message); }
+  if (!pinned) missing('not installed');
+  for (const path of [join(layout.version(pinned), NODE_RECORD_FILE), join(layout.version(pinned), 'bin', 'node')]) guard(path);
+  const managed = managedNode(real, {host: {platform: 'linux', arch}});
+  if (!managed.path) missing(managed.missing);
+  if (Number(managed.version.split('.')[0]) < NODE_FLOOR) missing(`its version ${managed.version} is below ${NODE_FLOOR}`);
+  const binary = guard(managed.path);
+  if (!binary.real) missing(`${managed.path} ${unresolved(binary)}`);
+  // its recorded bytes, and runnable: one that lost its execute bit would fail at spawn (no version probe)
+  try { accessSync(binary.real, constants.X_OK); } catch { missing(`${managed.path} is not executable`); }
+  return binary.real;
 }
 
 // The `node` a shell would run from `PATH`: the first executable file of that name in an absolute entry.

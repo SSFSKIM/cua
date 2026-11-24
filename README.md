@@ -22,13 +22,16 @@ The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-c
 - macOS on Apple silicon, or Linux on x64 or arm64 with an X11 desktop (see Linux; other platforms get
   `unsupported_platform`), and Node matching `^22.14 || >=23.7` as `node` on `PATH` for cua itself (the plugin starts
   the server with `--disable-sigusr1`, which those versions introduced). cua's own REPL host needs Node 24 or later:
-  `cua install` places a pinned official Node 24 for it under `$CUA_HOME/node`, and `CUA_NODE`, the node running cua or
-  `PATH` can supply one too (see Use); sessions on the vendor host keep the pinned vendor Node. The one npm dependency,
+  `cua install` places a pinned official Node 24 for it under `$CUA_HOME/node`, and `CUA_NODE` can name another; on
+  macOS the node running cua or `PATH` can supply one too (see Use), on Linux nothing else does (see Linux). Sessions
+  on the vendor host keep the pinned vendor Node. The one npm dependency,
   `ws`, is needed only for remote control through a relay (`npm ci`); everything else runs without `node_modules`.
 - The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
   `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
-  differ from `runtime/releases/*.json`. Vendor files are never modified or re-signed.
+  differ from `runtime/releases/*.json`. Vendor files are never modified or re-signed. On Linux `cua install` places
+  cua's own runtime instead, and OpenAI's Linux package only for `CUA_NATIVE_ENGINE=vendor` (see Linux, cua's own Linux
+  runtime).
 - For the vendor engine, the default on macOS: Accessibility and Screen Recording for the native computer-use helper
   (`Codex Computer Use.app`, started by the runtime through LaunchServices). macOS asks on first use; `cua doctor`
   cannot see these grants and reports them as `blocked` until a live run shows them. Where ChatGPT's Computer Use
@@ -61,8 +64,10 @@ node bin/cua.mjs doctor                    # --json for the structured checks; e
 
 `cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
 switches between verified installed releases. A release that no longer verifies is reported with its offline recovery:
-stop the servers using it, remove its directory, install again. On Linux it also fetches cua's sandbox helper (see
-Linux).
+stop the servers using it, remove its directory, install again. On Linux it installs cua's own runtime (its module
+tree, sandbox helper, Node and engine) and then OpenAI's package for `CUA_NATIVE_ENGINE=vendor`, each step tried on its
+own, and `cua runtime use` names only cua's own runtime (see Linux, cua's own Linux runtime). There, run it as
+`node <this checkout>/bin/cua.mjs install`: a `cua` on `PATH` from another checkout installs that checkout's runtime.
 
 **Removing the Codex CLI's leftovers.** This cua no longer uses what the Codex CLI left in its home (#115), but an
 older cua sharing the same `CUA_HOME` may: an earlier plugin version, a long-running `cua serve` or agent from an
@@ -109,10 +114,34 @@ This repository is its own marketplace, so the installed plugin follows `main` (
 picks up a new version). The plugin runs `node --disable-sigusr1 cua-shim.mjs`, which is `cua serve`, as the MCP server
 `plugin:cua:cua_repl` with `CUA_SHIM_SURFACES=computer,browser`; its tools are `mcp__plugin_cua_cua_repl__*`. The
 installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on the relay path of `cua agent`, never by
-`serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). The plugin cannot install the runtime: run
-`cua install` from a checkout once (Install, above), into the same `CUA_HOME`. If you registered `cua serve` yourself
+`serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). Claude Code never installs
+the runtime for you. On macOS, run `cua install` from a checkout once (Install, above), into the same `CUA_HOME`. On
+Linux, run the plugin copy's own installer, which needs no `npm ci` either:
+`node ~/.claude/plugins/cache/cua/cua/<version>/bin/cua.mjs install`, where `<version>` is the plugin version Claude
+Code runs (the newest directory there). If you registered `cua serve` yourself
 before (Plain MCP server, below), remove that registration under the name you gave it (`claude mcp remove cua -s user`
 for the example there, or `cua_repl`), or two servers drive the same Mac.
+
+**Updating on Linux: one install per home.** Since the release that brought cua's own Linux runtime (#171 M6a), every
+Linux session, browser-only ones included, runs from parts that `cua install` places in the home, and none from
+OpenAI's package (Linux, cua's own Linux runtime). After the update, each Linux home needs one install before any
+session opens there: until then `cua serve` refuses to start (`runtime_not_installed`), and its error and `cua
+doctor`'s `runtime.installed` row print the command to run. That command is always the updated cua's own installer,
+named by its absolute path, `node <that cua>/bin/cua.mjs install`. Never use a bare `cua install` for this: a `cua` on
+`PATH` from another checkout installs that checkout's runtime, succeeds, and leaves the updated cua refused. A later
+update asks for the install again when it changes the module tree or the sandbox helper, or raises the engine's
+minimum; a Node or an engine behind the new pin keeps running until then, and doctor warns. The Linux homes this
+touches:
+
+- **A machine where Claude Code runs the plugin**, a devcloud VM for one: once the plugin has updated, the plugin
+  copy's installer above, with the new version's directory.
+- **A Linux cua device** (`cua agent` from a checkout as a systemd user unit; Remote control): update the checkout,
+  run `node <checkout>/bin/cua.mjs install`, then `node <checkout>/bin/cua.mjs agent install`, which restarts the agent
+  on the updated code.
+- **A device made by `deploy/cloud-vm/`**: `ssh root@<vm> /usr/local/sbin/cua-provision.sh` moves its checkout to
+  `CUA_REF` (`main` unless `/etc/cua-provision.conf` says otherwise), runs that checkout's `cua install` and, with a
+  relay, restarts the agent. A VM provisioned before this release keeps its earlier script, which first takes the
+  vendor's deb from its cache in `/var/cache/cua`, as it always did, then installs.
 
 The same server drives other machines too: `devices_list` and `devices_use` switch its tools to a device you
 registered with `cua devices` (Remote control, 4), with no registration in Claude Code per device. The plugin also
@@ -329,32 +358,35 @@ With `CUA_REPL_HOST` unset or empty, the defaults are:
 
 | session | REPL host | why |
 |---|---|---|
-| Linux | `cua`, with Node 24+ | The owned host serves Linux computer and browser sessions (`linux`); it is the only host there: the vendor host is retired on Linux (#115), so `CUA_REPL_HOST=vendor` is refused (`repl_host_refused`) and a missing Node 24 refuses (`repl_host_node`) |
+| Linux | `cua`, with Node 24+ | The owned host serves Linux computer and browser sessions (`linux`); it is the only host there: the vendor host is retired on Linux (#115), so `CUA_REPL_HOST=vendor` is refused (`repl_host_refused`); without the Node `cua install` places, or `CUA_NODE`, a session is refused (`runtime_not_installed`) |
 | macOS, browser only (MAWS and profile listing included) | `cua`, with Node 24+ | No native-helper peer is needed (`browser_only`) |
 | macOS, computer enabled, the vendor engine (the default) | `vendor` | The native helper accepts only the vendor host's `node_repl` as a peer until #117 (`macos_native_peer_requires_vendor`); MAWS does not override this |
 | macOS, computer enabled, cua's engine (Install, cua's own macOS engine) | `cua`, with Node 24+ | cua's engine runs on cua's own host (`cua_engine`); with no Node 24 the session is refused (`repl_host_node`), naming `CUA_REPL_HOST=vendor`, which loads cua's engine service in the vendor host instead |
 
 Either host runs cua's own browser service with the browser surface (Chrome).
 
-The own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the Node `cua install`
-placed under `$CUA_HOME/node`, the node running cua, then the first `node` on `PATH`, never the vendor's pinned Node.
-cua itself keeps running on your Node; only the own host's processes use the installed one. After the runtime,
-`cua install` downloads the official nodejs.org tarball of the pinned Node 24 for this platform (or takes a local copy
-with `--node-archive <tarball>`), refuses it unless its length and SHA-256 match `runtime/releases/node/*.json` (on
-macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signature, team `HX7739G8FX`) and its
-`--version` is the pinned one, and keeps only `bin/node` and its licence in `$CUA_HOME/node/<version>`, recording the
-binary's SHA-256: a `bin/node` that no longer matches its record is never run, neither by a later install nor as a
-candidate. Like the runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
-the command fails after the runtime is in place and says so; `--no-node` skips it, as for an offline install without
-the tarball. If no candidate qualifies, a macOS session that selects nothing (browser-only, with `CUA_REPL_HOST`
-unset) keeps the vendor host with reason `own_host_node_unavailable`, and a Linux session is refused: run `cua install`,
-install Node 24 or later yourself, or set `CUA_NODE` to one. So is a macOS computer session that selects cua's engine
+On macOS the own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the Node `cua
+install` placed under `$CUA_HOME/node`, the node running cua, then the first `node` on `PATH`, never the vendor's pinned
+Node. On Linux it takes `CUA_NODE` when set, else the Node `cua install` placed, and nothing else (Linux, cua's own
+Linux runtime). cua itself keeps running on your Node; only the own host's processes use the installed one. After the
+runtime, `cua install` downloads the official nodejs.org tarball of the pinned Node 24 for this platform (or takes a
+local copy with `--node-archive <tarball>`), refuses it unless its length and SHA-256 match
+`runtime/releases/node/*.json` (on macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signature,
+team `HX7739G8FX`) and its `--version` is the pinned one, and keeps only `bin/node` and its licence in
+`$CUA_HOME/node/<version>`, recording the binary's SHA-256: a `bin/node` that no longer matches its record is never run,
+neither by a later install nor as a candidate. Like the runtime, a verified Node makes it a no-op, and a damaged one is
+reported, never repaired in place. If that step fails, the command fails after the runtime is in place and says so;
+`--no-node` skips it, as for an offline install without the tarball. If no candidate qualifies, a macOS session that
+selects nothing (browser-only, with `CUA_REPL_HOST` unset) keeps the vendor host with reason
+`own_host_node_unavailable`, and a Linux session is refused (`runtime_not_installed`), naming this cua's installer, or
+`CUA_NODE` for a Node 24 or later of your own. So is a macOS computer session that selects cua's engine
 (`CUA_NATIVE_ENGINE=cua` or `"engine": "cua"`): it is refused (`repl_host_node`), never moved to the vendor engine, and
 the sentence names `CUA_REPL_HOST=vendor`, which runs cua's engine on the vendor host instead, changing the host and not
 the engine. This is selection before launch, not a retry on another host after a failed launch. On macOS
-`CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
-computer surface on macOS runs the vendor engine (`repl_host_refused`, naming `CUA_NATIVE_ENGINE=cua`); it is never
-silently downgraded. This replaces the host and facade on supported sessions, not the installed vendor runtime.
+`CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found
+(`repl_host_node`) or when the computer surface on macOS runs the vendor engine (`repl_host_refused`, naming
+`CUA_NATIVE_ENGINE=cua`); it is never silently downgraded. This replaces the host and facade on supported sessions, not
+the installed vendor runtime.
 
 `cua doctor`'s `repl.host` row names the host and reason for the configured session and the separate browser-only
 profile listing. It reads `pass` for usable selections, and `fail` when either of them is refused: a setting or
@@ -1237,43 +1269,46 @@ engine, below):
   static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
   `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
   `runtime/engine/linux-engine.json` pins its version (0.4.4), URLs and SHA-256s. `cua install` fetches the asset for
-  this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` installs or
-  replaces it on its own. cua's own Linux service (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript
-  runs for the computer surface. It is the default.
+  this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` makes that step
+  required, so a failed engine download fails the command (cua's own Linux runtime, below). cua's own Linux service
+  (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript runs for the computer surface. It is the default.
 - **The vendor engine,** OpenAI's computer-use helper `sky_linux` behind the vendor's `@oai/sky` service, from
   OpenAI's official Linux package of the same ChatGPT release, the `chatgpt` deb for amd64 or arm64 (pins
   `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*` JavaScript is the macOS release's byte for
   byte (the deb's `codex` and its Chrome native host are no longer installed: #115, #79). It is the rollback,
-  `CUA_NATIVE_ENGINE=vendor` or `"engine": "vendor"` (below), and what a home keeps until it holds an engine of cua's
-  that this cua can drive.
+  `CUA_NATIVE_ENGINE=vendor` or `"engine": "vendor"` (below), and the only thing that still reads OpenAI's package:
+  `cua install` places it under `$CUA_HOME/runtimes/` for this selection alone, and a vendor selection without it is
+  refused (`engine_not_installed`). No home falls back to it.
 
-Either way `cua install` still installs that package: until #171's M6a, the module tree the cells import from and the
-runtime record that names the installed release come from it. With cua's engine nothing of it drives the computer
-surface: `ps` shows `cua-engine` as the trusted worker's child and no `sky_linux`. cua's engine
-passed its release gate on x64 (`docs/evidence/2026-10-28-own-linux-engine/m4/gate/README.md`); its acceptance on the
-pinned release on both architectures is recorded under `docs/evidence/2026-10-28-own-linux-engine/m5/x64/` and
-`…/m5/arm64/`.
+Every Linux session, browser-only ones included, runs from cua's own runtime: a module tree, a Node, the sandbox helper
+and, for the computer surface on cua's engine, `cua-engine`, all placed by `cua install` (cua's own Linux runtime,
+below). A session that does not select the vendor engine reads, runs and names nothing under `$CUA_HOME/runtimes/`; only
+`cua install` and `cua doctor` look there, to place and report OpenAI's package. With cua's engine `ps` shows
+`cua-engine` as the trusted worker's child and no `sky_linux`. cua's engine passed its release gate on x64
+(`docs/evidence/2026-10-28-own-linux-engine/m4/gate/README.md`); its acceptance on the pinned release on both
+architectures is recorded under `docs/evidence/2026-10-28-own-linux-engine/m5/x64/` and `…/m5/arm64/`.
 
 Every Linux session runs cua's own REPL host on Node 24 or later (Use): the vendor host is retired on Linux,
-`CUA_REPL_HOST=vendor` is refused (`repl_host_refused`), and a machine with no Node 24 is refused (`repl_host_node`)
-until `cua install` places one. The own host drives the selected engine and confines its children with cua's sandbox
-helper (below). The vendor engine's computer surface under that sandbox is shown on an Ubuntu 24.04 arm64 GCE box
-with Xvfb and Openbox
-(`docs/evidence/2026-10-17-own-sandbox/m3/`: gedit through `sky_linux` with the kernel confined, the #116 parity
-suites). The vendor host was shown earlier on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
+`CUA_REPL_HOST=vendor` is refused (`repl_host_refused`), and a home without the Node `cua install` places, or
+`CUA_NODE`, is refused (`runtime_not_installed`). The own host drives the selected engine and confines its children with
+cua's sandbox helper (below). The vendor engine's computer surface under that sandbox is shown on an Ubuntu 24.04 arm64
+GCE box with Xvfb and Openbox (`docs/evidence/2026-10-17-own-sandbox/m3/`: gedit through `sky_linux` with the kernel
+confined, the #116 parity suites). The vendor host was shown earlier on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
 (`docs/evidence/2026-10-06-linux-acceptance.md`), and the x64 pin and the agent as a systemd user unit, driven through
 the hosted relay, in `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
 **A cloud VM in one step.** `deploy/cloud-vm/` turns a fresh Ubuntu 24.04 cloud VM into such a machine from user data:
-the X11 desktop with autologin, deb Chrome with the extension by policy and AT-SPI on, Node 22, a checkout with the
-pinned runtime installed, the host registered and a profile `me` bound, the user-namespace sysctl, and with a relay the
+the X11 desktop with autologin, deb Chrome with the extension by policy and AT-SPI on, Node 22, a checkout with cua's
+own runtime installed, the host registered and a profile `me` bound, the user-namespace sysctl, and with a relay the
 enrolment and the agent unit; it prints doctor's summary and the steps left to you (with a relay, the relay's table;
 nobody signs in to anything). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
 `deploy/cloud-vm/render.sh` prints the user data for any other provider. See `deploy/cloud-vm/README.md` and
-`docs/evidence/2026-10-07-cloud-vm-provisioning.md`. Its `cua install` also places the pinned Node 24 the own host
-runs on. A Node 22-only machine installed with `--no-node` has its sessions refused (`repl_host_node`) until `cua
-install` runs again, Node 24 or later is installed, or its absolute path is passed as `CUA_NODE` when installing the
-agent.
+`docs/evidence/2026-10-07-cloud-vm-provisioning.md`. Its `cua install` places the pinned Node 24 the own host runs on;
+the machine's Node 22 runs only cua itself. It needs no deb: its `cua install` tries the pinned deb's official URL for
+the vendor engine, and a failed download there leaves a working device; `--deb` makes the deb required, from that URL, a
+mirror or your copy. A home installed with `--no-node` has its sessions refused (`runtime_not_installed`) until the
+installer runs again without it, or a Node 24 or later is named by its absolute path as `CUA_NODE` (for the agent, when
+installing it).
 
 What it needs:
 
@@ -1292,26 +1327,29 @@ What it needs:
   sudo apt-get install binutils xz-utils x11-utils dbus-x11 at-spi2-core bubblewrap
   ```
 
-  `ar`, `tar` and `xz` unpack the deb, `xdpyinfo` and `dbus-send` are doctor's probes, and `bwrap` is what cua's
-  sandbox helper runs (the system's, from a fixed `PATH`).
-  `cua install` refuses with `missing_tool`, naming the package, when one is absent.
+  `ar`, `tar` and `xz` unpack OpenAI's deb, which only the vendor engine needs, `xdpyinfo` and `dbus-send` are
+  doctor's probes, and `bwrap` is what cua's sandbox helper runs (the system's, from a fixed `PATH`). A step of `cua
+  install` that needs a tool which is absent fails with `missing_tool`, naming the package.
 - **Google Chrome as a deb or rpm, never Flatpak or snap.** A Flatpak or snap Chrome cannot start a native host outside
   its own sandbox. Put the cua extension in each profile you want to use: loaded unpacked as on macOS, or by policy
   as the cloud template does (`ExtensionInstallForcelist` naming its id and an update URL, in one file under
   `/etc/opt/chrome/policies/managed/`: Chrome does not merge that policy across files there).
 
-Install and register from a checkout. The default `CUA_HOME` is `${XDG_DATA_HOME:-~/.local/share}/cua`:
+Install and register from a checkout, naming its own `bin/cua.mjs` (cua's own Linux runtime, below). The default
+`CUA_HOME` is `${XDG_DATA_HOME:-~/.local/share}/cua`:
 
 ```sh
-node bin/cua.mjs install --archive ~/mirror/chatgpt_26.928.40906_arm64.deb   # or no --archive: download the pinned deb
+node bin/cua.mjs install            # cua's own runtime and engine, then OpenAI's deb from its pinned URL
 node bin/cua.mjs doctor
 node bin/cua.mjs chrome register    # writes ~/.config/google-chrome/NativeMessagingHosts/io.github.ssfskim.cua.json
 ```
 
-**Keep a copy of the deb.** The repository's signed `Packages` index lists only the newest version, and keeping old
-pool files is not promised (the pinned file still downloaded on 2026-10-06). `--archive` takes the copy and checks it
+**OpenAI's deb, for the vendor engine only.** Every `cua install` also tries to place it (about 450 MB, once), and a
+home that does not select the vendor engine works without it. To keep the rollback, keep a copy: the repository's
+signed `Packages` index lists only the newest version, and keeping old pool files is not promised (the pinned file
+still downloaded on 2026-10-06). `--archive ~/mirror/chatgpt_26.928.40906_arm64.deb` takes the copy and checks it
 against the pin as it would a download. Trust is the archive's pinned length and SHA-256, because nothing in the deb
-is code-signed. Doctor's `runtime.signatures` says so. Each deb's own OpenPGP signature (`_gpgorigin`) was checked
+is code-signed; doctor's `runtime.vendor` row says so. Each deb's own OpenPGP signature (`_gpgorigin`) was checked
 against OpenAI's repository key when the pin was written; the pin's `notes` record the check.
 
 **The sandbox.** cua confines both of the own host's children with its sandbox helper, `codex-linux-sandbox`: OpenAI's
@@ -1330,7 +1368,7 @@ computer surface defaulted to `disabled`). The cells' kernel gets no socket of a
 every family), so a cell can no longer reach the X display, the session bus or the network directly, and it is denied
 the secret store, `~/.config/cua` and cua's `state/`, `remote/`, `chrome/` and `run/` but its own run directory (on
 Linux the denial is per directory: `profiles.json`, `current.json`, `staging/` and `bin/` stay readable). With the
-computer surface the trusted worker has the network, so `sky_linux`, its child, reaches X and the session bus; it
+computer surface the trusted worker has the network, so the engine, its child, reaches X and the session bus; it
 keeps the same filesystem limits. `launch_app` on Linux starts the application outside the sandbox: cua checks the id
 against `sky_linux`'s own `list_apps`, resolves it to a desktop entry outside every sandbox write root, and runs it
 with `gio launch` in the desktop session, so the application is not confined with the worker. A connection's own
@@ -1403,8 +1441,16 @@ lack of `DISPLAY`.
   `{{secret:KEY}}` reference is substituted as the whole text of `typeText` or `paste` (both arrive as `type_text
   {window, text}`). The typing caveat above applies to the vendor engine: in a GTK3 text view the substituted
   `type_text` is what crashes. With cua's engine the value is pasted like any other text.
-- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
-  `sandbox.launcher` checks the placed helper against its pin.
+- **Doctor's rows.** The runtime rows describe cua's own Linux runtime (below). `platform` names its release.
+  `runtime.installed` checks that the module tree, the Node and the sandbox helper a session resolves are installed and
+  that `current.json` names this release: `warn` when it names OpenAI's release (an older cua's install wrote it) or
+  another runtime, since then no install of this cua has completed there. `runtime.modules` hashes every file of the
+  module tree against its install record, and `runtime.node` names the Node sessions run on, with `warn` for one behind
+  or ahead of the pin or for `CUA_NODE`. `runtime.vendor` stands for the vendor rows macOS has (`runtime.files`,
+  `runtime.vendor-manifest`, `runtime.ipc`, `runtime.signatures`): `pass` when OpenAI's package is installed and whole,
+  `skip` when it is absent, `fail` when it is damaged. Every `fail`, and every `warn` for a part behind its pin, names
+  this cua's installer by its absolute path. `display`, `accessibility.bus` and `sandbox.userns` replace the macOS
+  helper rows, and `sandbox.launcher` checks the placed helper against its pin.
 - **Remote control.** `cua remote enroll`, `cua agent run` and the relay work as on macOS, and `cua agent install`
   runs the agent as a systemd user unit (below). The agent reads no console state on Linux: there is no portable
   screen-lock signal, so `console_locked` is never answered, and doctor's `agent.console` checks instead that the
@@ -1415,21 +1461,87 @@ lack of `DISPLAY`.
   Web content appears only when Chrome is also started with `--force-renderer-accessibility`. The browser surface
   needs neither.
 
+### cua's own Linux runtime
+
+Since #171 M6a every Linux session, browser-only ones included, runs from four parts that `cua install` places under
+`CUA_HOME`, none of them OpenAI's. `runtime/linux-runtime.json` names them, and the runtime's release is made from
+them, `cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d` on x64 today, so a change to any part is a new release.
+
+| Part | In `CUA_HOME` | Pinned in | Needed by | What a session accepts | Named stand-in |
+|---|---|---|---|---|---|
+| The module tree: the packages cells import (`playwright`, `sharp`, `pngjs`, `jpeg-js`, `pixelmatch`) and `classic-level`, which `cua profiles bind` loads, with their dependencies: 23 packages | `modules/<lock hash>/` | `runtime/modules/` | every session | this cua's tree, whole | none |
+| Node 24.22.0, which cua's own REPL host runs on | `node/<version>/` | `runtime/releases/node/` | every session | a Node cua installed, its bytes as recorded, at 24 or later | `CUA_NODE` |
+| The sandbox helper, `codex-linux-sandbox` (`rust-v0.163.0`; The sandbox, above) | `sandbox/<tag>/` | `runtime/sandbox/linux-sandbox.json` | every session but a `CUA_SHIM_SANDBOX=disabled` one | the pinned helper's bytes, checked at every launch | `CUA_SHIM_SANDBOX=disabled`, which runs none |
+| cua's engine, `cua-engine` 0.4.4 | `engine/linux/cua-engine` | `runtime/engine/linux-engine.json` | computer sessions on cua's engine | a release cua installed, at 0.4.4 or later | `CUA_LINUX_ENGINE_BIN`, for the development harnesses; a local build from `cua engine build` |
+
+A part that is missing, damaged or below that minimum refuses the session when it opens, and the refusal names this
+cua's installer by its absolute path: `runtime_not_installed` (no module tree of this cua's lock, or no Node),
+`layout_invalid` (a module tree with a file missing), `sandbox_unavailable` (the helper), or `engine_not_installed`,
+`engine_outdated` and `engine_unrecorded` (the engine; cua's own engine, below). A Node or an engine that cua
+installed at another version than this cua pins, at or above its minimum, still runs, and `cua doctor` warns. Nothing
+else stands in: on Linux the node running cua and `node` on `PATH` are not used, and a `CUA_NODE` or
+`CUA_LINUX_ENGINE_BIN` that is, or leads, under `$CUA_HOME/runtimes/` (OpenAI's package) is refused
+(`invalid_setting`), as is an installed engine whose path leads there.
+
+**What cells can import.** cua's module tree replaces the one in OpenAI's package, under either engine, and carries
+none of OpenAI's own packages: `@oai/*` (OpenAI's code), `@statsig/*` (its telemetry client) and `corepack` (its
+Node's tool) are no longer importable in cells. `playwright`, which the `js` tool's description names, still is.
+
+**How `cua install` places it.** The runtime's parts come first, so a browser-only session needs nothing from either
+engine's server, then each engine on its own. Every step is tried whatever happened before:
+
+1. It checks that `runtime/linux-runtime.json` agrees with the four pins, before anything is fetched.
+2. The module tree. Each package's tarball comes from the npm registry, its length and SHA-512 are checked against
+   `runtime/modules/` before anything reads it, and cua unpacks it itself (files and directories only; no npm, `tar`
+   or package script runs) and records every file, then moves the tree into place in one step. `--modules-dir <dir>`
+   takes local copies of the tarballs, checked the same way.
+3. The sandbox helper (`--sandbox-helper <file>` takes a local copy).
+4. Node (`--node-archive <tarball>` takes a local copy; `--no-node` places none, and sessions then need `CUA_NODE`).
+5. `current.json`, once steps 2 to 4 are in place, names this runtime's release. On Linux it records the last install
+   that completed and selects nothing, so an older cua's install that writes OpenAI's release there changes no session
+   of this cua.
+6. cua's engine.
+7. OpenAI's package, for the vendor engine (`--archive <deb>` takes a local copy, `--release <id>` names one of its
+   pinned releases).
+8. The Codex CLI's leftovers (Install, above).
+
+A part already installed and verified makes its step a no-op; one that no longer verifies is never repaired in place,
+and its message names what to stop and remove or move aside before the installer runs again. The command fails when a
+runtime part (steps 2 to 4) failed, or when an engine the home asks for failed: cua's when the setting selects it (the
+default) or `--engine` is given, OpenAI's package when the setting selects the vendor engine or `--archive` or
+`--release` is given. An engine nobody asked for that fails is said in one line, and the command succeeds: on a default
+home a failed download of OpenAI's package leaves every session the home selects working. The last line says which
+sessions now open, resolved as `cua serve` would resolve them; with `--json` the report's `sessions` is `{browser,
+computer, engine, alternate, why}`, where `why` holds each refusal in its own words.
+
+**Installing while a session is open.** The module tree, the Node and the sandbox helper sit in directories named by
+their lock hash, version or tag, which an install never replaces, so an open session keeps those it opened with. The
+engine is one file, `engine/linux/cua-engine`, which an install of another version replaces in one rename: a running
+engine keeps running, but an open session runs whichever file is there the next time it starts its engine, after an
+idle stop for one. cua's service asks every engine it starts for its version first and refuses one older than 0.4.4,
+so what runs is always an engine this cua can drive, though not always the one the session opened with.
+
+**Updating.** The update that brought this runtime, and any later one that moves the module tree or the sandbox
+helper or raises the engine's minimum, needs one install in each Linux home, with the updated cua's own installer
+(Install, Updating on Linux).
+
 ### cua's own engine
 
 **Selecting it.** `CUA_NATIVE_ENGINE=cua` in `cua serve`'s environment selects cua's engine for that server's
 sessions, and `"engine": "cua"` in `~/.config/cua/engine.json` selects it for every session of the account; the
 variable wins over the file. `vendor` in either selects the vendor engine. With neither set, a session gets the default,
-which is cua's engine. The default takes the installed engine only when it is at least the version this cua needs
-(0.4.4), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its SHA-256 is the
-file's. A home with no engine of cua's, with an older one, or with one its `install.json` does not match keeps the
-vendor engine, and `cua doctor`'s `engine` row warns, naming which (`engine_not_installed`, `engine_outdated`,
-`engine_unrecorded`) and that `cua install --engine` replaces it. A connection resolves its engine once, when it opens, and keeps it for every launch after.
-An explicit selection of cua's engine with none installed is refused (`engine_not_installed`, naming `cua install
---engine`). cua's service checks the engine's version before a session's first request: one older than this cua needs
-is refused there, with `cua-engine <found> is older than 0.4.4, which this cua needs; run cua install --engine`, and `cua install
---engine` fixes it. `CUA_LINUX_ENGINE_BIN` names another engine file in place of the installed one, for the
-development harnesses only.
+which is cua's engine. Selected either way, cua's engine runs only when the installed one is at least the version this
+cua needs (0.4.4), read from the bytes, not by running it: the pinned asset's version, or `install.json`'s while its
+SHA-256 is the file's. A home with no engine of cua's, with an older one, or with one its `install.json` does not match
+has its computer sessions refused when they open (`engine_not_installed`, `engine_outdated`, `engine_unrecorded`), the
+sentence naming this cua's installer with `--engine`, and `cua doctor`'s `engine` row fails the same way. No session
+falls back to the vendor engine. A connection resolves its engine once, when it opens, and keeps it for every launch
+after (an install in between may still replace the file: cua's own Linux runtime, above). cua's service checks the
+version again each time it starts the engine: one older than this cua needs is refused there, with ``cua-engine
+<found> is older than 0.4.4, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine` ``, where `<this
+cua>` is the checkout or plugin copy that runs the session. `CUA_LINUX_ENGINE_BIN` names another engine file
+in place of the installed one, for the development harnesses only: its `--version` is read once when a session opens
+and held to the same minimum.
 
 **The device mode** says whom the desktop belongs to. `shared` (the default) means a person may be using it: input to a
 background window changes neither the active window, the stacking order, the keyboard focus nor the pointer, and input
@@ -1464,7 +1576,10 @@ selected engine.
 **Doctor.** The `engine` row reports the selected engine, its version and SHA-256 against the pin (or a local build
 from `cua engine build`, an older release or an unknown file), the service that drives it, the device mode and the
 engine's capability report (`backend`, `tree`, `input`, `capture`, `text`), read from the engine started for the check
-and stopped. `accessibility.enabled` checks `IsEnabled`. While the vendor engine is selected the row is `skip`.
+and stopped. It warns for a release behind or ahead of the pin, a local build or `CUA_LINUX_ENGINE_BIN`, and fails
+where computer sessions are refused. `accessibility.enabled` checks `IsEnabled`. While the vendor engine is selected
+the row is `skip`, or `fail` when OpenAI's package is not installed or is damaged, since those sessions are then
+refused.
 
 ### Known limitations (cua's engine)
 
@@ -1724,12 +1839,12 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime (`runtimes/`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's sandbox helper (`sandbox/<tag>/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
+| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed vendor runtime (`runtimes/`; on Linux only for `CUA_NATIVE_ENGINE=vendor`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's module tree (`modules/<lock hash>/`), sandbox helper (`sandbox/<tag>/`) and engine (`engine/linux/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host and cua's own browser service, no login needed), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions take the host their engine needs, the vendor host for the vendor engine and cua's for cua's. If only Node is missing, a macOS session that selects nothing (browser-only) keeps the vendor host (`own_host_node_unavailable`); a macOS computer session that selects cua's engine is refused (`repl_host_node`), naming `CUA_REPL_HOST=vendor`, which runs cua's engine on the vendor host (the host changes, not the engine); Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS with the vendor engine (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
-| `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
-| `CUA_NATIVE_ENGINE` | `cua` on Linux, `vendor` on macOS | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default: on Linux cua's engine where one this cua can drive is installed (else the vendor engine, with a warning in `cua doctor`), on macOS the vendor engine. cua's engine needs one installed: on Linux `cua-engine` (`cua install --engine`), on macOS an approved engine (`cua install --engine` or `cua engine build`, then `cua engine approve`; Install, cua's own macOS engine). An explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). On macOS the approved engine must be at least the version this cua drives (0.1.0, which every approved engine meets today): an older one is refused when selected explicitly and passed over by the default, with a warning in `cua doctor` (`engine_outdated`), naming `cua engine approve` for a pending build that meets it, else `cua install --engine` then `cua engine approve`. Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
+| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions take the host their engine needs, the vendor host for the vendor engine and cua's for cua's. If only Node is missing, a macOS session that selects nothing (browser-only) keeps the vendor host (`own_host_node_unavailable`); a macOS computer session that selects cua's engine is refused (`repl_host_node`), naming `CUA_REPL_HOST=vendor`, which runs cua's engine on the vendor host (the host changes, not the engine); Linux refuses (`runtime_not_installed`, or `repl_host_node` for a `CUA_NODE` that is missing or older than 24). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS with the vendor engine (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
+| `CUA_NODE` | unset | absolute path to a Node executable for cua's own host (24+). On macOS it is tried first, before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`, and a missing, unreadable or older candidate falls through to the next. On Linux it replaces the Node `cua install` placed and nothing falls through: one that is missing or older than 24 refuses (`repl_host_node`), and doctor's `runtime.node` warns while it is set (Linux, cua's own Linux runtime). A relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node: on Linux a path that is, or leads, under `$CUA_HOME/runtimes/` refuses (`invalid_setting`). `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
+| `CUA_NATIVE_ENGINE` | `cua` on Linux, `vendor` on macOS | `vendor` or `cua`: the native engine of computer sessions, on macOS (#117) and on Linux (#171; Linux, cua's own engine). Unset or empty, `"engine"` in `~/.config/cua/engine.json` decides, else the default: on Linux cua's engine, on macOS the vendor engine. cua's engine needs one installed: on Linux `cua-engine` at 0.4.4 or later (this cua's `node <checkout>/bin/cua.mjs install --engine`), on macOS an approved engine (`cua install --engine` or `cua engine build`, then `cua engine approve`; Install, cua's own macOS engine). On Linux every selection of cua's engine, the default included, is refused without one (`engine_not_installed`, `engine_outdated`, `engine_unrecorded`, naming the remedy), and `vendor` is refused without OpenAI's package (`engine_not_installed`); on macOS an explicit selection with none installed is refused (`engine_not_installed`, naming the remedy). On macOS the approved engine must be at least the version this cua drives (0.1.0, which every approved engine meets today): an older one is refused when selected explicitly and passed over by the default, with a warning in `cua doctor` (`engine_outdated`), naming `cua engine approve` for a pending build that meets it, else `cua install --engine` then `cua engine approve`. Any other value refuses (`invalid_setting`). Each connection resolves it once at its open; `cua doctor`'s `engine` row reports it |
 | `CUA_SIGNING_IDENTITY` | `"signingIdentity"` in `~/.config/cua/engine.json` | macOS, cua's own engine: the Apple Development identity that `cua install --engine` and `cua engine build` sign it with, its SHA-1 or common name as `security find-identity -v -p codesigning` lists it; wins over the file. Never printed: reports say only whether a signature matches it. With neither set a build refuses (`engine_identity_missing`); `--engine-sign adhoc` or `--sign adhoc` is for CI only |
 | `CUA_SIGN_WAIT_MS` | `45000` | macOS, cua's own engine: how long a build waits for `codesign`, a keychain prompt included, in milliseconds from 1 to 1800000; `--sign-wait` wins. 600000 leaves the owner time to answer the first sign's prompt. Read only by a build that runs |
 | `CUA_DESKTOP_MODE` | `shared` | `shared` or `dedicated`: the device mode cua's engine runs in (Linux, cua's own engine; macOS since #282). `shared`: a person may be using this desktop, so input an application ignores in the background is refused with nothing sent. `dedicated`: the desktop is the agent's, so such input brings its window forward. Unset or empty, `"desktop"` in `~/.config/cua/engine.json` decides, else `shared`; the cloud template writes `dedicated`. Any other value refuses (`invalid_setting`) |
@@ -1778,7 +1893,8 @@ through the host's trusted pipes.
 
 `scoped` places requirements on where things live. Nothing of cua's may sit under `$CUA_HOME/run`: a checkout there
 would make cua's trusted code writable, and a write root over the runtime's configuration and approvals, the Node
-`cua install` placed under `$CUA_HOME/node`, its sandbox helper or what it verifies in `$CUA_HOME/staging` would let
+`cua install` placed under `$CUA_HOME/node`, its sandbox helper, on Linux its module trees (`$CUA_HOME/modules`) and
+engine, or what it verifies in `$CUA_HOME/staging` would let
 cells choose what later runs outside the sandbox. On macOS, under `scoped` and `default` alike, `CUA_HOME`, the secret
 store and `~/.config/cua` must not lie inside one another (a custom `CUA_HOME` under `~/.config`, say): the kernel's
 denial of one would cut through the other. `cua serve` and the profile listing refuse such a layout with
@@ -1791,7 +1907,8 @@ since its tiers could not be denied.
 `disabled` permission profile, so cells and trusted services can read and write wherever your account can, the secret
 store included, and the sandbox no longer refuses their network connections. This fits the trust model (the agent is
 trusted, and cua adds no policy against exfiltration), but it also lets a cell write cua's trusted code roots, the
-runtime's configuration and approvals in `state/codex` and the vendor's modules in the installed release; you accept
+runtime's configuration and approvals in `state/codex`, the vendor's modules in the installed release and, on Linux,
+cua's module tree and engine; you accept
 that cua no longer protects the integrity of that code from the agent. With `default`, cua sends no sandbox state;
 either host then allows reads but the denied ones and denies all writes, including to `$TMPDIR` and `/tmp`, as well as
 network connections, and the features that need scratch space fail.
@@ -1812,10 +1929,18 @@ variables (`HOME`, `USER`, `TMPDIR`, locale), nothing else in the server's envir
 
 ## Licences and sources
 
-- **The installed runtime** is OpenAI's: `cua install` downloads the pinned ChatGPT archive from its official URL (or
-  takes your copy) and places it under `CUA_HOME` unmodified; this repository does not contain or redistribute it.
-  The native engine and the vendor host still use that tree; `cua install` removes only the unused Codex CLI from it
-  (see Install).
+- **The installed vendor runtime** is OpenAI's: `cua install` downloads the pinned ChatGPT archive from its official
+  URL (or takes your copy) and places it under `CUA_HOME` unmodified; this repository does not contain or redistribute
+  it. On macOS the native engine and the vendor host still use that tree; on Linux only `CUA_NATIVE_ENGINE=vendor`
+  does. `cua install` removes only the unused Codex CLI from it (see Install).
+- **cua's Linux module tree** (Linux, cua's own Linux runtime) is not in this repository either, and cua does not
+  redistribute it: `cua install` fetches each package from the npm registry and checks its length and SHA-512 against
+  `runtime/modules/package-lock.json`. When that lock was written, every name, version and SHA-512 in it was checked
+  against the lockfile inside OpenAI's pinned Linux packages, for both architectures (`scripts/modules-pin.mjs`, which
+  records the check in `runtime/modules/provenance.json`). Each package keeps its own licence: among them `sharp` is
+  Apache-2.0, `classic-level` MIT, and the prebuilt libvips `sharp` loads (`@img/sharp-libvips-linux-<arch>`)
+  LGPL-3.0-or-later. The Node `cua install` places is the official nodejs.org build, downloaded from there and checked
+  against its pin.
 - **cua's sandbox** is ported from, or built unmodified from, OpenAI's open-source Codex (`openai/codex`,
   **Apache-2.0**, with its NOTICE): `src/sandbox/seatbelt.mjs` and its `.sbpl` files (byte copies) from `rust-v0.159.2`,
   with `src/sandbox/LICENSE` and `NOTICE` beside them and a provenance header naming every source range; the Linux

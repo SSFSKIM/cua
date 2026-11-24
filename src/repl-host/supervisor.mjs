@@ -87,7 +87,6 @@
 // code, gets the host's whole (already allowlisted) environment, as the vendor's does.
 import {randomUUID} from 'node:crypto';
 import {delimiter, dirname, isAbsolute, join} from 'node:path';
-import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
 import {InvalidParams, initializeResult, jsArguments, parseToolOverrides, resetArguments, toolsFor, turnEndedArguments} from './tools.mjs';
@@ -100,6 +99,7 @@ import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError} from '../runtime/sandbox.mjs';
 import {parseDenyRead, policyTable, tableKey as launchKey, writeRootsOf} from '../sandbox/policy.mjs';
 import {sandboxedLaunch} from '../sandbox/index.mjs';
+import {jsonLine, lines} from './jsonl.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
 // What a kernel reads beyond its own code under a restricted profile: cua's facade (src/cua-api), which the banner
@@ -235,7 +235,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   let resolveClosed;
   const closed = new Promise(resolve => { resolveClosed = resolve; });
 
-  const write = message => { if (!output.destroyed && output.writable) output.write(`${JSON.stringify(message)}\n`); };
+  const write = message => { if (!output.destroyed && output.writable) output.write(jsonLine(message)); };
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
   const toolResult = (id, result) => respond(id, {...result, _meta: {...(result._meta ?? {}), [REPL_HOST_META_KEY]: {...hostMarker}}});
@@ -733,7 +733,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     }
   }
 
-  createInterface({input}).on('line', line => {
+  lines(input).on('line', line => {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return log(`dropped a non-JSON line (${line.length} characters)`); }

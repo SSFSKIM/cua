@@ -7,7 +7,8 @@ import './helpers/scratch-home.mjs'; // first: the native engine's selection mus
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync} from 'node:fs';
 import {createServer as createNetServer} from 'node:net';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -18,13 +19,17 @@ import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
 import {browserKeysStamp} from '../src/mcp/connection.mjs';
-import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
+import {loadPins, resolveRuntime, selectPin, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {createFakeMawsExtension} from './helpers/fake-maws-peer.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {hostIdentity, REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {BROWSER_SERVICE_IMPL_DIR} from '../src/runtime/launch.mjs';
+import {openConnection} from '../src/mcp/connection.mjs';
+import {verifiedLinuxEngineVersion} from '../src/runtime/linux-engine.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
 
 const supported = installedHomeSupported;
 const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'lazy-e2e', version: '0'}};
@@ -479,6 +484,83 @@ test('an idle restart reuses a leftover working directory, fixes its mode and re
   assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
   assert.equal(existsSync(cwd), false, 'close removes the reused directory and its residue');
   assert.deepEqual(readdirSync(join(home, 'run')), []);
+});
+
+// #171 M6a (the pre-flight's §3.2, §3.3): a Linux connection resolves its engine once, at the open, and every launch of
+// it (the first, lazy one, and the one after an idle stop) builds from that selection. The vendor's tree is looked
+// for once, there. cua's engine is bound by its pathname, not its bytes: an install that replaces the file between the
+// open and a launch, or while the runtime is stopped, changes what the next launch runs, and nothing selects again
+// (the service checks the version of whatever it starts: test/services-engine-linux/client.test.mjs).
+const LINUX = {platform: 'linux', arch: 'x64'};
+async function linuxConnection(t, home, {env = {}, engine} = {}) {
+  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
+  const input = new PassThrough(), output = new PassThrough();
+  const frames = [], launches = [], diagnostics = [];
+  createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+  const clock = fakeClock();
+  const user = scratch();
+  t.after(user.cleanup);
+  const connection = await openConnection({home, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: line => diagnostics.push(line), idleTimer: clock.timer, engine,
+    env: {PATH: process.env.PATH, HOME: user.dir, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000', ...env},
+    prepareLaunch: launch => { launches.push(launch); return {...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}}; },
+    resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'})});
+  let id = 0;
+  const request = async (method, params = {}) => {
+    const n = ++id;
+    input.write(JSON.stringify({jsonrpc: '2.0', id: n, method, params}) + '\n');
+    for (let i = 0; i < 600; i++) { const f = frames.find(m => m.id === n); if (f) return f; await tick(25); }
+    throw new Error(`no reply to ${method}; diagnostics: ${diagnostics.join('\n')}`);
+  };
+  await request('initialize', INIT);
+  const idleStop = async () => { clock.fire(); await until('the idle stop', () => diagnostics.includes('runtime stopped after 15 min idle')); };
+  return {launches, diagnostics, js: code => request('tools/call', {name: 'js', arguments: {code}}), idleStop, close: () => { input.end(); return connection.closed; }};
+}
+// Places `version` at the home's engine path as `cua install` does, with one rename over the file.
+function replaceEngine(home, version) {
+  const staged = fakeInstalledEngine(join(home, 'staging', 'replacement'), version);
+  renameSync(staged, join(home, 'engine', 'linux', 'cua-engine'));
+  renameSync(join(home, 'staging', 'replacement', 'engine', 'linux', 'install.json'), join(home, 'engine', 'linux', 'install.json'));
+}
+
+test('a Linux connection binds cua\'s engine by its path at the open: a replacement before the first launch or during an idle stop is what the next launch runs, never selected again', async t => {
+  const home = fakeInstalledHome(t, {host: LINUX});
+  const path = fakeInstalledEngine(home, MIN_ENGINE_VERSION);
+  // the handshake recorded, so the open launches nothing and the first launch is the first call's
+  const {release} = resolveRuntime({home, host: LINUX});
+  handshakeRecords({dir: join(homeLayout(home).handshake, release), surfaces: ['computer'], host: hostIdentity({host: 'cua', release})})
+    .write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
+  let selected = 0;
+  const installedVersion = () => { selected++; return verifiedLinuxEngineVersion({home}); };
+  const c = await linuxConnection(t, home, {engine: {installedVersion}});
+  assert.equal(selected, 1, 'the open selected once');
+  const opened = readFileSync(path);
+  replaceEngine(home, '9.0.0');
+  assert.notDeepEqual(readFileSync(path), opened, 'another release is at the path before the first launch');
+  await c.js('first');
+  replaceEngine(home, '0.4.2');
+  await c.idleStop();
+  await c.js('again');
+  assert.deepEqual(c.launches.map(launch => launch.env.CUA_ENGINE_BIN), [path, path], 'the first call\'s launch and the relaunch: the path the open bound');
+  assert.equal(selected, 1, 'no launch selected again: the open\'s engine, a pathname, is what every launch names');
+  assert.equal((await c.close()).code, 0, c.diagnostics.join('\n'));
+});
+
+test('a Linux connection on the vendor\'s engine looks for its tree once, at the open; every launch, the relaunch too, takes it from that selection', async t => {
+  const home = fakeInstalledHome(t, {host: LINUX});
+  const tree = vendorLinuxRuntime({home, host: LINUX});
+  let looked = 0;
+  const vendor = args => { looked++; return vendorLinuxRuntime(args); };
+  const c = await linuxConnection(t, home, {env: {CUA_NATIVE_ENGINE: 'vendor'}, engine: {vendor}});
+  await c.js('first');
+  await c.idleStop();
+  await c.js('again');
+  assert.ok(c.launches.length >= 2);
+  for (const launch of c.launches) {
+    assert.equal(launch.env.OAI_SKY_LINUX_BIN, tree.paths.skyLinuxBin);
+    assert.equal(launch.env.CUA_SKY_SERVICE, tree.paths.skyVendorService);
+  }
+  assert.equal(looked, 1, 'the open looked once; no launch looked again');
+  assert.equal((await c.close()).code, 0, c.diagnostics.join('\n'));
 });
 
 test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds', {skip: !supported}, async t => {

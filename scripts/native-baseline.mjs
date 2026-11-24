@@ -204,7 +204,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, approvedR
   if (!ADAPTERS[pre.platform]) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
   const adapter = surface === 'browser' ? browserAdapter(ADAPTERS[pre.platform]) : ADAPTERS[pre.platform];
   if (pre.dirty) throw new Error('the parity clone is dirty');
-  if (!pre.release) throw new Error('no runtime installed in the device home');
+  if (!pre.release) throw new Error(`no runtime installed in the device home${pre.runtimeError ? `: ${pre.runtimeError}` : ''}`);
   if (!pre.sandbox?.mode) throw new Error(`the serve's sandbox policy could not be resolved on the device (${pre.sandbox?.error ?? 'not reported'})`);
   const refusal = adapter.refuse(pre);
   if (refusal) throw new Error(refusal);

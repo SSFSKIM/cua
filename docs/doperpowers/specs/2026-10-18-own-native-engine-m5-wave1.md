@@ -311,6 +311,32 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1226 (the design session, after pilot C-7, 45446649714). C-7 is accepted: both lanes complete in
+  82 of 360 min, and blocking holds only #587's three typeSelect cells.
+  - **What C-7 proved on hosted.**
+    - #212's real path passed end to end on the vendor.
+    - R3's witness had its control seen in 2 of 2 runs, and the probe was seen in every cell. Finder's and Chrome's
+      concurrent@textedit pass as "user app's own window".
+    - The intervention rows took the top-wait.
+    - The Chrome background Tab fix held.
+  - **Three harness fixes before the full form.**
+    - The Go To field counts as focused through a selection only when all three hold: the dialog is a root of the
+      observation, PathTextField is its only text field, and the trailer shows a selection. macOS remembers the last
+      Go To path, so a later lane's dialog opens with the earlier lane's path selected. The exact-path check after
+      typing still guards the only Return. The row records `goToField {focusVia, prefilled {present, length}}`, never
+      the text.
+    - Chrome's background drag prepares with Chrome in front (`prepareInFront`): its prepare clicks would be background
+      web clicks, which cua refuses by design.
+    - Chrome's drag points come from the notes field's frame as Accessibility reads it (`field-frame`). The fixed
+      points had never landed in the field on the hosted window, C-2 to C-7. A frame not read leaves the row invalid.
+  - **C's full form, 3 runs per engine.** It alternates which lane runs first, vendor / cua / vendor, recorded in the
+    plan and in sitting.json, and each run records `meta.laneOrder`.
+    - Save-sheet runs one step per run in the same order.
+    - Key-route keeps its order (vendor, then cua), recorded.
+    - The put-back gate chains through the swap unchanged. In each run, the second lane's step carries the frame pair.
+    - The summary and the sitting report split every failed and no-verdict cell by the lane that ran first, recorded
+      and never judged.
+    - Projection: about 240 min, under ruling 1195's 300.
 - 2026-11-24, ruling 1225 (the design session): R3's third condition gets its witness, a listen-only event tap around
   the concurrent cells. Ruling 1198's tap app gains `--mode events`.
   - **Granting.** Input Monitoring is granted to the tap binary alone through tcc.mjs (`grantDiagnosticListen`, behind

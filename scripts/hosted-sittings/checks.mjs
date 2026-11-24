@@ -40,11 +40,15 @@
 //   onboarding   T3b's staged onboarding (sitting D): its record (`record`) judged stage by stage against M4's behaviour
 //                (./onboarding-judge.mjs), in ruling 1149's order: a result answered on another engine than the side
 //                (`engine`) is NO VERDICT before any FAIL; a missing or incomplete record is NO VERDICT, never a pass
+//   diagnostic   C's key-route diagnostic (ruling 1198, ./key-route.mjs): INFO with what its record (`report`) holds, so
+//                it never changes the sitting's verdict, whatever the engines did; a cleanup failure is a FAIL naming
+//                each, and a record not written is a FAIL too (its cleanup unconfirmed)
 // deps: {exit, logText() (the step's log), readJson(path) (null when unreadable), exists(path)}. -> [status, reason].
 import {HOMES} from '../accept/macos-selection.mjs';
 import {isFixtureCheck} from '../accept/textedit.mjs';
 import {sampleCause} from '../native-matrix/front-key.mjs';
 import {classifyAttestedRecord} from '../probe/lib.mjs';
+import {keyRouteSummary} from './key-route-report.mjs';
 import {judgeOnboarding} from './onboarding-judge.mjs';
 import {frameAsymmetry} from './venue.mjs';
 
@@ -165,6 +169,12 @@ export const CHECKS = Object.freeze({
     return ['FAIL', `driver failure: no observation recorded (${rows.find(row => row.invalid)?.invalid ?? 'no reason recorded'})`];
   },
   onboarding: (step, {exit, readJson}) => judgeOnboarding(readJson(step.record), {path: step.record, exit, engine: step.engine}),
+  diagnostic(step, {exit, readJson}) {
+    const report = readJson(step.report);
+    if (!report) return ['FAIL', `the diagnostic's record ${step.report} was not written (exit ${exit}): its cleanup is unconfirmed`];
+    if (report.cleanup?.ok !== true) return ['FAIL', `cleanup: ${(report.cleanup?.failures ?? []).join('; ') || 'not confirmed'}`];
+    return ['INFO', `a diagnostic, recorded: ${keyRouteSummary(report)}`];
+  },
   acceptance(step, {exit, readJson}) {
     if (exit === 0) return ['PASS', null];
     const report = readJson(step.record), stop = report?.alertGuardStop;

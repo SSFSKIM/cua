@@ -12,8 +12,10 @@
 // the workflow may name a later one) and writes it to a run-owned file, named with its commit by
 // CUA_HOSTED_DECISION_FILE and CUA_HOSTED_DECISION_SHA. The writer runs no git and fetches nothing; a missing or
 // unreadable file refuses (ruling 1137; proven by test/hosted-sittings/tcc.test.mjs with a spy store). Every write cites
-// the entry and the pinned commit in the log and in its report. It grants rows (the setup's and the approval's), and it
-// removes cua's engine's own rows for named services (the hosted staged onboarding's, T3b), through the same guard.
+// the entry and the pinned commit in the log and in its report. It grants rows (the setup's and the approval's), it
+// removes cua's engine's own rows for named services (the hosted staged onboarding's, T3b), and it grants Input
+// Monitoring to sitting C's key-route diagnostic's tap app alone (ruling 1198, grantDiagnosticListen), all through the
+// same guard; engineRows reads the engines' rows, hosted only, so that step can show it left them as they were.
 //
 // What H0 found (#175; scripts/probe-117-h0/README.md on probe/117-h0 56c08949), and so what this writes: the system
 // database's rows are honoured, at the client's next launch only (so the caller relaunches the engines after it,
@@ -108,12 +110,12 @@ const quote = value => `'${String(value).replace(/'/g, "''")}'`;
 // The designated requirement of a signed bundle, compiled to the blob a row's csreq column holds, as hex (H0's).
 export function csreqHex(bundle) {
   let shown;
-  try { shown = execFileSync('/usr/bin/codesign', ['-d', '-r-', bundle], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}); } catch (error) { shown = `${error.stdout ?? ''}${error.stderr ?? ''}`; }
+  try { shown = execFileSync('/usr/bin/codesign', ['-d', '-r-', bundle], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000}); } catch (error) { shown = `${error.stdout ?? ''}${error.stderr ?? ''}`; }
   const requirement = /designated => (.*)$/m.exec(shown)?.[1];
   if (!requirement) throw new Error(`no designated requirement for ${bundle}`);
   const dir = mkdtempSync(join(tmpdir(), 'cua-csreq-'));
   try {
-    execFileSync('/usr/bin/csreq', ['-r', `=${requirement}`, '-b', join(dir, 'req.bin')], {stdio: ['ignore', 'pipe', 'pipe']});
+    execFileSync('/usr/bin/csreq', ['-r', `=${requirement}`, '-b', join(dir, 'req.bin')], {stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000});
     return readFileSync(join(dir, 'req.bin')).toString('hex');
   } finally { rmSync(dir, {recursive: true, force: true}); }
 }
@@ -185,4 +187,70 @@ export function revokeRows({client, services} = {}, deps = {}) {
     const present = key => read.some(([s, c]) => s === SERVICES[key] && c === client);
     return {decision, client, removed: services.filter(key => !present(key)), remaining: services.filter(present)};
   }, deps);
+}
+
+// The key-route diagnostic's tap app (ruling 1198; ../native-matrix/key-route-tap.swift, built by
+// ../native-matrix/key-route-device.mjs buildTapApp): the one identity besides the two engines this writer grants, and
+// only Input Monitoring, which its listen-only taps need. Neither engine under test gets a row from it.
+export const DIAGNOSTIC_CLIENT = 'io.github.ssfskim.cua.key-route-tap';
+
+// Grants Input Monitoring to the diagnostic's tap app (`bundle`, whose designated requirement the row carries) in the
+// system database, through the same guard as every write (hosted, under O0), then reads the row back. `deps`:
+// grantRows'. -> {decision, client, service, granted}.
+export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} = {}) {
+  if (typeof bundle !== 'string' || !bundle) throw new Error('the TCC writer grants the key-route diagnostic its tap app\'s bundle only');
+  const service = SERVICES.inputMonitoring;
+  return tccWrite((store, decision) => {
+    if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
+    const hex = store.csreq(bundle);
+    if (!/^[0-9a-f]+$/.test(hex)) throw new Error(`the designated requirement of ${bundle} did not compile`);
+    store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(service)}, ${quote(DIAGNOSTIC_CLIENT)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${Math.floor(now() / 1000)});`);
+    const granted = readRows(store, [DIAGNOSTIC_CLIENT], ['inputMonitoring']).some(([s, c, value]) => s === service && c === DIAGNOSTIC_CLIENT && value === '2');
+    return {decision, client: DIAGNOSTIC_CLIENT, service, granted};
+  }, deps);
+}
+
+// The access table's bookkeeping columns: what tccd itself rewrites on a row it consults, which grants nothing. tccd's
+// own record of a row (docs/doperpowers/research/2026-10-18-own-native-engine/spike/sit2/u78-tcc.jsonl, its access
+// dumps) carries last_modified and the session's pid, pid version and boot UUID (session_pid, session_pid_version,
+// session_boot_UUID: the table's pid, pid_version and boot_uuid); last_reminded is the reminder's clock. Matched by name
+// against the columns the table has (read from it, so a name it lacks matches nothing): every other column, one this set
+// does not name included, is a grant column.
+export const TCC_BOOKKEEPING_COLUMNS = Object.freeze(['last_modified', 'last_reminded', 'pid', 'pid_version', 'boot_uuid']);
+
+// The two engines' rows as the system database holds them, losslessly: every column the access table has (read from
+// the table itself, so no column a narrower select would omit escapes the compare), each row as two SQL tuples of its
+// values as quote() spells them, its grant columns' and its bookkeeping columns', carried hex-encoded so no value can
+// split a line. Read before and after a step that must leave them as they were (the key-route diagnostic). A read only,
+// still hosted only (the system database is read through sudo).
+// -> {columns: [name], bookkeeping: [name], rows: [grant tuple], full: ['<grant tuple> <bookkeeping tuple>']}, sorted.
+export function engineRows({env = process.env, platform = process.platform, store = STORE} = {}) {
+  assertGithubHosted(env, platform, 'the TCC reader');
+  const columns = String(store.sql(SYSTEM_DB, 'select name from pragma_table_info(\'access\') order by cid;') ?? '').split('\n').filter(Boolean);
+  if (!columns.every(name => /^\w+$/.test(name)) || !columns.includes('service') || !columns.includes('client')) throw new Error('the access table\'s columns could not be read');
+  const clients = Object.values(CLIENTS).map(quote).join(', ');
+  const bookkeeping = columns.filter(name => TCC_BOOKKEEPING_COLUMNS.includes(name)), grant = columns.filter(name => !bookkeeping.includes(name));
+  const tuple = names => `hex('(' || ${names.length ? names.map(name => `quote("${name}")`).join(' || \', \' || ') : '\'\''} || ')')`;
+  const read = String(store.sql(SYSTEM_DB, `select ${tuple(grant)} || '|' || ${tuple(bookkeeping)} from access where client in (${clients});`) ?? '')
+    .split('\n').filter(Boolean).map(line => line.split('|').map(part => Buffer.from(part, 'hex').toString('utf8')));
+  return {columns, bookkeeping, rows: read.map(([g]) => g).sort(), full: read.map(([g, b]) => `${g} ${b}`).sort()};
+}
+// What changed between two readings of engineRows, rows compared as multisets (a duplicate gained or lost counts).
+// `grant`: a grant column's value, a row gained or lost, or the table's columns (a failure, named, to the caller);
+// `bookkeeping`: when nothing of that changed, the rows whose bookkeeping columns alone moved (recorded, never a failure).
+// -> null when nothing did, else {grant: {added, removed, columns?: {before, after}} | null, bookkeeping: {columns,
+// added, removed} | null}.
+export function rowsChanged(before, after) {
+  const minus = (rows, taken) => {
+    const left = new Map();
+    for (const row of taken) left.set(row, (left.get(row) ?? 0) + 1);
+    return rows.filter(row => { const n = left.get(row) ?? 0; if (n) left.set(row, n - 1); return n === 0; });
+  };
+  const added = minus(after.rows, before.rows), removed = minus(before.rows, after.rows);
+  const columnsChanged = before.columns.join('\n') !== after.columns.join('\n');
+  if (added.length || removed.length || columnsChanged) {
+    return {grant: {added, removed, ...(columnsChanged ? {columns: {before: before.columns, after: after.columns}} : {})}, bookkeeping: null};
+  }
+  const moved = {added: minus(after.full, before.full), removed: minus(before.full, after.full)};
+  return moved.added.length || moved.removed.length ? {grant: null, bookkeeping: {columns: before.bookkeeping, ...moved}} : null;
 }

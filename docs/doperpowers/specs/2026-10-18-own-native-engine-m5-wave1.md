@@ -32,6 +32,15 @@ H0's pass); a witness not yet cleared is prepared and named in its gate's dispos
 | 9 | T11a | The default-selection mode, failing while the macOS default is the vendor's |
 | 10 | T11b | The flip: `darwin: 'cua'`, its mirrors, tests and docs (PF §7). Stays on the branch, unmerged |
 
+**Sitting C's last step: the key-route diagnostic (ruling 1198).** After C's counted lanes and their judges, one step
+(`key-route`, kind `diagnostic`) runs a lane per engine whose only section opens TextEdit's Open panel, reads the AX
+half on the device, watches one `pressKey("Escape")` with listen-only taps and closes the panel by Accessibility when
+the Escape did not. Its record (`key-route/key-route.json`) and section (appended to sitting.md) are what the P1 engine
+ticket on cua's key routing rests on. It is INFO, never C's verdict, save a named cleanup failure; hosted only at
+every entry point (the step, the matrix cell, the device commands, the AX helper, the tap app). What only the hosted
+run proves: that the tap app's own row is the one TCC asks (its readiness reports `listenAccess`), that the per-pid
+taps see a CGEventPostToPid post, and the pids themselves.
+
 **The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
 the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
 `RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner
@@ -288,6 +297,60 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1198 (the design session, after pilot C-2): sitting C gains a key-route diagnostic as its own
+  last step, after the counted lanes (matrix, save-sheet) and their judges, never among judged cells. In C-2 the
+  vendor's `pressKey("Escape")` closed TextEdit's Open panel (drawn by com.apple.appkit.xpc.openAndSavePanelService)
+  and cua's did not. The static reading of the pinned vendor binary says the vendor posts keys with CGEventPostToPid to
+  a pid found by walking the focused element's AXParent chain with the private `_AXUIElementGetActualPid`, switching to
+  an ancestor's owner when it differs from the app's and its activation policy is prohibited; cua's engine posts to
+  the app's focused element's public AXUIElementGetPid (`Input.swift:1014` keyboardTarget, then `postToPid`). The
+  step (`scripts/hosted-sittings/key-route.mjs`) records, per engine through its own matrix lane (the `key-route`
+  cell, `scripts/native-matrix/key-route-run.mjs`): the AX ancestor table (role, GetPid, ActualPid or "unavailable",
+  the owner's activation policy and isFinishedLaunching), cua's keyboardTarget mirrored (the engine unchanged), the
+  static reading's predicted pid, every public route to the panel's pid against ActualPid (the window list at the
+  panel's frame and under its centre, the frontmost window's owner, runningApplications of the panel service, the
+  AXWindow's and the focused window's GetPid, the system-wide focused element and application, the frontmost
+  application), and one Escape watched by listen-only CGEventTapCreateForPid taps on TextEdit and the panel service
+  (fields 40 and 41, which tap), with the panel's state after it read by the device. Input Monitoring is granted to
+  the diagnostic's own tap app alone (`io.github.ssfskim.cua.key-route-tap`, a background-only app ad-hoc signed on
+  the runner and launched through LaunchServices so it is its own responsible process), through the hosted kit's
+  one TCC writer under O0 (`grantDiagnosticListen`); the engines' rows are read before and after and must not change.
+  Its status is INFO and never C's verdict; a cleanup failure (the engines' rows changed or unread, a panel or tap
+  left, TextEdit still running) is a FAIL naming each. Off a GitHub-hosted runner it refuses before it reads, builds,
+  writes or opens anything. Each lane opens its own TextEdit, so the AX half is read once per lane, before its press
+  (the brief's "once before the presses" read per engine), and the panel is opened afresh between the engines.
+  After its review (same day): hosted-only at every entry point, not only the sitting step: `native-matrix.mjs cell
+  key-route` refuses off a hosted macOS runner before it begins or writes anything and, on one, before any scene comes
+  up unless the device attests this job's run (`meta.runner`); every device command (`key-route-device.mjs`) and the
+  AX helper (`key-route.swift`, exit 3) refuse off it before any read, compile or Accessibility call; the tap app,
+  which `open` launches without its caller's environment, runs only with a one-use admission (a fresh nonce in the
+  run's `key-route/tap.admission`, at most 60 s old) the guarded launcher writes, and a hard deadline armed first. The
+  Escape's attribution reads the taps' events inside the press's own device-clock window only (50 ms before, 500 ms
+  after; the rest kept apart, uncounted), prints a pid field the event did not carry as "unavailable", never 0, and
+  tells a tap that failed (not launched, not ready, no Input Monitoring, a tap not created, its log unread) from one
+  that saw nothing. The AX half also names the selected ancestor, compares each route with it (`matchesSelected`) and
+  marks a route it could not read as unread; the taps also watch the selected ancestor's pid when no other tap does.
+  The panel is closed only on a reading that says it is gone (the device's after the Escape, or the AX cancel's own),
+  and the cancel is tried whatever the reading before it did. A lane's missing result, put-back not held or approved
+  home not cleaned (a refused lane aside) is a named failure. The engines' TCC rows are snapshotted losslessly (every
+  column the access table has, compared as a multiset and with the columns). A grant column's change (service,
+  client, client_type, auth_value, auth_reason, csreq, indirect_object_identifier and every column not named below), a
+  row gained or lost and the column set changing stay a named FAIL; tccd's own bookkeeping moving alone
+  (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`: last_modified, last_reminded, pid, pid_version, boot_uuid, from tccd's
+  record of a row in the sitting-2 TCC stream) is recorded and never a failure, so tccd consulting an engine's row
+  during the step cannot fail sitting C. After its re-review: the tap app checks RUNNER_ENVIRONMENT in its own
+  process first, before it reads, removes or creates any file (the launcher passes it with `open --env`), and
+  consumes its admission only once the admission held. The panel's absence is certified only when every candidate
+  window's identifier (and frame) was read. key-route.json carries each lane's attributed capture (`capture`, the one
+  the section renders) beside the taps' raw events (`rawEvents`), and a tap counts as live through the press only on
+  its own stop line or a kill at the stop. The deadline is the earlier of the step's cap (60 min, provisional: under 45 the cua lane got 6 to 10 min once the grace held the real recovery bound) and the
+  job's limit (M5_JOB_STARTED, 360 min) less 15 min for what C does after the step. A lane's grace after SIGTERM is
+  sized to the recovery's own bound (`recoverBoundMs`, about 22 min) plus the step it is in and its close (about 29
+  min in all). The final inventory's reader is compiled before any hold. A lane with too little time left is skipped
+  before its hold, and the whole step is skipped before anything when its set-up and cleanup do not fit, each
+  recorded, INFO. A lane past its bound (20 min, provisional) whose put-back and the final inventory confirm a clean
+  device is INFO with `timedOut` recorded. The begin and preparation before the device's attestation stay where they
+  are: they are the matrix's ordinary hold, put back, and every key-route act comes after the attestation.
 - 2026-11-23, ruling 1197 (the design session, after pilot C-2): the pressKey row (`r k`) reads its field until it
   holds the expected text, has read the same for 500 ms, or 2 s have passed since the first read, 100 ms apart, in the
   same cell on both lanes (`scripts/native-matrix/unicode-plan.mjs` `settledFieldCheck`). The row's outcome adds

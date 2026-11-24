@@ -31,6 +31,8 @@
 //      window in front, the scene down, the launch's intent journaled on the device, the app observed by its path
 //      through the engine's own call (its text never leaves the cell), the launched process journaled by pid and start
 //      time, the oracle read, the outcome read, and the launched process quit in a `finally`
+//   7a. the key-route cell alone (ruling 1198, a diagnostic writing no row): TextEdit's Open panel, the device's AX half
+//      and taps around one Escape, the panel closed (./key-route-run.mjs)
 //   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
 //      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
 //      launch quit (an intent kept); the Electron fixture's accessibility record exported into the run's output unless
@@ -69,6 +71,7 @@ import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
+import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKeyAt, skippedReadings, step, Stop,
@@ -103,7 +106,7 @@ export function planOf(kind, {scene = null, user = null} = {}) {
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length) {
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.keyRoute) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
@@ -130,6 +133,8 @@ function narrowed(kind, {scene, user}) {
     case 'intervention-save-sheet': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['saveSheet'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
+    // Ruling 1198's diagnostic (./key-route-run.mjs): TextEdit's Open panel alone, no row of the matrix.
+    case 'key-route': return {...EMPTY_PLAN, keyRoute: !scene || scene === 'openPanel'};
     default: throw new Error(`no plan ${kind}`);
   }
 }
@@ -137,7 +142,7 @@ function narrowed(kind, {scene, user}) {
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
   || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
-  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
+  || ((plan.intervention?.length || plan.keyRoute) && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
     // The Korean source is read only after its target is refocused through another scene (./unicode-run.mjs koreanIn).
     || (r.condition === 'korean' && REFOCUS_THROUGH[r.field] === id)));
 
@@ -157,6 +162,7 @@ export async function runMatrix(options, io) {
   if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('--samples needs a positive integer');
   if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one hold names the same');
   if (!out) throw new Error('run needs --out <dir>');
+  refuseKeyRouteOffRunner(options.plan, io);
   const base = resolve(out);
   const dirs = Array.from({length: runs}, (_, i) => join(base, `run-${first + i}`));
   if (!io.dryRun) for (const dir of dirs) if (fs.existsSync(join(dir, 'result.json'))) throw new Error(`${dir} already holds a result: choose a new --out`);
@@ -264,6 +270,7 @@ async function runOnce(options, io) {
     // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs): meta.hosted
     // from both sides, meta.runner the run's attestation, its install the approved runtime and engine this run serves.
     Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine, ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}));
+    refuseKeyRouteUnattested(plan, meta, io);
 
     const scenes = scenesOf(plan);
     meta.fixtures = {
@@ -303,6 +310,7 @@ async function runOnce(options, io) {
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
     await inputSections(ctx, plan);
     for (const launch of plan.launch) await launchRow(ctx, launch);
+    if (plan.keyRoute) await keyRouteSection(ctx);
     snapshot();
     try { await ctx.lane.client.call('end_task'); } catch (error) { problems.push(`end_task failed: ${error.message}`); }
     complete = true;

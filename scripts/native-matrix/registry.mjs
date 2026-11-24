@@ -34,6 +34,8 @@ export const MATRIX_CELLS = Object.freeze({
   'pre-action-refusal': {section: 'intervention', plan: 'pre-action-refusal', describe: 'a probe keystroke into TextEdit just before its typeText: refused with the still-interacting sentence, nothing posted'},
   'intervention-save-sheet': {section: 'intervention', plan: 'intervention-save-sheet', describe: '#212: a probe keystroke into TextEdit during set_value on its Save sheet\'s name field: stopped part-way, what may have taken effect named, the sheet not committed'},
   korean: {section: 'unicode', plan: 'korean', describe: 'the Korean and Unicode matrix (part 6): typeText and paste of each string under each source and condition (--scene narrows to a field)'},
+  // A diagnostic, never judged: it writes no row, only its run's meta (sitting C's last step reads it).
+  'key-route': {section: 'method', plan: 'key-route', describe: 'ruling 1198\'s diagnostic: where one pressKey("Escape") lands while TextEdit\'s Open panel is focused (the AX ancestors, the taps\' fields 40 and 41); no row'},
 });
 
 // M2a's residue cells on the live harness (M2b.1b: scripts/native-matrix/residue-checks.mjs RESIDUE_CELLS, run by

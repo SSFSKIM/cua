@@ -5,8 +5,10 @@
 //       For the app's AXFocusedUIElement and each AXParent up to the application (at most 64): its role,
 //       AXUIElementGetPid and the private _AXUIElementGetActualPid (dlsym; "unavailable" when the symbol is not found),
 //       and for every pid met its NSRunningApplication's bundle id, activationPolicy and isFinishedLaunching. Then:
-//       `cuaKeyboardTarget`, the pid cua's engine posts keys to (native/engine/Sources/Engine/Input.swift:1014
-//       keyboardTarget, with :1196 ownerPid, mirrored here, never imported: the engine is not changed);
+//       `cuaKeyboardTarget`, the pid cua's engine posts keys to since #582 (native/engine/Sources/Engine/KeyTarget.swift:95
+//       keyboardTarget and :67 remoteViewKeyOwner, mirrored here, never imported: the engine is not changed), and
+//       `cuaPublicPidTarget`, the one it posted to before #582 (the focused element's public AXUIElementGetPid, else
+//       the app's), kept apart;
 //       `selectedAncestor`, the element the static reading of the vendor's binary says its walk selects (the first in the
 //       chain whose actual pid is not the app's and whose owner's activation policy is prohibited; null when none is,
 //       "unavailable" without the private call), and `staticReadingTarget`, its pid or else the app's;
@@ -192,13 +194,28 @@ func read() {
   let focusedActual = focused.map { actualPid($0) } as Any? ?? NSNull()
   let reference = focusedActual as? Int
 
-  // cua's engine, mirrored (Input.swift:1014 keyboardTarget, :1196 ownerPid): the application's focused element's
-  // AXUIElementGetPid when positive, else the app's pid. AXUIElementGetPid leaves 0 when it fails.
-  let cuaTarget: pid_t = {
+  // cua's target before #582, and still its answer when the walk below finds no remote view: the application's focused
+  // element's AXUIElementGetPid when positive, else the app's pid. AXUIElementGetPid leaves 0 when it fails.
+  let publicTarget: pid_t = {
     guard let focused else { return appPid }
     var owner: pid_t = 0
     AXUIElementGetPid(focused, &owner)
     return owner > 0 ? owner : appPid
+  }()
+  // cua's engine since #582, mirrored (KeyTarget.swift:95 keyboardTarget, :67 remoteViewKeyOwner, :49
+  // owningProcessKind): from the focused element up its parents, an element whose actual pid is unread or whose process
+  // is no finished-launching running application is passed over; the first that classifies ends the walk, its pid the
+  // target when that process's policy is prohibited and it is not the app's; any other end keeps the public target.
+  // Without the private call the walk is not made. The engine's 250 ms walk budget is not mirrored (this chain stops at
+  // 64 levels, the engine's at 300).
+  let cuaTarget: pid_t = {
+    guard focused != nil, actualPidFunction != nil else { return publicTarget }
+    for row in chain {
+      guard let actual = row["actualPid"] as? Int, actual > 0, let running = NSRunningApplication(processIdentifier: pid_t(actual)),
+            running.isFinishedLaunching else { continue }
+      return running.activationPolicy == .prohibited && actual != Int(appPid) ? pid_t(actual) : publicTarget
+    }
+    return publicTarget
   }()
   // The static reading's rule for the vendor's helper: walking the chain, the first element whose actual pid differs
   // from the app's and whose owner's activation policy is prohibited.
@@ -253,7 +270,7 @@ func read() {
 
   emit(["trusted": true, "pid": Int(appPid), "actualPidAvailable": actualPidFunction != nil,
         "focused": ["status": Int(focusedRead.status.rawValue), "found": focused != nil],
-        "chain": chain, "processes": processes, "actualPid": focusedActual, "cuaKeyboardTarget": Int(cuaTarget),
+        "chain": chain, "processes": processes, "actualPid": focusedActual, "cuaKeyboardTarget": Int(cuaTarget), "cuaPublicPidTarget": Int(publicTarget),
         "selectedAncestor": actualPidFunction == nil ? "unavailable" : (selected as Any? ?? NSNull()),
         "staticReadingTarget": actualPidFunction == nil ? "unavailable" : (selectedPid ?? Int(appPid)),
         "panel": ["up": panel != nil, "frame": rectWire(panel.flatMap(frame))], "routes": routes])

@@ -352,7 +352,7 @@ test('rowsChanged: a grant column, a row gained or lost, a duplicate or the colu
 });
 
 test('the section: per engine the Escape\'s posted and receiving pids and the panel; the AX ancestors; cua\'s keyboardTarget; every public route against ActualPid and the selected ancestor', () => {
-  const ax = {trusted: true, pid: 500, actualPidAvailable: true, actualPid: 700, cuaKeyboardTarget: 500, staticReadingTarget: 700, selectedAncestor: {depth: 0, pid: 700},
+  const ax = {trusted: true, pid: 500, actualPidAvailable: true, actualPid: 700, cuaKeyboardTarget: 700, cuaPublicPidTarget: 500, staticReadingTarget: 700, selectedAncestor: {depth: 0, pid: 700},
     chain: [{depth: 0, role: 'AXTextField', pid: 500, actualPid: 700}, {depth: 1, role: 'AXWindow', pid: 500, actualPid: 700}, {depth: 2, role: 'AXApplication', pid: 500, actualPid: 500}],
     processes: {500: {running: true, bundleId: 'com.apple.TextEdit', activationPolicy: 'regular', finishedLaunching: true}, 700: {running: true, bundleId: 'com.apple.appkit.xpc.openAndSavePanelService', activationPolicy: 'prohibited', finishedLaunching: true}},
     routes: [{route: 'runningApplicationsPanelService', read: true, pids: [700], matchesActual: true, matchesSelected: true, how: 'h'},
@@ -367,7 +367,14 @@ test('the section: per engine the Escape\'s posted and receiving pids and the pa
   assert.match(md, /^\| vendor \| yes \| 700 \| 600 \| panelService \| yes \| \|$/m);
   assert.match(md, /^\| cua \| yes \| 500 \| 800 \| textedit \| no \(closed by the AX cancel: cancelButton\) \| \|$/m);
   assert.match(md, /^\| 0 \| AXTextField \| 500 \| 700 \| com\.apple\.appkit\.xpc\.openAndSavePanelService \| prohibited \| yes \|$/m);
-  assert.match(md, /cua's keyboardTarget \(native\/engine\/Sources\/Engine\/Input\.swift:1014\): pid 500; the focused element's ActualPid: 700; the selected ancestor \(the static reading's walk\): depth 0, pid 700; the static reading's rule: pid 700/);
+  // cua's keyboardTarget as merged by #582 (KeyTarget.swift), and in a column of its own the public AXUIElementGetPid
+  // owner it posted to before (C-4's report printed that one as the keyboardTarget while the tap saw the service's pid).
+  assert.match(md, /^\| cua's keyboardTarget \(native\/engine\/Sources\/Engine\/KeyTarget\.swift:95, #582\) \| the focused element's public AXUIElementGetPid owner \(cua's target before #582\) \| the focused element's ActualPid \| the selected ancestor \(the static reading's walk\) \| the static reading's rule \|$/m);
+  assert.match(md, /^\| 700 \| 500 \| 700 \| depth 0, pid 700 \| 700 \|$/m);
+  assert.doesNotMatch(md, /Input\.swift:1014/);
+  // A reading from before the merged mirror (no public column) shows the column unread, never the old value as cua's.
+  const old = renderKeyRoute({...report, engines: {vendor: {...report.engines.vendor, keyRoute: {...report.engines.vendor.keyRoute, ax: {...ax, cuaPublicPidTarget: undefined}}}}});
+  assert.match(old, /^\| 700 \| - \| 700 \| depth 0, pid 700 \| 700 \|$/m);
   assert.match(md, /^\| runningApplicationsPanelService \| yes \| 700 \| yes \| yes \|$/m);
   assert.match(md, /^\| windowListAtPanelFrame \| yes \| 500 \| no \| no \|$/m);
   assert.match(md, /^\| axWindowsPanelPid \| no: AXError -25204 \| - \| - \| - \|$/m);

@@ -70,8 +70,12 @@ function axSection(engine, ax) {
   if (!ax) return [`### ${engine}'s lane: the AX half not read`, ''];
   if (ax.trusted !== true) return [`### ${engine}'s lane: the AX reader is not trusted for Accessibility`, ''];
   const owner = r => ax.processes?.[String(Number.isInteger(r.actualPid) ? r.actualPid : r.pid)] ?? {};
+  // cua's keyboardTarget as #582 merged it (./key-route.swift mirrors KeyTarget.swift), and beside it the public
+  // AXUIElementGetPid owner cua posted keys to before #582, a column of its own ('-' in a reading made before the mirror).
   return [`### ${engine}'s lane: TextEdit pid ${ax.pid}`, '',
-    `cua's keyboardTarget (native/engine/Sources/Engine/Input.swift:1014): pid ${ax.cuaKeyboardTarget}; the focused element's ActualPid: ${pidText(ax.actualPid)}; the selected ancestor (the static reading's walk): ${selectedText(ax.selectedAncestor)}; the static reading's rule: pid ${pidText(ax.staticReadingTarget)}.`, '',
+    cells(['cua\'s keyboardTarget (native/engine/Sources/Engine/KeyTarget.swift:95, #582)', 'the focused element\'s public AXUIElementGetPid owner (cua\'s target before #582)',
+      'the focused element\'s ActualPid', 'the selected ancestor (the static reading\'s walk)', 'the static reading\'s rule']), '|---|---|---|---|---|',
+    cells([pidText(ax.cuaKeyboardTarget), pidText(ax.cuaPublicPidTarget), pidText(ax.actualPid), selectedText(ax.selectedAncestor), pidText(ax.staticReadingTarget)]), '',
     '| depth | role | AXUIElementGetPid | _AXUIElementGetActualPid | owner | activation policy | finished launching |', '|---|---|---|---|---|---|---|',
     ...(ax.chain ?? []).map(r => cells([r.depth, r.role ?? '-', pidText(r.pid), pidText(r.actualPid), owner(r).bundleId ?? '-', owner(r).activationPolicy ?? '-', yesNo(owner(r).finishedLaunching)])),
     '', '| route | read | pids | matches ActualPid | matches the selected ancestor |', '|---|---|---|---|---|',

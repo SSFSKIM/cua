@@ -2,7 +2,8 @@
 // Open panel (drawn by com.apple.appkit.xpc.openAndSavePanelService) is focused, on each engine, for the P1 engine ticket
 // that rests on it. Pilot C-2 saw the vendor's Escape close the panel and cua's not; the static reading of the pinned
 // vendor binary says the vendor posts to the pid an AXParent walk finds through the private _AXUIElementGetActualPid,
-// where cua's engine posts to the focused element's AXUIElementGetPid (native/engine/Sources/Engine/Input.swift:1014).
+// where cua's engine posted to the focused element's AXUIElementGetPid until #582 made it walk as the vendor does
+// (native/engine/Sources/Engine/KeyTarget.swift:95 keyboardTarget; ../native-matrix/key-route.swift mirrors both).
 //
 // One sitting step, after C's counted lanes and their judges, never interleaved with a judged cell. In order:
 //   1. it refuses off a GitHub-hosted macOS runner, before it reads, builds, writes or opens anything

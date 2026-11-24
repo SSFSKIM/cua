@@ -174,21 +174,17 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   if (runtime && host.platform !== 'linux') {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root, manifest.platform)}`));
+    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
-    if (manifest.signing) {
-      const signatures = await verifySignatures(root, manifest);
-      const bad = signatures.filter(s => !s.valid);
-      const signed = !bad.length && signatures.length === manifest.signing.components.length;
-      checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
-        ? `${signatures.length} components signed by team ${manifest.signing.team}`
-        : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
-    } else {
-      checks.push(result('runtime.signatures', 'pass', `archive hash is the trust root on ${manifest.platform}: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed`));
-    }
+    const signatures = await verifySignatures(root, manifest);
+    const bad = signatures.filter(s => !s.valid);
+    const signed = !bad.length && signatures.length === manifest.signing.components.length;
+    checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
+      ? `${signatures.length} components signed by team ${manifest.signing.team}`
+      : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
   }
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});

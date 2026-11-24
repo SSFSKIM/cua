@@ -5,11 +5,15 @@
 //   node scripts/modules-pin.mjs <pinned vendor deb>...
 //
 // The one authenticated statement of these packages is the vendor's own lockfile, `.pnpm/lock.yaml`, inside a deb whose
-// length and SHA-256 are pinned (runtime/releases/<release>.json) and whose signature was checked when that pin was
-// written. For each deb given, the script
-//   1. matches the deb to a Linux pin by its length and SHA-256, and refuses one that is no pin's;
-//   2. takes `.pnpm/lock.yaml` out of its data.tar.xz (cua reads the ar archive; the system `tar` extracts that one
-//      member to standard output, so nothing else is unpacked);
+// length and SHA-256 are recorded (runtime/provenance/<release>.json) and whose signature was checked when that record
+// was written. Those records are this script's alone (#171 M6b; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-
+// preflight.md §4.1, §4.2): they were the vendor's Linux pins until cua 0.30.0 retired the vendor's engine there, and
+// are now trimmed to what names an archive and the one member read from it. Nothing that installs, diagnoses or launches
+// reads them, and the reader here returns no URL, so the directory is never a place to fetch from. For each deb given,
+// the script
+//   1. matches the deb to a record by its length and SHA-256, and refuses one that is no record's;
+//   2. takes the lockfile its record names out of its data.tar.xz (cua reads the ar archive; the system `tar` extracts
+//      that one member to standard output, so nothing else is unpacked);
 //   3. computes both architectures' closures from runtime/modules/package-lock.json, as the installer does;
 //   4. computes the vendor's closures from the same roots in its lockfile, by the same rule, and requires the two to
 //      hold the same packages by name, version and SHA-512. That lockfile lists every platform's packages, so either
@@ -23,24 +27,79 @@
 // whenever it changes, on a machine that holds a pinned deb, and review its output like any pin.
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, fstatSync, mkdtempSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {closeSync, constants as fsConstants, copyFileSync, createReadStream, createWriteStream, fstatSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {pipeline} from 'node:stream/promises';
 import {fileURLToPath} from 'node:url';
 import {fail} from '../src/runtime/errors.mjs';
-import {loadPins} from '../src/runtime/manifest.mjs';
 import {admitsHost, MODULES_PIN_DIR, moduleClosure, parseModuleLock, parseModuleProvenance} from '../src/runtime/module-tree.mjs';
 import {readPackageTarball} from '../src/runtime/tarball.mjs';
 
 // The targets cua's Linux runtime serves: the vendor's two debs, both glibc.
 export const TARGETS = [{platform: 'linux', arch: 'arm64', libc: 'glibc'}, {platform: 'linux', arch: 'x64', libc: 'glibc'}];
 
+// The vendor debs' provenance records, outside package.json's `files`: a checkout's, for this script.
+export const PROVENANCE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'runtime', 'provenance');
+
 // The largest tarball accepted from the registry; the largest pinned one, libvips, is about 8.5 MB.
 export const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 
 const mismatch = message => fail('pin_mismatch', message);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+
+// ---- the provenance records ----
+
+const invalid = (where, why) => fail('invalid_provenance', `provenance record ${where}: ${why}`);
+const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+function exactKeys(value, keys, where) {
+  if (!isObject(value)) invalid(where, 'must be an object');
+  for (const key of Object.keys(value)) if (!keys.includes(key)) invalid(where, `unknown field "${key}"`);
+  for (const key of keys) if (!(key in value)) invalid(where, `missing field "${key}"`);
+}
+// The lockfile's path inside the deb's payload: relative, of plain components, ending in the pnpm lockfile.
+const PLAIN_COMPONENT = /^[A-Za-z0-9._@-]+$/;
+function lockfileMember(value, where) {
+  if (typeof value !== 'string' || !value.endsWith('/.pnpm/lock.yaml')
+    || !value.split('/').every(part => PLAIN_COMPONENT.test(part) && part !== '.' && part !== '..' && !part.startsWith('-')))
+    invalid(`${where}.lockfile`, `${JSON.stringify(value)} is not a relative path of plain components ending in /.pnpm/lock.yaml`);
+  return value;
+}
+
+// A record's JSON -> {release, length, sha256, lockfile}, exactly: {schema: 1, release, platform: 'linux', arch, archive:
+// {format: 'deb', url, length, sha256}, lockfile, notes}. The URL is checked to be where an https archive was published
+// and is not returned, so no caller can fetch by a record; the notes are the record of the signature check and are kept
+// for a reader of the file. Anything else is invalid_provenance.
+export function parseProvenanceRecord(json, {file} = {}) {
+  const where = file ?? 'record';
+  exactKeys(json, ['schema', 'release', 'platform', 'arch', 'archive', 'lockfile', 'notes'], where);
+  if (json.schema !== 1) invalid(where, `unsupported schema ${JSON.stringify(json.schema)}`);
+  if (json.platform !== 'linux') invalid(`${where}.platform`, `${JSON.stringify(json.platform)} is not "linux"`);
+  if (typeof json.arch !== 'string' || !/^[a-z0-9]+$/.test(json.arch)) invalid(`${where}.arch`, `invalid value ${JSON.stringify(json.arch)}`);
+  if (typeof json.release !== 'string' || !/^\d+(\.\d+)+-linux-[a-z0-9]+$/.test(json.release) || !json.release.endsWith(`-linux-${json.arch}`))
+    invalid(`${where}.release`, `${JSON.stringify(json.release)} is not <version>-linux-${json.arch}`);
+  exactKeys(json.archive, ['format', 'url', 'length', 'sha256'], `${where}.archive`);
+  if (json.archive.format !== 'deb') invalid(`${where}.archive.format`, 'must be "deb"');
+  let url;
+  try { url = new URL(json.archive.url); } catch { invalid(`${where}.archive.url`, 'not a URL'); }
+  if (url.protocol !== 'https:') invalid(`${where}.archive.url`, 'must be https');
+  if (!Number.isSafeInteger(json.archive.length) || json.archive.length <= 0) invalid(`${where}.archive.length`, 'must be a positive integer');
+  if (typeof json.archive.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(json.archive.sha256)) invalid(`${where}.archive.sha256`, `invalid value ${JSON.stringify(json.archive.sha256)}`);
+  if (typeof json.notes !== 'string' || !json.notes) invalid(`${where}.notes`, 'must be a non-empty string');
+  return {release: json.release, length: json.archive.length, sha256: json.archive.sha256, lockfile: lockfileMember(json.lockfile, where)};
+}
+
+// Every record in `dir`, by file name, each named for its release.
+export function loadProvenanceRecords(dir = PROVENANCE_DIR) {
+  return readdirSync(dir).filter(name => name.endsWith('.json')).sort().map(name => {
+    const file = join(dir, name);
+    let json;
+    try { json = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { invalid(file, error.message); }
+    const record = parseProvenanceRecord(json, {file});
+    if (name !== `${record.release}.json`) invalid(file, `file name must be ${record.release}.json`);
+    return record;
+  });
+}
 
 // ---- the deb ----
 
@@ -50,17 +109,18 @@ async function fileSha256(path) {
   return hash.digest('hex');
 }
 
-// The deb's pin by its length and SHA-256, read from `snapshot`, the private copy of the deb named `deb` -> {pin, sha256};
-// a deb that is no pin's is refused. Exported for the comparator fixture's one-time check
-// (scripts/linux-engine-gate/vendor-fixture-pin.mjs), which asks it only whether a deb is the authenticated one.
-export async function matchPin(deb, snapshot, pins) {
+// The deb's record by its length and SHA-256, read from `snapshot`, the private copy of the deb named `deb`, among
+// `records` (loadProvenanceRecords') -> {record, sha256}; a deb that is no record's is refused. Exported for the
+// comparator fixture's one-time check (scripts/linux-engine-gate/vendor-fixture-pin.mjs), which asks it only whether a
+// deb is the authenticated one.
+export async function matchRecord(deb, snapshot, records) {
   const fd = openSync(snapshot, 'r');
   let length;
   try { length = fstatSync(fd).size; } finally { closeSync(fd); }
   const digest = await fileSha256(snapshot);
-  const pin = pins.find(p => p.archive.format === 'deb' && p.archive.length === length && p.archive.sha256 === digest);
-  if (!pin) fail('archive_not_pinned', `${deb} (${length} bytes, SHA-256 ${digest}) is not a pinned vendor deb`);
-  return {pin, sha256: digest};
+  const record = records.find(r => r.length === length && r.sha256 === digest);
+  if (!record) fail('archive_not_pinned', `${deb} (${length} bytes, SHA-256 ${digest}) is not a vendor deb any provenance record pins`);
+  return {record, sha256: digest};
 }
 
 // {start, length} of an ar archive member.
@@ -87,12 +147,6 @@ export function arMember(path, member) {
   fail('lockfile_unreadable', `${path} has no ${member}`);
 }
 
-// The vendor lockfile's path inside the deb's payload: the pin's module directory under the component it lies in.
-function lockfileMember(pin) {
-  const [component, ...rest] = pin.layout.moduleDir.split('/');
-  return `./${pin.components[component]}/${rest.join('/')}/.pnpm/lock.yaml`;
-}
-
 function run(command, args) {
   return new Promise((resolvePromise, reject) => {
     execFile(command, args, {encoding: 'buffer', maxBuffer: 64 * 1024 * 1024}, (error, stdout, stderr) =>
@@ -100,15 +154,17 @@ function run(command, args) {
   });
 }
 
-// The lockfile out of the snapshot, by way of its data.tar.xz member copied beside it.
-async function vendorLockfile(deb, snapshot, scratch, pin, {tar}) {
+// The lockfile its record names out of the snapshot, by way of its data.tar.xz member copied beside it. The payload's
+// members are spelled `./<path>`, as dpkg-deb writes them.
+async function vendorLockfile(deb, snapshot, scratch, record, {tar}) {
   const {start, length} = arMember(snapshot, 'data.tar.xz');
   const payload = join(scratch, 'data.tar.xz');
+  const member = `./${record.lockfile}`;
   await pipeline(createReadStream(snapshot, {start, end: start + length - 1}), createWriteStream(payload));
   try {
-    return await run(tar, ['-xJOf', payload, lockfileMember(pin)]);
+    return await run(tar, ['-xJOf', payload, member]);
   } catch (error) {
-    fail('lockfile_unreadable', `could not take ${lockfileMember(pin)} out of ${deb}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
+    fail('lockfile_unreadable', `could not take ${member} out of ${deb}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
   } finally {
     rmSync(payload, {force: true});
   }
@@ -285,8 +341,10 @@ async function fetchTarball(entry, fetchImpl, maxBytes) {
 
 // ---- the run ----
 
-export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loadPins().filter(p => p.platform === 'linux'), fetch = globalThis.fetch, tar = 'tar', maxTarballBytes = MAX_TARBALL_BYTES, log = message => console.error(message)}) {
+// `provenanceDir` is the records' directory, read through loadProvenanceRecords; nothing else can name a deb.
+export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, provenanceDir = PROVENANCE_DIR, fetch = globalThis.fetch, tar = 'tar', maxTarballBytes = MAX_TARBALL_BYTES, log = message => console.error(message)}) {
   if (!debs?.length) fail('usage', 'name at least one pinned vendor deb');
+  const records = loadProvenanceRecords(provenanceDir);
   const lockText = readFileSync(join(modulesDir, 'package-lock.json'), 'utf8');
   const lock = parseModuleLock(lockText);
   const roots = lock.packages[''].dependencies;
@@ -295,20 +353,20 @@ export async function pinModules({debs, modulesDir = MODULES_PIN_DIR, pins = loa
   const vendor = [];
   for (const deb of debs) {
     const scratch = mkdtempSync(join(tmpdir(), 'cua-modules-pin-'));
-    let pin, archiveSha256, lockfile;
+    let record, archiveSha256, lockfile;
     try {
       const snapshot = join(scratch, 'archive.deb');
       try { copyFileSync(deb, snapshot, fsConstants.COPYFILE_FICLONE); } catch (error) { fail('archive_missing', `${deb} is not readable: ${error.code ?? error.message}`); }
-      ({pin, sha256: archiveSha256} = await matchPin(deb, snapshot, pins));
-      log(`${deb}: the pinned ${pin.release}`);
-      lockfile = await vendorLockfile(deb, snapshot, scratch, pin, {tar});
+      ({record, sha256: archiveSha256} = await matchRecord(deb, snapshot, records));
+      log(`${deb}: the pinned ${record.release}`);
+      lockfile = await vendorLockfile(deb, snapshot, scratch, record, {tar});
     } finally {
       rmSync(scratch, {recursive: true, force: true});
     }
     const parsed = parseVendorLockfile(lockfile.toString('utf8'));
-    for (const {host, packages} of closures) compareClosures(packages, vendorClosure(parsed, roots, host), `${pin.release}'s lockfile against the ${host.arch} closure`);
-    log(`${pin.release}: its lockfile holds both closures, by name, version and SHA-512`);
-    vendor.push({release: pin.release, archiveSha256, lockfileSha256: sha256(lockfile)});
+    for (const {host, packages} of closures) compareClosures(packages, vendorClosure(parsed, roots, host), `${record.release}'s lockfile against the ${host.arch} closure`);
+    log(`${record.release}: its lockfile holds both closures, by name, version and SHA-512`);
+    vendor.push({release: record.release, archiveSha256, lockfileSha256: sha256(lockfile)});
   }
 
   const lengths = new Map();

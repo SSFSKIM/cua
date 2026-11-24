@@ -62,12 +62,14 @@ export function step(ctx, args) {
   return answer;
 }
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
-// A background row's user window brought to the front (ruling 1221, H2): its activation also waits for the run's window
-// on top, raised on a hosted runner when the wait misses (../repl-parity/scenes-mac.mjs activateScene `top`).
-// Its path is kept apart from any later activation (ctx.userToTop; fix wave I6: an Open panel pairing's close activates
-// TextEdit after its rows), and the engine's roots go with it so its own windows are passed over (fix wave I5).
+// A scene's activation that also waits for the run's window on top, raised on a hosted runner when the wait misses
+// (ruling 1221, H2; ../repl-parity/scenes-mac.mjs activateScene `top`), the engine's roots going with it so its own
+// windows are passed over (fix wave I5). -> the activation's answer, its path `toTop` among it.
+export const activateToTop = (ctx, scene) => step(ctx, ['activate', scene, '--top-window', 'yes', ...engineRoots(ctx)]);
+// A background row's user window brought to the front so. Its path is kept apart from any later activation
+// (ctx.userToTop; fix wave I6: an Open panel pairing's close activates TextEdit after its rows).
 export function activateUser(ctx, scene) {
-  const answer = step(ctx, ['activate', scene, '--top-window', 'yes', ...engineRoots(ctx)]);
+  const answer = activateToTop(ctx, scene);
   ctx.userToTop = answer?.toTop ? {scene, ...answer.toTop} : null;
   return answer;
 }

@@ -28,7 +28,7 @@ import {requeryCell} from './matrix-cells.mjs';
 import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {typeIntoList} from './plan.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
-import {activate, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
+import {activate, activateToTop, activated, activationOf, AlertHeld, alertCheck, device, errorNameOf, focusOf, js, keyReading, mark, notActivated, push, quiet, read, readKey, sendKeys,
   ownWindowClosed, ownWindowOpened, sceneWindowNumbers, skippedReadings, Stop, userFront, waitQuiet, frontSeen, userWindowSeen} from './steps.mjs';
 
 const j = JSON.stringify;
@@ -181,13 +181,18 @@ const cleanedUp = async out => { try { await out.cleanup?.(); return null; } cat
 // The device-clock window of an attempt's cells, marked as one row window when it ends (made by sampled, one an attempt).
 // `made(scene, cleanup)`: the attempt made a fixture on `scene` that `cleanup` undoes, registered the moment it exists, so
 // an attempt that ends by a throw (AlertHeld) still has it undone (`fixture`).
+// `toTop`: the path the attempt's window took to the top (drivenInFront), kept on its row whatever ends it.
 function spanOf(ctx, key) {
   let from = null, to = null;
   const span = {
     fixture: null,
+    toTop: null,
     made: (scene, cleanup) => { span.fixture = {scene, cleanup}; },
     add: r => { if (r?.at) { from ??= r.at[0]; to = r.at[1]; } return r; },
-    end: (row, extra = {}) => { if (from !== null) mark(ctx, 'row', key, [from, to]); return {row, key, ...extra}; },
+    end: (row, extra = {}) => {
+      if (from !== null) mark(ctx, 'row', key, [from, to]);
+      return {row: span.toTop && row.toTop === undefined ? {...row, toTop: span.toTop} : row, key, ...extra};
+    },
   };
   return span;
 }
@@ -398,10 +403,13 @@ const cleanupSeen = r => (!r ? 'not sent' : !r.ok ? `the cell failed: ${String(r
 // ---- intervention fires ---------------------------------------------------------------------------------------------
 
 // TextEdit in front, its document emptied and focused, the window the probe is gated on; the front and key read with the
-// focus just before the act (the probe's scheduling between them changes neither). -> {window, readings}, {skipped} (its
-// activation did not take front and key) or {invalid}.
+// focus just before the act (the probe's scheduling between them changes neither). Its activation waits for the run's
+// window on top and raises it on a hosted runner, as a background row's user window's does (ruling 1223, R2: C-6's
+// fires and pre-action rows found the run's Electron window above TextEdit's), the path kept on the row (span.toTop).
+// -> {window, readings}, {skipped} (its activation did not take front and key) or {invalid}.
 async function drivenInFront(ctx, span, scene) {
-  const front = activate(ctx, scene);
+  const front = activateToTop(ctx, scene);
+  if (front?.toTop) span.toTop = {scene, ...front.toTop};
   const app = SCENES[scene].bundleId, skipped = notActivated(ctx, scene);
   if (skipped) return {skipped: {frontKey: skipped}};
   if (!front?.ok) return {invalid: `${scene} did not come to the front`};

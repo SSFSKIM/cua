@@ -847,3 +847,28 @@ test('#212\'s exits after the destination cell carry the cancel\'s temp-folder r
   assert.deepEqual(unread.outcome.unsaved, {unread: 'the Save sheet was not cancelled first (the sheet still up)'});
   assert.deepEqual(unread.outcome.cancel, {cancelled: false, destinationRemoved: null, destinationFiles: null});
 });
+
+// Ruling 1223 (R2): C-6's fires and pre-action rows found the run's Electron fixture window on top of TextEdit on both
+// lanes. Their TextEdit activation waits for its window on top, then raises it on a hosted runner, as ruling 1221's
+// background user windows do (./steps.mjs activateToTop); the path is kept on the row (`toTop`). The save sheet's
+// activation, a fixture's reset and the panels' are left as they were.
+test('the intervention probes bring TextEdit\'s window to the top as ruling 1221\'s user windows, the path on the row', async () => {
+  const raised = {path: 'raised', ms: 900, topBefore: {bundleId: 'com.github.Electron', number: 41, layer: 0, owned: true}, raise: {ok: true}};
+  const ops = {matrix: (base, a) => {
+    const out = base(a);
+    return a[0] === 'step' && a[1] === 'activate' && a.includes('--top-window') ? {...out, answer: {...out.answer, toTop: raised}} : out;
+  }};
+  const {result, steps} = await runWith({plan: {...planOf('intervention-fires'), intervention: ['fires', 'preAction'], id: 'x'}, cellName: 'intervention-fires', ops,
+    env: {RUNNER_ENVIRONMENT: 'github-hosted'},
+    cell: c => (tagOf(c) === 'intervention.act' ? acted(c, {threw: `${REFUSED}${USER_CHANGED}x'. Re-query`, errorName: 'Error'})
+      : tagOf(c) === 'intervention.next' ? {...acted(c), threw: true, errorName: 'Error', message: `${REFUSED}${USER_CHANGED}x'.`}
+        : tagOf(c) === 'preaction.act' ? acted(c, {threw: `${REFUSED}${STILL_INTERACTING}x'. Wait`, errorName: 'Error', interval: null}) : null)});
+  for (const id of ['textedit/intervention.fires', 'textedit/intervention.preAction']) assert.deepEqual(rowOf(result, id).toTop, {scene: 'textedit', ...raised}, id);
+  const activations = matrixSteps(steps, 'step').filter(a => a[1] === 'activate' && a[2] === 'textedit');
+  // Each of the two rows' two samples; the run's setup activation before them stays plain.
+  assert.equal(activations.filter(a => a[a.indexOf('--top-window') + 1] === 'yes' && a.includes('--approved-engine')).length, 4, JSON.stringify(activations));
+  // #212's save sheet keeps its plain activation.
+  const sheet = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells()});
+  assert.ok(matrixSteps(sheet.steps, 'step').filter(a => a[1] === 'activate').every(a => !a.includes('--top-window')));
+  assert.equal(rowOf(sheet.result, SAVE_SHEET).toTop, undefined);
+});

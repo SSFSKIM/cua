@@ -516,7 +516,19 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
-    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), verdict};
+    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full), verdict};
+}
+
+// R3's witness per full run that recorded one (ruling 1225, ./witness.mjs): its positive control's result per tapped
+// scene, or why the run had none, and the rows its gaps left NO VERDICT. Recorded; the rows' own NO VERDICT carries it
+// into the counts. -> [{engine, run, missing?, controls: [{scene, pid, seen}], noVerdict}].
+export function witnessOf(full) {
+  return full.filter(({result}) => result.meta?.witness).map(({result}) => {
+    const w = result.meta.witness;
+    return {engine: result.lanes[0]?.engine, run: result.meta.run, ...(w.missing ? {missing: w.missing} : {}),
+      controls: (w.controls ?? []).map(c => ({scene: c.scene, pid: c.pid, seen: c.seen === true})),
+      noVerdict: result.rows.filter(r => typeof r.invalid === 'string' && r.invalid.startsWith('R3\'s witness')).length};
+  });
 }
 
 // The background rows' user windows by the path they took to the top (ruling 1221, H2; ./steps.mjs keepToTop): per user
@@ -714,6 +726,17 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   if (toTop.counts.length) {
     out.push(`- User windows to the top (ruling 1221): ${toTop.counts.map(c => `${c.scene} ${c.engine} waited ${c.waited}, raised ${c.raised}, raise failed ${c.raiseFailed}`).join('; ')}`
       + `${toTop.afterRaise.length ? `; not ok after a raise: ${toTop.afterRaise.map(r => `${r.engine} ${r.id}`).join(', ')}` : ''}.`);
+  }
+  // Ruling 1225: R3's witness, its control's result per run; a run with no control seen leaves its R3 rows NO VERDICT.
+  const witness = j.witness ?? [];
+  if (witness.length) {
+    const runName = w => `${w.engine} run ${w.run}`;
+    const seen = witness.filter(w => w.controls.length && w.controls.every(c => c.seen));
+    const unseen = witness.filter(w => w.controls.some(c => !c.seen)), none = witness.filter(w => !w.controls.length);
+    out.push(`- R3's witness (ruling 1225): the control seen in ${seen.length} of ${witness.length} runs`
+      + `${unseen.length ? `; NOT seen: ${unseen.map(w => `${runName(w)} (${w.controls.filter(c => !c.seen).map(c => c.scene).join(', ')})`).join(', ')}` : ''}`
+      + `${none.length ? `; no witness: ${none.map(w => `${runName(w)} (${w.missing ?? 'no control posted'})`).join(', ')}` : ''}`
+      + `; ${witness.reduce((n, w) => n + w.noVerdict, 0)} row(s) NO VERDICT on it.`);
   }
   const notJudgedListed = s => j.notJudged.some(n => n.section === 'interference' && n.id === s.id);
   for (const s of j.sharedInterference ?? []) out.push(`- ${s.id}: both engines failed; ${s.kind === 'defect' ? `the person's ${s.moved.map(m => m.replace(/^the /, '')).join(', ')} moved: a shared product defect, ${notJudgedListed(s) ? `ticket ${s.ticket}, not judged (below)` : 'NO VERDICT on cua, ticket to be registered'}`

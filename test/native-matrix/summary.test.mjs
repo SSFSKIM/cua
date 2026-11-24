@@ -14,7 +14,7 @@ import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-resu
 import {isCaretRow, isPointerdownRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
-import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary, toTopOf} from '../../scripts/native-matrix/summary.mjs';
+import {judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderSummary, toTopOf, witnessOf} from '../../scripts/native-matrix/summary.mjs';
 import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {NOT_JUDGED_RULES, notJudgedRefusal} from '../../scripts/native-matrix/not-judged.mjs';
 
@@ -1269,6 +1269,27 @@ test('to the top: background rows counted waited and raised per user scene and e
   const text = renderSummary({...judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}}), toTop: t});
   assert.match(text, /^- User windows to the top \(ruling 1221\): electron vendor waited 1, raised 0, raise failed 0; textedit cua waited 1, raised 2, raise failed 1; not ok after a raise: cua finder\/background\/c@textedit\.$/m);
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /User windows to the top/);
+});
+
+// Ruling 1225: R3's witness on each full run that had concurrent cells: its positive control's result per tapped scene,
+// or why there was no witness, and the rows its gaps left NO VERDICT; on the summary, a run whose control was not seen
+// named.
+test('R3\'s witness: each run\'s control result and the rows it left NO VERDICT, on the summary', () => {
+  const control = (seen, pid = 41) => ({scene: 'textedit', pid, posted: true, by: 90, at: 1, seen});
+  const r3 = {ok: false, invalid: 'R3\'s witness: the positive control was not seen on the user app\'s pid'};
+  const j = judged({
+    vendor: {meta: () => ({witness: {ready: true, controls: [control(true)]}})},
+    cua: {meta: run => ({witness: run === 2 ? {ready: true, controls: [control(false)]} : run === 3 ? {missing: 'off a GitHub-hosted runner: no witness tap (ruling 1225)'} : {ready: true, controls: [control(true)]}}),
+      tweak: (rows, run) => (run === 2 ? rows.map(r => (r.id === 'chrome/concurrent@textedit' ? {...r, ...r3} : r)) : rows)},
+  });
+  assert.deepEqual(j.witness.filter(w => w.engine === 'cua'), [
+    {engine: 'cua', run: 1, controls: [{scene: 'textedit', pid: 41, seen: true}], noVerdict: 0},
+    {engine: 'cua', run: 2, controls: [{scene: 'textedit', pid: 41, seen: false}], noVerdict: 1},
+    {engine: 'cua', run: 3, missing: 'off a GitHub-hosted runner: no witness tap (ruling 1225)', controls: [], noVerdict: 0}]);
+  const text = renderSummary(j);
+  assert.match(text, /^- R3's witness \(ruling 1225\): the control seen in 4 of 6 runs; NOT seen: cua run 2 \(textedit\); no witness: cua run 3 \(off a GitHub-hosted runner: no witness tap \(ruling 1225\)\); 1 row\(s\) NO VERDICT on it\.$/m);
+  assert.deepEqual(witnessOf([]), []);
+  assert.doesNotMatch(renderSummary(judged()), /R3's witness/);
 });
 
 // Fix wave I2 and I3: a cua failure is shared only with its own paired vendor sample's (the same run and sample, as

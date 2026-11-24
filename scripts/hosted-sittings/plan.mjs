@@ -95,17 +95,21 @@ function sittingC(ctx) {
   const lane = engine => ['--device', DEVICE, '--host', engine, '--engine', engine, ...approvedArgs(ctx), '--sitting', sitting];
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
     argv: ['node', 'scripts/hosted-sittings.mjs', 'focus-timing', '--approved-engine', ctx.approvedEngine, '--out', `${ctx.out}/focus-timing.json`]});
-  // Each matrix run needs the one before it to have passed, as A's runs and B's cua lane do: a run that could not bring a
-  // scene down (a Finder window it left, pilot B) fails, and the next run, of either engine, is never started into it.
-  // The gate is PASS: a complete run that is NO VERDICT, one the alert guard stopped, or an engine failure thrown also
-  // skips the rest. That costs evidence, never the verdict, the trade sitting A makes. The save-sheet cells stay
-  // unchained: their own preflight refuses a screen a run left.
+  // Each matrix run needs the one before it to have put the device back (ruling 1214; pilot C-4, where the vendor run
+  // stopped on a held fixture's reset and the cua run was skipped though the put-back held): the next run, of either
+  // engine, starts when the previous run's record exists and its put-back held (`gate.putBack`, ./run.mjs
+  // putBackHeld: every scene down and every scene app at 0 running, Finder's run window gone and its windows as at
+  // begin, the input source restored and read back), whether that run was complete, NO VERDICT or stopped. Nothing of a
+  // stopped run carries over: its fixtures, sheets and panels went with the apps it quit, and the next run puts its
+  // scenes up afresh. A run whose put-back did not hold, or that wrote no record, skips the rest, naming why. The next
+  // run's own preflight still refuses a screen a run left. A's runs and B's cua lane still chain on PASS. The save-sheet
+  // cells stay unchained: their own preflight refuses a screen a run left.
   const runSteps = [];
   for (let i = 1; i <= runs; i++) for (const engine of ['vendor', 'cua']) {
     const before = runSteps.at(-1);
     runSteps.push(`matrix-${engine}-${i}`);
     steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i}`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
-      ...(before ? {needs: [before]} : {}),
+      ...(before ? {needs: [before], gate: {putBack: `${ctx.out}/${before.replace(/^matrix-(\w+)-(\d+)$/, '$1/run-$2')}/result.json`}} : {}),
       ...(engine === 'cua' ? {pair: `${ctx.out}/vendor/run-${i}/result.json`} : {}), argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i))});
   }
   // #212's cell asks for its runs (one in the pilot), and its check reads every one of their records.

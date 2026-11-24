@@ -18,6 +18,40 @@ import {LIVE_SITTING_ENV} from '../../test/native-goldens/live-guard.mjs';
 import {CHECKS} from './checks.mjs';
 
 const PASSED = new Set(['PASS']);
+// Ruling 1214: whether a run's put-back held, from its record (null when it wrote none): the put-back ok, every scene
+// down, every scene app at 0 running, Finder's run window gone and its windows as at begin, the input source restored
+// and read back. -> {held: true} | {held: false, reason} naming the first condition that failed.
+export function putBackHeld(record) {
+  if (!record) return {held: false, reason: 'wrote no record'};
+  const pb = record.putBack, steps = pb?.steps ?? {};
+  if (!pb) return {held: false, reason: 'recorded no put-back'};
+  if (pb.ok !== true) return {held: false, reason: `its put-back did not hold${pb.manual ? ` (${pb.manual})` : pb.error ? ` (${pb.error})` : ''}`};
+  if (steps['scenes-down']?.down !== true) return {held: false, reason: 'scenes-down: the scenes were not brought down'};
+  const running = steps['apps-check']?.running;
+  if (!running || typeof running !== 'object') return {held: false, reason: 'apps-check: not recorded'};
+  const left = Object.entries(running).filter(([, n]) => n !== 0);
+  if (left.length) return {held: false, reason: `apps-check: ${left.map(([app, n]) => `${app} still running (${n})`).join(', ')}`};
+  const finder = steps['finder-check'];
+  if (!finder) return {held: false, reason: 'finder-check: not recorded'};
+  if (finder.runWindowGone !== true) return {held: false, reason: 'finder-check: the run\'s Finder window is not gone'};
+  if (finder.windowsAsAtBegin !== true) return {held: false, reason: 'finder-check: Finder\'s windows are not as at begin'};
+  const input = steps['input-source'];
+  if (!input) return {held: false, reason: 'input-source: not recorded'};
+  if (input.sourceRestored !== true || !input.read) return {held: false, reason: 'input-source: the owner\'s input source was not restored and read back'};
+  return {held: true};
+}
+// A step's needs, judged: by PASS, or for a step that names a put-back gate (`gate.putBack`, C's matrix runs) by the
+// gated need having run and its record's put-back holding. -> null, or the skip's reason.
+function needsUnmet(step, needs, readJson) {
+  if (!step.gate?.putBack) {
+    const failed = needs.filter(n => !PASSED.has(n.status));
+    return failed.length ? `needs ${failed.map(n => n.id).join(', ')}, which did not pass` : null;
+  }
+  const unrun = needs.filter(n => n.log === null);
+  if (unrun.length) return `needs ${unrun.map(n => n.id).join(', ')}, which did not run`;
+  const held = putBackHeld(readJson(step.gate.putBack));
+  return held.held ? null : `needs ${needs.map(n => n.id).join(', ')}, which ${held.reason.startsWith('wrote no') ? held.reason : `left the device unready: ${held.reason}`}`;
+}
 export const SITTING_EXITS = Object.freeze([['FAIL', 1], ['NO VERDICT', 4], ['INCOMPLETE', 5], ['OWNER', 3]]);
 const STATUSES = ['PASS', 'FAIL', 'NO VERDICT', 'OWNER', 'INFO', 'SKIP', 'PENDING'];
 
@@ -65,7 +99,7 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
     if (step.kind === 'pending') Object.assign(entry, {status: 'PENDING', reason: step.pending});
     else if (step.kind === 'pilot' && plan.form !== 'pilot') Object.assign(entry, {status: 'SKIP', reason: 'a pilot reading'});
     else if (step.kind === 'cleanup' && needs.some(n => n.exit === null)) Object.assign(entry, {status: 'SKIP', reason: `needs ${needs.filter(n => n.exit === null).map(n => n.id).join(', ')}, which never ran`});
-    else if (step.kind !== 'cleanup' && needs.some(n => !PASSED.has(n.status))) Object.assign(entry, {status: 'SKIP', reason: `needs ${needs.filter(n => !PASSED.has(n.status)).map(n => n.id).join(', ')}, which did not pass`});
+    else if (step.kind !== 'cleanup' && needsUnmet(step, needs, readJson)) Object.assign(entry, {status: 'SKIP', reason: needsUnmet(step, needs, readJson)});
     else if (step.missing) Object.assign(entry, {status: 'FAIL', reason: step.missing});
     else {
       entry.log = join(out, 'logs', `${step.id}.log`);

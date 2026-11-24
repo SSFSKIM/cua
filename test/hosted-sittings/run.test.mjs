@@ -195,3 +195,45 @@ test('a step\'s log is whole when the step resolves, its last line read straight
     assert.match(failed.error, /log/);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
+
+// Ruling 1214, item 3: C's matrix runs chain on the put-back, not on a PASS. A run may start when the previous run's
+// record exists and its put-back held (every scene app quit, Finder as at begin, the input source restored and read
+// back), complete or not; one whose put-back did not hold, or that wrote no record, still skips the rest, naming why.
+const HELD = {ok: true, stopped: true, steps: {'finder-teardown': {ok: true}, 'scenes-down': {ok: true, down: true},
+  'input-source': {ok: true, source: 'com.apple.keylayout.US', sourceRestored: true, perContextRestored: true, read: {source: 'com.apple.keylayout.US', perContext: null}},
+  'engine-stop': {ok: true}, 'apps-check': {ok: true, running: {textedit: 0, chromeForTesting: 0, electronFixture: 0}},
+  'finder-check': {ok: true, runWindowGone: true, windowsAsAtBegin: true, keysAsSaved: true}, 'front-app': {ok: true}}};
+const gated = () => plan([step('v1', 'run', {check: 'record', record: '/w/out/v1.json'}),
+  step('c1', 'run', {check: 'record', record: '/w/out/c1.json', needs: ['v1'], gate: {putBack: '/w/out/v1.json'}})]);
+test('C\'s chain: an incomplete run whose put-back held lets the next run start', async () => {
+  const stopped = {complete: false, problems: ['stopped: the textedit fixture … could not be reset'], rows: [], meta: {}, putBack: HELD};
+  const {report, ran} = await run(gated(), {v1: 1}, {files: {'/w/out/v1.json': stopped, '/w/out/c1.json': {complete: true, rows: [], meta: {}, putBack: HELD}}});
+  assert.deepEqual(ran, ['v1', 'c1']);
+  assert.notEqual(statuses(report).v1, 'PASS', 'the stopped run keeps its own status');
+});
+test('C\'s chain: a put-back that did not hold, or no record, skips the rest, naming the condition', async () => {
+  const broken = [
+    [{...HELD, ok: false}, /put-back did not hold/],
+    [{...HELD, steps: {...HELD.steps, 'scenes-down': {ok: false, down: false}}}, /scenes-down: the scenes were not brought down/],
+    [{...HELD, steps: {...HELD.steps, 'apps-check': {ok: false, running: {textedit: 1, chromeForTesting: 0}}}}, /apps-check: textedit still running \(1\)/],
+    [{...HELD, steps: {...HELD.steps, 'finder-check': {ok: false, runWindowGone: false, windowsAsAtBegin: true}}}, /finder-check: the run's Finder window is not gone/],
+    [{...HELD, steps: {...HELD.steps, 'finder-check': {ok: false, runWindowGone: true, windowsAsAtBegin: false}}}, /finder-check: Finder's windows are not as at begin/],
+    [{...HELD, steps: {...HELD.steps, 'input-source': {ok: false, sourceRestored: false, read: null}}}, /input-source: the owner's input source was not restored and read back/],
+    [{...HELD, steps: (({'input-source': _, ...rest}) => rest)(HELD.steps)}, /input-source: not recorded/],
+  ];
+  for (const [putBack, why] of broken) {
+    const {report, ran} = await run(gated(), {v1: 1}, {files: {'/w/out/v1.json': {complete: false, problems: [], rows: [], meta: {}, putBack}}});
+    assert.deepEqual(ran, ['v1'], String(why));
+    assert.equal(statuses(report).c1, 'SKIP');
+    assert.match(report.steps.find(s => s.id === 'c1').reason, why);
+  }
+  const none = await run(gated(), {v1: 1});
+  assert.deepEqual(none.ran, ['v1']);
+  assert.match(none.report.steps.find(s => s.id === 'c1').reason, /needs v1, which wrote no record/);
+  // A run never started (its own needs skipped it) gives the next nothing to start on, whatever an older file says.
+  const p = plan([step('v0', 'run'), step('v1', 'run', {check: 'record', record: '/w/out/v1.json', needs: ['v0']}),
+    step('c1', 'run', {check: 'record', record: '/w/out/c1.json', needs: ['v1'], gate: {putBack: '/w/out/v1.json'}})]);
+  const skipped = await run(p, {v0: 1}, {files: {'/w/out/v1.json': {complete: true, putBack: HELD}}});
+  assert.deepEqual(skipped.ran, ['v0']);
+  assert.match(skipped.report.steps.find(s => s.id === 'c1').reason, /needs v1, which did not run/);
+});

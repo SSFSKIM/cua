@@ -139,6 +139,9 @@ test('C: the matrix, three runs a side with vendor and cua alternating per run n
   // Each run needs the one before it, through the alternation: a run that left a scene up fails, and the next is SKIP
   // rather than started into what it left (pilot B's Finder window).
   assert.deepEqual(runs.map(s => s.needs ?? []), [[], ['matrix-vendor-1'], ['matrix-cua-1'], ['matrix-vendor-2'], ['matrix-cua-2'], ['matrix-vendor-3']]);
+  // Ruling 1214: on the put-back the run before it holds (its record), not on its PASS.
+  assert.deepEqual(runs.map(s => s.gate?.putBack ?? null), [null, '/w/out/vendor/run-1/result.json', '/w/out/cua/run-1/result.json', '/w/out/vendor/run-2/result.json',
+    '/w/out/cua/run-2/result.json', '/w/out/vendor/run-3/result.json']);
   const pilot = plan('c', {pilot: true});
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.id), ['matrix-vendor-1', 'matrix-cua-1'], 'the pilot: one run pair');
   assert.deepEqual(pilot.steps.filter(s => s.id.startsWith('matrix-')).map(s => s.needs ?? []), [[], ['matrix-vendor-1']], 'the pilot\'s pair chained the same way, after the focus timing it does not need');

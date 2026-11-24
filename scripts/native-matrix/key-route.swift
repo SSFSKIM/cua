@@ -6,7 +6,7 @@
 //       AXUIElementGetPid and the private _AXUIElementGetActualPid (dlsym; "unavailable" when the symbol is not found),
 //       and for every pid met its NSRunningApplication's bundle id, activationPolicy and isFinishedLaunching. Then:
 //       `cuaKeyboardTarget`, the pid cua's engine posts keys to since #582, predicted from the observed chain (native/engine/Sources/Engine/KeyTarget.swift:100
-//       keyboardTarget and :67 remoteViewKeyOwner, mirrored here, never imported: the engine is not changed), and
+//       keyboardTarget and :69 remoteViewKeyOwner, mirrored here, never imported: the engine is not changed), and
 //       `cuaPublicPidTarget`, the one it posted to before #582 (the focused element's public AXUIElementGetPid, else
 //       the app's), kept apart;
 //       `selectedAncestor`, the element the static reading of the vendor's binary says its walk selects (the first in the

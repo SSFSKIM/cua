@@ -221,7 +221,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
           return args[1] === 'settle' ? {quit: 0, remaining: 0, pending: 0, waitedMs: 0} : {quit: 1, remaining: 0, gone: 0, pending: 0};
         case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
         case 'load': return {answer: {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10}, at};
-        case 'saved': return {answer: {dirs: {documents: [], desktop: [], icloudTextEdit: [], icloudDrive: []}}, at};
+        case 'document': return {answer: {ok: true, number: Number(args[args.indexOf('--window') + 1]), found: true, document: false, edited: true, editedFrom: 'window'}, at};
         default: return {};
       }
     }),
@@ -246,7 +246,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
 // requested engine; the vendor's helper path is made up to match dryOps' runtime root.
 export function dryConnect({log, engine, host, clock = Date.now}) {
   return () => {
-    const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, threw: false,
+    const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, cancelled: true, panel: false, documentInFront: true, bound: true, actMs: 1, threw: false,
       targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}, typed: true, clicked: true, sceneInFront: true, landed: true, observed: true, hash: sha256Hex(''), length: 0,
       target: 'scene-file-007', finderSelected: true, documentUnchanged: true};
     const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};

@@ -6,8 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import * as matrixDevice from '../../scripts/native-matrix/matrix-device.mjs';
-import {alerts, compiled, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, documentState, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 // A GitHub-hosted runner's environment, where the input source may be written (ruling 1188); the owner's Mac's.
 const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
@@ -565,14 +564,20 @@ test('read: the vendor\'s overlay is passed over as cua\'s cursor is; each skip 
   assert.deepEqual(read({approvedRuntime: '/R'}, {...unowned, env: {}}).frontWindow, {top: {owned: false, bundleId: 'com.openai.sky.CUAService', number: null, ownerPid: null, layer: 0}, skipped: []});
 });
 
-// Ruling 1220: where an untitled TextEdit document would be saved by default, read on a hosted device alone, only the
-// entries named for the intended name leaving it.
-test('saved: the default save folders\' entries under the intended name, a missing folder empty, an unreadable one null; hosted only', () => {
-  const {savedNamed} = matrixDevice;
-  const listing = {'/h/Documents': ['cua-212-intended.rtf', 'Owner notes.rtf'], '/h/Desktop': ['x']};
-  const readdir = dir => { if (dir in listing) return listing[dir]; const error = new Error('x'); error.code = dir.includes('CloudDocs') ? 'EPERM' : 'ENOENT'; throw error; };
-  const hosted = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', home: '/h', readdir};
-  assert.deepEqual(savedNamed('cua-212-intended', hosted), {dirs: {documents: ['cua-212-intended.rtf'], desktop: [], icloudTextEdit: [], icloudDrive: null}});
-  assert.deepEqual(savedNamed('cua-212-intended', {...hosted, env: {}}), {dirs: null, refused: 'saved reads the default save folders on a GitHub-hosted runner only'});
-  assert.throws(() => savedNamed('../x', hosted), /--name/);
+// Ruling 1221 (F2): #212's unsaved proof reads TextEdit's own window through Accessibility (ax-state document), never a
+// folder: whether a document on disk is behind it and whether its edits are unsaved.
+test('document: the window the run opened read by Accessibility at its bounds, booleans only; not taken when it is not on screen', () => {
+  const asked = [];
+  const windows = [{ownerPid: 11, number: 70, layer: 0, bounds}, {ownerPid: 11, number: 71, layer: 0, bounds: {x: 40, y: 60, width: 500, height: 400}}];
+  const io = {state: () => state, windows: () => windows,
+    axDocument: (pid, rect) => { asked.push([pid, rect]); return {trusted: true, ok: true, failed: [], found: true, document: false, edited: true, editedFrom: 'window'}; }};
+  assert.deepEqual(documentState({scene: 'textedit', window: '71'}, io), {ok: true, number: 71, found: true, document: false, edited: true, editedFrom: 'window'});
+  assert.deepEqual(asked, [[11, '40,60,500,400']]);
+  assert.deepEqual(documentState({scene: 'textedit', window: '72'}, io), {ok: false, number: 72, reason: 'window 72 is not on screen'});
+  const saved = {...io, axDocument: () => ({trusted: true, ok: true, failed: [], found: true, document: true, edited: false, editedFrom: 'window'})};
+  assert.deepEqual(documentState({scene: 'textedit', window: '70'}, saved), {ok: true, number: 70, found: true, document: true, edited: false, editedFrom: 'window'});
+  const unread = {...io, axDocument: () => ({trusted: true, ok: false, failed: ['edited'], found: true, document: false, edited: null, editedFrom: null})};
+  assert.deepEqual(documentState({scene: 'textedit', window: '70'}, unread), {ok: false, number: 70, found: true, document: false, edited: null, editedFrom: null, reason: 'a read failed: edited'});
+  assert.deepEqual(documentState({scene: 'textedit', window: '70'}, {...io, axDocument: () => ({trusted: false})}), {ok: false, number: 70, reason: 'the reader is not trusted for Accessibility'});
+  assert.throws(() => documentState({scene: 'textedit', window: 'x'}, io), /--window/);
 });

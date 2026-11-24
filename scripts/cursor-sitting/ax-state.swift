@@ -22,6 +22,11 @@
 //       Chrome's textarea offers AXPress yet): {"trusted", "ok", "failed", "found", "count", "walked", "actions"}: the
 //       window found, how many elements of the role the walk met (breadth first, at most 20000 elements and 64 levels),
 //       and the first one's action names (AXUIElementCopyActionNames), null when none was met. Names only: no text.
+//   ax-state document <pid> <x,y,w,h>
+//       Whether the window at those bounds has a document on disk behind it and unsaved edits (#212's unsaved proof,
+//       ruling 1221): {"trusted", "ok", "failed", "found", "document", "edited", "editedFrom"}: `document` whether its
+//       AXDocument names one (no value is false), `edited` its AXEdited, read on the window, else on its close button
+//       (`editedFrom` "window" or "closeButton"). Booleans only: no URL, no title. It reads no folder.
 // It never asks for a grant: an untrusted terminal answers {"trusted": false} and reads nothing.
 import ApplicationServices
 import Foundation
@@ -31,8 +36,8 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 3, ["window", "text", "actions"].contains(args[1]), let pid = Int32(args[2]) else {
-  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>] | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role>\n".utf8))
+guard args.count >= 3, ["window", "text", "actions", "document"].contains(args[1]), let pid = Int32(args[2]) else {
+  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>] | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role> | ax-state document <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 guard AXIsProcessTrusted() else { emit(["trusted": false]); exit(0) }
@@ -117,6 +122,26 @@ if args[1] == "actions" {
     if AXUIElementCopyActionNames(first, &names) == .success { actions = (names as? [String]) ?? [] } else { failed.append("actions") }
   }
   emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": run != nil, "count": count, "walked": walked, "actions": actions])
+  exit(0)
+}
+
+if args[1] == "document" {
+  guard args.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
+  guard let (_, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  var document: Any = NSNull(), edited: Any = NSNull(), editedFrom: Any = NSNull()
+  if let run {
+    // A document on disk: AXDocument's URL (a string or a URL), present and non-empty; no value is none.
+    let d = read(run, kAXDocumentAttribute)
+    if d.status == .noValue || (d.status == .success && d.value == nil) { document = false }
+    else if d.status == .success, let s = d.value as? String { document = !s.isEmpty }
+    else if d.status == .success, d.value.map({ CFGetTypeID($0) == CFURLGetTypeID() }) == true { document = true }
+    else { failed.append("document") }
+    // Unsaved edits: AXEdited on the window, else on its close button, which carries the edited mark.
+    if let value = read(run, kAXEditedAttribute).value as? Bool { edited = value; editedFrom = "window" }
+    else if let button = element(read(run, kAXCloseButtonAttribute).value), let value = read(button, kAXEditedAttribute).value as? Bool { edited = value; editedFrom = "closeButton" }
+    else { failed.append("edited") }
+  }
+  emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": run != nil, "document": document, "edited": edited, "editedFrom": editedFrom])
   exit(0)
 }
 

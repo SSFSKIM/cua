@@ -49,8 +49,9 @@
 //       asked `--with hit`: the element at its centre, the post-refusal diagnostic's system-wide hit-test): where a key
 //       case's input lands when its panel could not be placed in the strip (./steps.mjs elementGuardCause; ruling 1203's
 //       fallback). Hosted only -> {answer: {frame: null, refused}, at} off a runner
-//   saved --run <dir> --name <prefix>
-//       the default save folders' entries under the intended name (savedNamed; #212's row, ruling 1220), hosted only
+//   document --run <dir> --scene <scene> --window <n>
+//       whether the scene's window numbered <n> has a document on disk behind it and unsaved edits, read by Accessibility
+//       at its bounds (documentState; #212's unsaved proof, ruling 1221), no folder read
 //       -> {answer: {dirs}, at}
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
@@ -240,20 +241,26 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
   return {...out, at};
 }
 
-// Where an untitled TextEdit document would be saved by default (ruling 1220, #212's row): the account's Documents and
-// Desktop, iCloud Drive's TextEdit folder and its root; for each, the entries whose name begins with `name` (the intended
-// name, so nothing else of the folder leaves), [] for a folder that does not exist, null for one that could not be read.
-// Read on a GitHub-hosted runner only, never an owner's Mac. io: {env?, platform?, home?, readdir?}. -> {dirs} | {dirs:
-// null, refused}.
-export const DEFAULT_SAVE_DIRS = Object.freeze({documents: 'Documents', desktop: 'Desktop', icloudTextEdit: 'Library/Mobile Documents/com~apple~TextEdit/Documents',
-  icloudDrive: 'Library/Mobile Documents/com~apple~CloudDocs'});
-export function savedNamed(name, io = {}) {
-  if (!/^[\w.-]+$/.test(name ?? '') || name.startsWith('.')) throw new Error('saved needs --name <the intended name>');
-  if (!isGithubHosted(io.env ?? process.env, io.platform ?? process.platform)) return {dirs: null, refused: 'saved reads the default save folders on a GitHub-hosted runner only'};
-  const home = io.home ?? homedir(), readdir = io.readdir ?? fs.readdirSync;
-  return {dirs: Object.fromEntries(Object.entries(DEFAULT_SAVE_DIRS).map(([key, rel]) => {
-    try { return [key, readdir(join(home, rel)).filter(n => n.startsWith(name)).slice(0, 10)]; } catch (error) { return [key, error?.code === 'ENOENT' ? [] : null]; }
-  }))};
+// #212's unsaved proof (ruling 1221, F2): the scene's window numbered `window` read by Accessibility at its bounds
+// (../cursor-sitting/ax-state.swift document): whether a document on disk is behind it (AXDocument) and whether its
+// edits are unsaved (AXEdited), booleans only. No folder is read, so no protected folder is asked for. Not taken (ok
+// false, with why) when the scene is not up, the window list was unread or the window is not on screen. io: {state,
+// windows, axDocument(pid, 'x,y,w,h')}. -> {ok, number, found?, document?, edited?, editedFrom?, reason?}.
+export function documentState({scene, window}, io) {
+  if (!SCENES[scene]) throw new Error('document needs --scene <scene>');
+  if (!/^\d+$/.test(String(window ?? ''))) throw new Error('document needs --window <number>');
+  const number = Number(window), pid = io.state().scenes?.[scene]?.pid;
+  if (!Number.isSafeInteger(pid)) return {ok: false, number, reason: 'the scene is not up in this run'};
+  let windows = null;
+  try { windows = io.windows(); } catch { windows = null; }
+  if (!Array.isArray(windows)) return {ok: false, number, reason: 'the window list was unread'};
+  const w = sceneWindowOf(windows, {pid, number});
+  if (!w) return {ok: false, number, reason: `window ${number} is not on screen`};
+  const a = io.axDocument(pid, [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','));
+  if (a?.trusted !== true) return {ok: false, number, reason: 'the reader is not trusted for Accessibility'};
+  const read = {found: a.found === true, document: typeof a.document === 'boolean' ? a.document : null, edited: typeof a.edited === 'boolean' ? a.edited : null, editedFrom: a.editedFrom ?? null};
+  if (a.ok !== true) return {ok: false, number, ...read, reason: a.found === false ? 'Accessibility lists no window at its bounds' : `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
+  return {ok: true, number, ...read};
 }
 
 // The front-window probe's top window and the windows it passed over (see read). -> {top, skipped}.
@@ -776,6 +783,7 @@ export async function main(argv, {io: given = {}} = {}) {
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     screen: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])),
     axState: axStateOf(dir),
+    axDocument: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['document', String(pid), bounds])),
     panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
@@ -829,7 +837,7 @@ export async function main(argv, {io: given = {}} = {}) {
       return timed(() => probeStart({kind: positional[0], window: flags.window, text: flags.text, mode: flags.mode, id: flags.source, lead: Number(flags.lead)}, io));
     case 'source': return timed(() => source(positional[0], {id: flags.source, value: flags.value}, io));
     case 'load': return timed(() => deviceLoad());
-    case 'saved': return timed(() => savedNamed(flags.name, io));
+    case 'document': return timed(() => documentState({scene: flags.scene, window: flags.window}, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

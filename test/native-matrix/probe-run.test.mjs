@@ -11,7 +11,7 @@ import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTR
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {sceneKeyWindow} from '../../scripts/native-matrix/matrix-device.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
-import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
+import {matrixSteps, names, runWith as runDoubles, stopWith} from './run-doubles.mjs';
 
 // An engine refusal as a cell sees it: the REPL hands the cell a plain Error (src/repl-host/trusted-worker.mjs), so its
 // name is 'Error' and only its message, the vendor's envelope around the engine's sentence, says what it was.
@@ -26,6 +26,26 @@ const acted = (code, {interval = [50, 2_500], threw = null, errorName = null, me
     _meta: {'cua/inputRoute': "2'", 'cua/actionInterval': interval ? {startedAt: at + interval[0], endedAt: at + interval[1]} : {startedAt: null, endedAt: null}, ...meta}};
 };
 const rowOf = (result, id) => result.rows.find(r => r.id === id);
+// #212's runs with TextEdit's untitled document as ⌘N makes it: the window list's newcomer from its opening cell until
+// its cleanup closes it, so the run knows its own window and the unsaved proof reads it (probe-run.mjs unsavedProof).
+const UNTITLED = 500;
+const runWith = opts => {
+  if (opts.cellName !== 'intervention-save-sheet') return runDoubles(opts);
+  let untitled = false;
+  const cell = code => {
+    const tag = tagOf(code);
+    if (tag === 'sheet.new') untitled = true;
+    if (tag === 'sheet.cleanup') untitled = false;
+    return opts.cell ? opts.cell(code) : null;
+  };
+  const given = opts.ops?.matrix;
+  const matrix = (base, a) => {
+    const out = given ? given(base, a) : base(a);
+    return untitled && a[0] === 'read' && out?.alertBounds
+      ? {...out, alertBounds: {...out.alertBounds, windows: [...out.alertBounds.windows, {scene: 'textedit', number: UNTITLED, recorded: false, bounds: {x: 240, y: 100, width: 500, height: 400}}]}} : out;
+  };
+  return runDoubles({...opts, cell, ops: {...opts.ops, matrix}});
+};
 const probeSteps = steps => matrixSteps(steps, 'probe').map(a => a.slice(0, 2).join(' '));
 const sourceSteps = steps => matrixSteps(steps, 'source').map(a => [a[1], ...(a.includes('--source') ? [a[a.indexOf('--source') + 1]] : []), ...(a.includes('--value') ? [a[a.indexOf('--value') + 1]] : [])].join(' '));
 
@@ -301,7 +321,8 @@ test('#212\'s save sheet: super+n, the text typed and super+s under the key guar
   assert.deepEqual(row.outcome.destinationFiles, []);
   const tags = calls.map(c => tagOf(c.code)).filter(Boolean);
   assert.deepEqual(tags.filter(t => /^(sheet|savesheet)\./.test(t)),
-    ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.destination', 'savesheet.act', 'savesheet.check', 'savesheet.cancel', 'sheet.cleanup']);
+    ['sheet.new', 'sheet.type', 'savesheet.open', 'savesheet.destination', 'savesheet.act', 'savesheet.check', 'savesheet.cancel', 'savesheet.cancel', 'sheet.cleanup'],
+    'the sheet cancelled for the unsaved proof, and again by the cleanup, which then finds none');
   const open = calls.find(c => tagOf(c.code) === 'savesheet.open').code, act = calls.find(c => tagOf(c.code) === 'savesheet.act').code;
   assert.match(open, /__app\.pressKey\("super\+s"\)/);
   assert.match(open, /saveAsNameTextField/);
@@ -732,20 +753,31 @@ test('#212\'s Go To dialog surviving every step stops the run, the stop naming i
   assert.match(stop ?? '', /with the Go To dialog up through every step its cell tried \(Escape 3x: still up; its CloseButton: clicked, still up; the Save sheet's cancel: still up\) \(its cleanup refused by the key-window guard\)/, JSON.stringify(result.problems));
 });
 
-// Ruling 1220's third condition: nothing is saved, and the row proves it at the run's folder and where an untitled
-// document would land by default (read on the device before the destination and after the check, keyed on SAVE_NAME).
-test('#212\'s row checks the default save locations: a file there under the intended name fails the row', async () => {
-  let checked = false;
-  const savedOps = appear => ({matrix: (base, a) => (a[0] === 'saved'
-    ? {answer: {dirs: {documents: checked && appear ? ['cua-212-intended.rtf'] : [], desktop: [], icloudTextEdit: [], icloudDrive: null}}, at: [1, 2]} : base(a))});
-  const cell = c => { if (tagOf(c) === 'savesheet.check') checked = true; return saveCells()(c); };
-  const clean = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell, ops: savedOps(false)});
-  const ok = rowOf(clean.result, SAVE_SHEET);
-  assert.equal(ok.ok, true, JSON.stringify(ok));
-  assert.deepEqual(ok.outcome.defaultSaves, {appeared: [], unread: ['icloudDrive']});
-  checked = false;
-  const saved = await runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell, ops: savedOps(true)});
-  const failed = rowOf(saved.result, SAVE_SHEET);
-  assert.equal(failed.ok, false);
-  assert.deepEqual(failed.outcome.defaultSaves.appeared, ['documents/cua-212-intended.rtf']);
+// Ruling 1220's third condition, by ruling 1221 (F2) read with no protected folder: nothing is saved, proved at the run's
+// folder and, once the sheet is cancelled inside the attempt, by Accessibility on TextEdit's own window: no document on
+// disk behind it (AXDocument) and its edits still unsaved (AXEdited). No default save folder is listed.
+test('#212\'s row proves nothing saved on TextEdit\'s own window after the cancel: a stubbed save (AXDocument appears) fails it', async () => {
+  const order = [];
+  const documentOps = answer => ({matrix: (base, a) => {
+    if (a[0] === 'saved') throw new Error('no default save folder is read');
+    if (a[0] !== 'document') return base(a);
+    order.push(`document:${a[a.indexOf('--window') + 1]}`);
+    return {answer, at: [1, 2]};
+  }});
+  const cell = c => { if (['savesheet.cancel', 'savesheet.check'].includes(tagOf(c))) order.push(tagOf(c)); return saveCells()(c); };
+  const run = answer => runWith({plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell, ops: documentOps(answer)});
+  const clean = rowOf((await run({ok: true, number: 1, found: true, document: false, edited: true, editedFrom: 'window'})).result, SAVE_SHEET);
+  assert.equal(clean.ok, true, JSON.stringify(clean));
+  assert.deepEqual(clean.outcome.unsaved, {document: false, edited: true, editedFrom: 'window'});
+  assert.equal(clean.outcome.defaultSaves, undefined);
+  assert.deepEqual(order.slice(0, 3), ['savesheet.check', 'savesheet.cancel', `document:${UNTITLED}`], 'the run\'s own untitled window read after the cancel');
+  order.length = 0;
+  const saved = rowOf((await run({ok: true, number: 1, found: true, document: true, edited: false, editedFrom: 'window'})).result, SAVE_SHEET);
+  assert.equal(saved.ok, false);
+  assert.equal(saved.invalid, undefined, 'a save is a finding, not a missing proof');
+  assert.deepEqual(saved.outcome.unsaved, {document: true, edited: false, editedFrom: 'window'});
+  order.length = 0;
+  const unread = rowOf((await run({ok: false, number: 1, reason: 'the reader is not trusted for Accessibility'})).result, SAVE_SHEET);
+  assert.equal(unread.ok, false);
+  assert.equal(unread.invalid, 'nothing saved was not proved: TextEdit\'s own window could not be read (the reader is not trusted for Accessibility)');
 });

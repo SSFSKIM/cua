@@ -101,10 +101,12 @@ export function frontKeyCause(frontKey, {hosted = false} = {}) {
 // never sent: that is its cause; so was one a hosted runner left to the owner's sitting (`ownerSitting`, ruling 1203).
 // -> {category, detail?} | null.
 export function sampleCause(row) {
+  // A row left unsent to the owner's sitting keeps that cause even where its opening's frames split (one lane clamped,
+  // the other placed): it was never a measurement on either frame (review finding 6). The other side's row is the split's.
+  if (row.ownerSitting) return {category: 'ownerSitting', detail: row.ownerSitting};
   if (row.frameSplit) return {category: 'venue', detail: `the run's pair did not stand on one frame (${row.frameSplit})`};
   if (row.venueInput) return {category: 'venue', detail: row.venueInput};
   if (row.ownerInput) return {category: 'ownerInput', detail: row.ownerInput};
-  if (row.ownerSitting) return {category: 'ownerSitting', detail: row.ownerSitting};
   if (row.alertHeld) return {category: 'alert', detail: `${row.alertHeld.front} in front at the key guard; ${row.alertHeld.keys.join(', ')} held`};
   if (row.alertGuard) return {category: row.alertGuard.cause, detail: `the alert guard: ${row.alertGuard.detail}`};
   // A row of a panel's opening whose close did not take (./panels.mjs closePanel, ruling 1195): by the refusal's cause,

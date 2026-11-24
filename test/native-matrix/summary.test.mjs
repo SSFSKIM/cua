@@ -1037,6 +1037,26 @@ test('a speed row not qualified shows what its partial readings would give as a 
   assert.ok(!/as sampled/.test(text));
 });
 
+// Review finding 6 (ruling 1203): one lane's panel clamped (its click left to the owner's sitting, unsent), the other's
+// placed in the strip. The opening's frames split, yet the unsent side keeps `ownerSitting` on the click and its timing;
+// the placed side's samples are the split's (`venue`), with no pair.
+test('a clamped opening against a placed one: the unsent side stays ownerSitting, the other side has no pair', () => {
+  const OPEN = 'openPanel/frontmost/click.cancel', TIMING = 'textedit/method.panel.click.cancel';
+  const centred = {x: 520, y: 162, width: 880, height: 448}, asked = {x: -58, y: 80, width: 880, height: 448};
+  const entry = readBack => ({beforeRow: 1, target: 'openPanel', opening: OPEN, number: 994, from: centred, to: asked, readBack, matched: readBack.x === -58,
+    ax: {trusted: true, found: true, size: null, position: 0, readBack}, moved: true, inStrip: readBack.x === -58, ...(readBack.x === -58 ? {} : {fallback: 'clamped'})});
+  const placed = readBack => () => ({hosted: true, placement: {alerts: [], scenes: {}, panel: [entry(readBack)]}});
+  const cause = 'left to the owner\'s sitting, unsent: the Open panel\'s window 994 stood at 0,80 880x448: its x clamped where -116 was asked';
+  const tag = rows => rows.map(r => (r.id === OPEN || r.id === TIMING ? {...r, opening: OPEN} : r));
+  const unsent = rows => tag(rows).map(r => (r.id === OPEN || r.id === TIMING ? {...r, ok: false, ownerSitting: cause, invalid: cause} : r));
+  const j = judged({vendor: {resolved: 9, axMs: 50, meta: placed({x: 0, y: 80, width: 880, height: 448}), tweak: unsent}, cua: {axMs: 40, meta: placed(asked), tweak: tag}});
+  const click = j.cells.find(c => c.id === OPEN);
+  assert.deepEqual([click.account.vendor.noVerdict, click.account.cua.noVerdict], [{ownerSitting: 3}, {venue: 3}]);
+  const timing = j.cells.find(c => c.id === TIMING);
+  assert.deepEqual(timing.account.vendor.noVerdict, {ownerSitting: 3});
+  assert.match(renderSummary(j), /`ownerSitting` \(the Open panel's pointer cells left to the owner's sitting, the panel clamped short of the strip, ruling 1203\): cua 0, vendor [1-9]/);
+});
+
 // Review finding 4: a panel opening whose placement the lanes read apart leaves that opening's rows alone without a
 // pair (NO VERDICT `venue`); the run is still one pair, every other row judged, and no missing proof is said of it.
 test('a panel opening that stood apart on the two lanes takes only its own rows out; the run and its other rows are judged', () => {

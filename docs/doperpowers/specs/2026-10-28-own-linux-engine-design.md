@@ -2971,6 +2971,20 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - F7 is a development-only exception, kept out of product entry points. Both arches' full vendor release trees are preserved and hash-checked outside any cua home, and one differential step runs on the relocated fixture alone.
   Date/Author: 2026-11-24, linux171 (plan-executor), recording the design session's rulings.
 
+- Decision (2026-11-24, M6b's pre-flight; ruling 1217 on its §7.2): **the nine choices the pre-flight left open are settled, as the pre-flight has them.**
+  - **N1.** The `engine_retired` sentence names `CUA_NATIVE_ENGINE=cua` as the default it describes, and tells the person to unset the variable.
+  - **N2.** Doctor's `runtime.retired` row is informational (`skip`), and present only for a release whose install record says cua placed it. At close-out, acceptance 13's "no vendor runtime rows" is reworded to say no failing or selectable vendor row, and one informational row for a recorded release.
+  - **N3–N6, as written:**
+    - N3: a linked `runtimes/` or release is neither followed nor named.
+    - N4: on Linux, `--prune-leftovers` and `runtime.leftovers` stop looking inside a release.
+    - N5: the service's own outdated sentence stays as it is, for the credit.
+    - N6: the provisioner's bootstrap, with the forward guard.
+  - **N7.** The second copy of both arches' vendor fixtures is on the owner's MacBook, at `~/.local/share/cua-171/vendor-fixtures/{x64,arm64}/`, with its hashes checked there. cua is public and these are the vendor's binaries, so the fixtures never go into the repository or any of its releases, drafts included.
+  - **N8.** If `ci-gate --gates engine-linux` skips a branch whose engine paths are unchanged, #585's pass is cited, and the PR records that the diff from 854103aa5 over those paths is empty. If anything there changed, the gate runs.
+  - **N9.** arm64's FB, item 4's facade half, which had no bridge, was run at main 854103aa5 on the arm VM before its lease ended. It passed 10 of 10 steps, with the vendor service and cua's service equal on each (task 165; evidence on `m6b-fb-arm64`, f18235d8e).
+  - **#558 and #565.** M6b's facade runs are the first counted runs of both. A failure there is a defect on main. It gets its own ticket and its own PR from main, and M6b's evidence waits for that fix, unless the fix is a one-liner named to the design session first.
+  Date/Author: 2026-11-24, linux171 (plan-executor), recording ruling 1217.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

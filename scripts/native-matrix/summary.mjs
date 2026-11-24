@@ -601,7 +601,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
       // The input causes among the invalid samples (rulings 1188 and 1189), so the report shows what the run could not take.
       const sum = (side, key) => list.reduce((n, entry) => n + (entry[side][key] ?? 0), 0);
       const causes = [['ownerInput', 'the owner\'s input source or per-context preference not the row\'s, never changed off a GitHub-hosted runner, ruling 1188'],
-        ['venue', 'an input source the runner\'s setup could not enable, ruling 1189']].filter(([key]) => sum('cua', key) + sum('vendor', key))
+        ['venue', `an input source the runner's setup could not enable, ruling 1189${condition === 'perContext' ? ', or the sources enabled and the per-context context not reading Korean after its reactivation, #577' : ''}`]].filter(([key]) => sum('cua', key) + sum('vendor', key))
         .map(([key, what]) => `\`${key}\` (${what}): cua ${sum('cua', key)}, vendor ${sum('vendor', key)}`);
       out.push(`### ${condition}`, '', list[0].cause, '', ...(causes.length ? [`Of the invalid samples, ${causes.join('; ')}.`, ''] : []), '| row | cua ok | vendor ok |', '|---|---|---|');
       for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);

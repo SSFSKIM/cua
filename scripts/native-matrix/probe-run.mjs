@@ -347,7 +347,7 @@ async function closeUntitled(ctx, keys) {
 // before any cleanup, as the row's `outcome.typing`. A typing the key guard never sent says so.
 function untypedRow(ctx, typed) {
   const r = read(ctx, null, {frontKey: true, windowOrder: true});
-  const top = Array.isArray(r?.windowOrder) ? r.windowOrder[0] ?? null : null;
+  const top = oracleTop(r);
   const value = typed?.value ?? null;
   return {invalid: `the untitled document's text was not typed (${typed ? typed.error ?? value?.reason ?? 'the cell gave no reason' : 'the key guard did not send it'})`,
     outcome: {typing: {...(value && 'readBack' in value ? {readBack: value.readBack} : {}), ...(value?.front ? {front: value.front} : {}),
@@ -388,10 +388,21 @@ async function sceneWindowInFront(ctx, scene) {
   }
   return {window, reads, last};
 }
+// The top window as the front-window oracle selects it (scripts/accept/front-window.swift: the frontmost visible window
+// at layer 0, the reading's topWindow), its owner's bundle id taken from the window order's matching entry: the run's
+// own window by its number, another app's as the first layer-0 window no run process owns. An overlay above layer 0
+// (a menu-bar extra, a status panel) is never it. -> {owned, pid?, bundleId, layer} | null when unread.
+function oracleTop(r) {
+  const top = r?.reading?.topWindow ?? null;
+  if (!top) return null;
+  const order = Array.isArray(r?.windowOrder) ? r.windowOrder : [];
+  if (top.owned) return {owned: true, pid: top.ownerPid, bundleId: order.find(w => w.owned && w.number === top.number)?.bundleId ?? null, layer: 0};
+  return {owned: false, bundleId: order.find(w => !w.owned && w.layer === 0)?.bundleId ?? null, layer: 0};
+}
 // What stood in front, from a reading with its window order: the front app and the top window's owner, bundle ids
 // (the run's own windows as such).
 function frontText(r) {
-  const top = Array.isArray(r?.windowOrder) ? r.windowOrder[0] ?? null : null;
+  const top = oracleTop(r);
   const owner = !top ? 'unread' : top.owned ? `the run's own (pid ${top.pid})` : `${top.bundleId ?? 'an unnamed app'}'s (layer ${top.layer ?? '?'})`;
   return `the front app ${r?.frontKey?.front ?? 'unread'}, the top window ${owner}`;
 }

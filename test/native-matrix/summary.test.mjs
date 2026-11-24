@@ -416,7 +416,7 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
   assert.deepEqual([owned.verdict, owned.blocking, owned.missing], ['PASS', [], []]);
   assert.deepEqual(owned.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: true,
     vendor: {ok: 0, valid: 0, invalid: 3, ownerInput: 3}, cua: {ok: 0, valid: 0, invalid: 3, venue: 3}});
-  assert.ok(renderSummary(owned).includes(`${NOT_JUDGED.perContext}\n\nOf the invalid samples, \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua 0, vendor 162; \`venue\` (an input source the runner's setup could not enable, ruling 1189): cua 162, vendor 0.\n`), renderSummary(owned));
+  assert.ok(renderSummary(owned).includes(`${NOT_JUDGED.perContext}\n\nOf the invalid samples, \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua 0, vendor 162; \`venue\` (an input source the runner's setup could not enable, ruling 1189, or the sources enabled and the per-context context not reading Korean after its reactivation, #577): cua 162, vendor 0.\n`), renderSummary(owned));
 });
 
 // The review's regression: only ruling 1119's per-context rows are out of the verdict, by section and condition. An

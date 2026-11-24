@@ -31,6 +31,17 @@ test('a window that covers TextEdit\'s for a moment: the read is taken again and
   assert.doesNotMatch(row.invalid ?? '', /window was not in front/);
 });
 
+test('the window named is the oracle\'s own top window (layer 0), never an overlay above that layer', async () => {
+  const {lane, ops} = coveredTop(Infinity);
+  const overlaid = {matrix: (base, a) => {
+    const r = ops.matrix(base, a);
+    return r.windowOrder ? {...r, windowOrder: [{owned: false, bundleId: 'com.apple.controlcenter', layer: 25}, ...r.windowOrder]} : r;
+  }};
+  const {result} = await runWith({plan: planOf('intervention-fires'), cellName: 'intervention-fires', lane, ops: overlaid, slept: []});
+  const row = result.rows.find(r => r.id === 'textedit/intervention.fires');
+  assert.match(row.invalid, new RegExp(`the top window ${FOREIGN.replaceAll('.', '\\.')}'s \\(layer 0\\)$`));
+});
+
 test('a window that never leaves: invalid, naming the front app and the top window\'s owner, with the reads it took', async () => {
   for (const [kind, id] of [['intervention-fires', 'textedit/intervention.fires'], ['pre-action-refusal', 'textedit/intervention.preAction']]) {
     const {lane, ops} = coveredTop(Infinity);

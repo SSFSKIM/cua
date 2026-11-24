@@ -366,6 +366,11 @@ test('a CUA_BROWSER_BACKENDS serve refuses: the browser-only session does not op
   assert.deepEqual(opened(report), {browser: false, cua: true, vendor: true});
   assert.equal(report.sessions.why.browser.code, 'invalid_setting');
   assert.match(report.sessions.why.browser.message, /CUA_BROWSER_BACKENDS must list absolute socket paths/);
+  // and the text's last line says so, naming the computer sessions that open (task 156, fix wave 2)
+  const text = lastLine(await cli(['install'], deps));
+  assert.ok(text.startsWith(`${SAID}browser-only sessions do not open: CUA_BROWSER_BACKENDS must list absolute socket paths`), text);
+  assert.match(text, /; computer sessions open on cua's engine, which this home selects; with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine$/);
+  assert.doesNotMatch(text, /no session opens/);
 });
 
 test('an engine setting that cannot be read is reported, and no computer session opens; the install itself succeeds', async t => {

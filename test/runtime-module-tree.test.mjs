@@ -370,6 +370,19 @@ test('the connection\'s check refuses a package.json truncated or emptied, by it
   }
 });
 
+// The full check holds the record's manifest sizes to the files too, so what the installer calls verified the open
+// accepts (task 156, fix wave 2).
+test('a record whose manifestSize is off by a byte: the full check and the reinstall refuse it, as the open does', async t => {
+  const s = setup(t);
+  const {root} = await install(s);
+  const written = record(root);
+  written.packages[0].manifestSize += 1;
+  writeFileSync(join(root, 'install.json'), JSON.stringify(written, null, 2));
+  assert.throws(() => checkModuleTree(root, written), expectCode('layout_invalid', /package\.json is \d+ bytes, recorded as \d+/));
+  assert.throws(() => verifyModuleTree(root, written), expectCode('module_tree_invalid', /package\.json is \d+ bytes, recorded as \d+/));
+  await assert.rejects(install(s), expectCode('module_tree_invalid'));
+});
+
 // A file or directory the full check cannot read is damage it names, with the tree to move aside and the installer,
 // never a raw filesystem error and never an empty directory (task 156). Unreadable by fault injection, since a test run
 // as root reads any mode.

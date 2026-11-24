@@ -247,8 +247,10 @@ const SAID = 'sessions here, by what is installed and set: ';
 function opensNow({browser, computer, engine, alternate, why}, env) {
   const words = ({code, message, hint}) => `${message} (${code})${hint ? `; ${hint}` : ''}`;
   const label = name => (name === 'cua' ? 'cua\'s engine' : 'the vendor\'s engine');
-  if (!browser) return `${SAID}no session opens: ${words(why.browser)}`;
-  const parts = [`browser-only sessions open${env.CUA_NODE ? ` on CUA_NODE=${env.CUA_NODE}` : ''}`,
+  // A shared prerequisite that failed opens nothing, and readiness then evaluated no computer session (no why.computer);
+  // a browser-only refusal of its own (CUA_BROWSER_BACKENDS) leaves the computer sessions to be said.
+  if (!browser && !computer && !why.computer) return `${SAID}no session opens: ${words(why.browser)}`;
+  const parts = [browser ? `browser-only sessions open${env.CUA_NODE ? ` on CUA_NODE=${env.CUA_NODE}` : ''}` : `browser-only sessions do not open: ${words(why.browser)}`,
     !engine ? `no computer session opens: ${words(why.computer)}`
       : computer ? `computer sessions open on ${label(engine)}, which this home selects`
         : `computer sessions on ${label(engine)}, which this home selects, do not open: ${words(why.computer)}`];

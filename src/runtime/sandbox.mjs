@@ -242,6 +242,7 @@ export function assertSandboxFits(mode, launch) {
   if (launch.compat) assertVendorLauncher(launch.env.CODEX_CLI_PATH);
   if (launch.denyRead) assertDenyListShape(launch.denyRead);
   if (mode !== 'scoped') return;
+  if (launch.modulesRoot) assertHomeRootsOutsideVendorTree(launch);   // a Linux launch
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
       managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
@@ -286,13 +287,32 @@ function assertVendorLauncher(path) {
 // names and runs. One that leads into the tree is refused before anything there is read (sandbox_unavailable), naming
 // the link to move aside (`context.blocking`), since the installer would take the place it leads to as the helper.
 export function guardedLinuxHelper({home, path, sha256, verifyHelper = verifyLinuxHelper}) {
+  return verifyHelper({path: helperOutsideVendorTree({home, path}), sha256});
+}
+// The helper's path as guardedLinuxHelper resolves it, before anything reads it -> its real path (or `path` as spelled,
+// where a part of it does not exist, for the check to report). Also what a confined launch's construction names the
+// helper by (launch.mjs), so a later launch of a connection, which repeats no preflight, refuses one that has become a
+// link into the tree since the open.
+export function helperOutsideVendorTree({home, path}) {
   const at = typeof path === 'string' && isAbsolute(path) ? outsideVendorTree(path, home) : {};
   if (at.lead) {
     const blocking = at.links[0] ?? path;
     fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: it is neither read nor run, and nothing was started`,
       {hint: `move ${blocking} aside, then run \`${ownInstaller().command}\` to place the pinned helper`, context: {blocking}});
   }
-  return verifyHelper({path: at.real ?? path, sha256});
+  return at.real ?? path;
+}
+
+// The directories of a Linux launch's own cua home that the scoped preflight protects by their real paths (its managed
+// Node, staging, sandbox helper, engine and module trees): each is walked by the guard first, so one that is a link into
+// the vendor's tree is refused, naming that link, before anything resolves it there (#171 M6a, task 156).
+function assertHomeRootsOutsideVendorTree(launch) {
+  const home = dirname(launch.modulesRoot);
+  for (const root of [launch.managedNodeRoot, launch.stagingRoot, launch.sandboxHelperRoot, launch.engineRoot, launch.modulesRoot].filter(Boolean)) {
+    const at = outsideVendorTree(root, home);
+    if (at.lead) fail('sandbox_conflict', `${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: the scoped sandbox protects it by its real path, which is not resolved there; nothing was started`,
+      {hint: `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``});
+  }
 }
 // The pinned helper `cua install` placed in the real cua home `home` for `arch`, as guardedLinuxHelper takes it: doctor's
 // sandbox.launcher row and install's readiness check it as a session does.

@@ -758,7 +758,7 @@ test('a panel typing row not prepared for the focus keeps the prepare\'s reading
   assert.equal(row.invalid, `not prepared: ${FOCUS_REASONS.unfocused}`);
   assert.deepEqual(row.prepareSeen, seen);
   // (a) the click missed: the device's focus is elsewhere, the field's centre hits the field itself.
-  assert.deepEqual(row.deviceFocus, {inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement, field: {kind: 'search', frame: field, hit}, fieldFocused: false});
+  assert.deepEqual(row.deviceFocus, {panelWindow: {placed: 994, now: 994}, inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement, field: {kind: 'search', frame: field, hit}, fieldFocused: false});
   assert.deepEqual(asked, ['focused', 'search+hit'], 'the diagnostic asks for the hit at the field\'s centre');
   // Only that row reads it: a row prepared reads nothing more.
   assert.equal(result.rows.filter(r => r.deviceFocus).length, 1);
@@ -837,4 +837,35 @@ test('the device\'s fieldFocused: true, false, or null where the focus or the fi
   assert.equal(await fieldFocusedOf({frame: null, inWindow: null}, found), null, 'no focused element read');
   assert.equal(await fieldFocusedOf({frame: null, inWindow: true, focusedElement: outline}, found), null, 'the focused element\'s frame unread');
   assert.equal(await fieldFocusedOf({frame: elsewhere, inWindow: true, focusedElement: outline}, {frame: null, inWindow: null}), null, 'the field not found');
+});
+
+// Ruling 1219 (h4): the panel's window may be another by the time the diagnostic reads it (C-5's vendor lane: the number
+// placement found, 158 and 204, was gone after the click), so the diagnostic looks the panel's window up again as
+// placement does and reads the one it finds now, recording both numbers.
+test('the field-focus diagnostic looks the panel window up again and records the placed and the present number', async () => {
+  const seen = {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: 0, reading: 'unfocused'}};
+  const dev = panelDevice({alerts: []});
+  let prepared = false;
+  const cell = code => {
+    if (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')) { prepared = true; return {ready: false, reason: FOCUS_REASONS.unfocused, seen}; }
+    return dev.cell(code);
+  };
+  const field = rect(560, 96, 220, 22), asked = [];
+  const matrix = (base, a) => {
+    if (a[0] === 'panel' && a[1] === 'element') {
+      asked.push(Number(flag(a, 'window')));
+      if (Number(flag(a, 'window')) !== 995) return {answer: {found: false, frame: null, inWindow: null, pid: 300}, at: [1, 2]};
+      return {answer: flag(a, 'element') === 'focused' ? {found: true, frame: field, inWindow: true, pid: 300, focusedElement: {role: 'AXTextField', subrole: 'AXSearchField', identifier: null}}
+        : {found: true, frame: field, inWindow: null, pid: 300}, at: [1, 2]};
+    }
+    const out = dev.ops.matrix(base, a);
+    // After the prepare's click the panel's window is another (995), at the same place.
+    if (!prepared || !out.alertBounds?.windows) return out;
+    return {...out, alertBounds: {...out.alertBounds, windows: out.alertBounds.windows.map(w => (w.number === 994 ? {...w, number: 995} : w))}};
+  };
+  const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
+  const row = result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search');
+  assert.deepEqual(row.deviceFocus.panelWindow, {placed: 994, now: 995});
+  assert.equal(row.deviceFocus.fieldFocused, true, 'read in the window found now');
+  assert.deepEqual(asked, [995, 995]);
 });

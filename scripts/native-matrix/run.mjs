@@ -69,7 +69,7 @@ import {caseCells, findingCell, launchCell, launchCheckCell, selectCell} from '.
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, FOCUS_REASONS, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
+import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, panelWindowsIn, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause, sendsPointer} from './alert-guard.mjs';
@@ -644,15 +644,27 @@ function panelElementRead(ctx, window, element, {hit = false} = {}) {
     return {refused: String(error?.message ?? error).split('\n')[0].slice(0, 160)};
   }
 }
+// The panel's window as it is now (ruling 1219, h4: the number placement found may be gone after the prepare's click):
+// looked up again as placement looks (./panels.mjs panelWindowsIn), the one found now when there is exactly one, else the
+// placed one. -> {placed, now, number, candidates?}.
+function panelWindowNow(ctx) {
+  const placed = ctx.panelWindows?.length === 1 ? ctx.panelWindows[0] : null;
+  const found = panelWindowsIn(read(ctx, null, {alertBounds: true})?.alertBounds ?? null, ctx.panelKnown ?? null);
+  const now = found?.length === 1 ? found[0].number : null;
+  return {placed, now, number: now ?? placed, ...(found && found.length > 1 ? {candidates: found.map(w => w.number)} : {})};
+}
 function deviceFocusOf(ctx, target) {
   const windows = ctx.panelWindows ?? [];
-  if (windows.length !== 1) return {unread: windows.length ? `${windows.length} panel windows` : 'the panel\'s window is not known'};
-  const answer = panelElementRead(ctx, windows[0], 'focused');
-  if (answer?.refused) return {unread: answer.refused};
-  const focused = {inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
+  if (windows.length > 1) return {unread: `${windows.length} panel windows`};
+  const {number, ...panelWindow} = panelWindowNow(ctx);
+  if (number === null) return {unread: 'the panel\'s window is not known', panelWindow};
+  const element = (kind, options) => panelElementRead(ctx, number, kind, options);
+  const answer = element('focused');
+  if (answer?.refused) return {unread: answer.refused, panelWindow};
+  const focused = {panelWindow, inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
   const known = FIELD_ELEMENTS[target];
   if (!known) return focused;
-  const field = panelElementRead(ctx, windows[0], known.kind, {hit: true});
+  const field = element(known.kind, {hit: true});
   if (field?.refused) return {...focused, field: {kind: known.kind, unread: field.refused}, fieldFocused: null};
   return {...focused, field: {kind: known.kind, frame: field?.frame ?? null, hit: field?.hit ?? null}, fieldFocused: fieldFocusedOf(answer, field, known)};
 }

@@ -107,17 +107,23 @@ export async function openPanelOf(ctx, target, apps, opening) {
 // from, so an unproven placement is recorded and the case runs. -> the `venue` cause when the placement is unproven on a
 // hosted runner or a read-back missed the strip, else null.
 const PLACE_READS = 4, PLACE_READ_MS = 250;
+// The panel's windows in one alert-guard reading: the panel service's, or a TextEdit window of panel size that is
+// neither the scene's recorded one nor among `known` (TextEdit's windows before the opening key). -> [window] | null
+// when the reading or `known` is unread.
+export const panelWindowsIn = (bounds, known) => (!Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows) || !known ? null
+  : bounds.windows.filter(w => isRect(w.bounds) && w.bounds.width >= 100 && w.bounds.height >= 100
+    && (w.scene === 'openPanel' || (w.scene === 'textedit' && !w.recorded && !known.has(w.number)))));
 async function placePanel(ctx, target, known, opening) {
   const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
   const hosted = ctx.meta.hosted === true;
   ctx.panelWindows = [];
+  // Kept for a later lookup of the same panel (./run.mjs deviceFocusOf, ruling 1219's h4).
+  ctx.panelKnown = known;
   let bounds = null, windows = null, reads = 0;
   for (; reads < (hosted ? PLACE_READS : 1) && !windows?.length; reads++) {
     if (reads) await ctx.sleep(PLACE_READ_MS);
     bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
-    windows = !Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows) || known === null ? null
-      : bounds.windows.filter(w => isRect(w.bounds) && w.bounds.width >= 100 && w.bounds.height >= 100
-        && (w.scene === 'openPanel' || (w.scene === 'textedit' && !w.recorded && !known.has(w.number))));
+    windows = panelWindowsIn(bounds, known);
     if (known === null) { reads++; break; }
   }
   if (!windows?.length) {

@@ -139,14 +139,15 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
   'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
-  'cua/overlayClick': null, 'cua/pointerRefusal': null, 'cua/permission': null,
+  'cua/overlayClick': null, 'cua/pointerRefusal': null, 'cua/permission': null, 'cua/keyTargetCutOff': null,
 };
 // The grants a permissionsPending names in `meta.permission`, carried as cua/permission.
 const PERMISSIONS = new Set(['accessibility', 'screenRecording']);
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
-// a keyed type_text into a password field confirmed by its length alone, #414), and its bound.
-const NOTED_METHODS = new Set(['paste', 'type_text', 'click', 'scroll']);
+// a keyed type_text into a password field confirmed by its length alone, #414; keys whose remote-view panel check was
+// cut off at its time budget, on press_key, type_text and paste, #582), and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text', 'press_key', 'click', 'scroll']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
@@ -161,9 +162,11 @@ const NOTE_CHARS = 500;
 // overlay closed, or why #452's refusal stood, {window, by, kind?, route?, confirmed?, refused?, row? {role, frame},
 // refusedBy? {role, reason}, ...}, #453; `pointerRefusal`: a shared pointer refused before its events because no route-3
 // activation stood for it while another app was in front, {reason "keyFocusOnly", frontmostPid, keyFocusPid,
-// keyFocusIsTarget}, on the refusal and on the element route that carried it instead, #538).
+// keyFocusIsTarget}, on the refusal and on the element route that carried it instead, #538; `keyTargetCutOff`: {pid}, the
+// process a press_key's, type_text's or paste's keys went to by ordinary routing when the check for a remote-view panel
+// was cut off at its time budget, #582).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick', 'pointerRefusal'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu', 'overlayClick', 'pointerRefusal', 'keyTargetCutOff'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

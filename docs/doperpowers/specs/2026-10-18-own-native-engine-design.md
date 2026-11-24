@@ -396,8 +396,9 @@ execute  {method: string, args: object, deadlineUnixMilliseconds: number, lineag
           "no longer valid" sentence; the deadline is checked on receipt and cancels a settle or launch wait still running when it
           passes. An element-targeted method carries args.element: token, the service's translation of the facade's element_index)
 status   {} → {engineVersion, build, accessibility: boolean, screenRecording: boolean, inputMonitoring: boolean, canPostHid: boolean, socket: string, pid: number, bundlePath: string, connections: number,
-          holders: [{pid: number | null, label: string | null}]}
-         (connections = open connections other than the requesting one, so `connections > 0` means "someone else"; shutdown's "busy" uses the same count;
+          holders: [{pid: number | null, label: string | null}], actualPid: boolean}
+         (actualPid: whether `_AXUIElementGetActualPid` resolved, so keys reach a remote-view panel's service, #582;
+         connections = open connections other than the requesting one, so `connections > 0` means "someone else"; shutdown's "busy" uses the same count;
           holders (#237) names them in accept order: the peer's pid read at accept (LOCAL_PEERPID) and the session's label from its cursor
           requests (at most 64 characters, client-asserted), each null when unknown; an engine before #237 sends no holders;
           inputMonitoring is the non-prompting listen preflight, CGPreflightListenEventAccess, the intervention tap's grant, read for doctor and
@@ -8978,6 +8979,169 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - Its interface: `loadModuleLock`, `moduleClosure`, `installModuleTree`, `readModuleTree`, `checkModuleTree`, `verifyModuleTree` (src/runtime/module-tree.mjs), with `provenance.json` keyed by target. darwin is added as a target with no schema change.
   - **One departure from N L204:** it isn't installed by `npm ci`. cua fetches each tarball of the closure itself and checks its length and SHA-512 against a lock authenticated at pin time against the vendor archive's `.pnpm/lock.yaml` (`scripts/modules-pin.mjs`). The managed Node carries no npm, and cua controls what a tarball may write.
   - See `docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md` (§4.2, F1) and the Linux spec's Decision Log (M6a).
+- Decision (#582, ruling 1202, 2026-11-23, `fix/582-remote-view-keys` from 0d4c5990): **keys go to a remote-view
+  panel's service, found as the vendor finds it, with the private `_AXUIElementGetActualPid`.** An Open or Save panel is
+  drawn by com.apple.appkit.xpc.openAndSavePanelService, and every element of it answers the app's pid to the public
+  AXUIElementGetPid, so `keyboardTarget` posted press_key's, type_text's and paste's keys to the app, which never passed
+  them on. C-3 (run 45339840861) showed it: the vendor's Escape went to the service and closed the panel, cua's went to
+  TextEdit and did not; at depths 0 to 5 of the focused element's ancestors the private call answered the service (its
+  activation policy prohibited), at the AXWindow and AXApplication both calls answered TextEdit.
+  - The route (KeyTarget.swift), as the pinned helper's `targetForKeyboardEvent` → `outOfProcessTarget(for:appPID:)` →
+    `ProcessType.containingElement(for:ofTypes:)` does (`R/F-helper-logic.md` §5.7, its static set decoded for this
+    entry): from the app's focused element itself up its AXParent chain, each element's actual pid is read; a failed read,
+    or a pid with no finished-launching running application, passes the element over; the first element whose process
+    classifies ends the walk. Its pid becomes the keys' target only when that process's activation policy is prohibited
+    and it is not the app's pid; a regular or accessory process, the app's own included, ends the walk with no switch.
+    The keys are posted with CGEventPostToPid as before. With no switch, or no focused element, the target is main's.
+  - Choices the reading left open: the depth bound counts the focused element and 300 parents (`maxDepth: 300,
+    includingSelf: true`; whether the vendor's 300 includes the element itself was not read, and no real chain is near
+    it); the parent read is AXParent (`parentChain`'s own read was not decoded); with no switch cua keeps main's answer,
+    the focused element's public owner, rather than the vendor's app pid, which is the same pid in every case observed
+    (C-3 read the app's pid at every depth). One refinement of the ruling's wording, taken from the reading: the walk
+    does not look past the first classified owner for a prohibited one, so a focused element the app itself serves keeps
+    the keys whatever lies above it, as the vendor's does.
+  - Why the private call and not a public heuristic: a heuristic that guesses wrong posts keys to the wrong process,
+    which is worse than main's no-op, and every public route C-3 probed (the window list at the panel, the frontmost and
+    focused windows and applications, the system-wide focused element) answered TextEdit; only NSRunningApplication by
+    the service's bundle id reached it, which is a guess about which panel is focused. The private call answers the
+    question directly and is the vendor's own. It is resolved with dlsym (`ActualPid.resolve`), never linked.
+  - The fallback: when the symbol does not resolve, no walk is made and the keys go where main sends them. `status`
+    carries `actualPid` (true or false), and doctor's engine row says "keys reach remote-view panels such as Open and
+    Save" when true and warns, naming `_AXUIElementGetActualPid` unavailable and what then fails, when false; an engine
+    older than the field adds nothing. The seam is `ActualPid.resolve(lookup)` and the engine's `KeyTargetReads`, whose
+    `actualPid` a test sets to nil.
+  - With #538 and #258: nothing about activation or refusal moves; only the pid the key events are posted to does. Every
+    decision before the post stays the bound app's: press_key's route (`believesItHasFocus(pid)`), its focus hold and a
+    forced route 3 (`FakeActivation` for the app's primary window), type_text's per-context source check
+    (`frontmostPid() != pid`), the paste's route-3 activation, its delivery guard and the 3a predicate (whose key-focus
+    process already counted the keys' target beside the app). #538's refusal reads the front only for a pointer
+    (`deliver(pointer: true)`), and keys never take that path, so a key for the service is never refused because the
+    service is not the frontmost app; nor is the service ever activated, which its prohibited policy rules out and the
+    vendor never attempts (it enforces the app's active state for the selection's window, then posts to the target).
+    #258's frontmost carrier is a click's and is untouched. What does move with the target: the forbidden-list check
+    now reads the service's bundle ids (not forbidden), and the intervention detector drives the service's pid for the
+    app, as the spec's Input section intended for a panel served by another process.
+  - `engineVersion` 0.2.0 → 0.2.1 (Version.swift alone, which the bundle, the client and the gate read).
+    `scripts/engine-version-check.mjs` is not on main, so no gate ran it.
+  - The proof: `KeyTargetTests` (9: C-3's chain picks the service; unread and unknown owners passed over; a regular
+    different owner is not picked and ends the walk; the app's own element ends it whatever lies above; a looping chain
+    stops at the element and 300 parents; the target's fallbacks; the symbol resolves on the suite's macOS and is forced
+    missing by the lookup; the missing symbol posts as main and `status.actualPid` reads false; the engine's
+    `keyboardTarget`, which press_key, type_text and paste all take their target from, answers the service through its
+    reads) and `PasteActivationTests.testThePastesKeysGoToTheRemoteViewServiceAndItsActivationToTheApp` (paste and
+    type_text's paste route: every key event to the service, the activation's events to the app, no refusal). press_key
+    and keyed type_text cannot be driven in a unit test (live app resolution and the Accessibility grant); both post
+    through `EventPoster.toProcess` to `keyboardTarget`'s answer. Doctor's row has its test with the field true, false,
+    absent and from another engine. 1781 swift tests (1 skipped), 0 failures.
+  - Live, still to prove (nothing GUI runs on this Mac): on a hosted C after feat/117-m5 merges main, the judged cells
+    `openPanel/frontmost/pressKey.escape`, `openPanel/frontmost/typeText.search`, `savePanel/frontmost/pressKey.escape`
+    and `savePanel/frontmost/typeText.name` pass on cua as on the vendor, and the key-route diagnostic shows cua posting
+    to the panel service. Other remote-view UI (share sheets, print panels) is unverified either way.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1206, 2026-11-23, the review of 0d4c5990..4b489551; amends the entry above): **the keys'
+  process is read again after any activation, just before the first key; the walk has a 250 ms time budget; keys past
+  the request's deadline are refused, never posted late.**
+  - (P1) The entry above read the target once, before press_key's focus hold or forced route 3, before type_text's forced
+    route 3 and before the paste's lock and activation. On main the public owner was the app wherever focus sat, so the
+    early read never mattered; now an activation that moves focus between a document and its Open or Save panel would
+    send the keys to the process focused before it. Each route now reads twice. The early read
+    (`refuseForbiddenKeyTarget`) only refuses a forbidden process, before anything is touched. The final read
+    (`finalKeyTarget`), once the activation has run and as the last step before the poster, names the process the keys
+    go to, is refused when forbidden and is driven by the intervention detector. press_key and keyed type_text make it
+    after their activation; paste and type_text's paste route make it inside the paste lock, after the paste's
+    activation and the read-back's snapshot, before the pasteboard is written (`PasteTarget.reread`); the 3a
+    predicate's key-focus reading takes the final pid. The activation stays the app's.
+  - The vendor's order, read from the pinned helper's `performKeyboardAction` (0x100076f80, its async partials): when
+    the app does not believe it has focus it awaits the enforcer's activation (the tail call at 0x100077274, resuming at
+    0x100077654 → 0x1000778b0) and only then calls `targetForKeyboardEvent` (0x100077934); when it does, it calls
+    `targetForKeyboardEvent` at once (0x1000772ac). Either way the vendor reads the target once, after any activation
+    and right before `SynthesizedEvent.pressKeys` (F §6.1 and §7.3 say the same for typing and the paste's ⌘V). cua's
+    final read is at the vendor's place; its early read is cua's own, for the forbidden list.
+  - (P2) The walk was bounded by depth alone: up to 301 parent reads at a 1 s messaging timeout each, the last one never
+    inspected. It now stops before a parent read once its time is spent, gives each parent read the time left as its
+    messaging timeout (`boundedMessagingTimeout`, 50 ms floor), and never reads the parent of the last element it may
+    inspect. The budget is `keyTargetWalkBudgetMs` = 250 ms, and the request's deadline when sooner: a real chain from a
+    focused element to its application is a few dozen sub-millisecond reads and the walk usually ends at the focused
+    element itself (C-3's Open panel did), so 250 ms leaves ample room for a deep or slow chain, while a hung app
+    delays keys by at most a quarter of a second plus one read's floor rather than minutes. A walk the budget stops
+    makes no switch (main's target). Every key route refuses a request past its deadline just before its first key
+    (`refuseLateKeys`, `timeoutReached`, "the request's deadline passed before its keys were sent. Nothing was sent."):
+    press_key before its first press, keyed type_text before its first event, paste and type_text's paste route after
+    the final read, before the pasteboard.
+  - (P3) The tests no longer require the symbol: resolution is tested through an injected function (found, failing,
+    missing); the live reads are checked to agree with what dlsym finds, present or absent; the presence canary runs
+    only on GitHub's hosted runner (`GITHUB_ACTIONS`), skipped elsewhere.
+  - The proof: `KeyTargetTests` grows to 16 (the depth bound with no unread parent; the budget stopping the walk at
+    250, 150 and 50 ms; the engine's walk bounded by the budget and by a past deadline; keys past the deadline refused;
+    the final read following focus across the activation both ways; a forbidden process on either read refusing; the
+    injected resolution; live agreement; the hosted canary). `PasteActivationTests` adds the paste's keys going to the
+    process read after its activation, both ways, on paste and type_text's paste route (the read made after subtype 1,
+    the activation's events the app's); a forbidden process on that read refusing before the pasteboard and any key;
+    and a deadline passed during the activation refusing likewise. press_key and keyed type_text still cannot be
+    driven in a unit test; their final read and deadline check sit after their activation in the source. 1791 swift
+    tests (2 skipped: main's one, and the canary off the hosted runner), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1207, 2026-11-23, the re-review of 4b489551..fe8912c9; amends the two entries above): **both
+  key-target reads drive their process; the paste checks the deadline at its first key too; a walk cut off at its
+  budget says so in the reply.**
+  - (P1) Ruling 1206 moved `actionTargets` to the final read. The detector records events only for processes already
+    driven, so on a first action against a panel service nobody drove yet, a person's key into the panel during the
+    paste lock's wait or the activation was dropped, and the paste went over it. The early read (`earlyKeyTarget`) now
+    drives its process again (the app already is, by the guard), and the final read drives its own. Only the final
+    read's process gets the keys.
+  - The residue, declared: a person's key into a process first driven at the final read, typed between the two reads,
+    is not seen. With focus unchanged across the activation (the usual case: the panel focused before the action), both
+    reads walk the same chain and name the same process, so the service is driven from the early read on. They differ
+    only when the activation itself moves focus into a panel, or in a narrow race where one walk is cut short and the
+    other is not (its budget or deadline, a failed actual-pid read, a service not yet finished launching). An observation
+    that met the panel already drives its service (`observationRead`). Logged as a ticket from
+    `/Users/new/.claude/jobs/b93055dd/tmp/582-residue-ticket.md`.
+  - (P2) The paste checked the deadline only before its setup. `runPaste` now takes `beforeFirstKey`, run just before its
+    first ⌘V or Return (after the clipboard snapshot, the effect baseline, the write and the key-focus read) and inside
+    the restore's reach: past the deadline it refuses with `keysDeadlinePassed`, nothing keyed and the pasteboard
+    restored. The check after the final read stays.
+  - (P3) type_text's paste route reuses the early read's pid for the paste's target and `pointerPending`, two lookups
+    rather than three. The symbol canary runs only where `RUNNER_ENVIRONMENT` is `github-hosted` (a self-hosted runner
+    sets `GITHUB_ACTIONS` too).
+  - The design's request: when the final read's walk stops at its 250 ms budget with the request's deadline still open,
+    the keys still go to the public owner or the app, and the reply now says so. `KeyTarget.walkCutOff` marks a stop at
+    the walk's time (not an answer, not the chain's end); the input meta's `keyTargetCutOff` carries it, and
+    `keyInputResult` appends the notice to the result's `note` after the method's own: "The check for a remote-view panel
+    (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to
+    <App> and may not have reached such a panel. Observe the app with get_app_state before relying on them." The service
+    puts a press_key's note in the tool result's text now as it did type_text's and paste's (`NOTED_METHODS`).
+  - The proof: `KeyTargetTests` grows to 19 (both reads drive their process; the cut-off reported only for a stop at the
+    time; the notice in the result's note, alone and after another). `PasteActivationTests`: a person's key into the
+    early-read service during the activation stops the paste with `userIntervened` and nothing keyed, while the same key
+    into an undriven process is unseen and the paste goes on; a deadline passed during the effect baseline refuses at the
+    first key with the pasteboard restored, on paste and type_text's paste route; a paste whose final read was cut off
+    carries the notice. The service test carries press_key's notice into the tool result's text. 1797 swift tests
+    (2 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1210, 2026-11-24, the re-review of fe8912c9..69bdbfaf; amends the cut-off notice of the entry
+  above): **the notice says where the keys went, leads the note, and reaches errors after a post; no routing changes.**
+  C-4 runs on 69bdbfaf, so this round touches only the notice, the note and the error paths: the pid the walk answers,
+  the final read and the post's pid are as they were.
+  - A parent read that answers nothing once the walk's time is spent (its messaging timeout, set to the time left,
+    fired) is now told as a cut-off, not as the chain's end; a quick nil stays the chain's end. The walk answers nil
+    either way, so only `KeyTarget.walkCutOff` moves.
+  - The notice names the keys' destination, the focused element's public owner: the app by its name when that is the
+    owner, else the owner's localized name, its bundle id, or "process <pid>". It is short and comes first in the note:
+    "The check for an Open or Save panel timed out, so the keys went to <destination> by ordinary routing and may not
+    have reached such a panel." (134 characters for TextEdit; with the password field's 354-character note, 489 of the
+    service's 500, whole; a longer destination's cut falls in the method's note, never in the notice.)
+  - It is given only once keys were posted (`meta.startedAt`): on success in the note, and on an error after the post
+    (a typeUnconfirmed after typed text, a ⌘V that timed out) after the error's own sentence (`keyInputError`). A
+    refusal before any key carries neither the notice nor the meta. The input meta carries `keyTargetCutOff: {pid}`
+    once keys were posted, which the service passes as cua/keyTargetCutOff.
+  - Logged, not fixed (`tech-debt-tracker.md`): the paste's first-key deadline check runs before `deliver`, whose guard
+    for a background paste sharing a standing activation can read the front window (1 s timeout) before ⌘V.
+  - The proof: `KeyTargetTests` (a timed-out parent read is a cut-off with the same pid as the chain's end; the notice's
+    destination, app or owner by name, bundle id or pid; the notice only after a post, first in the note, in the meta;
+    the real password-field note within 500 whole, and a long destination's cut in the method's note; an error after
+    the post carries the notice, a refusal before it does not). The service test carries cua/keyTargetCutOff. 1801
+    swift tests (2 skipped), 0 failures.
+  Date/Author: 2026-11-24, cursor235's builder for #582.
 
 ## Outcomes & Retrospective
 

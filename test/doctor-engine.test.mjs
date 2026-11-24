@@ -151,6 +151,24 @@ test('a grant that reads false: Accessibility or Screen Recording fails the row,
   assert.match(probe.row.detail, /the probe mode cannot post HID events/);
 });
 
+test('#582: the row says whether keys reach remote-view panels; _AXUIElementGetActualPid unavailable warns, an older engine says nothing', async () => {
+  const routed = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status({actualPid: true})})});
+  assert.equal(routed.row.status, 'pass', routed.row.detail);
+  assert.equal(routed.report.actualPid, true);
+  assert.match(routed.row.detail, /keys reach remote-view panels such as Open and Save \(_AXUIElementGetActualPid\)/);
+  const missing = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status({actualPid: false})})});
+  assert.equal(missing.row.status, 'warn', missing.row.detail);
+  assert.equal(missing.report.actualPid, false);
+  assert.match(missing.row.detail, /_AXUIElementGetActualPid is unavailable on this macOS, so keys for a remote-view panel \(an Open or Save panel\) go to its app/);
+  const older = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts()});
+  assert.equal(older.row.status, 'pass', older.row.detail);
+  assert.equal(older.report.actualPid, null);
+  assert.doesNotMatch(older.row.detail, /remote-view/);
+  const notOwned = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status({actualPid: false, build: OTHER_BUILD})})});
+  assert.equal(notOwned.report.actualPid, null, 'another engine\'s answer is not this bundle\'s');
+  assert.doesNotMatch(notOwned.row.detail, /_AXUIElementGetActualPid/);
+});
+
 test('an engine answering at the socket that is not the approved bundle fails the row', async () => {
   for (const other of [{bundlePath: '/elsewhere/cua Engine.app'}, {build: OTHER_BUILD}]) {
     const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status(other)})});

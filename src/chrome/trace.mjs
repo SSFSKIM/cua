@@ -1,6 +1,7 @@
 // Optional, session-latched diagnostics. Never include payloads or error sentences.
 import {appendFileSync, readFileSync, statSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
+import {jsonLine} from '../repl-host/jsonl.mjs';
 export function sessionTrace(home) {
   if (!home) return null;
   try {
@@ -23,5 +24,5 @@ export function traceSession(s, kind, method, params, outcome = {}) {
   const row = {t:new Date().toISOString(), ...(idToken(s.id)?{session:s.id}:{}), name:s.title, kind, method:idToken(method)?method:'<invalid>',
     ...(identifier('tabId',params.tabId) ? {tabId:params.tabId} : {}), ...(ids && Object.keys(ids).length ? {target:ids} : {}),
     ...(idToken(cdp) ? {cdp} : {}), paramKeys:Object.keys(payload ?? {}).sort(), ...outcome};
-  try { appendFileSync(s.tracePath, JSON.stringify(row)+'\n', {mode:0o600}); } catch { /* tracing cannot affect the host */ }
+  try { appendFileSync(s.tracePath, jsonLine(row), {mode:0o600}); } catch { /* tracing cannot affect the host */ }
 }

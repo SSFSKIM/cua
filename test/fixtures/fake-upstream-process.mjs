@@ -6,6 +6,7 @@
 //   orphan       on EOF exit, leaving a SIGTERM-ignoring grandchild in the process group
 //   unowned      start a grandchild in its own session (like the LaunchServices-started native helper), then echo
 //   noise        write a non-JSON line before each response
+// A js call whose code starts with "separators" is answered with that code and a text holding a raw U+2028 and U+2029.
 // When CODEX_HOME is set (an actual `cua serve` launch), every received message plus the launch environment and
 // working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect. A js call with code
 // "approve" writes the session approval file node_repl writes for an accepted app approval. A Chrome backend listing
@@ -93,6 +94,8 @@ createInterface({input: process.stdin}).on('line', line => {
       const {name, arguments: args = {}, _meta} = msg.params;
       if (name === 'js' && args.code === 'exit') process.exit(3);
       if (name === 'js' && args.code === 'big') return reply(text('x'.repeat(8 << 20)));
+      // The runtime's raw U+2028/U+2029 (JSON.stringify leaves them unescaped), after the code it received (#565).
+      if (name === 'js' && String(args.code).startsWith('separators')) return reply(text(`${args.code}|Inbox${String.fromCharCode(0x2028)}draft${String.fromCharCode(0x2029)}end`));
       if (name === 'js' && args.code === 'approve') {
         // What node_repl does when an app approval is accepted with persist "session".
         const sessions = join(process.env.CODEX_HOME, 'computer-use', 'sessions');

@@ -749,8 +749,12 @@ struct PasteTarget {
   let app: ResolvedApp
   let pid: pid_t
   let application: AXUIElement
+  /// The keys' process as read before anything was touched (the forbidden list's early check).
   let keyboard: pid_t
   let guarding: InterventionGuard
+  /// The keys' process read again once the paste's activation has run, checked and driven (`Engine.finalKeyTarget`,
+  /// ruling 1206); nil keeps `keyboard` (the unit tests' fixed target).
+  var reread: (() throws -> pid_t)? = nil
 }
 
 extension Engine {
@@ -775,16 +779,17 @@ extension Engine {
       meta.apply(guarding)
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let keyboard = keyboardTarget(application, fallback: pid)
-      try refuseForbiddenOwner(keyboard)
-      actionTargets(keyboard, app: app, connection: context.connection)
+      // The forbidden list on the keys' process before anything is touched; read again after the paste's activation.
+      let keyboard = keyboardTarget(application, fallback: pid, deadline: context.deadline)
+      try keyTargetReads.refuseForbidden(keyboard)
       // A minimized window takes no ⌘V (Minimized.swift): refused before the pasteboard is snapshotted or written.
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       // Converted before the app or the pasteboard is touched, so a conversion that fails changes nothing.
       let representations = try pasteRepresentations(text, format: format)
       var entered = 0
       let outcome = try pasteOperation([.content(representations, units: text.utf16.count)],
-                                       PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding),
+                                       PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding,
+                                                   reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, entered: &entered, meta: &meta)
       return pasteResult(meta, note: pasteUnconfirmedNote(outcome))
     } catch let error as EngineError {
@@ -916,13 +921,17 @@ extension Engine {
       defer { observer?.invalidate() }
       effect.observed(pasteNotificationSource(registered: observer != nil, app: target.app, pid: target.pid))
       let window = primaryWindow(of: application)
+      // #582 (ruling 1206): the keys' process read again now that the activation has run, the last step before the
+      // pasteboard and the first event; past the request's deadline nothing is sent.
+      let keyboard = try target.reread?() ?? target.keyboard
+      try refuseLateKeys(deadline: context.deadline)
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
       // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
-      let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, target.keyboard) }
+      let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, keyboard) }
       func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
       let outcome = try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
-                   keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
+                   keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: keyboard, application: application, window: window, system: system) },
                    focusEnforcement: enforcement, activationNow: system.now, deliver: deliver,
                    beforePart: typing?.beforePart,
                    checkInFlight: target.guarding.checkInFlight,

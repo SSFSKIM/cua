@@ -51,15 +51,23 @@ func owningProcessKind(_ pid: pid_t) -> OwningProcessKind {
   return running.activationPolicy == .prohibited ? .prohibited : .application
 }
 
+/// How long the walk may spend reading parents (ruling 1206): past it no further parent is read and the keys stay where
+/// main sends them. A real chain from a focused element to its application is a few dozen levels of sub-millisecond
+/// reads, and the walk usually ends at the focused element itself (the Open panel's list did), so this leaves ample room
+/// for a deep or slow chain while a hung app costs keys at most a quarter of a second (plus one read's 50 ms floor),
+/// not the 300 one-second messaging timeouts the depth bound alone allowed. The request's deadline bounds it too.
+let keyTargetWalkBudgetMs: Double = 250
+
 /// The vendor's out-of-process keyboard target: the focused element first, then its parents, `maxDepth` of them at most;
 /// at each, the actual pid (`actualPid`, nil passes the element over) and its process's kind (`.unknown` passes it over
 /// too). The first element that classifies ends the walk: its pid when the process is prohibited-policy and not the
-/// app's, else nil (the keys stay with the app).
-func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (Element) -> Element?, actualPid: (Element) -> pid_t?,
-                                 kind: (pid_t) -> OwningProcessKind, maxDepth: Int = 300) -> pid_t? {
-  var element: Element? = focused
+/// app's, else nil (the keys stay with the app). A parent is read only when it will be inspected, and only while
+/// `leftMs` (the walk's time left) is positive; `parent` is given that time to bound its read. No answer by then is nil.
+func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (Element, Double) -> Element?, actualPid: (Element) -> pid_t?,
+                                 kind: (pid_t) -> OwningProcessKind, leftMs: () -> Double = { .infinity }, maxDepth: Int = 300) -> pid_t? {
+  var current = focused
   var depth = 0
-  while let current = element, depth <= maxDepth {
+  while true {
     if let owner = actualPid(current) {
       switch kind(owner) {
       case .unknown: break
@@ -67,45 +75,97 @@ func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (El
       case .prohibited: return owner == appPid ? nil : owner
       }
     }
-    element = parent(current)
+    guard depth < maxDepth else { return nil }
+    let left = leftMs()
+    guard left > 0, let next = parent(current, left) else { return nil }
+    current = next
     depth += 1
   }
-  return nil
 }
 
 /// The process keyboard events go to, given the app's focused element: the remote view's service when the walk finds
 /// one, else the focused element's public owner (`publicOwner`, as before #582), else the app (no focused element). With
 /// no `actualPid` (the symbol absent) the walk is not made.
-func keyboardTarget<Element>(focused: Element?, appPid: pid_t, publicOwner: (Element) -> pid_t, parent: (Element) -> Element?,
-                             actualPid: ((Element) -> pid_t?)?, kind: (pid_t) -> OwningProcessKind) -> pid_t {
+func keyboardTarget<Element>(focused: Element?, appPid: pid_t, publicOwner: (Element) -> pid_t, parent: (Element, Double) -> Element?,
+                             actualPid: ((Element) -> pid_t?)?, kind: (pid_t) -> OwningProcessKind,
+                             leftMs: () -> Double = { .infinity }) -> pid_t {
   guard let focused else { return appPid }
-  if let actualPid, let remote = remoteViewKeyOwner(of: focused, appPid: appPid, parent: parent, actualPid: actualPid, kind: kind) {
+  if let actualPid, let remote = remoteViewKeyOwner(of: focused, appPid: appPid, parent: parent, actualPid: actualPid, kind: kind,
+                                                    leftMs: leftMs) {
     return remote
   }
   return publicOwner(focused)
 }
 
-/// The reads keyboard targeting makes: the live ones, replaced in the unit tests (a fake tree, the symbol forced missing).
+/// The reads keyboard targeting makes: the live ones, replaced in the unit tests (a fake tree, the symbol forced missing,
+/// a fake clock, a forbidden process).
 struct KeyTargetReads {
   var focused: (AXUIElement) -> AXUIElement?
-  var parent: (AXUIElement) -> AXUIElement?
+  /// An element's parent, read within the milliseconds given.
+  var parent: (AXUIElement, Double) -> AXUIElement?
   /// AXUIElementGetPid's answer, 0 when it has none.
   var publicPid: (AXUIElement) -> pid_t
   /// `_AXUIElementGetActualPid`, nil when it did not resolve.
   var actualPid: ((AXUIElement) -> pid_t?)?
   var kind: (pid_t) -> OwningProcessKind
+  /// The walk's clock (ms).
+  var now: () -> Double = monotonicMilliseconds
+  /// The forbidden list on the keys' process (OwnerPolicy.swift): throws Policy's refusal.
+  var refuseForbidden: (pid_t) throws -> Void = { try refuseForbiddenOwner($0) }
 
   /// The live reads over `function`, this process's resolution by default.
   static func live(actualPid function: ActualPid.Function? = ActualPid.resolved) -> KeyTargetReads {
-    KeyTargetReads(focused: { elementAttribute($0, kAXFocusedUIElementAttribute) }, parent: { elementAttribute($0, kAXParentAttribute) },
-                   publicPid: pid(of:), actualPid: function.map(ActualPid.read), kind: owningProcessKind)
+    KeyTargetReads(focused: { elementAttribute($0, kAXFocusedUIElementAttribute) }, parent: { element, leftMs in
+      guard let timeout = boundedMessagingTimeout(leftMs: leftMs) else { return nil }
+      AXUIElementSetMessagingTimeout(element, timeout)
+      defer { AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) }
+      return elementAttribute(element, kAXParentAttribute)
+    }, publicPid: pid(of:), actualPid: function.map(ActualPid.read), kind: owningProcessKind)
   }
 
-  /// The process keyboard events for `application` (the app `appPid`'s application element) go to.
-  func target(_ application: AXUIElement, appPid: pid_t) -> pid_t {
-    keyboardTarget(focused: focused(application), appPid: appPid, publicOwner: { owner in
+  /// The process keyboard events for `application` (the app `appPid`'s application element) go to, the walk given
+  /// `budgetMs` from now.
+  func target(_ application: AXUIElement, appPid: pid_t, budgetMs: Double = keyTargetWalkBudgetMs) -> pid_t {
+    let cutoff = now() + budgetMs
+    return keyboardTarget(focused: focused(application), appPid: appPid, publicOwner: { owner in
       let pid = publicPid(owner)
       return pid > 0 ? pid : appPid
-    }, parent: parent, actualPid: actualPid, kind: kind)
+    }, parent: parent, actualPid: actualPid, kind: kind, leftMs: { cutoff - now() })
+  }
+}
+
+/// The request's deadline passed before its keys were sent (ruling 1206): refused, never posted late.
+let keysDeadlinePassed = EngineError(name: "timeoutReached",
+  "timeoutReached: the request's deadline passed before its keys were sent. Nothing was sent.")
+
+/// Refuses keys whose request is past its deadline (`deadline`, Unix ms), just before the first is posted.
+func refuseLateKeys(deadline: Int64, now: () -> Int64 = unixMilliseconds) throws {
+  if now() >= deadline { throw keysDeadlinePassed }
+}
+
+extension Engine {
+  /// The process keyboard events go to, press_key's, type_text's (both routes) and paste's alike: a remote-view panel's
+  /// service when the vendor's walk finds one (#582), else the public owner of the app's focused element, else the app
+  /// (`pid`). The walk is bounded by `keyTargetWalkBudgetMs` and by the request's deadline when one is given.
+  func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t, deadline: Int64? = nil) -> pid_t {
+    let left = deadline.map { Double($0 - unixMilliseconds()) } ?? .infinity
+    return keyTargetReads.target(application, appPid: pid, budgetMs: min(keyTargetWalkBudgetMs, left))
+  }
+
+  /// Before anything is touched (ruling 1206): the keys' process as it reads now, refused when a forbidden process serves
+  /// it. The keys themselves go to `finalKeyTarget`'s answer.
+  func refuseForbiddenKeyTarget(_ application: AXUIElement, pid: pid_t, deadline: Int64) throws {
+    try keyTargetReads.refuseForbidden(keyboardTarget(application, fallback: pid, deadline: deadline))
+  }
+
+  /// The keys' process once any activation has run, read again just before the first key event (ruling 1206: an
+  /// activation can move focus between a document and its Open or Save panel, so a read before it can name the wrong
+  /// process): refused when a forbidden process serves it, then driven for the app by the intervention detector. The
+  /// activation itself stays the app's.
+  func finalKeyTarget(_ application: AXUIElement, pid: pid_t, app: ResolvedApp, context: ExecutionContext) throws -> pid_t {
+    let target = keyboardTarget(application, fallback: pid, deadline: context.deadline)
+    try keyTargetReads.refuseForbidden(target)
+    actionTargets(target, app: app, connection: context.connection)
+    return target
   }
 }

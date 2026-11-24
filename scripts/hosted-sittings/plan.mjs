@@ -96,10 +96,12 @@ function sittingB(ctx) {
 // Each run is told its order (--first-lane), which it records (meta.laneOrder); the key-route diagnostic runs its two
 // engines once, in its own fixed order, recorded beside the schedule. -> {runs: [{run, first}], keyRoute}.
 export const laneOrderOf = runs => ({runs: Array.from({length: runs}, (_, i) => ({run: i + 1, first: i % 2 === 0 ? 'vendor' : 'cua'})), keyRoute: [...KEY_ROUTE_ENGINES]});
+// Sitting C's schedule: one run a lane in the pilot, three in the full form; its steps and its plan's record read the same.
+const sittingCOrder = ctx => laneOrderOf(ctx.pilot ? 1 : 3);
 const ordered = first => (first === 'vendor' ? ['vendor', 'cua'] : ['cua', 'vendor']);
 
 function sittingC(ctx) {
-  const runs = ctx.pilot ? 1 : 3, sitting = `hosted-${ctx.runId}-c`, steps = [], schedule = laneOrderOf(runs).runs;
+  const sitting = `hosted-${ctx.runId}-c`, steps = [], schedule = sittingCOrder(ctx).runs;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args];
   const lane = engine => ['--device', DEVICE, '--host', engine, '--engine', engine, ...approvedArgs(ctx), '--sitting', sitting];
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
@@ -197,7 +199,7 @@ export function sittingPlan(sitting, ctx) {
   const [title, proves] = TITLES[sitting];
   return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
     counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot),
-    ...(sitting === 'c' ? {laneOrder: laneOrderOf(ctx.pilot ? 1 : 3)} : {}),
+    ...(sitting === 'c' ? {laneOrder: sittingCOrder(ctx)} : {}),
     scratchDirs: sitting === 'd' ? [acceptConfig(ctx)] : []};
 }
 

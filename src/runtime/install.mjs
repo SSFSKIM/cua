@@ -55,7 +55,7 @@ import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
-import {findPin, linuxRelease, loadLinuxRuntime, loadPins, locateRuntime, pointerObstruction, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
+import {findPin, loadPins, locateRuntime, pointerObstruction, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
 import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
@@ -163,12 +163,11 @@ async function extractDeb(archive, {stage, extracted, unpackers}) {
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
 // On Linux (#171 M6a; the pre-flight's §4.3) the one release is this cua's own runtime, whose name the record derives:
 // its module tree is verified again in full and the pointer names it. The pointer selects nothing there (resolution
-// never reads it), so this only records it. A vendor release is refused: CUA_NATIVE_ENGINE=vendor is the way to its
-// engine. The derived name is recognised first and the vendor's pins are read only for another name, so a vendor pin
-// that does not load never blocks this cua's own runtime; and the pointer is read and written only where install would
-// (pointerObstruction: a link, a directory or a FIFO there is named to be moved aside, never followed or opened).
+// never reads it), so this only records it. Any other name, a vendor release's too, is unknown_release (M6b: no vendor
+// pin is read here); and the pointer is read and written only where install would (pointerObstruction: a link, a
+// directory or a FIFO there is named to be moved aside, never followed or opened).
 export async function useRuntime({home, release, pins, verifySignatures = verifyCodeSignatures, host = {platform: process.platform, arch: process.arch}}) {
-  if (host.platform === 'linux') return useOwnLinuxRuntime({home, release, pins, host});
+  if (host.platform === 'linux') return useOwnLinuxRuntime({home, release, host});
   pins ??= loadPins();
   const pin = findPin(pins, release);
   assertHostSupports(pin, host);
@@ -181,10 +180,7 @@ export async function useRuntime({home, release, pins, verifySignatures = verify
   return {release: pin.release, root};
 }
 
-function useOwnLinuxRuntime({home, release, pins, host}) {
-  if (release !== linuxRelease(loadLinuxRuntime({host}), host.arch) && (pins ?? loadPins()).some(pin => pin.platform === 'linux' && pin.release === release))
-    fail('release_refused', `${release} is the vendor's release: on Linux cua runs its own runtime, and the vendor's tree serves only the vendor's engine`,
-      {hint: 'set CUA_NATIVE_ENGINE=vendor (or "engine": "vendor" in ~/.config/cua/engine.json) to run computer sessions on the vendor\'s engine'});
+function useOwnLinuxRuntime({home, release, host}) {
   const runtime = locateRuntime({home, release, host});
   try { verifyModuleTree(runtime.root, runtime.record); } catch (error) {
     if (!(error instanceof CuaError)) throw error;

@@ -232,14 +232,12 @@ export function withFeedbackNote(notes, feedbackDir) {
 // Elicitation hook removes) are asked by the trusted wrapper per app: a window's app as listWindows() names it,
 // launch_app's id (so a launch and the first action on its window are two apps), and the whole desktop for input that
 // names no window. Approval is consent, not confinement: under CUA_SHIM_SANDBOX=disabled a cell can talk to X directly
-// (DISPLAY and XAUTHORITY reach the runtime; since #115 a confined cell has no socket to reach X with). Text input is F2's measurement on Ubuntu 24.04 arm64
-// (docs/evidence/2026-10-06-linux-acceptance.md): the helper's typeText and paste insert through AT-SPI and crashed the
-// GTK3 editors gedit and mousepad (SIGSEGV in gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in
-// GTK4's gnome-text-editor they inserted the text and then threw (Text.SetCaretOffset unsupported), which the general
-// "observe, act, verify" rule covers. On x64 (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash
-// gedit but threw "editable Paste did not insert text"; pressKey typed on both, so the rule holds on both architectures.
+// (DISPLAY and XAUTHORITY reach the runtime; since #115 a confined cell has no socket to reach X with). Text input was
+// F2's measurement of the vendor's helper on Ubuntu 24.04 arm64 (docs/evidence/2026-10-06-linux-acceptance.md): its
+// typeText and paste inserted through AT-SPI and crashed the GTK3 editors gedit and mousepad, while pressKey typed;
+// cua's engine, the only one on Linux since cua 0.30.0, has its own text rule (below).
 const JS_TITLE = 'Host rules (cua), before the documentation below:';
-// On macOS the text rule follows the engine as on Linux (below) (#117 M4; the own native engine spec's "Input" and
+// On macOS the text rule follows the engine (#117 M4; the own native engine spec's "Input" and
 // "Install, signing and permissions"). cua's typeText keys what a reliably read Latin layout can, sends the rest as
 // Unicode and Return, and pastes under any other input source (native/engine Routes.swift textRoute), so the vendor's
 // workaround is not needed. A {{secret:…}} is never pasted, and is keyed only under a Latin layout the engine reads
@@ -264,31 +262,24 @@ const COMPUTER_RULES = {
     '- "cua Engine needs …": the user grants it, not you; then retry.',
   ]),
 };
-// The Linux text rule F2 measured (above) is the vendor engine's. With cua's own Linux engine (#171; its spec's Decision Log, M5 pre-flight) the
-// same calls insert exact text through one verified paste, and an app that ignores background input is refused on a
-// shared desktop with nothing sent ("<App> does not accept background input; ..."), so the rule follows the engine the
-// connection selected: `engine` 'cua' takes cua's two lines in its place; any other value, or none, keeps the vendor's.
-const linuxComputerRules = textRules => [
+// The Linux text rule F2 measured (above) was the vendor engine's, which cua 0.30.0 retired on Linux (#171 M6b). With
+// cua's own Linux engine (#171; its spec's Decision Log, M5 pre-flight) the same calls insert exact text through one
+// verified paste, and an app that ignores background input is refused on a shared desktop with nothing sent ("<App>
+// does not accept background input; ..."), so a Linux computer session's rules are cua's, whatever `engine` is passed.
+const LINUX_COMPUTER_RULES = [
   '- Bind by window: cua.getApp({windowId}) with an id from listWindows(); if REPL state is confused, js_reset and rebind.',
   '- setValue and selectText do not exist; paste types like typeText.',
-  ...textRules,
+  '- typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms (minus, space).',
+  '- "does not accept background input": nothing was sent, since this desktop is shared; use the element\'s action, or tell the user.',
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- Approval is per app: a window\'s app as listWindows() names it, launch_app\'s id, and the whole desktop for input without a window.',
 ];
-const LINUX_COMPUTER_RULES = {
-  vendor: linuxComputerRules(['- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).']),
-  cua: linuxComputerRules([
-    '- typeText and paste insert exact text, Unicode and newlines included; pressKey takes X keysyms (minus, space).',
-    '- "does not accept background input": nothing was sent, since this desktop is shared; use the element\'s action, or tell the user.',
-  ]),
-};
 const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 
 // `engine`: the native engine the connection selected (launch.mjs nativeEngineFor's `engine`), which decides the
-// engine's rules above on either platform; any other value, or none, keeps the vendor's.
+// engine's rules above on macOS; any other value, or none, keeps the vendor's there. Linux has cua's alone.
 export function jsRulesFor(surfaces, {platform = process.platform, engine, inAppBrowser = false} = {}) {
-  const rules = platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
-  const computer = !surfaces.includes('computer') ? [] : rules[engine === 'cua' ? 'cua' : 'vendor'];
+  const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES[engine === 'cua' ? 'cua' : 'vendor'];
   return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [...(inAppBrowser ? [JS_MAWS_RULE] : []), BROWSER_POINTER] : [])].join('\n');
 }
 

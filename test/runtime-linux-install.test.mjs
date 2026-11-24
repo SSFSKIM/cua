@@ -41,7 +41,7 @@ for (const arch of ['x64', 'arm64']) {
   });
 }
 
-test('an installed Linux release resolves, re-installs as a no-op without the archive; runtime use refuses it, naming CUA_NATIVE_ENGINE=vendor', async t => {
+test('an installed Linux release resolves, re-installs as a no-op without the archive; runtime use refuses it as any name not this cua\'s own', async t => {
   const ctx = setup(t);
   await install(ctx);
   const runtime = vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
@@ -49,11 +49,11 @@ test('an installed Linux release resolves, re-installs as a no-op without the ar
   assert.equal(runtime.paths.skyLinuxBin, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
   const again = await install(ctx, {archivePath: join(ctx.dir, 'gone.deb')});
   assert.equal(again.changed, false);
-  // On Linux the pointer names cua's own runtime (#171 M6a, the pre-flight's §4.3): the vendor's tree serves only the
-  // vendor's engine.
+  // On Linux the pointer names cua's own runtime (#171 M6a, the pre-flight's §4.3), and since M6b no name of the
+  // vendor's is recognised: unknown_release, its hint naming no engine.
   await assert.rejects(useRuntime({home: ctx.home, release: ctx.pin.release, pins: [ctx.pin], verifySignatures: noSignatures, host: ctx.host}), err => {
-    assert.equal(err.code, 'release_refused');
-    assert.match(err.hint, /CUA_NATIVE_ENGINE=vendor/);
+    assert.equal(err.code, 'unknown_release');
+    assert.equal(err.hint, 'on Linux this cua resolves only its own runtime');
     return true;
   });
   assert.throws(() => vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));

@@ -31,11 +31,13 @@ const PINNED = {version: PIN, release: `linux-engine-v${PIN}`, sha256: SHA};
 const facts = over => ({path: PATH, exists: true, executable: true, sha256: SHA, build: 'pinned', version: PIN, release: `linux-engine-v${PIN}`, pinned: PINNED, current: true, ...over});
 const NONE = facts({exists: false, executable: false, sha256: null, build: null, version: null, release: null, current: false});
 
-// The vendor's tree a vendor selection finds (manifest.mjs vendorLinuxRuntime's answer), and its absence.
-const VENDOR_ROOT = `${HOME}/runtimes/26.928.40906-linux-x64`;
-const VENDOR_TREE = {release: '26.928.40906-linux-x64', paths: {skyLinuxBin: `${VENDOR_ROOT}/sky_linux_x64`, skyVendorService: `${VENDOR_ROOT}/service.js`, moduleDir: `${VENDOR_ROOT}/node_modules`}};
-const VENDOR_ABSENT = new CuaError('release_not_installed', `the vendor's release 26.928.40906-linux-x64 is not installed in ${HOME}`,
-  {hint: `run \`${ownInstaller().command}\` (or \`${ownInstaller().command} --archive <ChatGPT deb>\` with the pinned archive)`, context: {release: '26.928.40906-linux-x64', home: HOME, root: VENDOR_ROOT}});
+// engine_retired's sentence by its sources (M6b's pre-flight, §2.1), and the hint every engine refusal carries.
+const RETIRED = 'which cua 0.30.0 removed from Linux, where cua\'s own engine (CUA_NATIVE_ENGINE=cua, the default) is the only one';
+const ENGINE_HINT = 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s';
+const retired = (settings, {env = false, file = false}) => (env && file
+  ? `CUA_NATIVE_ENGINE=vendor and "engine": "vendor" in ${settings} select the vendor's engine, ${RETIRED}: unset CUA_NATIVE_ENGINE and remove "engine" from ${settings}, then run ${ENGINE_INSTALL}`
+  : env ? `CUA_NATIVE_ENGINE=vendor selects the vendor's engine, ${RETIRED}: unset CUA_NATIVE_ENGINE, then run ${ENGINE_INSTALL}`
+    : `"engine": "vendor" in ${settings} selects the vendor's engine, ${RETIRED}: remove "engine" from ${settings}, then run ${ENGINE_INSTALL}`);
 
 // The X11 backend's capability report (Design, "The capability report"), as cua-engine answers it in `desktop` mode.
 const CAPS = (desktop = 'shared', over = {}) => ({backend: 'x11', tree: 'at_spi', input: {background: true, desktop: true}, capture: {window: 'retained', desktop: true},
@@ -47,12 +49,11 @@ const CAPS_WORDS = mode => `capabilities, from cua-engine started for this check
 // the refusal `refusal` ({code, message, hint?}), as a session's selection refuses it (launch.mjs linuxEngineFor, #171
 // M6a's §3.3). `capabilities` answers the engine's capability read (a report, or an Error it throws); every read is
 // recorded.
-async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed, capabilities = ({desktop}) => CAPS(desktop), refusal, vendorTree = VENDOR_TREE} = {}) {
+async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'cua', installed, capabilities = ({desktop}) => CAPS(desktop), refusal} = {}) {
   const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', DISPLAY: ':9', ...env};
   // the installed engine's verified version (F5a) is what the inspection read: its version while the file is recognized
   const engine = {defaultEngine, config: () => config, installed: () => (installed ?? read.executable) ? {path: read.path} : null,
-    installedVersion: () => (read.build === 'unknown' ? null : read.version),
-    vendor: () => { if (vendorTree instanceof Error) throw vendorTree; return vendorTree; }};
+    installedVersion: () => (read.build === 'unknown' ? null : read.version)};
   let session = refusal;
   if (!session) try { session = replHostFor({platform: 'linux', surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: HOME, resolveOwnNode: () => '/usr/bin/node', engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -144,10 +145,10 @@ test('what doctor does not start: a file it does not recognize, an invalid devic
   assert.match(unknown.row.detail, /refused \(engine_unrecorded\): CUA_NATIVE_ENGINE=cua selects cua's own engine, and no record says what the engine installed in this cua home/);
   const invalid = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'mine'});
   assert.equal(invalid.started.length, 0);
-  const vendor = await row({});
+  const vendor = await row({CUA_NATIVE_ENGINE: 'vendor'});
   assert.equal(vendor.started.length, 0);
-  assert.equal(vendor.report.service, 'vendor');
-  assert.match(vendor.row.detail, /the vendor's sky_linux helper behind the vendor's service/);
+  assert.equal(vendor.report.service, null, 'no service: cua\'s or none');
+  assert.equal(vendor.row.status, 'fail');
 });
 
 test('an engine that is not this cua\'s pinned one is flagged: a local build or a release behind or ahead of the pin warns, an unknown file fails, each naming the installer', async () => {
@@ -192,33 +193,49 @@ test('the device mode set in either place is reported; an invalid one fails the 
   assert.equal(invalid.report.desktop, null);
 });
 
-test('the vendor engine preferred: skip, saying how to select cua\'s and what this home holds', async () => {
-  const {row: check, report, reads} = await row({}, {read: NONE});
-  assert.equal(check.status, 'skip');
-  assert.equal(check.detail, 'cua\'s engine is not selected: the default engine is the vendor\'s, so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service. '
-    + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects cua's own: no engine is installed in this cua home (${PATH}): ${ENGINE_INSTALL} installs the pinned cua-engine ${PIN} (linux-engine-v${PIN})`);
-  assert.equal(reads.length, 1);
-  assert.deepEqual([report.selected, report.preferred, report.runs, report.installed.exists], ['vendor', {engine: 'vendor', reason: 'default'}, null, false]);
-  const unpinned = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: {...NONE, pinned: null}});
-  assert.match(unpinned.row.detail, /^cua's engine is not selected: CUA_NATIVE_ENGINE=vendor, .*no engine is installed in this cua home \(.*\), and this cua pins none yet \(runtime\/engine\/linux-engine\.json comes with the engine's first release\): cua engine build installs a local build$/);
-});
-
-// #171 M6a (the pre-flight's §3.3, §4.5, F3): the selection refuses the vendor's engine when its tree is absent, and
-// the row fails with the refusal's sentence and the installer that places the tree.
-test('the vendor engine selected and its tree absent: fail, with the refusal and the installer', async () => {
-  const message = 'CUA_NATIVE_ENGINE=vendor selects the vendor\'s engine, and its release 26.928.40906-linux-x64 is not installed in /home/u/.local/share/cua';
-  const hint = `run \`${ownInstaller().command}\` (or \`${ownInstaller().command} --archive <ChatGPT deb>\` with the pinned archive)`;
-  const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, vendorTree: VENDOR_ABSENT});
-  assert.equal(check.status, 'fail');
-  assert.equal(check.detail, `cua's engine is not selected: CUA_NATIVE_ENGINE=vendor, and sessions here are refused (engine_not_installed; see repl.host): ${message}; ${hint}`);
-  assert.deepEqual([report.selected, report.refused.code, report.preferred], [null, 'engine_not_installed', {engine: 'vendor', reason: 'explicit'}]);
-  // A refusal with no hint of its own still names the installer.
-  const bare = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'engine_not_installed', message}});
-  assert.ok(bare.row.detail.includes(`\`${ownInstaller().command}\``), bare.row.detail);
+// #171 M6b (the pre-flight's §2.3): a home selecting the vendor's engine fails the row, by each source, with the
+// selection's sentence and hint and what the home holds; nothing is started.
+test('the vendor engine selected, by the variable or engine.json: fail, with the refusal\'s sentence, the hint and what this home holds', async () => {
+  const settings = '/nonexistent-home/.config/cua/engine.json';
+  for (const [env, config, source, file] of [[{CUA_NATIVE_ENGINE: 'vendor'}, {}, 'CUA_NATIVE_ENGINE=vendor', false], [{}, {engine: 'vendor'}, `"engine": "vendor" in ~/.config/cua/engine.json`, true]]) {
+    const {row: check, report, started} = await row(env, {read: NONE, config});
+    assert.equal(check.status, 'fail');
+    assert.equal(check.detail, `the vendor's engine is selected (${source}), and every Linux computer session is refused (engine_retired; see repl.host): `
+      + `${retired(settings, {env: !file, file})}; ${ENGINE_HINT}; in this home: no engine is installed in this cua home (${PATH}): ${ENGINE_INSTALL} installs the pinned cua-engine ${PIN} (linux-engine-v${PIN})`);
+    assert.deepEqual([report.selected, report.refused.code, report.preferred, report.service, report.runs], [null, 'engine_retired', {engine: 'vendor', reason: file ? 'settings' : 'explicit'}, null, null]);
+    assert.equal(started.length, 0);
+  }
   // A refusal of every session for another reason is repl.host's to fail; the engine row only says so.
   const other = await row({CUA_NATIVE_ENGINE: 'vendor'}, {read: NONE, refusal: {code: 'runtime_not_installed', message: 'cua\'s Linux runtime is not installed'}});
   assert.equal(other.row.status, 'skip');
+  assert.match(other.row.detail, /^the vendor's engine is selected \(CUA_NATIVE_ENGINE=vendor\); sessions here are refused \(runtime_not_installed; see repl\.host\)/);
 });
+
+// Doctor whole, by each source: repl.host and engine fail with that source's sentence and the hint (§5.1).
+for (const [label, env, file] of [['the variable', true, false], ['engine.json', false, true], ['both', true, true]]) {
+  test(`doctor on Linux, the home selecting the vendor's engine by ${label}: repl.host and engine fail with its sentence and the hint`, async t => {
+    const s = scratch();
+    t.after(s.cleanup);
+    const home = realpathSync(s.dir);
+    const user = join(home, 'user');
+    const settings = join(user, '.config', 'cua', 'engine.json');
+    if (file) { mkdirSync(join(user, '.config', 'cua'), {recursive: true}); writeFileSync(settings, JSON.stringify({engine: 'vendor'})); }
+    const stubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
+      inspectChrome: async () => [], inspectLinux: async () => [], verifySignatures: async () => [], linuxHelper: () => ({path: '/h', sha256: SHA})};
+    const report = await inspectRuntime({home, host: {platform: 'linux', arch: 'x64'}, env: {HOME: user, CUA_SHIM_SURFACES: 'computer,browser', ...(env ? {CUA_NATIVE_ENGINE: 'vendor'} : {})},
+      resolveOwnNode: () => '/usr/bin/node', readLinuxCapabilities: () => assert.fail('nothing is started'), ...stubs});
+    const sentence = retired(settings, {env, file});
+    const host = report.checks.find(c => c.name === 'repl.host');
+    assert.equal(host.status, 'fail');
+    assert.ok(host.detail.startsWith(`refused (engine_retired): ${sentence}; ${ENGINE_HINT}. The profile listing (browser only): cua host (linux) on Node /usr/bin/node: `), host.detail);
+    const engine = report.checks.find(c => c.name === 'engine');
+    assert.equal(engine.status, 'fail');
+    assert.ok(engine.detail.startsWith(`the vendor's engine is selected (${env ? 'CUA_NATIVE_ENGINE=vendor' : '"engine": "vendor" in ~/.config/cua/engine.json'}), `
+      + `and every Linux computer session is refused (engine_retired; see repl.host): ${sentence}; ${ENGINE_HINT}; in this home: `), engine.detail);
+    assert.equal(report.engine.service, null);
+    assert.equal(report.checks.some(c => c.name === 'runtime.vendor'), false, 'no row checks a vendor runtime');
+  });
+}
 
 // #171 M6a (the pre-flight's §3.3, F3): cua's engine preferred, by the default too, either runs or is refused at the
 // open; the row fails with the refusal, naming the installer. M5's fallback to the vendor's engine is gone.
@@ -242,7 +259,7 @@ test('cua\'s engine preferred but refused, explicitly or by the default: fail, n
   assert.ok(isOlder('0.4.2', MIN_ENGINE_VERSION));
   const invalid = await row({CUA_NATIVE_ENGINE: 'sky'});
   assert.equal(invalid.row.status, 'fail');
-  assert.match(invalid.row.detail, /^CUA_NATIVE_ENGINE must be vendor or cua; every Linux computer session is refused \(invalid_setting\): name vendor or cua there, or remove the setting for the default$/);
+  assert.equal(invalid.row.detail, 'CUA_NATIVE_ENGINE must be cua (cua 0.30.0 removed the vendor\'s engine from Linux); every Linux computer session is refused (invalid_setting): name cua there, or remove the setting for the default');
 });
 
 // Fix wave 1: a session refused for want of its Node, with a good engine installed, is no engine's to fix.

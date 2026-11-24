@@ -17,9 +17,9 @@ import {assertSandboxConfines} from '../src/runtime/sandbox.mjs';
 import {bwrapUserns} from '../src/runtime/linux-desktop.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends, listingSandboxMode} from '../src/profiles/inventory.mjs';
-import {ownInstaller, resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {ownInstaller, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {verifyHelper} from '../src/sandbox/linux.mjs';
-import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {fakeInstalledHome, fakeUpstreamLaunch} from './fixtures/installed-home.mjs';
 import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
@@ -165,11 +165,10 @@ test('a disabled connection lists its profiles under disabled, unprobed, where a
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  // Linux runs cua's own host; the fake release's upstream stands in for its supervisor, in the listing too.
+  // Linux runs cua's own host; the fake upstream stands in for its supervisor, in the listing too.
   const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'};
   const runtime = resolveRuntime({home, host: LINUX});
-  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
-  const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+  const prepareLaunch = fakeUpstreamLaunch(home);
   const verifyHelper = helperCheck();
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, resolveOwnNode: ownNode, prepareLaunch, verifyHelper,
     listBackends: () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox: 'disabled', probeUserns: probe, verifyHelper, resolveOwnNode: ownNode, prepareLaunch}),

@@ -1,25 +1,26 @@
 import './helpers/scratch-home.mjs'; // first: the engine setting is read from this file's own scratch HOME
-// `cua install` on Linux (#171 M6a; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md §4.1, §4.3, F4):
-// the record first, then the common parts (the module tree, the sandbox helper, Node), the pointer to the derived release
-// once they are in place, then each engine's lane on its own (cua's engine, the vendor's tree), every step attempted
-// whatever happened before, and the exit status set by a failed common part or a failed lane the home asks for. Each
-// installer is a stub that lays its part in a scratch home (or fails as a download would); the sessions that open
-// afterwards are planned by the real `openConnection` over that home. Also `cua runtime use` on Linux, and macOS's
-// install, which is the vendor's release and then Node, as before.
+// `cua install` on Linux (#171 M6a; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-preflight.md §4.1, §4.3, F4;
+// M6b's pre-flight, §2.2 and §3.5): the record first, then the common parts (the module tree, the sandbox helper, Node),
+// the pointer to the derived release once they are in place, then cua's engine, every step attempted whatever happened
+// before, and the exit status set by a failed common part, a failed engine the home asks for, or a vendor selection,
+// which cua 0.30.0 retired on Linux (engine_retired, once every step ran). Nothing of the vendor's is installed, and
+// --archive and --release are usage errors. Each installer is a stub that lays its part in a scratch home (or fails as a
+// download would); the sessions that open afterwards are planned by the real `openConnection` over that home. Also
+// `cua runtime use` on Linux, and macOS's install, which is the vendor's release and then Node, as before.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {createHash, randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {main} from '../src/cli.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
-import {CUA_ENTRY, RELEASES_DIR, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, selectPin} from '../src/runtime/manifest.mjs';
+import {RELEASES_DIR, linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, selectPin} from '../src/runtime/manifest.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {guardedLinuxHelper} from '../src/runtime/sandbox.mjs';
 import {SCRATCH_HOME} from './helpers/scratch-home.mjs';
 import {fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
-import {shortScratch} from './fixtures/runtime-fixture.mjs';
+import {scratchUserHome, shortScratch} from './fixtures/runtime-fixture.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 const RELEASE = linuxRelease(loadLinuxRuntime({host: LINUX}), 'x64');
@@ -28,13 +29,13 @@ const INSTALLER = ownInstaller().command;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const pointer = home => existsSync(join(home, 'current.json')) ? JSON.parse(readFileSync(join(home, 'current.json'), 'utf8')).release : null;
 const HELPER = home => join(home, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox');
-// What the report says opens on each engine, without the refusals' words: the selected engine's computer session, and
-// the other engine's under its override.
-const opened = ({sessions: s}) => {
-  const on = engine => (s.engine === engine ? s.computer : s.alternate?.engine === engine ? s.alternate.opens : false);
-  return {browser: s.browser, cua: on('cua'), vendor: on('vendor')};
-};
+// What the report says opens: browser-only sessions, and computer sessions on the engine the home selects.
+const opened = ({sessions: s}) => ({browser: s.browser, computer: s.computer});
 const SAID = 'sessions here, by what is installed and set: ';
+// engine_retired's sentence as install ends it (§2.2): each source's prerequisite, then that the install otherwise
+// completed, and nothing about the next open.
+const RETIRED = 'which cua 0.30.0 removed from Linux, where cua\'s own engine (CUA_NATIVE_ENGINE=cua, the default) is the only one';
+const settingsOf = user => join(user, '.config', 'cua', 'engine.json');
 const lastLine = run => run.stdout.trimEnd().split('\n').at(-1);
 const RELEASE_HINT = ownInstaller({release: RELEASE}).hint;
 const unreachable = what => new CuaError('download_failed', `could not fetch ${what}: ENOTFOUND`);
@@ -45,7 +46,7 @@ function scratchHome(t) {
   return realpathSync(s.dir);
 }
 
-// The vendor's tree for the checked-in pin, as its install leaves it (placeholder files; no vendor code).
+// The vendor's tree for the checked-in pin, as an older cua's install left it (placeholder files; no vendor code).
 function layVendorTree(home) {
   const root = join(home, 'runtimes', VENDOR.release);
   for (const [key, rel] of Object.entries(VENDOR.layout)) {
@@ -96,12 +97,7 @@ function installers(home, {down = new Set()} = {}) {
       writeFileSync(join(dir, 'install.json'), JSON.stringify({schema: 1, build: 'pinned', version: pin.version, release: pin.release, sha256: sha256(bytes), source: 'test'}));
       return {path: join(dir, 'cua-engine'), version: pin.version, release: pin.release, sha256: sha256(bytes), changed: fresh};
     }),
-    installRuntime: step('vendor', ({manifest, activate}) => {
-      assert.equal(activate, false, 'the vendor\'s tree never takes the pointer on Linux');
-      const fresh = !existsSync(join(home, 'runtimes', manifest.release));
-      const root = fresh ? layVendorTree(home) : join(home, 'runtimes', manifest.release);
-      return {release: manifest.release, root, changed: fresh, record: {source: 'download'}};
-    }),
+    installRuntime: async () => assert.fail('nothing of the vendor\'s is installed on Linux'),
   };
   return {calls, deps, down};
 }
@@ -152,27 +148,25 @@ const refused = async (home, options, code) => {
   return outcome.refused;
 };
 
-test('cua install in an empty home: the record, the module tree, the helper and Node, the pointer to the derived release, then cua\'s engine and the vendor\'s tree', async t => {
+test('cua install in an empty home: the record, the module tree, the helper and Node, the pointer to the derived release, then cua\'s engine; nothing of the vendor\'s', async t => {
   const home = scratchHome(t);
   const {calls, deps} = installers(home);
   const {status, report} = await installJson(deps);
   assert.equal(status, 0);
-  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine', 'vendor']);
+  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine']);
   assert.equal(pointer(home), RELEASE);
   assert.equal(report.ok, true);
   assert.equal(report.release, RELEASE);
   assert.equal(report.changed, true);
   assert.deepEqual(report.pointer, {previous: null, current: RELEASE, changed: true});
   assert.equal(report.modules.root, join(home, 'modules', loadLinuxRuntime({host: LINUX}).modules.lock));
-  assert.deepEqual(report.vendor, {release: VENDOR.release, root: join(home, 'runtimes', VENDOR.release), changed: true, source: 'download'});
-  assert.deepEqual(opened(report), {browser: true, cua: true, vendor: true});
-  assert.equal(report.sessions.engine, 'cua');
-  assert.deepEqual(report.sessions.alternate, {engine: 'vendor', override: 'CUA_NATIVE_ENGINE=vendor', opens: true});
-  assert.deepEqual(report.sessions.why, {});
+  assert.equal('vendor' in report, false, 'no vendor lane');
+  assert.equal(existsSync(join(home, 'runtimes')), false, 'no runtimes/ is made');
+  assert.deepEqual(report.sessions, {browser: true, computer: true, engine: 'cua', why: {}}, 'no other engine is offered');
   assert.equal(report.error, undefined);
   await opens(home, {surfaces: 'browser'});
   await opens(home, {surfaces: 'computer'});
-  await opens(home, {surfaces: 'computer', engine: 'vendor'});
+  await refused(home, {surfaces: 'computer', engine: 'vendor'}, 'engine_retired');
 
   // Again: nothing changes, and the pointer is not rewritten.
   const again = await installJson(installers(home).deps);
@@ -181,110 +175,117 @@ test('cua install in an empty home: the record, the module tree, the helper and 
   assert.deepEqual(again.report.pointer, {previous: RELEASE, current: RELEASE, changed: false});
 });
 
-test('the text output says each step, and its last line what opens now', async t => {
+test('the text output says each step, and its last line what opens now, with no other engine', async t => {
   const home = scratchHome(t);
   const all = await cli(['install'], installers(home).deps);
   assert.equal(all.status, 0, all.stderr);
   assert.match(all.stderr, new RegExp(`^installing cua's Linux runtime ${RELEASE}$`, 'm'));
   assert.match(all.stdout, new RegExp(`^installed cua's module tree at ${home}/modules/[0-9a-f]{64}$`, 'm'));
   assert.match(all.stdout, new RegExp(`^current\\.json now names ${RELEASE}, cua's own runtime$`, 'm'));
-  assert.match(all.stdout, new RegExp(`^installed the vendor's release ${VENDOR.release} at \\S+, kept for CUA_NATIVE_ENGINE=vendor$`, 'm'));
-  assert.equal(lastLine(all), `${SAID}browser-only sessions open; computer sessions open on cua's engine, which this home selects; with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine`);
+  assert.doesNotMatch(all.stdout + all.stderr, /vendor/);
+  assert.equal(lastLine(all), `${SAID}browser-only sessions open; computer sessions open on cua's engine, which this home selects`);
+});
 
-  const other = scratchHome(t);
-  const failing = installers(other, {down: new Set(['vendor'])});
-  const said = await cli(['install'], failing.deps);
-  assert.equal(said.status, 0, said.stderr);
-  assert.match(said.stdout, new RegExp(`^the vendor's release ${VENDOR.release} was not installed: could not fetch vendor: ENOTFOUND \\(download_failed\\); only CUA_NATIVE_ENGINE=vendor needs it, and this home does not select it$`, 'm'));
-  assert.ok(lastLine(said).startsWith(`${SAID}browser-only sessions open; computer sessions open on cua's engine, which this home selects; CUA_NATIVE_ENGINE=vendor would not open them on the vendor's engine: CUA_NATIVE_ENGINE=vendor selects the vendor's engine, and its release ${VENDOR.release} is not installed`), lastLine(said));
+// F10 (§2.2): under a vendor selection install runs every step, then exits nonzero with engine_retired, naming what to
+// undo and that the install otherwise completed, and nothing about the next open. One test per source.
+for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"engine": "vendor" in engine.json', false, true], ['both', true, true]]) {
+  test(`cua install under ${label}: every part placed, then exit 1 engine_retired, its sentence ending with what the install did`, async t => {
+    const home = scratchHome(t);
+    const user = scratchUserHome(t);
+    const settings = settingsOf(user);
+    if (file) { mkdirSync(dirname(settings), {recursive: true}); writeFileSync(settings, JSON.stringify({engine: 'vendor'})); }
+    const named = [...(env ? ['CUA_NATIVE_ENGINE=vendor'] : []), ...(file ? [`"engine": "vendor" in ${settings}`] : [])].join(' and ');
+    const undo = [...(env ? ['unset CUA_NATIVE_ENGINE'] : []), ...(file ? [`remove "engine" from ${settings}`] : [])].join(' and ');
+    const message = `${named} ${env && file ? 'select' : 'selects'} the vendor's engine, ${RETIRED}: ${undo}; the install otherwise completed`;
+    const setting = {HOME: user, ...(env ? {CUA_NATIVE_ENGINE: 'vendor'} : {})};
+    const {calls, deps} = installers(home);
+    deps.env = setting;
+    const {status, report} = await installJson(deps);
+    assert.equal(status, 1);
+    assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine'], 'every step ran');
+    for (const part of ['modules', 'sandboxHelper', 'node', 'engine']) assert.equal(report[part].failed, undefined, part);
+    assert.equal(pointer(home), RELEASE);
+    assert.deepEqual(report.error, {code: 'engine_retired', message});
+    assert.equal(report.sessions.engine, 'vendor');
+    assert.deepEqual(opened(report), {browser: true, computer: false});
+    assert.equal(report.sessions.why.computer.code, 'engine_retired');
+    // The text: the last line says what opens, naming the setting; the command's error, last, is §2.2's sentence.
+    const text = await cli(['install'], {...installers(home).deps, env: setting});
+    assert.equal(text.status, 1);
+    assert.ok(lastLine(text).startsWith(`${SAID}browser-only sessions open; computer sessions on the vendor's engine, which this home selects, do not open: ${named} ${env && file ? 'select' : 'selects'} the vendor's engine`), lastLine(text));
+    assert.ok(text.stderr.endsWith(`cua: ${message} [engine_retired]\n`), text.stderr);
+    assert.doesNotMatch(message, /session|open/, 'nothing promised about the next open');
+    // In this clean home, with the setting gone, a session opens with no further install.
+    await refused(home, {surfaces: 'computer', env: setting}, 'engine_retired');
+    await opens(home, {surfaces: 'browser', env: setting});
+    if (file) writeFileSync(settings, JSON.stringify({}));
+    await opens(home, {surfaces: 'computer', env: {HOME: user}});
+  });
+}
+
+test('a vendor selection with a step that failed: that step\'s error is the install\'s, and the last line names the setting', async t => {
+  const home = scratchHome(t);
+  const {calls, deps} = installers(home, {down: new Set(['engine'])});
+  deps.env = {...deps.env, CUA_NATIVE_ENGINE: 'vendor'};
+  const {status, report} = await installJson(deps);
+  assert.equal(status, 1);
+  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine']);
+  assert.equal(report.error.code, 'download_failed', 'cua\'s engine is what the home needs once the setting is gone');
+  assert.match(report.error.message, /^cua's Linux engine was not installed: could not fetch engine: ENOTFOUND$/);
+  assert.equal(report.sessions.why.computer.code, 'engine_retired');
+  const text = await cli(['install'], deps);
+  assert.match(lastLine(text), /computer sessions on the vendor's engine, which this home selects, do not open: CUA_NATIVE_ENGINE=vendor selects the vendor's engine/);
+  assert.doesNotMatch(text.stderr, /otherwise completed/);
+});
+
+test('--archive and --release are usage errors on Linux, before anything is installed', async t => {
+  for (const args of [['--archive', '/srv/chatgpt.deb'], ['--release', VENDOR.release]]) {
+    const home = scratchHome(t);
+    const {calls, deps} = installers(home);
+    const run = await cli(['install', ...args], deps);
+    assert.equal(run.status, 2, args[0]);
+    assert.ok(run.stderr.startsWith('cua: install takes --archive and --release on macOS only: on Linux cua installs its own runtime and, since cua 0.30.0, no ChatGPT package\n'), run.stderr);
+    assert.deepEqual(calls, []);
+    assert.deepEqual(readdirSync(home), []);
+  }
 });
 
 // The failure table of §4.1: what fails, the setting, the exit, and what opens afterwards. Each opens the surviving
 // sessions and is refused the blocked one.
-test('the engine fails under the default (cua\'s): nonzero; browser-only opens, and the vendor\'s engine once its tree is placed; cua\'s engine is refused', async t => {
+test('the engine fails under the default (cua\'s): nonzero; browser-only opens; cua\'s engine is refused, naming the one command', async t => {
   const home = scratchHome(t);
   const {calls, deps} = installers(home, {down: new Set(['engine'])});
   const {status, report} = await installJson(deps);
   assert.equal(status, 1);
-  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine', 'vendor'], 'the vendor\'s tree is still attempted');
+  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine']);
   assert.equal(report.ok, false);
   assert.deepEqual(report.engine, {failed: {code: 'download_failed', message: 'could not fetch engine: ENOTFOUND'}});
   assert.equal(report.error.code, 'download_failed');
   assert.match(report.error.message, /^cua's Linux engine was not installed: could not fetch engine: ENOTFOUND$/);
   assert.ok(report.error.hint.includes(`\`${INSTALLER} --engine\``), report.error.hint);
   assert.equal(pointer(home), RELEASE, 'the common parts are in place, so the pointer is written');
-  assert.deepEqual(opened(report), {browser: true, cua: false, vendor: true});
+  assert.deepEqual(opened(report), {browser: true, computer: false});
   await opens(home, {surfaces: 'browser'});
-  await opens(home, {surfaces: 'computer', engine: 'vendor'});
   for (const engine of [undefined, 'cua']) {
     const why = await refused(home, {surfaces: 'computer', engine}, 'engine_not_installed');
-    assert.ok(why.message.includes(`\`${INSTALLER} --engine\``), why.message);
-    assert.ok(why.hint.includes(`\`${INSTALLER}\``), why.hint);
+    assert.ok(why.message.endsWith(`: run \`${INSTALLER} --engine\``), why.message);
+    assert.equal(why.hint, 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s');
   }
 });
 
-test('the engine fails under CUA_NATIVE_ENGINE=vendor: 0, said; browser-only and the vendor\'s engine open', async t => {
-  const home = scratchHome(t);
-  const {deps} = installers(home, {down: new Set(['engine'])});
-  deps.env = {...deps.env, CUA_NATIVE_ENGINE: 'vendor'};
-  const {status, report} = await installJson(deps);
-  assert.equal(status, 0);
-  assert.equal(report.ok, true);
-  assert.deepEqual(report.engine, {failed: {code: 'download_failed', message: 'could not fetch engine: ENOTFOUND'}});
-  assert.deepEqual(opened(report), {browser: true, cua: false, vendor: true});
-  await opens(home, {surfaces: 'browser', engine: 'vendor'});
-  await opens(home, {surfaces: 'computer', engine: 'vendor'});
-  await refused(home, {surfaces: 'computer', engine: 'cua'}, 'engine_not_installed');
-});
-
-test('the vendor\'s tree fails under the default: 0, said; browser-only and cua\'s engine open; the vendor\'s engine is refused, naming this installer', async t => {
-  const home = scratchHome(t);
-  const {deps} = installers(home, {down: new Set(['vendor'])});
-  const {status, report} = await installJson(deps);
-  assert.equal(status, 0);
-  assert.deepEqual(report.vendor, {failed: {code: 'download_failed', message: 'could not fetch vendor: ENOTFOUND'}});
-  assert.deepEqual(opened(report), {browser: true, cua: true, vendor: false});
-  await opens(home, {surfaces: 'browser'});
-  await opens(home, {surfaces: 'computer'});
-  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'}, 'engine_not_installed');
-  assert.ok(why.hint.includes(`\`${INSTALLER}\``), why.hint);
-});
-
-test('the vendor\'s tree fails under CUA_NATIVE_ENGINE=vendor: nonzero; following the refusal\'s own remedy with the server reachable opens the vendor\'s session', async t => {
-  const home = scratchHome(t);
-  const stubs = installers(home, {down: new Set(['vendor'])});
-  stubs.deps.env = {...stubs.deps.env, CUA_NATIVE_ENGINE: 'vendor'};
-  const first = await installJson(stubs.deps);
-  assert.equal(first.status, 1);
-  assert.equal(first.report.error.code, 'download_failed');
-  assert.match(first.report.error.message, new RegExp(`^the vendor's release ${VENDOR.release} was not installed: could not fetch vendor: ENOTFOUND$`));
-  assert.deepEqual(opened(first.report), {browser: true, cua: true, vendor: false});
-  await opens(home, {surfaces: 'browser', engine: 'vendor'});
-  const why = await refused(home, {surfaces: 'computer', engine: 'vendor'}, 'engine_not_installed');
-
-  // The refusal names this cua's installer by its absolute path: run exactly that, with the server back.
-  const [, entry, rest] = why.hint.match(/`node (\S+) install([^`]*)`/);
-  assert.equal(entry, CUA_ENTRY);
-  stubs.down.delete('vendor');
-  const second = await installJson(stubs.deps, rest.trim() ? rest.trim().split(/\s+/) : []);
-  assert.equal(second.status, 0);
-  assert.equal(second.report.vendor.release, VENDOR.release);
-  await opens(home, {surfaces: 'computer', engine: 'vendor'});
-});
-
-test('a common part fails: nonzero; the helper, Node and both lanes are still attempted; the pointer is as it was; every session is refused, naming the installer', async t => {
+test('a common part fails: nonzero; the helper, Node and the engine are still attempted; the pointer is as it was; every session is refused, naming the installer', async t => {
   const home = scratchHome(t);
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
   const {calls, deps} = installers(home, {down: new Set(['modules'])});
   const {status, report} = await installJson(deps);
   assert.equal(status, 1);
-  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine', 'vendor']);
+  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine']);
   assert.deepEqual(report.modules, {failed: {code: 'download_failed', message: 'could not fetch modules: ENOTFOUND'}});
   assert.match(report.error.message, /^cua's module tree was not installed: could not fetch modules: ENOTFOUND$/);
   assert.ok(report.error.hint.includes(`\`${INSTALLER}\``), report.error.hint);
   assert.deepEqual(report.pointer, {previous: VENDOR.release, current: VENDOR.release, changed: false});
   assert.equal(pointer(home), VENDOR.release);
-  assert.deepEqual(opened(report), {browser: false, cua: false, vendor: false});
+  assert.deepEqual(opened(report), {browser: false, computer: false});
   assert.equal(report.sessions.why.browser.code, 'runtime_not_installed');
   for (const options of [{surfaces: 'browser'}, {surfaces: 'computer'}, {surfaces: 'computer', engine: 'vendor'}]) {
     const why = await refused(home, options, 'runtime_not_installed');
@@ -292,12 +293,11 @@ test('a common part fails: nonzero; the helper, Node and both lanes are still at
   }
 });
 
-test('--engine requests cua\'s lane and --archive the vendor\'s, whatever the setting', async t => {
+test('--engine makes cua\'s lane required where the setting cannot say', async t => {
   const engineDown = installers(scratchHome(t), {down: new Set(['engine'])});
-  engineDown.deps.env = {...engineDown.deps.env, CUA_NATIVE_ENGINE: 'vendor'};
+  engineDown.deps.env = {...engineDown.deps.env, CUA_NATIVE_ENGINE: 'sky'};
+  assert.equal((await installJson(engineDown.deps)).status, 0, 'a setting that cannot be read asks for no engine');
   assert.equal((await installJson(engineDown.deps, ['--engine'])).status, 1);
-  const vendorDown = installers(scratchHome(t), {down: new Set(['vendor'])});
-  assert.equal((await installJson(vendorDown.deps, ['--archive', '/nonexistent/chatgpt.deb'])).status, 1);
 });
 
 test('a failure a step does not classify is normalized at its boundary, and the text output ends with the error and its remedy', async t => {
@@ -314,12 +314,13 @@ test('cua install over a vendor pointer: the pointer moves to the derived releas
   const root = layVendorTree(home);
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
   const record = readFileSync(join(root, 'install.json'));
+  const listing = readdirSync(root, {recursive: true}).sort();
   const {status, report} = await installJson(installers(home).deps);
   assert.equal(status, 0);
   assert.deepEqual(report.pointer, {previous: VENDOR.release, current: RELEASE, changed: true});
   assert.equal(pointer(home), RELEASE);
-  assert.equal(report.vendor.changed, false);
   assert.deepEqual(readFileSync(join(root, 'install.json')), record);
+  assert.deepEqual(readdirSync(root, {recursive: true}).sort(), listing);
 });
 
 // Fix wave 1: what opens is resolved as a session resolves it (the Node lookup, the helper, the engine selection), not
@@ -329,9 +330,9 @@ test('--no-node completes the home as asked; with no CUA_NODE nothing opens, wit
   const {calls, deps} = installers(home);
   const run = await installJson(deps, ['--no-node']);
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(calls, ['modules', 'helper', 'engine', 'vendor']);
+  assert.deepEqual(calls, ['modules', 'helper', 'engine']);
   assert.equal(pointer(home), RELEASE);
-  assert.deepEqual(opened(run.report), {browser: false, cua: false, vendor: false});
+  assert.deepEqual(opened(run.report), {browser: false, computer: false});
   assert.equal(run.report.sessions.why.browser.code, 'runtime_not_installed');
   assert.match(run.report.sessions.why.browser.message, /its Node is not installed/);
   const text = await cli(['install', '--no-node'], deps);
@@ -352,7 +353,7 @@ test('a helper step that failed fails the install; with CUA_SHIM_SANDBOX=disable
   deps.env = {...deps.env, CUA_SHIM_SANDBOX: 'disabled'};
   const open = await installJson(deps);
   assert.equal(open.status, 1, 'the helper is a common part all the same');
-  assert.deepEqual(opened(open.report), {browser: true, cua: true, vendor: true});
+  assert.deepEqual(opened(open.report), {browser: true, computer: true});
 });
 
 // serve refuses a CUA_BROWSER_BACKENDS that is not a list of absolute socket paths when its surfaces include the browser
@@ -363,13 +364,13 @@ test('a CUA_BROWSER_BACKENDS serve refuses: the browser-only session does not op
   deps.env = {...deps.env, CUA_BROWSER_BACKENDS: 'relative.sock'};
   const {status, report} = await installJson(deps);
   assert.equal(status, 0, 'every part is installed');
-  assert.deepEqual(opened(report), {browser: false, cua: true, vendor: true});
+  assert.deepEqual(opened(report), {browser: false, computer: true});
   assert.equal(report.sessions.why.browser.code, 'invalid_setting');
   assert.match(report.sessions.why.browser.message, /CUA_BROWSER_BACKENDS must list absolute socket paths/);
   // and the text's last line says so, naming the computer sessions that open (task 156, fix wave 2)
   const text = lastLine(await cli(['install'], deps));
   assert.ok(text.startsWith(`${SAID}browser-only sessions do not open: CUA_BROWSER_BACKENDS must list absolute socket paths`), text);
-  assert.match(text, /; computer sessions open on cua's engine, which this home selects; with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine$/);
+  assert.match(text, /; computer sessions open on cua's engine, which this home selects$/);
   assert.doesNotMatch(text, /no session opens/);
 });
 
@@ -379,27 +380,25 @@ test('an engine setting that cannot be read is reported, and no computer session
   deps.env = {...deps.env, CUA_NATIVE_ENGINE: 'sky'};
   const {status, report} = await installJson(deps);
   assert.equal(status, 0);
-  assert.equal(report.sessions.browser, true);
-  assert.equal(report.sessions.computer, false);
-  assert.equal(report.sessions.engine, null);
-  assert.equal(report.sessions.alternate, null, 'no engine is selected, so none is the other one');
-  assert.deepEqual(report.sessions.why, {computer: {code: 'invalid_setting', message: 'CUA_NATIVE_ENGINE must be vendor or cua'}});
+  const why = 'CUA_NATIVE_ENGINE must be cua (cua 0.30.0 removed the vendor\'s engine from Linux)';
+  assert.deepEqual(report.sessions, {browser: true, computer: false, engine: null, why: {computer: {code: 'invalid_setting', message: why}}});
   const text = await cli(['install'], deps);
-  assert.equal(lastLine(text), `${SAID}browser-only sessions open; no computer session opens: CUA_NATIVE_ENGINE must be vendor or cua (invalid_setting)`);
+  assert.equal(lastLine(text), `${SAID}browser-only sessions open; no computer session opens: ${why} (invalid_setting)`);
 });
 
-test('vendor pins this checkout cannot load fail the vendor\'s lane alone: the report is whole, the leftovers scan goes on', async t => {
-  const home = scratchHome(t);
-  const {deps} = installers(home);
-  deps.pins = () => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); };
-  const {status, report} = await installJson(deps);
-  assert.equal(status, 0);
-  assert.deepEqual(report.vendor, {failed: {code: 'invalid_pin', message: 'release pin x.json: unknown field "y"'}});
-  assert.equal(report.modules.changed, true);
-  assert.deepEqual(report.sessions.alternate, {engine: 'vendor', override: 'CUA_NATIVE_ENGINE=vendor', opens: false});
-  assert.equal(report.sessions.why.alternate.code, 'invalid_pin');
-  const text = await cli(['install'], deps);
-  assert.equal(text.status, 0, text.stderr);
+test('vendor pins this checkout cannot load or read change nothing of the install: the leftovers scan goes on without them', async t => {
+  for (const pins of [() => { throw new CuaError('invalid_pin', 'release pin x.json: unknown field "y"'); },
+    () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); }]) {
+    const home = scratchHome(t);
+    const {deps} = installers(home);
+    deps.pins = pins;
+    const {status, report} = await installJson(deps);
+    assert.equal(status, 0);
+    assert.equal(report.modules.changed, true);
+    assert.deepEqual(opened(report), {browser: true, computer: true});
+    const text = await cli(['install'], deps);
+    assert.equal(text.status, 0, text.stderr);
+  }
 });
 
 test('a current.json that is not a file is named to be moved aside; the parts are installed all the same', async t => {
@@ -408,7 +407,7 @@ test('a current.json that is not a file is named to be moved aside; the parts ar
   const {calls, deps} = installers(home);
   const {status, report} = await installJson(deps);
   assert.equal(status, 1);
-  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine', 'vendor']);
+  assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine']);
   assert.equal(report.error.code, 'target_occupied');
   assert.equal(report.error.message, `current.json could not be written: ${join(home, 'current.json')} is a directory, not a file cua wrote, and no install replaces it`);
   assert.equal(report.error.hint, `move ${join(home, 'current.json')} aside, then ${RELEASE_HINT}`);
@@ -424,7 +423,7 @@ test('what opens is the session\'s own selection: CUA_REPL_HOST=vendor or a refu
   for (const [extra, code] of [[{CUA_REPL_HOST: 'vendor'}, 'repl_host_refused'], [{CUA_SHIM_PERSIST: 'always'}, 'invalid_setting']]) {
     const {status, report} = await installJson({...deps, env: {...deps.env, ...extra}});
     assert.equal(status, 0, 'the parts are installed');
-    assert.deepEqual(opened(report), {browser: false, cua: false, vendor: false}, JSON.stringify(extra));
+    assert.deepEqual(opened(report), {browser: false, computer: false}, JSON.stringify(extra));
     assert.equal(report.sessions.why.browser.code, code);
     for (const surfaces of ['browser', 'computer']) await refused(home, {surfaces, env: extra}, code);
     const text = await cli(['install'], {...deps, env: {...deps.env, ...extra}});
@@ -432,30 +431,12 @@ test('what opens is the session\'s own selection: CUA_REPL_HOST=vendor or a refu
   }
   const sideways = {CUA_DESKTOP_MODE: 'sideways'};
   const {report} = await installJson({...deps, env: {...deps.env, ...sideways}});
-  assert.deepEqual(opened(report), {browser: true, cua: false, vendor: true});
+  assert.deepEqual(opened(report), {browser: true, computer: false});
   assert.deepEqual(report.sessions.why, {computer: {code: 'invalid_setting', message: 'CUA_DESKTOP_MODE must be shared or dedicated'}});
   await opens(home, {surfaces: 'browser', env: sideways});
   await refused(home, {surfaces: 'computer', env: sideways}, 'invalid_setting');
-  await opens(home, {surfaces: 'computer', engine: 'vendor', env: sideways});
   const text = await cli(['install'], {...deps, env: {...deps.env, ...sideways}});
-  assert.equal(lastLine(text), `${SAID}browser-only sessions open; computer sessions on cua's engine, which this home selects, do not open: CUA_DESKTOP_MODE must be shared or dedicated (invalid_setting); with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine`);
-});
-
-test('a pins directory that cannot be read fails the vendor\'s lane and its session alone, naming the checked-in pins to restore', async t => {
-  const home = scratchHome(t);
-  const {deps} = installers(home);
-  deps.pins = () => { throw Object.assign(new Error(`ENOENT: no such file or directory, scandir '${RELEASES_DIR}'`), {code: 'ENOENT', syscall: 'scandir', path: RELEASES_DIR}); };
-  const {status, report} = await installJson(deps);
-  assert.equal(status, 0);
-  assert.equal(report.vendor.failed.code, 'pins_unavailable');
-  assert.ok(report.vendor.failed.message.includes(`${RELEASES_DIR} cannot be read (ENOENT)`), report.vendor.failed.message);
-  assert.deepEqual(opened(report), {browser: true, cua: true, vendor: false});
-  assert.equal(report.sessions.why.alternate.code, 'pins_unavailable');
-  const asked = await installJson({...deps, env: {...deps.env, CUA_NATIVE_ENGINE: 'vendor'}});
-  assert.equal(asked.status, 1);
-  assert.equal(asked.report.error.code, 'pins_unavailable');
-  assert.ok(asked.report.error.hint.startsWith(`restore ${RELEASES_DIR} as this cua's checkout ships it, then run \`${INSTALLER}\` again`), asked.report.error.hint);
-  assert.equal(asked.report.sessions.why.computer.code, 'pins_unavailable');
+  assert.equal(lastLine(text), `${SAID}browser-only sessions open; computer sessions on cua's engine, which this home selects, do not open: CUA_DESKTOP_MODE must be shared or dedicated (invalid_setting)`);
 });
 
 test('a helper the sessions refuse is remedied by this cua\'s installer with its release, never a bare `cua install`; one that is not the pinned helper is named to be moved aside', async t => {
@@ -540,7 +521,7 @@ test('--modules-dir is passed to the module tree step; --sandbox-helper and --en
 
 // ---- cua runtime use on Linux (§4.3) ----
 
-test('cua runtime use on Linux: the derived release verifies its tree again and takes the pointer; a vendor release is refused, naming CUA_NATIVE_ENGINE=vendor', async t => {
+test('cua runtime use on Linux: the derived release verifies its tree again and takes the pointer; any other name, a vendor release\'s too, is unknown_release, its hint naming no engine', async t => {
   const home = scratchHome(t);
   const {root} = fakeModuleTree(home, LINUX);
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: VENDOR.release}));
@@ -550,13 +531,12 @@ test('cua runtime use on Linux: the derived release verifies its tree again and 
   assert.deepEqual(JSON.parse(used.stdout), {ok: true, release: RELEASE, root});
   assert.equal(pointer(home), RELEASE);
 
-  const vendor = await cli(['runtime', 'use', VENDOR.release, '--json'], deps);
-  assert.equal(vendor.status, 1);
-  const {error} = JSON.parse(vendor.stdout);
-  assert.equal(error.code, 'release_refused');
-  assert.match(error.message, /is the vendor's release: on Linux cua runs its own runtime/);
-  assert.match(error.hint, /CUA_NATIVE_ENGINE=vendor/);
-  assert.equal((await cli(['runtime', 'use', 'cua-linux-x64-e9.9.9-n24.0.0-s0.0.0-m000000000000', '--json'], deps)).status, 1);
+  for (const name of [VENDOR.release, 'cua-linux-x64-e9.9.9-n24.0.0-s0.0.0-m000000000000']) {
+    const other = await cli(['runtime', 'use', name, '--json'], deps);
+    assert.equal(other.status, 1);
+    assert.deepEqual(JSON.parse(other.stdout).error, {code: 'unknown_release', message: `release ${name} is not this cua's Linux runtime, ${RELEASE}`,
+      hint: 'on Linux this cua resolves only its own runtime'}, name);
+  }
 
   // A tree whose files are not the ones installed is refused, and the remedy names the release this cua installs.
   writeFileSync(join(root, 'node_modules', 'sharp', 'package.json'), '{"tampered": true}\n');

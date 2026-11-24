@@ -151,7 +151,9 @@ test('the runtime a serve uses: on Linux the own release it resolves and the ven
   const {rmSync} = await import('node:fs');
   const {join} = await import('node:path');
   const host = {platform: 'linux', arch: 'x64'};
-  const home = fakeInstalledHome(t, {host});   // the vendor tree, its name in the pointer, and the own module tree
+  const home = fakeInstalledHome(t, {host});   // the own module tree
+  const {forgeActiveRuntime} = await import('../fixtures/runtime-fixture.mjs');
+  forgeActiveRuntime(home, {}, {host, ownRuntime: false});   // the vendor tree an older cua placed, its name in the pointer
   const vendorRoot = join(homeLayout(home).runtimes, '26.928.40906-linux-x64');
   const {release} = fakeModuleTree(home, host);
   assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: vendorRoot}, 'the vendor\'s name in the pointer selects nothing');

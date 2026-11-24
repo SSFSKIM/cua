@@ -31,18 +31,18 @@
 // engine, cua-engine in the cua home: the engine sessions here run (the installed one, or what CUA_LINUX_ENGINE_BIN
 // names), its version, release and SHA-256 against this cua's pin, or that it is a local build (`cua engine build`), an
 // older release or an unknown file; the service that drives it (`cua`, cua's own Linux service, src/services/engine/
-// linux; the vendor's engine runs behind the vendor's); the device mode; and the engine's capability report. For the
-// report doctor starts the engine as a session's service does (the version check, `server --desktop <mode>`,
-// `capabilities` first), with the session's display and bus, and stops it once it has answered; it starts nothing
-// while cua's engine is not what sessions run, no file it does not recognize, and nothing without a display, since the
-// engine starts only on one (the report is then unread, and the display row says why). `pass` for the pinned engine
-// with every capability; `warn` for a local build, a recorded release behind or ahead of the pin, CUA_LINUX_ENGINE_BIN,
-// an unread report for want of a display, or a capability the backend lacks; `fail` for sessions refused while cua's
-// engine is preferred, by the default too (since #171 M6a's F3 no other engine stands in: none installed, one older
-// than this cua needs or whose record does not match it), a vendor selection refused because the vendor's tree is not
-// installed, an unknown or unexecutable file, an invalid device mode, or an engine whose report fails as a session's
-// start would; else `skip` while the vendor's engine is preferred. Every remedy names this cua's own installer by its
-// absolute path, `node <this cua>/bin/cua.mjs install --engine` (ruling 1110).
+// linux); the device mode; and the engine's capability report. For the report doctor starts the engine as a session's
+// service does (the version check, `server --desktop <mode>`, `capabilities` first), with the session's display and
+// bus, and stops it once it has answered; it starts nothing while cua's engine is not what sessions run, no file it does
+// not recognize, and nothing without a display, since the engine starts only on one (the report is then unread, and the
+// display row says why). `pass` for the pinned engine with every capability; `warn` for a local build, a recorded
+// release behind or ahead of the pin, CUA_LINUX_ENGINE_BIN, an unread report for want of a display, or a capability the
+// backend lacks; `fail` for sessions refused while cua's engine is preferred, by the default too (since #171 M6a's F3 no
+// other engine stands in: none installed, one older than this cua needs or whose record does not match it), a vendor
+// selection, which cua 0.30.0 retired on Linux (M6b: engine_retired, with the selection's sentence and what the home
+// holds), an unknown or unexecutable file, an invalid device mode, or an engine whose report fails as a session's start
+// would. Every remedy names this cua's own installer by its absolute path, `node <this cua>/bin/cua.mjs install
+// --engine` (ruling 1110).
 import {realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
@@ -185,12 +185,12 @@ function vendorRow(selection, records) {
 // ---- Linux (#171) ----
 
 // The report's facts on Linux: the selection; `runs`, the engine sessions here run ({path, source: 'installed' |
-// 'override'}, null when they run the vendor's); `installed`, what the cua home holds (inspectLinuxEngine's facts, null
-// when unread); `pinned`, this cua's pin for this machine; `service`, what drives the engine (`cua`, cua's own Linux
-// service, or `vendor`; null when refused); and where cua's engine runs, the device mode and its capability report
-// (`capabilities`, or why it is unread, `capabilitiesUnread`).
+// 'override'}, null when refused); `installed`, what the cua home holds (inspectLinuxEngine's facts, null when unread);
+// `pinned`, this cua's pin for this machine; `service`, what drives the engine (`cua`, cua's own Linux service; null
+// when refused); and where cua's engine runs, the device mode and its capability report (`capabilities`, or why it is
+// unread, `capabilitiesUnread`).
 function linuxReport({selected = null, reason = null, refused = null, preferred = null, facts = null, runs = null, desktop = null}) {
-  const service = selected === null ? null : selected === 'cua' ? 'cua' : 'vendor';
+  const service = selected === 'cua' ? 'cua' : null;
   const installed = facts && {path: facts.path, exists: facts.exists, executable: facts.executable, sha256: facts.sha256, version: facts.version, build: facts.build,
     release: facts.release, current: facts.current};
   return {selected, reason, refused, preferred, service, runs, installed, pinned: facts?.pinned ?? null, desktop, capabilities: null, capabilitiesUnread: null};
@@ -215,9 +215,10 @@ function linuxHeld(facts, say) {
   return facts.executable ? words : `${words}; ${say('fail', `it is not executable, so no session runs it: ${install} places it again`)}`;
 }
 
-// The correction of a Linux setting no installer can fix: where it is set, what it may name.
+// The correction of a Linux setting no installer can fix: where it is set, what it may name (cua alone there since
+// 0.30.0, which retired the vendor's engine).
 const SETTING_FIX = {
-  engine: 'name vendor or cua there, or remove the setting for the default',
+  engine: 'name cua there, or remove the setting for the default',
   desktop: 'name shared or dedicated there, or remove the setting for shared',
 };
 
@@ -235,12 +236,12 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   const report = linuxReport({...selection, facts});
   const {refused} = selection;
   if (selection.preferred.engine === 'vendor') {
-    const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : source('vendor');
-    // The vendor's engine refused at the open: its tree is not installed (launch.mjs linuxEngineFor, #171 M6a).
-    if (refused?.code === 'engine_not_installed')
-      return {row: result('engine', 'fail', `cua's engine is not selected: ${why}, and sessions here are refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint ?? ownInstaller().hint}`), report};
-    const serves = refused ? `; sessions here are refused (${refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service';
-    return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
+    // The vendor's engine, retired on Linux by cua 0.30.0 (#171 M6b): every computer session is refused at the open
+    // (launch.mjs linuxEngineFor), in the selection's own words. A session refused before its engine is asked for is
+    // repl.host's to fail.
+    const selected = `the vendor's engine is selected (${source('vendor')})`;
+    if (refused?.code !== 'engine_retired') return {row: result('engine', 'skip', `${selected}; sessions here are refused (${refused?.code}; see repl.host)`), report};
+    return {row: result('engine', 'fail', `${selected}, and every Linux computer session is refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint}; in this home: ${held}`), report};
   }
   // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
   // in for it.

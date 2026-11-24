@@ -191,7 +191,7 @@ test('the installed engine, its install record or its directory linked into the 
       const {error, inTree} = refusedWithoutReading(h, () => selectEngine(h, env), 'engine_not_installed');
       assert.deepEqual(inTree, [], error.message);
       assert.match(error.message, /vendor's tree/);
-      assert.ok(error.message.includes(`: move ${own.replace(/\/$/, '')} aside, then install this cua's engine with \`node `), `${name || 'the directory'}: ${error.message}`);
+      assert.ok(error.message.includes(`: move ${own.replace(/\/$/, '')} aside, then run \`node `), `${name || 'the directory'}: ${error.message}`);
     }
   }
 });
@@ -328,7 +328,7 @@ test('cua runtime use on Linux: a current.json that is a link into the tree is r
 
 // A vendor pin that does not parse is the vendor's lane's problem: `runtime use` of this cua's own release resolves the
 // derived name first and reads no vendor pin, and only a different name is classified against them.
-test('cua runtime use on Linux: a malformed vendor pin does not block this cua\'s own release; another name is classified against the pins', async t => {
+test('cua runtime use on Linux: a malformed vendor pin does not block this cua\'s own release; another name is unknown_release, no pin read (#171 M6b)', async t => {
   const h = homeWithVendorTree(t);
   const pins = fileURLToPath(new URL('../runtime/releases/', import.meta.url));
   const readFileSync = fs.readFileSync;
@@ -339,7 +339,7 @@ test('cua runtime use on Linux: a malformed vendor pin does not block this cua\'
   try {
     const used = await useRuntime({home: h.home, release: RELEASE, host: LINUX});
     assert.equal(used.release, RELEASE);
-    await assert.rejects(useRuntime({home: h.home, release: '26.928.40906-linux-x64', host: LINUX}), {code: 'invalid_pin'});
+    await assert.rejects(useRuntime({home: h.home, release: '26.928.40906-linux-x64', host: LINUX}), {code: 'unknown_release'});
   } finally {
     fs.readFileSync = readFileSync;
     syncBuiltinESMExports();

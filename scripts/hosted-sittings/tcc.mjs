@@ -110,12 +110,12 @@ const quote = value => `'${String(value).replace(/'/g, "''")}'`;
 // The designated requirement of a signed bundle, compiled to the blob a row's csreq column holds, as hex (H0's).
 export function csreqHex(bundle) {
   let shown;
-  try { shown = execFileSync('/usr/bin/codesign', ['-d', '-r-', bundle], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}); } catch (error) { shown = `${error.stdout ?? ''}${error.stderr ?? ''}`; }
+  try { shown = execFileSync('/usr/bin/codesign', ['-d', '-r-', bundle], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000}); } catch (error) { shown = `${error.stdout ?? ''}${error.stderr ?? ''}`; }
   const requirement = /designated => (.*)$/m.exec(shown)?.[1];
   if (!requirement) throw new Error(`no designated requirement for ${bundle}`);
   const dir = mkdtempSync(join(tmpdir(), 'cua-csreq-'));
   try {
-    execFileSync('/usr/bin/csreq', ['-r', `=${requirement}`, '-b', join(dir, 'req.bin')], {stdio: ['ignore', 'pipe', 'pipe']});
+    execFileSync('/usr/bin/csreq', ['-r', `=${requirement}`, '-b', join(dir, 'req.bin')], {stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000});
     return readFileSync(join(dir, 'req.bin')).toString('hex');
   } finally { rmSync(dir, {recursive: true, force: true}); }
 }
@@ -210,17 +210,30 @@ export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} =
   }, deps);
 }
 
-// The two engines' rows as the system database holds them, every column a grant writes, one line each, sorted: read
-// before and after a step that must leave them as they were (the key-route diagnostic). A read only, still hosted only
-// (the system database is read through sudo). -> [line].
+// The two engines' rows as the system database holds them, losslessly: every column the access table has (read from
+// the table itself, so no column a narrower select would omit escapes the compare), each row one SQL tuple of its
+// values as quote() spells them, carried hex-encoded so no value can split a line, sorted. Read before and after a step
+// that must leave them as they were (the key-route diagnostic). A read only, still hosted only (the system database is
+// read through sudo). -> {columns: [name], rows: [tuple]}.
 export function engineRows({env = process.env, platform = process.platform, store = STORE} = {}) {
   assertGithubHosted(env, platform, 'the TCC reader');
+  const columns = String(store.sql(SYSTEM_DB, 'select name from pragma_table_info(\'access\') order by cid;') ?? '').split('\n').filter(Boolean);
+  if (!columns.length || !columns.every(name => /^\w+$/.test(name))) throw new Error('the access table\'s columns could not be read');
   const clients = Object.values(CLIENTS).map(quote).join(', ');
-  return String(store.sql(SYSTEM_DB, `select service, client, auth_value, auth_reason, auth_version, hex(csreq), flags, last_modified from access where client in (${clients}) order by service, client`) ?? '')
-    .split('\n').filter(Boolean).sort();
+  const tuple = columns.map(name => `quote("${name}")`).join(' || \', \' || ');
+  const rows = String(store.sql(SYSTEM_DB, `select hex('(' || ${tuple} || ')') from access where client in (${clients});`) ?? '')
+    .split('\n').filter(Boolean).map(line => Buffer.from(line, 'hex').toString('utf8')).sort();
+  return {columns, rows};
 }
-// What changed between two readings of engineRows. -> null when nothing did, else {added, removed}.
+// What changed between two readings of engineRows: the rows compared as multisets (a duplicate gained or lost counts),
+// and the table's columns. -> null when nothing did, else {added, removed, columns?: {before, after}}.
 export function rowsChanged(before, after) {
-  const added = after.filter(row => !before.includes(row)), removed = before.filter(row => !after.includes(row));
-  return added.length || removed.length ? {added, removed} : null;
+  const minus = (rows, taken) => {
+    const left = new Map();
+    for (const row of taken) left.set(row, (left.get(row) ?? 0) + 1);
+    return rows.filter(row => { const n = left.get(row) ?? 0; if (n) left.set(row, n - 1); return n === 0; });
+  };
+  const added = minus(after.rows, before.rows), removed = minus(before.rows, after.rows);
+  const columnsChanged = before.columns.join('\n') !== after.columns.join('\n');
+  return added.length || removed.length || columnsChanged ? {added, removed, ...(columnsChanged ? {columns: {before: before.columns, after: after.columns}} : {})} : null;
 }

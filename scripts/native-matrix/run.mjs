@@ -68,7 +68,7 @@ import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs'
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
-import {keyRouteSection} from './key-route-run.mjs';
+import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
@@ -159,6 +159,7 @@ export async function runMatrix(options, io) {
   if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('--samples needs a positive integer');
   if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one hold names the same');
   if (!out) throw new Error('run needs --out <dir>');
+  refuseKeyRouteOffRunner(options.plan, io);
   const base = resolve(out);
   const dirs = Array.from({length: runs}, (_, i) => join(base, `run-${first + i}`));
   if (!io.dryRun) for (const dir of dirs) if (fs.existsSync(join(dir, 'result.json'))) throw new Error(`${dir} already holds a result: choose a new --out`);
@@ -266,6 +267,7 @@ async function runOnce(options, io) {
     // On a GitHub-hosted runner the device's own record of this job's run (../hosted-sittings/runner.mjs): meta.hosted
     // from both sides, meta.runner the run's attestation, its install the approved runtime and engine this run serves.
     Object.assign(meta, hostedRunOf(pre.runner ?? null, io.env ?? process.env, {approvedRuntime, approvedEngine, ...(io.vmIdentity ? {controllerVm: io.vmIdentity} : {})}));
+    refuseKeyRouteUnattested(plan, meta, io);
 
     const scenes = scenesOf(plan);
     meta.fixtures = {

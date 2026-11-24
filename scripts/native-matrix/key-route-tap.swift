@@ -7,15 +7,20 @@
 // Monitoring is granted to that app alone, on a GitHub-hosted runner only, by the hosted kit's TCC writer (ruling 1198,
 // under O0), and neither engine under test gets a grant. It never asks for one: CGPreflightListenEventAccess is reported.
 //
-//   key-route-tap --out <file> --stop <file> --max-seconds <n> --pid <label>:<pid> ...
+//   key-route-tap --admission <file> --nonce <hex> --out <file> --stop <file> --max-seconds <n> --pid <label>:<pid> ...
+// Admission, checked here, in the LaunchServices process, before it creates its log or any tap: `open` hands it none of
+// its caller's environment, so the guarded launcher (./key-route-device.mjs startTap, which refuses off a GitHub-hosted
+// runner) writes --admission, {"nonce", "at"}, just before it opens the app. The file must hold --nonce and be at most
+// ADMISSION_SECONDS old; it is consumed (removed) when read. Without it the tap exits 3, having made nothing.
+// The bound comes first: a deadline of --max-seconds (plus a grace) is armed before anything else, so it never outlives it.
 // One JSON line per fact, written to --out: first {"ready", "pid", "listenAccess", "taps": [{"label", "pid", "created"}]},
 // then {"label", "tapPid", "keycode", "target", "source", "at"} per Escape keyDown, then {"stopped", "why"} when --stop
-// appears or --max-seconds pass (it never outlives that bound).
+// appears or --max-seconds pass.
 import AppKit
 import CoreGraphics
 import Foundation
 
-var out: String?, stop: String?, maxSeconds = 120.0
+var out: String?, stop: String?, admission: String?, nonce: String?, maxSeconds = 120.0
 var targets: [(label: String, pid: pid_t)] = []
 var argv = CommandLine.arguments.dropFirst()
 while let flag = argv.popFirst() {
@@ -23,7 +28,9 @@ while let flag = argv.popFirst() {
   switch flag {
   case "--out": out = value
   case "--stop": stop = value
-  case "--max-seconds": maxSeconds = Double(value) ?? maxSeconds
+  case "--admission": admission = value
+  case "--nonce": nonce = value
+  case "--max-seconds": maxSeconds = min(Double(value) ?? maxSeconds, 600)
   case "--pid":
     let parts = value.split(separator: ":")
     guard parts.count == 2, let pid = Int32(parts[1]), pid > 0 else { exit(64) }
@@ -31,6 +38,20 @@ while let flag = argv.popFirst() {
   default: exit(64)
   }
 }
+// The hard bound, armed before the admission and the taps' set-up, so a set-up that hangs still ends.
+DispatchQueue.global().asyncAfter(deadline: .now() + maxSeconds + 5) { exit(0) }
+
+func refuse(_ why: String) -> Never {
+  FileHandle.standardError.write(Data("key-route-tap: refused: \(why)\n".utf8))
+  exit(3)
+}
+let ADMISSION_SECONDS = 60.0
+guard let admission, let nonce, !nonce.isEmpty else { refuse("no admission: it is launched only by the hosted launcher (key-route-device.mjs tap start)") }
+let admitted: [String: Any]? = (try? Data(contentsOf: URL(fileURLWithPath: admission))).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+try? FileManager.default.removeItem(atPath: admission)
+guard let admitted, admitted["nonce"] as? String == nonce, let at = (admitted["at"] as? NSNumber)?.doubleValue,
+      abs(Date().timeIntervalSince1970 * 1000 - at) <= ADMISSION_SECONDS * 1000 else { refuse("the admission is missing, another launch's, or stale") }
+
 guard let out, let stop, !targets.isEmpty, FileManager.default.createFile(atPath: out, contents: nil),
       let opened = FileHandle(forWritingAtPath: out) else { exit(64) }
 

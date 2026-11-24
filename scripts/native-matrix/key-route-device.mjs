@@ -1,27 +1,32 @@
 // The key-route diagnostic's device side (ruling 1198; #117 M5): run from the harness checkout on the Mac that shows the
 // scenes, over ssh (./lane.mjs matrixOps keyRoute), one JSON line on stdout per command (exit 1 with {error} when it
 // fails). Every command answers `at`, the device clock around it, so the run charges any activation to its step.
+// Hosted only, every command: off a GitHub-hosted runner each answers {answer: {refused}, at} before it reads, compiles,
+// opens or writes anything, and the hosted-only functions below check for themselves too.
 //
 //   read --run <dir> --pid <TextEdit's pid>
 //       ./key-route.swift read: the focused element's AXParent chain with AXUIElementGetPid and _AXUIElementGetActualPid,
-//       the owners' activation policies, cua's keyboardTarget mirrored, and the public routes -> {answer, at}
+//       the owners' activation policies, cua's keyboardTarget mirrored, the selected ancestor, and the public routes,
+//       each read or named unread -> {answer, at}
 //   panel --run <dir> --pid <n> [--frame <x,y,w,h>]
 //       whether TextEdit's Open panel is up, by Accessibility and, given the frame `read` found it at, the window list
-//       (./key-route.swift panel) -> {answer: {trusted, up, ax, windowAtFrame, frame}, at}
+//       (./key-route.swift panel) -> {answer: {trusted, up, ax, windowAtFrame, frame, unread}, at}; `up` is false only
+//       when every reading made says so, null when none could be made
 //   cancel --run <dir> --pid <n> [--frame <x,y,w,h>]
 //       the panel cancelled by Accessibility, never an engine nor a pointer event (./key-route.swift cancel) ->
-//       {answer: {found, via, pressed, closed}, at}. Hosted only: off a runner {answer: {closed: false, refused}, at}
+//       {answer: {found, via, pressed, closed, unread}, at}; `closed` only when the reading after it says the panel is gone
 //   tap start --run <dir> --pid <label>:<pid> ...
 //       the tap app (./key-route-tap.swift, built at TAP_APP by the sitting step's buildTapApp) launched through
-//       LaunchServices, so it is its own responsible process and its own Input Monitoring row is the one asked, and
-//       awaited until it reports its taps -> {answer: {launched, ready, pid, listenAccess, taps} | {launched: false,
-//       reason | refused}, at}. Hosted only, before anything is opened
+//       LaunchServices, so it is its own responsible process and its own Input Monitoring row is the one asked, admitted
+//       by a fresh nonce in <run>/key-route/tap.admission written just before the launch, and awaited until it reports
+//       its taps -> {answer: {launched, ready, pid, listenAccess, taps} | {launched: false, reason}, at}
 //   tap stop --run <dir>
 //       the tap told to stop (its stop file), awaited, and killed only when it outlives that (its own process, checked by
-//       its executable) -> {answer: {exited, killed, why, events: [{label, tapPid, target, source, at}]}, at}
+//       its executable) -> {answer: {exited, killed, why, logRead, ready, events: [{label, tapPid, target, source, at}]}, at}
 //
 // What leaves the device: pids, roles, bundle ids, activation policies, booleans and the Escape's event fields 40 and 41.
 import {execFileSync} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
 import * as fs from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
@@ -73,16 +78,21 @@ export function buildTapApp({exec = (cmd, args) => execFileSync(cmd, args, {stdi
 const linesOf = text => String(text ?? '').split('\n').filter(Boolean).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
 const stateFile = run => join(run, 'key-route', 'tap.json');
 
-// The tap launched (see the header). io: {env, platform, exists, mkdir, remove, open(args), readText, writeText, sleep}.
+// The tap launched (see the header). io: {env, platform, now, nonce, exists, mkdir, remove, open(args), readText,
+// writeText, sleep}.
 export async function startTap({run, targets}, io) {
   if (!isGithubHosted(io.env, io.platform)) return {launched: false, refused: `the key-route tap: refused: ${REFUSED}`};
   if (!targets.length || !targets.every(t => /^[A-Za-z]+:[1-9]\d*$/.test(t))) throw new Error('tap start needs --pid <label>:<pid>, at least one');
   if (!io.exists(TAP_EXECUTABLE)) return {launched: false, reason: `the tap app is not built at ${TAP_APP} (the sitting step builds it)`};
-  const dir = join(run, 'key-route'), log = join(dir, 'tap.jsonl'), stop = join(dir, 'tap.stop');
+  const dir = join(run, 'key-route'), log = join(dir, 'tap.jsonl'), stop = join(dir, 'tap.stop'), admission = join(dir, 'tap.admission');
   io.mkdir(dir);
   io.remove(log);
   io.remove(stop);
-  io.open(['-n', '-g', '-a', TAP_APP, '--args', '--out', log, '--stop', stop, '--max-seconds', String(TAP_MAX_SECONDS), ...targets.flatMap(t => ['--pid', t])]);
+  // This launch's admission (the tap checks it, as `open` hands it none of this guarded caller's environment).
+  const nonce = io.nonce();
+  io.writeText(admission, JSON.stringify({nonce, at: io.now()}));
+  io.open(['-n', '-g', '-a', TAP_APP, '--args', '--admission', admission, '--nonce', nonce, '--out', log, '--stop', stop,
+    '--max-seconds', String(TAP_MAX_SECONDS), ...targets.flatMap(t => ['--pid', t])]);
   let ready = null;
   for (let n = 0; n < TAP_READS && !ready; n++) {
     if (n) await io.sleep(TAP_READ_MS);
@@ -94,10 +104,15 @@ export async function startTap({run, targets}, io) {
   return {launched: true, ready: true, pid: ready.pid, listenAccess: ready.listenAccess === true, taps: Array.isArray(ready.taps) ? ready.taps : []};
 }
 
-// The tap stopped (see the header). io: startTap's, with alive(pid), isTap(pid), kill(pid).
+// The tap stopped (see the header). io: startTap's, with alive(pid), isTap(pid), kill(pid). `logRead`: the tap's log
+// was read (readText answers null when it was not), `ready`: it holds the tap's readiness line, so a log that could
+// not be read is never taken for a tap that saw no Escape.
 export async function stopTap({run}, io) {
+  const none = {exited: null, killed: false, why: null, logRead: false, ready: false, events: []};
+  if (!isGithubHosted(io.env, io.platform)) return {...none, refused: `the key-route tap: refused: ${REFUSED}`};
   let state;
-  try { state = JSON.parse(io.readText(stateFile(run))); } catch { return {exited: null, killed: false, why: null, events: [], reason: 'no tap was started in this run'}; }
+  try { state = JSON.parse(io.readText(stateFile(run))); } catch { state = null; }
+  if (!state) return {...none, reason: 'no tap was started in this run'};
   io.writeText(state.stop, '');
   const waitGone = async () => {
     let alive = io.alive(state.pid);
@@ -106,9 +121,10 @@ export async function stopTap({run}, io) {
   };
   let alive = state.pid === null ? null : await waitGone(), killed = false;
   if (alive && io.isTap(state.pid)) { io.kill(state.pid); killed = true; alive = await waitGone(); }
-  const lines = linesOf(io.readText(state.log));
+  const text = io.readText(state.log), lines = linesOf(text);
   io.remove(stateFile(run));
   return {exited: alive === null ? null : !alive, killed, why: lines.find(line => line.stopped)?.why ?? null,
+    logRead: typeof text === 'string', ready: lines.some(line => line.ready === true),
     events: lines.filter(line => line.keycode === 0x35).map(({label, tapPid, target, source, at}) => ({label, tapPid, target, source, at}))};
 }
 
@@ -122,13 +138,13 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 export function defaultIo(run) {
   return {
-    env: process.env, platform: process.platform, sleep,
+    env: process.env, platform: process.platform, sleep, now: Date.now, nonce: () => randomBytes(16).toString('hex'),
     helper: args => JSON.parse(execFileSync(compiled(KEY_ROUTE_SCRIPT, run), args, {encoding: 'utf8', timeout: 60_000})),
     exists: path => fs.existsSync(path), mkdir: path => fs.mkdirSync(path, {recursive: true, mode: 0o700}), remove: path => fs.rmSync(path, {force: true}),
-    readText: path => { try { return fs.readFileSync(path, 'utf8'); } catch { return ''; } }, writeText: (path, text) => fs.writeFileSync(path, text, {mode: 0o600}),
+    readText: path => { try { return fs.readFileSync(path, 'utf8'); } catch { return null; } }, writeText: (path, text) => fs.writeFileSync(path, text, {mode: 0o600}),
     open: args => execFileSync('/usr/bin/open', args, {stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000}),
     alive, kill: pid => { try { process.kill(pid, 'SIGTERM'); } catch {} },
-    isTap: pid => { try { return execFileSync('/bin/ps', ['-p', String(pid), '-o', 'args='], {encoding: 'utf8'}).includes(TAP_EXECUTABLE); } catch { return false; } },
+    isTap: pid => { try { return execFileSync('/bin/ps', ['-p', String(pid), '-o', 'args='], {encoding: 'utf8', timeout: 10_000}).includes(TAP_EXECUTABLE); } catch { return false; } },
   };
 }
 
@@ -146,6 +162,8 @@ const timed = async fn => { const from = Date.now(); const answer = await fn(); 
 
 export async function main(argv, {io: given = {}} = {}) {
   const {command, positional, flags} = parse(argv);
+  // Hosted only, every command, before anything is dispatched or compiled.
+  if (!isGithubHosted(given.env ?? process.env, given.platform ?? process.platform)) return timed(() => ({refused: `the key-route device: refused: ${REFUSED}`}));
   if (!flags.run) throw new Error(USAGE);
   const io = {...defaultIo(flags.run), ...given};
   const pid = () => { if (flags.pid.length !== 1 || !/^[1-9]\d*$/.test(flags.pid[0])) throw new Error(USAGE); return flags.pid[0]; };

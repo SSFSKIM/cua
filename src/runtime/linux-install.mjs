@@ -183,7 +183,12 @@ function readiness({home, env, host, installer, resolveOwnNode, linuxHelper, eng
     select(env, ['browser']);
     if (sandbox !== 'disabled') checkedHelper({home, host, linuxHelper, installer});
   });
-  if (!common) return {browser: false, computer: false, engine: selected, why};
+  if (!common) {
+    // A vendor selection is refused whatever else blocks the sessions (F10, §2.2): the last line names it beside the
+    // shared blocker. The selection refuses before it asks for Node, so this resolves nothing else.
+    if (selected === 'vendor') opens('computer', () => select(env, ['computer']));
+    return {browser: false, computer: false, engine: selected, why};
+  }
   // serve refuses a CUA_BROWSER_BACKENDS it cannot use when the browser is among its surfaces, and only then.
   const browser = opens('browser', () => configuredBackends(env));
   const computer = opens('computer', () => {
@@ -223,8 +228,9 @@ const SAID = 'sessions here, by what is installed and set: ';
 function opensNow({browser, computer, engine, why}, env) {
   const words = ({code, message, hint}) => `${message} (${code})${hint ? `; ${hint}` : ''}`;
   const label = name => (name === 'cua' ? 'cua\'s engine' : 'the vendor\'s engine');
-  // A shared prerequisite that failed opens nothing, and readiness then evaluated no computer session (no why.computer);
-  // a browser-only refusal of its own (CUA_BROWSER_BACKENDS) leaves the computer sessions to be said.
+  // A shared prerequisite that failed opens nothing, and readiness then evaluated no computer session (no why.computer),
+  // but a vendor selection's, which is said beside it; a browser-only refusal of its own (CUA_BROWSER_BACKENDS) leaves
+  // the computer sessions to be said.
   if (!browser && !computer && !why.computer) return `${SAID}no session opens: ${words(why.browser)}`;
   const parts = [browser ? `browser-only sessions open${env.CUA_NODE ? ` on CUA_NODE=${env.CUA_NODE}` : ''}` : `browser-only sessions do not open: ${words(why.browser)}`,
     !engine ? `no computer session opens: ${words(why.computer)}`

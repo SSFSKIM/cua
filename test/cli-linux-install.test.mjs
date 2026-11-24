@@ -223,6 +223,37 @@ for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"
   });
 }
 
+// Fix wave 1: a common lane failed (a fresh home's module tree) under each vendor source. The error is that lane's, and
+// the last line keeps the common blocker and names the retired selection besides (§2.2).
+for (const [label, env, file] of [['CUA_NATIVE_ENGINE=vendor', true, false], ['"engine": "vendor" in engine.json', false, true], ['both', true, true]]) {
+  test(`a common lane fails under ${label}: its error is the install's, and the last line names both the blocker and the retired selection`, async t => {
+    const home = scratchHome(t);
+    const user = scratchUserHome(t);
+    const settings = settingsOf(user);
+    if (file) { mkdirSync(dirname(settings), {recursive: true}); writeFileSync(settings, JSON.stringify({engine: 'vendor'})); }
+    const named = [...(env ? ['CUA_NATIVE_ENGINE=vendor'] : []), ...(file ? [`"engine": "vendor" in ${settings}`] : [])].join(' and ');
+    const setting = {HOME: user, ...(env ? {CUA_NATIVE_ENGINE: 'vendor'} : {})};
+    const {calls, deps} = installers(home, {down: new Set(['modules'])});
+    deps.env = setting;
+    const {status, report} = await installJson(deps);
+    assert.equal(status, 1);
+    assert.deepEqual(calls, ['modules', 'helper', 'node', 'engine'], 'every step ran');
+    assert.equal(report.error.code, 'download_failed', 'the failed lane\'s error');
+    assert.match(report.error.message, /^cua's module tree was not installed: /);
+    assert.deepEqual(opened(report), {browser: false, computer: false});
+    assert.equal(report.sessions.why.browser.code, 'runtime_not_installed');
+    assert.equal(report.sessions.why.computer.code, 'engine_retired');
+    const text = await cli(['install'], {...installers(home, {down: new Set(['modules'])}).deps, env: setting});
+    assert.equal(text.status, 1);
+    const last = lastLine(text);
+    assert.ok(last.startsWith(`${SAID}browser-only sessions do not open: cua's Linux runtime `), last);
+    assert.ok(last.includes('(runtime_not_installed)'), `the common blocker: ${last}`);
+    assert.ok(last.includes(`; computer sessions on the vendor's engine, which this home selects, do not open: ${named} ${env && file ? 'select' : 'selects'} the vendor's engine, ${RETIRED}`), `the setting: ${last}`);
+    assert.doesNotMatch(last, /no session opens/);
+    assert.doesNotMatch(text.stderr, /otherwise completed/);
+  });
+}
+
 test('a vendor selection with a step that failed: that step\'s error is the install\'s, and the last line names the setting', async t => {
   const home = scratchHome(t);
   const {calls, deps} = installers(home, {down: new Set(['engine'])});

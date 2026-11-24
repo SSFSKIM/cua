@@ -9081,6 +9081,43 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     driven in a unit test; their final read and deadline check sit after their activation in the source. 1791 swift
     tests (2 skipped: main's one, and the canary off the hosted runner), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1207, 2026-11-23, the re-review of 4b489551..fe8912c9; amends the two entries above): **both
+  key-target reads drive their process; the paste checks the deadline at its first key too; a walk cut off at its
+  budget says so in the reply.**
+  - (P1) Ruling 1206 moved `actionTargets` to the final read. The detector records events only for processes already
+    driven, so on a first action against a panel service nobody drove yet, a person's key into the panel during the
+    paste lock's wait or the activation was dropped, and the paste went over it. The early read (`earlyKeyTarget`) now
+    drives its process again (the app already is, by the guard), and the final read drives its own. Only the final
+    read's process gets the keys.
+  - The residue, declared: a person's key into a process first driven at the final read, typed between the two reads,
+    is not seen. With focus unchanged across the activation (the usual case: the panel focused before the action), both
+    reads walk the same chain and name the same process, so the service is driven from the early read on. They differ
+    only when the activation itself moves focus into a panel, or in a narrow race where one walk is cut short and the
+    other is not (its budget or deadline, a failed actual-pid read, a service not yet finished launching). An observation
+    that met the panel already drives its service (`observationRead`). Logged as a ticket from
+    `/Users/new/.claude/jobs/b93055dd/tmp/582-residue-ticket.md`.
+  - (P2) The paste checked the deadline only before its setup. `runPaste` now takes `beforeFirstKey`, run just before its
+    first ⌘V or Return (after the clipboard snapshot, the effect baseline, the write and the key-focus read) and inside
+    the restore's reach: past the deadline it refuses with `keysDeadlinePassed`, nothing keyed and the pasteboard
+    restored. The check after the final read stays.
+  - (P3) type_text's paste route reuses the early read's pid for the paste's target and `pointerPending`, two lookups
+    rather than three. The symbol canary runs only where `RUNNER_ENVIRONMENT` is `github-hosted` (a self-hosted runner
+    sets `GITHUB_ACTIONS` too).
+  - The design's request: when the final read's walk stops at its 250 ms budget with the request's deadline still open,
+    the keys still go to the public owner or the app, and the reply now says so. `KeyTarget.walkCutOff` marks a stop at
+    the walk's time (not an answer, not the chain's end); the input meta's `keyTargetCutOff` carries it, and
+    `keyInputResult` appends the notice to the result's `note` after the method's own: "The check for a remote-view panel
+    (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to
+    <App> and may not have reached such a panel. Observe the app with get_app_state before relying on them." The service
+    puts a press_key's note in the tool result's text now as it did type_text's and paste's (`NOTED_METHODS`).
+  - The proof: `KeyTargetTests` grows to 19 (both reads drive their process; the cut-off reported only for a stop at the
+    time; the notice in the result's note, alone and after another). `PasteActivationTests`: a person's key into the
+    early-read service during the activation stops the paste with `userIntervened` and nothing keyed, while the same key
+    into an undriven process is unseen and the paste goes on; a deadline passed during the effect baseline refuses at the
+    first key with the pasteboard restored, on paste and type_text's paste route; a paste whose final read was cut off
+    carries the notice. The service test carries press_key's notice into the tool result's text. 1797 swift tests
+    (2 skipped), 0 failures.
+  Date/Author: 2026-11-23, cursor235's builder for #582.
 
 ## Outcomes & Retrospective
 

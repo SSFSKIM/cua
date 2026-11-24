@@ -3,14 +3,14 @@
 // posted. Run as a binary compiled into the run directory (./matrix-device.mjs `place` and `panel cancel`):
 //   panel-ax move <pid> <x,y,w,h> <x,y,w,h>
 //       The window of <pid> at the first bounds (global top-left points, the window list's; within 2 pt) given the
-//       second frame: AXSize only when the frame asks another size than the window's (ruling 1203: the matrix asks
-//       none, the panel service refusing to shrink the Open panel), then AXPosition, then its frame read back.
-//       -> {"trusted", "found", "windows", "kind", "size", "position", "readBack"}: the AXError of each write (0 is
-//       success, null when not attempted) and the frame read back (null when unread). With no top-level window at the
-//       bounds, an AXSheet child of one of the app's windows at them (a Save sheet: its own window in the window list, a
-//       child in AX) is the panel, `kind` "sheet": a sheet takes no size or position of its own, so its parent is moved by
-//       the sheet's offset from the frame's origin ("parentPosition", that write's AXError), size and position stay null,
-//       and the sheet's frame is read back.
+//       second frame's origin: AXPosition alone, never AXSize (ruling 1203: the panel service refuses to shrink the
+//       Open panel, and the matrix keeps its size; the frame's size is the caller's record), then its frame read back.
+//       -> {"trusted", "found", "windows", "kind", "size", "position", "readBack"}: the AXError of the write (0 is
+//       success, null when not attempted; `size` always null) and the frame read back (null when unread). With no
+//       top-level window at the bounds, an AXSheet child of one of the app's windows at them (a Save sheet: its own
+//       window in the window list, a child in AX) is the panel, `kind` "sheet": a sheet takes no position of its own, so
+//       its parent is moved by the sheet's offset from the frame's origin ("parentPosition", that write's AXError),
+//       position stays null, and the sheet's frame is read back.
 //   panel-ax element <pid> <x,y,w,h> focused|search
 //       A read, no write: the frame of an element of that window (or sheet), where the alert guard checks a key case's
 //       input lands when the panel could not be placed clear of the alerts (ruling 1203's fallback): `focused`, the
@@ -102,9 +102,7 @@ if args[1] == "move" {
     }
     answer["readBack"] = rectWire(frame(sheet))
   } else if let window {
-    var size = target.size, origin = target.origin
-    let sameSize = frame(window).map { abs($0.width - size.width) <= 2 && abs($0.height - size.height) <= 2 } ?? false
-    if !sameSize, let value = AXValueCreate(.cgSize, &size) { answer["size"] = Int(AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value).rawValue) }
+    var origin = target.origin
     if let value = AXValueCreate(.cgPoint, &origin) { answer["position"] = Int(AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value).rawValue) }
     usleep(200_000)
     answer["readBack"] = rectWire(frame(window))

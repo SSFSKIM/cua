@@ -162,3 +162,11 @@ test('panel element: the focused element\'s or the search field\'s frame read by
     assert.deepEqual((await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused'], {io: off})).answer, {frame: null, refused: MOVE_REFUSED_OFF_HOSTED});
   });
 });
+
+// Review finding 2 (ruling 1203): the move writes the panel's position and nothing else; no AXSize write exists for any
+// read of its size to enable.
+test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere in it', () => {
+  const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
+  const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)/g)].map(m => m[1]);
+  assert.deepEqual([...new Set(writes)], ['kAXPositionAttribute']);
+});

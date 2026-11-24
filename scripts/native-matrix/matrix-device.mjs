@@ -36,7 +36,11 @@
 //       the known panel's window cancelled by the same helper (its Cancel pressed by Accessibility: no pointer event)
 //       and awaited gone from the window list -> {answer: {found, via, pressed, closed, pid}, at}: the run's last
 //       close of a panel neither Escape nor its Cancel click closed (./panels.mjs closePanel; ruling 1195). Hosted only
-//       -> {answer: {closed: false, refused}, at} off a runner
+//       -> {answer: {closed: false, refused}, at} off a runner. `state` says what the window list read after the press:
+//       closed, open, or unread (never closed for a list it could not read)
+//   panel state --run <dir> --window <number>
+//       the known panel's window read from the window list, no write, anywhere -> {answer: {state: closed | open |
+//       unread}, at}: what decides each step of a panel's close (./panels.mjs closePanel)
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -259,7 +263,8 @@ export function placeScene({scene, frame, window = null}, io) {
     const ax = io.panelAx(['move', String(shown.ownerPid), rectArg(shown.bounds), parts.join(',')]);
     const readBack = panelWindowOf(io, window, {gone: true})?.bounds ?? null;
     return {requested, readBack, matched: matches(readBack), exitStatus: null, pid: shown.ownerPid,
-      ax: {trusted: ax?.trusted === true, found: ax?.found === true, size: ax?.size ?? null, position: ax?.position ?? null, readBack: ax?.readBack ?? null}};
+      ax: {trusted: ax?.trusted === true, found: ax?.found === true, size: ax?.size ?? null, position: ax?.position ?? null, readBack: ax?.readBack ?? null,
+        ...(ax?.kind === 'sheet' ? {kind: 'sheet', parentPosition: ax.parentPosition ?? null} : {})}};
   }
   const record = io.state().scenes?.[scene];
   if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) throw new Error(`--scene names no scene of the run that is up (${scene})`);
@@ -275,7 +280,9 @@ const rectArg = b => [b.x, b.y, b.width, b.height].join(',');
 // `gone`: null when it is not on screen, else that is an error. -> the window-list entry.
 function panelWindowOf(io, window, {gone = false} = {}) {
   const textedit = io.state().scenes?.textedit ?? null;
-  const shown = (io.screen()?.windows ?? []).find(w => w.number === Number(window)
+  const listed = io.screen()?.windows;
+  if (!Array.isArray(listed)) throw new UnreadList('the window list was not read');
+  const shown = listed.find(w => w.number === Number(window)
     && (isPanelWindow(w) || (Number.isSafeInteger(textedit?.pid) && w.ownerPid === textedit.pid && w.number !== textedit.window?.number)));
   if (shown || gone) return shown ?? null;
   throw new Error(`--window names no panel window on screen (${window}): the panel service's, or one of the run's TextEdit other than its document`);
@@ -289,15 +296,24 @@ export const PANEL_GONE_READS = 10, PANEL_GONE_MS = 300;
 export async function cancelPanel({window}, io) {
   const refused = moveRefusal(io, null);
   if (refused) return {closed: false, refused: refused.refused};
-  const shown = panelWindowOf(io, window, {gone: true});
-  if (!shown) return {found: false, closed: true};
-  const ax = io.panelAx(['cancel', String(shown.ownerPid), rectArg(shown.bounds)]);
-  let closed = false;
-  for (let n = 0; n < PANEL_GONE_READS && !closed; n++) {
+  const before = panelState({window}, io);
+  if (before.state !== 'open') return {found: false, closed: before.state === 'closed', state: before.state};
+  const ax = io.panelAx(['cancel', String(before.shown.ownerPid), rectArg(before.shown.bounds)]);
+  let state = 'open';
+  for (let n = 0; n < PANEL_GONE_READS && state !== 'closed'; n++) {
     if (n) await io.sleep(PANEL_GONE_MS);
-    closed = panelWindowOf(io, window, {gone: true}) === null;
+    state = panelState({window}, io).state;
   }
-  return {found: ax?.found === true, via: ax?.via ?? null, pressed: ax?.pressed ?? null, closed, pid: shown.ownerPid};
+  return {found: ax?.found === true, via: ax?.via ?? null, pressed: ax?.pressed ?? null, ...(ax?.kind ? {kind: ax.kind} : {}), closed: state === 'closed', state, pid: before.shown.ownerPid};
+}
+// The window list read with no write (allowed anywhere, as the alert guard's reads are): whether the known panel's
+// window is on screen (`open`), gone (`closed`), or the list was not read (`unread`), never gone for a list unread. The
+// run's close is decided by this reading, not by a lane's observation (./panels.mjs closePanel). -> {state, shown?}.
+class UnreadList extends Error {}
+export function panelState({window}, io) {
+  let shown;
+  try { shown = panelWindowOf(io, window, {gone: true}); } catch { return {state: 'unread'}; }
+  return shown ? {state: 'open', shown} : {state: 'closed'};
 }
 
 // A bundle id as it may leave the device, or null.
@@ -705,6 +721,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'place': return timed(() => placeScene({scene: flags.scene, frame: flags.frame, window: flags.window ?? null}, io));
     case 'panel':
       if (positional[0] === 'cancel') return timed(() => cancelPanel({window: flags.window}, io));
+      if (positional[0] === 'state') return timed(() => { const {state} = panelState({window: flags.window}, io); return {state}; });
       throw new Error(USAGE);
     case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': {

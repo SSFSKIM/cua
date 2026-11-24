@@ -2231,6 +2231,29 @@ service's field takes keys is answered by `savePanel/frontmost/typeText.name`.
 - **The pressKey row (ruling 1197).** The vendor read ㄱ for `r k` in Chrome and Electron, 가 in TextEdit. The row now
   reads its field until it settles (500 ms unchanged or 2 s), with `reads` and `settleMs` on the row.
 
+### After the review of 55b7f56d9..fa91a1630
+
+- **The Save sheet in AX.** A Save sheet has a window of its own in the window list but is an AXSheet child of its
+  document in AX. `panel-ax.swift` now finds it under its parent by role and frame, for the move and for the cancel. A
+  sheet takes no size or position of its own, so the helper moves the parent by the sheet's offset and reads the
+  sheet's frame back. The placement entry says `via: 'parent'` and records no resize. Whether macOS 27 lists the sheet
+  as a top-level AX window or as a child is not yet read on a runner; the next run's `ax.kind` says.
+- **An unproven placement is not sent.** On a hosted runner the panel's window is looked for up to 4 times, 250 ms
+  apart. If the list stays unread or no window of the panel is found, the case and its timing row are NO VERDICT
+  `venue`, unsent. Off a hosted runner, with no alert to avoid, the case runs as before.
+- **The close follows the device.** Each step's outcome is the device's own reading of the panel's window: `panel
+  state`, read-only and allowed anywhere, gives closed, open or unread, and an unread list is never taken as closed.
+  The lane's word counts only when no window of the panel is known. A device-confirmed close is not `PanelStuck`. An
+  unread list after the device's cancel stops the run as unread. If the key guard stops Escape (the front is not the
+  run's), the step is recorded unsent, the click is skipped, the device's cancel is tried, and then the run stops
+  with the guard's reason.
+- **Placements pair by opening.** Each placement entry and each row of an opening carries its id (the case's row id, or
+  `openPanel/background@<user>`). The lanes' panel frames are compared by that id, never by position, and a
+  difference takes out only that opening's rows (NO VERDICT `venue`), never the run.
+- **No panel cell commits anything.** The panel cases run on both lanes off a hosted runner too (the owner's sitting).
+  A test runs every panel cell on both lanes, with alerts and without, and finds no Return or Enter, no typed line
+  break, and no Save or OK press.
+
 ### The time
 
 C-2's vendor matrix run took 2206 s. Before each run step the sitting projects its finish: the time so far, plus

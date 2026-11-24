@@ -166,7 +166,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
       const at = [clock(), clock()];
       switch (args[0]) {
         case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry', axState: 'ax-state-dry', panelAx: 'panel-ax-dry'};
-        case 'panel': return {answer: {found: true, via: 'cancelButton', pressed: 0, closed: true}, at};
+        case 'panel': return {answer: args[1] === 'state' ? {state: 'closed'} : {found: true, via: 'cancelButton', pressed: 0, closed: true, state: 'closed'}, at};
         case 'read': {
           const also = args.includes('--with') ? args[args.indexOf('--with') + 1].split(',') : [];
           return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),

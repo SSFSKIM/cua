@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {
-  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, PERSISTENCE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, frameAsymmetry, hostedFrames, readBackRows,
+  HOSTED_SIZES, MINI_FRAMES, PANEL_FRAME_KEY, PANEL_SIZE_KEY, PERSISTENCE_KEY, TEXTEDIT_DOCUMENT_VIEW, TEXTEDIT_DOMAIN, TEXTEDIT_WIDTH_IN_CHARS, clearTextEditSavedState, frameAsymmetry, hostedFrames, panelFrameSplits, readBackRows,
   renderReadBack, renderVenue, savedFrameString, sceneFrames, textEditContainerDomain, textEditDocumentPlan, textEditSavedStates, textEditWrites, UNTITLED_AT_LAUNCH_KEY, venueRecord, writeTextEditDefaults,
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES, textEditDocument} from '../../scripts/repl-parity/scenes-mac.mjs';
@@ -408,4 +408,26 @@ test('the pointerdown pair and the whole page lie inside the hosted Chrome frame
   // In this tree the upper point is above the field: the field's height is not what this test proves.
   assert.deepEqual([notes.y, notes.y + notes.height], [224, 355]);
   assert.ok(CHROME_DRAG_POINTS.from[1] < notes.y);
+});
+
+// Review finding 4: the lanes' panel placements are paired by the opening they were made for (the case or pairing,
+// ../../scripts/native-matrix/panels.mjs), never by their place in the list: one lane's skipped opening appends nothing,
+// so by position its Save sheet would meet the other's Open panel. A panel difference is no run-wide frame split: it is
+// that opening's alone (panelFrameSplits), and records from before openings were named are not compared.
+test('panel placements pair by opening: a skipped opening shifts nothing, a difference is that opening\'s alone, never the run\'s', () => {
+  const open = (opening, frame, target = 'openPanel') => ({beforeRow: 1, target, opening, number: 994, from: frame, moved: false, inStrip: true});
+  const record = panel => ({complete: true, meta: {placement: {alerts: [], scenes: {}, panel}}});
+  const OPEN = 'openPanel/frontmost/getAXState.panel', SAVE = 'savePanel/frontmost/pressKey.escape';
+  const vendor = record([open(SAVE, rect(240, 100, 480, 200), 'savePanel'), open(OPEN, rect(80, 80, 720, 440))]);
+  const cua = record([open(OPEN, rect(80, 80, 720, 440))]);
+  assert.deepEqual(sceneFrames(cua), {[`panel:${OPEN}`]: rect(80, 80, 720, 440)});
+  assert.equal(frameAsymmetry(cua, vendor), null, 'the skipped Save sheet compares with nothing');
+  assert.deepEqual([...panelFrameSplits(cua, vendor)], []);
+  const moved = record([open(OPEN, rect(22, 80, 720, 440))]);
+  assert.equal(frameAsymmetry(moved, vendor), null, 'a panel difference is not the run\'s');
+  assert.deepEqual([...panelFrameSplits(moved, vendor)], [[OPEN, `panel:${OPEN}: 22,80 720x440 on this side, 80,80 720x440 on its pair`]]);
+  // A record from before openings were named: not paired at all.
+  const legacy = record([{beforeRow: 1, number: 994, from: rect(22, 80, 720, 440), moved: false}]);
+  assert.deepEqual([...panelFrameSplits(legacy, vendor)], []);
+  assert.equal(frameAsymmetry(legacy, record([{beforeRow: 1, number: 994, from: rect(80, 80, 720, 440), moved: false}])), null);
 });

@@ -89,12 +89,58 @@ test('panel cancel: the known panel cancelled by AX on the device and awaited go
     const {io, asked} = device();
     const out = await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io});
     assert.deepEqual(asked, [['cancel', '300', '520,162,880,448']]);
-    assert.deepEqual(out.answer, {found: true, via: 'cancelButton', pressed: 0, closed: true, pid: 300});
+    assert.deepEqual(out.answer, {found: true, via: 'cancelButton', pressed: 0, closed: true, state: 'closed', pid: 300});
     assert.ok(Array.isArray(out.at));
     const stuck = device({closes: false});
     assert.equal((await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io: stuck.io})).answer.closed, false);
     // A window already gone: nothing to press, and closed.
     const gone = {...io, screen: () => ({windows: [DOCUMENT]})};
-    assert.deepEqual((await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io: gone})).answer, {found: false, closed: true});
+    assert.deepEqual((await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io: gone})).answer, {found: false, closed: true, state: 'closed'});
+  });
+});
+
+// Review finding 3: the close is grounded in the device's own reading of the window list, which tells closed, still
+// open and unread apart; an unread list is never a panel gone.
+test('panel state: read-only, anywhere: open, closed, or unread when the window list was not read', async () => {
+  await withRun(async dir => {
+    for (const where of [HOSTED, {env: {}, platform: 'darwin'}]) {
+      const {io, asked} = device();
+      const state = async over => (await main(['panel', 'state', '--run', dir, '--window', '994'], {io: {...io, ...where, ...over}})).answer;
+      assert.deepEqual(await state({}), {state: 'open'});
+      assert.deepEqual(await state({screen: () => ({windows: [DOCUMENT]})}), {state: 'closed'});
+      assert.deepEqual(await state({screen: () => ({windows: null})}), {state: 'unread'});
+      assert.deepEqual(await state({screen: () => { throw new Error('no list'); }}), {state: 'unread'});
+      assert.deepEqual(asked, [], 'nothing asked of the helper');
+    }
+  });
+});
+
+test('panel cancel says which: closed, still open, or unread after the press (never closed on a list it could not read)', async () => {
+  await withRun(async dir => {
+    const {io} = device();
+    assert.equal((await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io})).answer.state, 'closed');
+    const stuck = device({closes: false});
+    assert.deepEqual(Object.entries((await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io: stuck.io})).answer).filter(([k]) => ['closed', 'state'].includes(k)), [['closed', false], ['state', 'open']]);
+    // The list unread after the press: unread, not closed.
+    let reads = 0;
+    const blind = device();
+    const unread = {...blind.io, screen: () => (reads++ === 0 ? blind.io.screen() : {windows: null})};
+    const out = (await main(['panel', 'cancel', '--run', dir, '--window', '994'], {io: unread})).answer;
+    assert.deepEqual([out.closed, out.state], [false, 'unread']);
+  });
+});
+
+// Review finding 1: a Save sheet is its own window in the window list but an AXSheet child of its document in AX. The
+// helper resolves it under its parent and, since a sheet takes no size or position of its own, moves the parent so the
+// sheet lands at the frame's origin; the sheet's frame is read back from the window list, and the answer says so.
+test('place for a Save sheet the helper resolved as an AXSheet: the parent moved, the sheet read back, the answer naming the sheet', async () => {
+  await withRun(async dir => {
+    const sheet = rect(400, 120, 480, 220), landed = rect(80, 80, 480, 220);
+    const {io, asked} = device({at: sheet, moveTo: landed});
+    const helper = io.panelAx;
+    io.panelAx = args => ({...helper(args), kind: 'sheet', parentPosition: 0, size: null, position: null});
+    const out = await main(['place', '--run', dir, '--scene', 'savePanel', '--window', '994', '--frame', '80,80,720,440'], {io});
+    assert.deepEqual(asked, [['move', '300', '400,120,480,220', '80,80,720,440']]);
+    assert.deepEqual([out.answer.readBack, out.answer.ax.kind, out.answer.ax.parentPosition], [landed, 'sheet', 0]);
   });
 });

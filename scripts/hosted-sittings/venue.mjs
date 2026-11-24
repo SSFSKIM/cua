@@ -297,6 +297,11 @@ const numbered = (prefix, windows, out) => {
     if (frame) out[`${prefix}${w.scene}#${seen[w.scene]}`] = frame;
   }
 };
+// A matrix panel placement's key: `panel:<opening>`, the case or pairing it was opened for (../native-matrix/panels.mjs),
+// so the lanes' placements pair by opening; a record from before openings were named keeps its place in the list
+// (`openPanel#<n>`), which pairs with nothing (frameAsymmetry and panelFrameSplits leave such keys out).
+const panelKey = (entry, i) => (typeof entry?.opening === 'string' ? `panel:${entry.opening}` : `openPanel#${i + 1}`);
+const isPanelKey = key => key.startsWith('panel:') || /^openPanel#\d+$/.test(key);
 export function sceneFrames(record) {
   const meta = record?.meta ?? record ?? {}, out = {};
   for (const [scene, frame] of Object.entries(meta.venue?.frames ?? {})) out[`venue:${scene}`] = frame;
@@ -304,7 +309,7 @@ export function sceneFrames(record) {
   if (Array.isArray(placement)) for (const step of placement) numbered(`${step.at}/`, step.windows, out);
   else if (placement?.scenes) {
     for (const [scene, entry] of Object.entries(placement.scenes)) { const frame = standing(entry); if (frame) out[scene] = frame; }
-    (placement.panel ?? []).forEach((entry, i) => { const frame = standing(entry); if (frame) out[`openPanel#${i + 1}`] = frame; });
+    (placement.panel ?? []).forEach((entry, i) => { const frame = standing(entry); if (frame) out[panelKey(entry, i)] = frame; });
   } else if (Array.isArray(placement?.windows)) numbered('', placement.windows, out);
   for (const [id, scene] of Object.entries(meta.scenes ?? {})) numbered(`${id}/`, scene?.placement?.windows, out);
   return out;
@@ -324,7 +329,7 @@ export function readBackRows(records, venue) {
   for (const {step, record} of records) {
     const resizes = panelResizes(record);
     for (const [window, actual] of Object.entries(sceneFrames(record))) {
-      const kind = /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
+      const kind = window.startsWith('panel:') ? 'openPanel' : /(?:^|\/)(textedit|openPanel)(?:#\d+)?$/.exec(window)?.[1];
       if (!kind) continue;
       const planned = kind === 'openPanel' ? venue?.frames?.openPanel ?? null : sceneDocument(window) ? `view ${view.width}x${view.height}, ${edge}` : `WidthInChars ${width}, ${edge}`;
       out.push({step, window, planned, actual, overlap: alerts.some(a => overlaps(a, actual)), ...(resizes[window] ? {resized: resizes[window]} : {})});
@@ -337,7 +342,7 @@ export function readBackRows(records, venue) {
 function panelResizes(record) {
   const panel = (record?.meta ?? record ?? {}).placement?.panel;
   const out = {};
-  if (Array.isArray(panel)) panel.forEach((entry, i) => { if (entry?.resized && standing(entry)) out[`openPanel#${i + 1}`] = entry.resized; });
+  if (Array.isArray(panel)) panel.forEach((entry, i) => { if (entry?.resized && standing(entry)) out[panelKey(entry, i)] = entry.resized; });
   return out;
 }
 export function renderReadBack(rows) {
@@ -353,9 +358,20 @@ export function renderReadBack(rows) {
 }
 const sameFrame = (a, b) => ['x', 'y', 'width', 'height'].every(k => a?.[k] === b?.[k]);
 // Why a pair's sides were not measured on one frame: each key both read whose frames differ. -> the reason, or null.
+// A panel's placement is its opening's, not the run's: its keys are left out here (panelFrameSplits).
 export function frameAsymmetry(record, pair) {
   if (!record || !pair) return null;
   const mine = sceneFrames(record), theirs = sceneFrames(pair);
-  const differ = Object.keys(mine).filter(key => key in theirs && !sameFrame(mine[key], theirs[key]));
+  const differ = Object.keys(mine).filter(key => !isPanelKey(key) && key in theirs && !sameFrame(mine[key], theirs[key]));
   return differ.length ? differ.map(key => `${key}: ${rectText(mine[key])} on this side, ${rectText(theirs[key])} on its pair`).join('; ') : null;
+}
+// The panel openings whose placements both sides read and that differ, paired by opening (`panel:<opening>`), so only
+// the rows of that opening lose their pair (../native-matrix/summary.mjs). -> Map(opening -> how).
+export function panelFrameSplits(record, pair) {
+  const out = new Map();
+  if (!record || !pair) return out;
+  const mine = sceneFrames(record), theirs = sceneFrames(pair);
+  for (const key of Object.keys(mine).filter(k => k.startsWith('panel:') && k in theirs && !sameFrame(mine[k], theirs[k])))
+    out.set(key.slice('panel:'.length), `${key}: ${rectText(mine[key])} on this side, ${rectText(theirs[key])} on its pair`);
+  return out;
 }

@@ -4,10 +4,14 @@
 //   panel-ax move <pid> <x,y,w,h> <x,y,w,h>
 //       The window of <pid> at the first bounds (global top-left points, the window list's; within 2 pt) given the
 //       second frame: AXSize, then AXPosition, then its frame read back.
-//       -> {"trusted", "found", "windows", "size", "position", "readBack"}: the AXError of each write (0 is success,
-//       null when not attempted) and the frame read back (null when unread).
+//       -> {"trusted", "found", "windows", "kind", "size", "position", "readBack"}: the AXError of each write (0 is
+//       success, null when not attempted) and the frame read back (null when unread). With no top-level window at the
+//       bounds, an AXSheet child of one of the app's windows at them (a Save sheet: its own window in the window list, a
+//       child in AX) is the panel, `kind` "sheet": a sheet takes no size or position of its own, so its parent is moved by
+//       the sheet's offset from the frame's origin ("parentPosition", that write's AXError), size and position stay null,
+//       and the sheet's frame is read back.
 //   panel-ax cancel <pid> <x,y,w,h>
-//       That window cancelled: its AXCancelButton pressed; else the first AXButton titled Cancel (or 취소) under it,
+//       That window (or sheet, found as `move` finds it) cancelled: its AXCancelButton pressed; else the first AXButton titled Cancel (or 취소) under it,
 //       breadth first (at most 5000 elements, 40 levels); else the window's own AXCancel action.
 //       -> {"trusted", "found", "windows", "via": "cancelButton" | "button" | "action" | null, "pressed", "walked"}:
 //       `pressed` the AXError of the press (0 is success, null when nothing was found to press).
@@ -62,13 +66,34 @@ func near(_ a: CGRect, _ b: CGRect) -> Bool {
 
 guard let bounds = rect(args[3]) else { emit(["trusted": true, "found": false, "failed": "bounds"]); exit(64) }
 let windows = (read(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
-let window = windows.first { frame($0).map { near($0, bounds) } ?? false }
-var answer: [String: Any] = ["trusted": true, "found": window != nil, "windows": windows.count]
+let topLevel = windows.first { frame($0).map { near($0, bounds) } ?? false }
+// A Save sheet has a window of its own in the window list but is an AXSheet child of its document in AX
+// (scripts/cursor-sitting/ax-state.swift reads it so): with no top-level window at the bounds, the sheet at them, by
+// role and frame, under one of the app's windows.
+var sheetParent: AXUIElement? = nil
+let sheet: AXUIElement? = topLevel != nil ? nil : windows.lazy.compactMap { parent -> AXUIElement? in
+  let children = (read(parent, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+  guard let found = children.first(where: { (read($0, kAXRoleAttribute) as? String) == kAXSheetRole && (frame($0).map { near($0, bounds) } ?? false) }) else { return nil }
+  sheetParent = parent
+  return found
+}.first
+let window = topLevel ?? sheet
+var answer: [String: Any] = ["trusted": true, "found": window != nil, "windows": windows.count, "kind": sheet != nil ? "sheet" as Any : (topLevel != nil ? "window" as Any : NSNull())]
 
 if args[1] == "move" {
   guard let target = rect(args[4]) else { emit(["trusted": true, "found": false, "failed": "frame"]); exit(64) }
   answer["size"] = NSNull(); answer["position"] = NSNull(); answer["readBack"] = NSNull()
-  if let window {
+  if let sheet, let parent = sheetParent {
+    // A sheet takes no size or position of its own: its parent is moved by the sheet's offset from the frame's origin,
+    // so the sheet lands there at its own size, and the sheet's frame is read back.
+    answer["parentPosition"] = NSNull()
+    if let at = frame(sheet), let from = frame(parent) {
+      var origin = CGPoint(x: from.minX + target.minX - at.minX, y: from.minY + target.minY - at.minY)
+      if let value = AXValueCreate(.cgPoint, &origin) { answer["parentPosition"] = Int(AXUIElementSetAttributeValue(parent, kAXPositionAttribute as CFString, value).rawValue) }
+      usleep(200_000)
+    }
+    answer["readBack"] = rectWire(frame(sheet))
+  } else if let window {
     var size = target.size, origin = target.origin
     if let value = AXValueCreate(.cgSize, &size) { answer["size"] = Int(AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value).rawValue) }
     if let value = AXValueCreate(.cgPoint, &origin) { answer["position"] = Int(AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value).rawValue) }

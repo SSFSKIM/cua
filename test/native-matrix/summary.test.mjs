@@ -1022,3 +1022,17 @@ test('a speed row not qualified shows what its partial readings would give as a 
   assert.ok(text.includes('- getAXState (diagnostic, not counted): every eligible reading, partial runs included: vendor median 50.0, p95 50.0 (5); cua median 40.0, p95 40.0 (6); would beat: yes'), text);
   assert.ok(!/as sampled/.test(text));
 });
+
+// Review finding 4: a panel opening whose placement the lanes read apart leaves that opening's rows alone without a
+// pair (NO VERDICT `venue`); the run is still one pair, every other row judged, and no missing proof is said of it.
+test('a panel opening that stood apart on the two lanes takes only its own rows out; the run and its other rows are judged', () => {
+  const OPEN = 'openPanel/frontmost/getAXState.panel';
+  const placed = x => ({placement: {alerts: [], scenes: {}, panel: [{beforeRow: 1, target: 'openPanel', opening: OPEN, number: 994, from: {x, y: 80, width: 720, height: 440}, moved: false, inStrip: true}]}});
+  const tag = rows => rows.map(r => (r.id === OPEN || r.id === 'textedit/method.panel.getAXState.panel' ? {...r, opening: OPEN} : r));
+  const worseIn1 = (rows, run) => (run === 1 ? set(CLICK, {ok: false})(tag(rows)) : tag(rows));
+  const j = judged({vendor: {resolved: 9, axMs: 50, meta: () => placed(80), tweak: tag}, cua: {axMs: 40, meta: run => placed(run === 1 ? 22 : 80), tweak: worseIn1}});
+  assert.ok(j.blocking.includes(`method: ${CLICK} is worse on cua`), 'the run\'s other rows are still judged');
+  assert.ok(!j.missing.some(p => /did not stand on one frame/.test(p)), j.missing.join('\n'));
+  assert.deepEqual(j.cells.find(c => c.id === OPEN).account.cua.noVerdict, {venue: 1});
+  assert.deepEqual(j.cells.find(c => c.id === CLICK).account.cua.noVerdict ?? {}, {});
+});

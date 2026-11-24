@@ -11,13 +11,18 @@
 // Each opening is kept in meta.placement.panel ({beforeRow, target, number, from, to?, resized?: {from, to} (ruling 1199:
 // the frame asked is another size, so the panel was resized as well as moved), readBack?, matched?, ax?, moved, inStrip,
 // reason?}, or {beforeRow, target, unread | found: false}); a read-back that misses the strip makes the case
-// on that opening NO VERDICT `venue`, naming where it stood. Off a hosted runner nothing is moved: the device refuses it.
+// on that opening NO VERDICT `venue`, naming where it stood; so does, on a hosted runner, a placement it could not prove
+// (the list unread or no window found, after a few reads), the case unsent. A Save sheet the helper finds as an AXSheet
+// child of its document is placed by moving the document (`via: 'parent'`), never resized. Each entry and each row of
+// the opening carries its id (`opening`: the case's row id, or `<target>/background@<user>`), by which the lanes'
+// placements are paired. Off a hosted runner nothing is moved: the device refuses it.
 //
 // The close (ruling 1195), one rule on both lanes: Escape under the key guard; when that did not close it, its Cancel
 // clicked under the alert guard; when neither did (the key ineffective, the click refused or ineffective), the rows of
 // that opening say nothing (`panelClose` {cause, detail}: NO VERDICT by the refusal's cause, else `invalid`), the device
 // cancels the known panel by Accessibility (./matrix-device.mjs panel cancel: no pointer event, nothing the guard
-// refuses), and the run goes on. Only a panel still up after that stops the run (PanelStuck). Every step and its
+// refuses), and the run goes on. Each step's outcome is the device's reading of the window (closed, open or unread),
+// not a lane's. Only a panel still up, or unread, after that stops the run (PanelStuck). Every step and its
 // outcome is kept in meta.panelCloses ({beforeRow, target, steps: [{step: escape|cancel|device, ...}], rowsMarked?,
 // closed}). In pilot C-2 cua's Escape ran unrefused and did not close the Open panel; the next run's record says
 // whether it does.
@@ -25,7 +30,7 @@ import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {ALERT_MARGIN, MENU_BAR, overlaps} from './alert-guard.mjs';
 import {closePanelClickCell, closePanelKeyCell, OPEN_PANEL, panelGoneCell} from './matrix-cells.mjs';
 import {CLOSE_UNTITLED_CELL, NEW_DOCUMENT_CELL, SAVE_SHEET_OPEN_CELL} from './probe-plan.mjs';
-import {activate, activationOf, AlertGuarded, AlertHeld, device, js, notActivated, read, readKey, sendKeys, Stop, TEXTEDIT} from './steps.mjs';
+import {activate, activationOf, AlertGuarded, AlertHeld, device, js, KeyGuardStop, notActivated, read, readKey, sendKeys, Stop, TEXTEDIT} from './steps.mjs';
 
 // What opens each panel: the cell (a key cell, sent under the key guard with TextEdit's process in front) and its keys.
 const OPENERS = Object.freeze({openPanel: {code: OPEN_PANEL, keys: ['super+o']}, savePanel: {code: SAVE_SHEET_OPEN_CELL, keys: ['super+s']}});
@@ -68,7 +73,7 @@ function windowsBefore(ctx) {
 // untitled document is made first, untitledDocument). -> null (open and placed in the strip), {venue} (open, outside the
 // strip), {skipped, held?} when TextEdit's activation did not take front and key or the capture alert held the key
 // (ruling 1141), or {problem}.
-export async function openPanelOf(ctx, target, apps) {
+export async function openPanelOf(ctx, target, apps, opening) {
   const front = activate(ctx, 'textedit');
   const skipped = notActivated(ctx, 'textedit', apps);
   if (skipped) return {skipped};
@@ -84,34 +89,53 @@ export async function openPanelOf(ctx, target, apps) {
   if (!opened.ok || !opened.value?.opened) return {problem: `the ${PANEL_NAMES[target]} did not open (${opened.error ?? opened.value?.reason ?? 'not seen'})`};
   // TextEdit's focused window is the panel until closePanel: no key-window check meanwhile (./steps.mjs keyWindowScene).
   ctx.panelOpen = target;
-  const venue = await placePanel(ctx, target, known);
+  const venue = await placePanel(ctx, target, known, opening);
   return venue ? {venue} : null;
 }
 
-// The opening's window placed in the strip (see the header). `known`: TextEdit's windows before the opening key.
-// -> the `venue` cause when a read-back missed the strip, else null.
-async function placePanel(ctx, target, known) {
+// The opening's window placed in the strip (see the header). `known`: TextEdit's windows before the opening key;
+// `opening`: the case or pairing it was opened for, the key its placement is compared by across the lanes
+// (../hosted-sittings/venue.mjs sceneFrames). On a GitHub-hosted runner the window is looked for up to PLACE_READS
+// times, PLACE_READ_MS apart; a placement still unproven (the list unread, no window of the panel found) is the venue's:
+// the case is not sent (review of 55b7f56d9..fa91a1630, finding 2). Off a hosted runner there is no alert to keep it
+// from, so an unproven placement is recorded and the case runs. -> the `venue` cause when the placement is unproven on a
+// hosted runner or a read-back missed the strip, else null.
+const PLACE_READS = 4, PLACE_READ_MS = 250;
+async function placePanel(ctx, target, known, opening) {
   const kept = ((ctx.meta.placement ??= {}).panel ??= []), beforeRow = ctx.rows.length;
+  const hosted = ctx.meta.hosted === true;
   ctx.panelWindows = [];
-  const bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
-  if (!Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows) || known === null) { kept.push({beforeRow, target, unread: true}); return null; }
+  let bounds = null, windows = null, reads = 0;
+  for (; reads < (hosted ? PLACE_READS : 1) && !windows?.length; reads++) {
+    if (reads) await ctx.sleep(PLACE_READ_MS);
+    bounds = read(ctx, null, {alertBounds: true})?.alertBounds ?? null;
+    windows = !Array.isArray(bounds?.alerts) || !Array.isArray(bounds?.windows) || known === null ? null
+      : bounds.windows.filter(w => isRect(w.bounds) && w.bounds.width >= 100 && w.bounds.height >= 100
+        && (w.scene === 'openPanel' || (w.scene === 'textedit' && !w.recorded && !known.has(w.number))));
+    if (known === null) { reads++; break; }
+  }
+  if (!windows?.length) {
+    kept.push({beforeRow, target, opening, reads, ...(windows === null ? {unread: true} : {found: false})});
+    if (!hosted) return null;
+    return `the ${PANEL_NAMES[target]}'s placement is unproven: ${known === null ? 'TextEdit\'s windows before its key were unread' : windows === null ? 'the window list was unread' : 'no window of it was found'} after ${reads} ${reads === 1 ? 'read' : 'reads'}, so its case was not sent (ruling 1195)`;
+  }
   const alerts = bounds.alerts.map(a => a.bounds);
-  const windows = bounds.windows.filter(w => isRect(w.bounds) && w.bounds.width >= 100 && w.bounds.height >= 100
-    && (w.scene === 'openPanel' || (w.scene === 'textedit' && !w.recorded && !known.has(w.number))));
-  if (!windows.length) { kept.push({beforeRow, target, found: false}); return null; }
   let venue = null;
   for (const w of windows) {
     ctx.panelWindows.push(w.number);
-    const entry = {beforeRow, target, number: w.number, from: w.bounds};
+    const entry = {beforeRow, target, opening, number: w.number, from: w.bounds};
     let at = w.bounds;
     if (stripCause(at, alerts)) {
       const to = panelFrame(ctx, w.bounds, alerts);
       let answer;
       try { answer = device(ctx, ['place', '--scene', target, '--window', String(w.number), '--frame', frameArg(to)]); } catch (error) { answer = {error: String(error.message).slice(0, 200)}; }
       if (isRect(answer?.readBack)) at = answer.readBack;
-      // Ruling 1199: a move that also asks another size (the system's 880-wide panel never fits the strip) says so.
-      const resized = to.width !== w.bounds.width || to.height !== w.bounds.height ? {resized: {from: w.bounds, to}} : {};
-      Object.assign(entry, {to, ...resized, readBack: answer?.readBack ?? null, matched: answer?.matched === true, ...(answer?.ax ? {ax: answer.ax} : {}), ...(Number.isSafeInteger(answer?.pid) ? {pid: answer.pid} : {}),
+      // Ruling 1199: a move that also asks another size (the system's 880-wide panel never fits the strip) says so. A
+      // Save sheet the helper found as an AXSheet child takes no size of its own: its parent was moved to place it
+      // (`via: 'parent'`), the sheet's frame read back, and nothing was resized.
+      const sheet = answer?.ax?.kind === 'sheet';
+      const resized = !sheet && (to.width !== w.bounds.width || to.height !== w.bounds.height) ? {resized: {from: w.bounds, to}} : {};
+      Object.assign(entry, {to, ...resized, ...(sheet ? {via: 'parent'} : {}), readBack: answer?.readBack ?? null, matched: answer?.matched === true, ...(answer?.ax ? {ax: answer.ax} : {}), ...(Number.isSafeInteger(answer?.pid) ? {pid: answer.pid} : {}),
         ...(answer?.refused ? {reason: `the move was refused: ${answer.refused}`} : answer?.error ? {reason: `the move failed: ${answer.error}`} : {})});
     }
     const missed = stripCause(at, alerts);
@@ -125,6 +149,13 @@ async function placePanel(ctx, target, known) {
   return venue;
 }
 
+// The rows an opening's case or pairing wrote, from `from`, tagged with its id (`opening`), as its placement entries
+// are: a frame verdict on one opening (../hosted-sittings/venue.mjs panelFrameSplits, ./summary.mjs) reaches its rows
+// alone, never the run's.
+export function tagOpening(ctx, from, opening) {
+  for (const row of ctx.rows.slice(from)) row.opening ??= opening;
+}
+
 // A stop because a panel stayed open whatever closed it: ./run.mjs records every sample its plan still had to take with
 // this cause (recordUnrun), alike on both lanes.
 export class PanelStuck extends Stop {}
@@ -132,47 +163,90 @@ export class PanelStuck extends Stop {}
 // The panel closed after its case (see the header). `from`: the first row of this opening, so a close that did not take
 // marks that opening's rows. After the background pairing the user window (Finder's) is in front, where the key guard
 // would skip Escape: `activateFirst` brings TextEdit to the front first, its cases done by then (T8e review, Minor 1).
+// Whether the panel closed is the device's reading of the known window (`panel state`, ./matrix-device.mjs: closed,
+// still open, or unread), not a lane's observation; only with no window of the panel known is the lane's word taken. The
+// key guard stopping Escape (KeyGuardStop: the front is not the run's) is recorded, the click skipped (the front is not
+// TextEdit's), the device's cancel tried, and then the run stops with it. Any other stop, and every lane integrity
+// failure, passes through at once.
 export async function closePanel(ctx, target, {from = ctx.rows.length, activateFirst = false} = {}) {
   const record = {beforeRow: ctx.rows.length, target, steps: [], closed: false};
   (ctx.meta.panelCloses ??= []).push(record);
   const done = () => { record.closed = true; ctx.panelOpen = false; };
+  const known = ctx.panelWindows ?? [];
+  // -> 'closed', 'open' or 'unread' as the device read the known windows, null when none is known.
+  const deviceState = () => {
+    if (!known.length) return null;
+    const states = known.map(number => {
+      try { return device(ctx, ['panel', 'state', '--window', String(number)])?.state ?? 'unread'; } catch (error) {
+        if (error instanceof Stop) throw error;
+        return 'unread';
+      }
+    });
+    return states.includes('open') ? 'open' : states.every(s => s === 'closed') ? 'closed' : 'unread';
+  };
+  // A step closed the panel: the device read it gone (its state kept on the step), or, with no window known, the lane said so.
+  const closedBy = step => {
+    const state = deviceState();
+    if (state !== null) step.device = state;
+    return state === null ? step.closed === true : state === 'closed';
+  };
   if (activateFirst) activate(ctx, 'textedit');
   const escape = {step: 'escape'};
+  let guardStop = null;
   try {
     const keyed = await sendKeys(ctx, closePanelKeyCell(target), ['Escape'], {scene: 'textedit', front: read(ctx, null, {frontKey: true}), key: 'close-panel:escape'});
     if (keyed === null) escape.sent = false;
     else Object.assign(escape, {ok: keyed.ok === true, closed: keyed.value?.closed === true, ...(keyed.ok ? {} : {error: String(keyed.error ?? '').slice(0, 200)})});
   } catch (error) {
-    if (!(error instanceof AlertHeld)) throw error;
-    Object.assign(escape, error.guard ? {refused: {cause: error.guard.category, detail: error.guard.detail}} : {held: true});
+    if (error instanceof KeyGuardStop) { guardStop = error; Object.assign(escape, {sent: false, guardStop: error.message.slice(0, 200)}); }
+    else if (error instanceof AlertHeld) Object.assign(escape, error.guard ? {refused: {cause: error.guard.category, detail: error.guard.detail}} : {held: true});
+    else throw error;
   }
   record.steps.push(escape);
-  if (escape.closed) return done();
-  const click = {step: 'cancel'};
-  try {
-    const clicked = await js(ctx, 'harness', 'close-panel', closePanelClickCell(target), {apps: TEXTEDIT});
-    Object.assign(click, {ok: clicked.ok === true, closed: clicked.value?.closed === true, ...(clicked.ok ? {} : {error: String(clicked.error ?? '').slice(0, 200)})});
-  } catch (error) {
-    if (!(error instanceof AlertGuarded)) throw error;
-    click.refused = {cause: error.guard.category, detail: error.guard.detail};
+  if (!guardStop && closedBy(escape)) return done();
+  let click = null;
+  if (!guardStop) {
+    click = {step: 'cancel'};
+    try {
+      const clicked = await js(ctx, 'harness', 'close-panel', closePanelClickCell(target), {apps: TEXTEDIT});
+      Object.assign(click, {ok: clicked.ok === true, closed: clicked.value?.closed === true, ...(clicked.ok ? {} : {error: String(clicked.error ?? '').slice(0, 200)})});
+    } catch (error) {
+      if (!(error instanceof AlertGuarded)) throw error;
+      click.refused = {cause: error.guard.category, detail: error.guard.detail};
+    }
+    record.steps.push(click);
+    if (closedBy(click)) return done();
   }
-  record.steps.push(click);
-  if (click.closed) return done();
-  const refused = click.refused ?? escape.refused ?? null;
-  const mark = refused ? {cause: refused.cause, detail: `the ${PANEL_NAMES[target]}'s close was refused (${refused.detail}): Escape did not close it`}
-    : {cause: 'invalid', detail: `neither Escape nor the ${PANEL_NAMES[target]}'s Cancel click closed it`};
+  const refused = click?.refused ?? escape.refused ?? null;
+  const name = PANEL_NAMES[target];
+  const mark = guardStop ? {cause: 'invalid', detail: `the ${name}'s Escape was not sent: ${guardStop.message}`}
+    : refused ? {cause: refused.cause, detail: `the ${name}'s close was refused (${refused.detail}): Escape did not close it`}
+      : {cause: 'invalid', detail: `neither Escape nor the ${name}'s Cancel click closed it`};
   record.rowsMarked = markOpening(ctx, from, mark);
   const ax = {step: 'device', windows: []};
   record.steps.push(ax);
-  for (const number of ctx.panelWindows ?? []) {
+  for (const number of known) {
     let answer;
-    try { answer = device(ctx, ['panel', 'cancel', '--window', String(number)]); } catch (error) { answer = {error: String(error.message).slice(0, 200)}; }
+    try { answer = device(ctx, ['panel', 'cancel', '--window', String(number)]); } catch (error) {
+      if (error instanceof Stop) throw error;
+      answer = {error: String(error.message).slice(0, 200)};
+    }
     ax.windows.push({number, ...answer});
   }
-  const gone = await js(ctx, 'harness', 'panel-gone', panelGoneCell(target), {apps: TEXTEDIT});
-  ax.closed = gone.ok === true && gone.value?.closed === true;
-  if (ax.closed) return done();
-  throw new PanelStuck(`TextEdit's ${PANEL_NAMES[target]} stayed open after its case: Escape, its Cancel click and the device's Accessibility cancel all left it up`);
+  // The device's own confirmation decides; with no window known, the lane's observation is all there is.
+  let state = deviceState();
+  if (state === null) {
+    const gone = await js(ctx, 'harness', 'panel-gone', panelGoneCell(target), {apps: TEXTEDIT});
+    state = gone.ok === true && gone.value?.closed === true ? 'closed' : 'open';
+    ax.lane = state;
+  } else ax.device = state;
+  ax.closed = state === 'closed';
+  if (ax.closed) done();
+  if (guardStop) throw guardStop;
+  if (ax.closed) return;
+  throw new PanelStuck(state === 'unread'
+    ? `TextEdit's ${name} could not be read after its close: the device's window list was unread, so whether it stayed open is unknown`
+    : `TextEdit's ${name} stayed open after its case: Escape, its Cancel click and the device's Accessibility cancel all left it up`);
 }
 // The NO VERDICT mark of a close that did not take, on every row of the opening that had a verdict to lose (one with an
 // invalid reason already has none). -> how many rows it marked.

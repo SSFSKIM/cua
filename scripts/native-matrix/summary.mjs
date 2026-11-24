@@ -85,7 +85,7 @@ import {FULL_PLAN} from './run.mjs';
 import {exclusionOf, unicodeConditionOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
-import {frameAsymmetry} from '../hosted-sittings/venue.mjs';
+import {frameAsymmetry, panelFrameSplits} from '../hosted-sittings/venue.mjs';
 import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
@@ -204,6 +204,12 @@ function frameSplit(list) {
 // its own (a proven change of the user's value, an `own` or acceptance row, the oracle's interference reading) and no
 // vendor sample (pressKey's `differs`) can fail the matrix from a pair that was no pair. -> Map(run -> asymmetry).
 export const splitFrameRuns = full => new Map(runsByNumber(full).map(([n, list]) => [n, frameSplit(list)]).filter(([, apart]) => apart));
+// The panel openings whose placements a run's vendor and cua sides read apart, paired by opening
+// (../hosted-sittings/venue.mjs panelFrameSplits). -> Map(run -> Map(opening -> how)).
+export function splitPanelRuns(full) {
+  const side = (list, engine) => list.find(({result}) => result.lanes[0]?.engine === engine)?.result;
+  return new Map(runsByNumber(full).map(([n, list]) => [n, panelFrameSplits(side(list, 'cua'), side(list, 'vendor'))]).filter(([, apart]) => apart.size));
+}
 
 // The run a hosted result's runner names, or null when it records none that is whole.
 const hostedRunnerKey = meta => (meta?.runner && !runnerProblems(meta.runner).length ? runnerKey(meta.runner) : null);
@@ -288,10 +294,12 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const unmeasured = fullRuns.map(entry => [entry, unmeasuredSide(entry.result)]).filter(([, problem]) => problem);
   const full = fullRuns.filter(entry => !unmeasured.some(([u]) => u === entry));
   // Each row tagged with its run's number (the pairing key), whether that run is hosted, and how its pair stood on two
-  // frames when it did (`frameSplit`, ruling 1169; ./front-key.mjs).
-  const split = splitFrameRuns(full);
+  // frames when it did (`frameSplit`, ruling 1169; ./front-key.mjs): the whole run's, or a panel opening's alone for the
+  // rows that opening wrote (`opening`, ./panels.mjs tagOpening).
+  const split = splitFrameRuns(full), panelSplit = splitPanelRuns(full);
   const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true,
-    ...(split.has(result.meta?.run) ? {frameSplit: split.get(result.meta.run)} : {})})));
+    ...(split.has(result.meta?.run) ? {frameSplit: split.get(result.meta.run)}
+      : panelSplit.get(result.meta?.run)?.has(row.opening) ? {frameSplit: `the panel opening ${row.opening}: ${panelSplit.get(result.meta.run).get(row.opening)}`} : {})})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
   const rows = all.filter(r => !exclusionOf(r));
   const notJudged = full.length ? notJudgedOf(all.filter(r => exclusionOf(r))) : [];

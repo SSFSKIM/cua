@@ -67,7 +67,7 @@ import {findingCell, launchCell, launchCheckCell, selectCell} from './matrix-cel
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {closePanel, closeUntitledDocument, openPanelOf, PanelStuck, untitledDocument} from './panels.mjs';
+import {closePanel, closeUntitledDocument, openPanelOf, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {probeCells, ResetBlocked} from './probe-run.mjs';
 import {guardCause} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
@@ -580,13 +580,15 @@ async function panelTarget(ctx, target, plan) {
   }
   for (const c of casesOf(target, 'frontmost')) {
     await ctx.checkpoint();
-    const from = ctx.rows.length;
-    const opened = await openPanelOf(ctx, target, apps);
-    if (opened?.skipped) caseRows(ctx, target, 'frontmost', {frontKey: opened.skipped, ...opened.held}, null, [c]);
-    else if (opened?.problem) caseRows(ctx, target, 'frontmost', {invalid: opened.problem}, null, [c]);
-    else if (opened?.venue) caseRows(ctx, target, 'frontmost', venueInputMarks(opened.venue), null, [c]);
-    else await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
-    if (ctx.panelOpen) await closePanel(ctx, target, {from});
+    const from = ctx.rows.length, opening = caseId(target, 'frontmost', c);
+    try {
+      const opened = await openPanelOf(ctx, target, apps, opening);
+      if (opened?.skipped) caseRows(ctx, target, 'frontmost', {frontKey: opened.skipped, ...opened.held}, null, [c]);
+      else if (opened?.problem) caseRows(ctx, target, 'frontmost', {invalid: opened.problem}, null, [c]);
+      else if (opened?.venue) caseRows(ctx, target, 'frontmost', venueInputMarks(opened.venue), null, [c]);
+      else await caseRow(ctx, target, 'frontmost', c, {speed: plan.speed});
+      if (ctx.panelOpen) await closePanel(ctx, target, {from});
+    } finally { tagOpening(ctx, from, opening); }
   }
   if (target === 'savePanel') await closeUntitledDocument(ctx);
 }
@@ -594,7 +596,7 @@ async function panelTarget(ctx, target, plan) {
 // Every frontmost case's timing row (./manifest.mjs: one per case and run), for a case that ended before it was timed
 // (not prepared, its act not sent, its opening skipped or outside the strip): the case row's own marks, so the sample is
 // NO VERDICT by the same cause, never missing (pilot C-2's vendor `chrome/method.drag.select`).
-const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'panelClose', 'error']);
+const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertHeld', 'venueInput', 'ownerInput', 'panelClose', 'error', 'opening']);
 function fillTimings(ctx, target, plan) {
   if (!plan.speed || plan.onlyMeasures) return;
   const timed = new Set(ctx.rows.filter(r => r.section === 'speed' && r.sample === ctx.n).map(r => r.id));
@@ -607,10 +609,17 @@ function fillTimings(ctx, target, plan) {
   }
 }
 
-async function backgroundPairing(ctx, {driven, user}) {
+// A pairing whose driven target is a panel is one opening: its rows carry the opening's id (./panels.mjs tagOpening).
+async function backgroundPairing(ctx, pairing) {
   const from = ctx.rows.length;
+  try { return await pairingRows(ctx, pairing, from); } finally {
+    if (isPanelTarget(pairing.driven)) tagOpening(ctx, from, pairingOpening(pairing));
+  }
+}
+const pairingOpening = ({driven, user}) => `${driven}/background@${user}`;
+async function pairingRows(ctx, {driven, user}, from) {
   if (driven === 'openPanel') {
-    const failed = await openPanelOf(ctx, driven, appsOf(driven, user));
+    const failed = await openPanelOf(ctx, driven, appsOf(driven, user), pairingOpening({driven, user}));
     if (failed?.skipped) return caseRows(ctx, driven, 'background', {frontKey: failed.skipped, ...failed.held}, user);
     if (failed?.problem) return invalidCases(ctx, driven, 'background', failed.problem, user);
     if (failed?.venue) {

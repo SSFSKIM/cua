@@ -20,6 +20,9 @@ export const PASTING = Object.freeze(['paste', 'typeText']);
 
 // Stops the run (its put-back runs): something the run must not act past.
 export class Stop extends Error {}
+// The key guard's own stop (sendKeys): the keys unsent because the front is not the run's. A caller that must still
+// record its step and undo what it opened (./panels.mjs closePanel) catches this one alone, then stops the run with it.
+export class KeyGuardStop extends Stop {}
 
 export const push = (ctx, row) => { ctx.rows.push(row); return row; };
 // A step's device-clock window; a harness step names the apps it intends to activate (`apps`), the only activations
@@ -188,14 +191,14 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
   ctx.meta.keySkipped.push(skip);
   if (ctx.meta.hosted === true && seen !== 'unreadable' && seen.owned !== true && seen.bundleId === CAPTURE_ALERT_PROCESS) {
     const check = alertCheck(ctx, `at the key guard for ${keys.join(', ')}`);
-    if (!(check.export?.held?.count > 0)) throw new Stop(`${keys.join(', ')} not sent: UserNotificationCenter is in front and the alert watch holds no capture alert; the run stopped`);
+    if (!(check.export?.held?.count > 0)) throw new KeyGuardStop(`${keys.join(', ')} not sent: UserNotificationCenter is in front and the alert watch holds no capture alert; the run stopped`);
     skip.held = true;
     const r = read(ctx, null, {frontKey: true});
     const ends = ctx.windows.map(w => w.at[1]);
     if (Array.isArray(r?.at)) mark(ctx, kind === 'row' ? 'row' : 'setup', key, [ends.length ? Math.max(...ends) : r.at[0], r.at[1]]);
     throw new AlertHeld(keys, {front: seen.bundleId, key: keyReading(r).key});
   }
-  if (seen === 'unreadable' || seen.owned !== true) throw new Stop(`${keys.join(', ')} not sent: the front is not one of the run's windows (#162); the run stopped`);
+  if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${keys.join(', ')} not sent: the front is not one of the run's windows (#162); the run stopped`);
   return null;
 }
 

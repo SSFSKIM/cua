@@ -468,6 +468,38 @@ test('a deny-list directory linked into the tree, state/, remote/, chrome/ or ru
   }
 });
 
+// Fix wave 2: the deny list's discovery of the secret store's tiers (src/sandbox/policy.mjs denyListFor) reads the
+// filesystem, so the home's guarded roots are resolved before it runs. A store beneath a state/ linked into the tree,
+// with a projects/ there to list, is refused, and discovery never reads inside the tree, for a launch (the store named
+// directly) and for doctor (the store under $HOME).
+test('a secret store beneath a state/ linked into the tree: the launch and doctor refuse it before the store\'s tiers are discovered, nothing there touched', async t => {
+  const h = homeWithVendorTree(t);
+  const planted = join(h.runtimes, 'planted-state');
+  for (const store of ['store', 'user/.config/claude-secrets']) fs.mkdirSync(join(planted, store, 'projects', 'tier'), {recursive: true});
+  fs.symlinkSync(planted, join(h.home, 'state'));
+  const runtime = resolveRuntime({home: h.home, host: LINUX});
+  const replHost = replHostFor({platform: 'linux', arch: LINUX.arch, surfaces: ['browser'], ambient: h.ambient, home: h.home});
+  for (const sandbox of ['scoped', 'default']) {
+    let error;
+    const seen = recorded(() => {
+      try { buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces: ['browser'], replHost, services: {browser: BROWSER_SERVICE}, sandbox, secretsDir: join(h.home, 'state', 'store')}); } catch (caught) { error = caught; }
+    });
+    assert.equal(error?.code, 'sandbox_conflict', `launch (${sandbox}): ${error?.message ?? 'not refused'}`);
+    assert.equal(error.hint, installerHint(join(h.home, 'state')), sandbox);
+    assert.deepEqual(inVendorTree(seen, h.home), [], `launch (${sandbox})`);
+    const doctor = await recordedRun(() => doctorOf({...h, ambient: {...h.ambient, HOME: join(h.home, 'state', 'user')}}, NO_RETIRED, {CUA_SHIM_SANDBOX: sandbox}));
+    const row = doctor.value.checks.find(c => c.name === 'sandbox');
+    assert.equal(row.status, 'fail', `doctor (${sandbox})`);
+    assert.ok(row.detail.includes(`refuse to start like this (sandbox_conflict): ${installerHint(join(h.home, 'state'))}`), `doctor (${sandbox}): ${row.detail}`);
+    assert.deepEqual(inVendorTree(doctor.seen, h.home), [], `doctor (${sandbox})`);
+  }
+  // the control: with state/ a real directory holding the same store, the same discovery lists its projects/
+  fs.rmSync(join(h.home, 'state'));
+  fs.cpSync(planted, join(h.home, 'state'), {recursive: true});
+  const seen = recorded(() => buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces: ['browser'], replHost, services: {browser: BROWSER_SERVICE}, sandbox: 'scoped', secretsDir: join(h.home, 'state', 'store')}));
+  assert.ok(seen.some(({call, path}) => /readdirSync/.test(call) && path === join(h.home, 'state', 'store', 'projects')), 'discovery lists the store\'s projects/');
+});
+
 // The open itself, as `cua serve` makes it, and a profile listing: each refuses a linked run/ before it claims the
 // session, so no record is written through the link into the tree, where its own cleanup, which follows no link,
 // would leave it.

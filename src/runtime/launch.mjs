@@ -188,7 +188,7 @@ import {defaultHome, homeLayout, realHome} from './layout.mjs';
 import {spawnSync} from 'node:child_process';
 import {ENGINE_RECORD, executableFile, linuxEnginePath, verifiedLinuxEngineVersion} from './linux-engine.mjs';
 import {MIN_ENGINE_VERSION, engineVersionOf, isOlder} from '../services/engine/linux/client.mjs';
-import {STORE_ENV} from '../secrets/store.mjs';
+import {STORE_ENV, storeDir} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
 import {assertTrustedServicesContained, helperOutsideVendorTree, realish} from './sandbox.mjs';
@@ -296,11 +296,13 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
   // without one, so it can never be confined later without its list.
   // On Linux the run directory is kept out of the vendor's tree in every mode, as the connection's open keeps it before
-  // it claims the session (a later launch repeats no open), and the deny list is resolved by the guard's own walk.
+  // it claims the session (a later launch repeats no open), and the deny list is resolved by the guard's own walk, its
+  // roots in the home before the list's discovery of the secret store reads anything.
   if (linux) assertRunOutsideVendorTree(owned.home, sessionId);
+  const homeRoots = linux && sandbox !== 'disabled' ? linuxHomeRoots(owned.home, sessionId, sessionTmp, [secretsDir ?? storeDir(ambient), secretsProjectDir]) : null;
   const denyList = sandbox === 'disabled' ? null
     : denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform});
-  const denyRead = denyList && (linux ? linuxDenyList(denyList, owned.home) : realDenyList(denyList));
+  const denyRead = denyList && (linux ? linuxDenyList(denyList, owned.home, homeRoots) : realDenyList(denyList));
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
@@ -680,10 +682,22 @@ export const assertRunOutsideVendorTree = (home, sessionId) => {
   const real = realHome(home);
   homePathOutsideVendorTree(join(homeLayout(real).run, sessionId, 'tmp'), real);
 };
+// The paths of the real cua home `home` a Linux deny list names, resolved by homePathOutsideVendorTree before the list is
+// built: its state/, remote/, chrome/ and run/, the session's directory and temp `sessionTmp` it re-exposes, and those of
+// `stores` (the secret store and a project tier) that lie in the home. Building the list discovers the store's tiers on
+// the filesystem (src/sandbox/policy.mjs denyListFor), and a store may lie beneath one of these, so each is refused, or
+// resolved, before anything is read there (#589, fix wave 2) -> Map(path -> its real path), for linuxDenyList to reuse.
+export function linuxHomeRoots(home, sessionId, sessionTmp, stores = []) {
+  const {run} = homeLayout(home);
+  const roots = [...['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)), join(run, sessionId), sessionTmp,
+    ...stores.filter(path => typeof path === 'string' && within(path, home))];
+  return new Map(roots.map(path => [path, homePathOutsideVendorTree(path, home)]));
+}
 // The Linux deny list `list` (denyListFor's) at its real locations, as realDenyList gives them, but every entry of the
-// real cua home `home` resolved by homePathOutsideVendorTree; the rest (the secret store and ~/.config/cua) by realish.
-export function linuxDenyList(list, home) {
-  const real = path => (within(path, home) ? homePathOutsideVendorTree(path, home) : realish(path));
+// real cua home `home` resolved by homePathOutsideVendorTree (as `roots`, linuxHomeRoots', already resolved it); the rest
+// (a secret store and ~/.config/cua outside the home) by realish.
+export function linuxDenyList(list, home, roots = new Map()) {
+  const real = path => roots.get(path) ?? (within(path, home) ? homePathOutsideVendorTree(path, home) : realish(path));
   return {deny: list.deny.map(real), reexpose: list.reexpose.map(real), metadataOnly: list.metadataOnly.map(real), tiers: list.tiers.map(real)};
 }
 // The sentence half that says where a path that entered the tree went.

@@ -83,7 +83,7 @@ import {CuaError} from './errors.mjs';
 import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from './engine.mjs';
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, assertRunOutsideVendorTree, linuxDenyList, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, assertRunOutsideVendorTree, linuxDenyList, linuxHomeRoots, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, installedLinuxHelper, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
@@ -92,6 +92,7 @@ import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint} from './
 import {linuxRuntimeChecks} from './doctor-linux-runtime.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
+import {storeDir} from '../secrets/store.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {leftoversCheck, sessionsInUse} from './codex-leftovers.mjs';
 import {retiredTrees} from './retired-tree.mjs';
@@ -355,8 +356,10 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   let deny;
   try {
     if (linux) assertRunOutsideVendorTree(owned.home, 'session');
+    // the home's roots first: building the list discovers the store's tiers on the filesystem (launch.mjs linuxHomeRoots)
+    const roots = linux ? linuxHomeRoots(owned.home, 'session', join(session, 'tmp'), [storeDir(env)]) : null;
     const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
-    const resolved = linux ? linuxDenyList(list, owned.home) : list;
+    const resolved = linux ? linuxDenyList(list, owned.home, roots) : list;
     assertDenyListShape(resolved);
     deny = resolved.deny;
   } catch (error) {

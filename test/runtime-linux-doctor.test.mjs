@@ -36,12 +36,12 @@ const NODE_BIN = (home, version = RECORD.node.version) => join(home, 'node', ver
 
 // A Linux home as `cua install` leaves it: cua's own module tree and Node, the pointer naming the derived release, and
 // the vendor's tree of a fixture pin (`pin`) beside them. Each part can be left out.
-async function linuxHome(t, {vendor = true, modules = true, node = RECORD.node.version, pointer = RELEASE} = {}) {
+async function linuxHome(t, {vendor = true, modules = true, node = RECORD.node.version, pointer = RELEASE, name = 'home'} = {}) {
   const s = shortScratch();
   t.after(s.cleanup);
   const archive = debFixture(s.dir);
   const pin = parsePin(linuxFixturePin({sha256: archive.sha256, length: archive.length}));
-  const home = join(s.dir, 'home');
+  const home = join(s.dir, name);
   mkdirSync(home, {recursive: true});
   const real = realpathSync(home);
   if (vendor) await installRuntime({home, manifest: pin, archivePath: archive.deb, host: LINUX, tools: debTools(), verifySignatures: never('codesign'), activate: false});
@@ -207,7 +207,8 @@ test('runtime.modules: a file altered inside the tree fails, naming it and the i
   writeFileSync(join(TREE(home), 'node_modules', 'sharp', 'package.json'), '{"altered": true}\n');
   const rows = byName(await doctor(home, pin));
   assert.equal(rows['runtime.modules'].status, 'fail');
-  assert.match(rows['runtime.modules'].detail, /does not verify: node_modules\/sharp's files are not the ones installed; stop any `cua serve` using it, remove \S+, then run /);
+  // its manifest is another size, which the full check names too (task 156, fix wave 2)
+  assert.match(rows['runtime.modules'].detail, /does not verify: node_modules\/sharp's files are not the ones installed; node_modules\/sharp\/package\.json is \d+ bytes, recorded as \d+; stop any `cua serve` using it, remove \S+, then run /);
   assert.ok(rows['runtime.modules'].detail.includes(INSTALLER), rows['runtime.modules'].detail);
   assert.ok(rows['runtime.modules'].detail.includes(`which may not be ${RELEASE}`), rows['runtime.modules'].detail);
 });
@@ -293,6 +294,16 @@ test('runtime.node: a managed bin/node that lost its execute bit names the mode 
   assert.equal(row.status, 'fail');
   assert.ok(row.detail.endsWith(`; ${NODE_BIN(home)} is not executable, and the installer never repairs it in place: restore its mode with \`chmod 755 ${NODE_BIN(home)}\`, `
     + `or stop any \`cua serve\` using it, move ${join(home, 'node', RECORD.node.version)} aside, then ${RELEASE_HINT}`), row.detail);
+});
+
+// The mode fix is a command to paste: a home whose path a shell would split has it quoted as one argument, as the
+// installer's own command is (task 156, fix wave 2).
+test('runtime.node: the mode fix quotes a managed Node path with a space or a quote as one shell argument', async t => {
+  const {home, pin} = await linuxHome(t, {name: 'it\'s a home'});
+  chmodSync(NODE_BIN(home), 0o644);
+  const row = byName(await doctor(home, pin))['runtime.node'];
+  const quoted = `'${NODE_BIN(home).replaceAll('\'', '\'\\\'\'')}'`;
+  assert.ok(row.detail.includes(`restore its mode with \`chmod 755 ${quoted}\``), row.detail);
 });
 
 test('runtime.vendor: a damaged tree fails with its recovery; a runtimes/ that is a file, or a link to nothing, fails naming it', async t => {

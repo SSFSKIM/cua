@@ -3,6 +3,7 @@
 // (src/runtime/sandbox.mjs), and the git the secret store's project lookup runs (src/secrets/project.mjs).
 import {accessSync, constants, lstatSync, readdirSync, readlinkSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {fail} from './errors.mjs';
 import {realHome} from './layout.mjs';
 
 // The absolute `path` resolved as the kernel resolves it, kept out of the vendor's tree, <home>/runtimes/ of the cua home
@@ -52,13 +53,15 @@ export function outsideVendorTree(path, home) {
   }
   return {real: current, links};
 }
-// The executable `command` as a PATH lookup finds it (`pathVariable`, the caller's PATH), with every entry that is, or
-// leads, into the vendor's tree of the cua home `home` skipped before anything there is touched -> the real path of the
-// first one found (the path to run, which is the one checked), or null. Only absolute entries are searched.
-export function executableOutsideVendorTree(command, pathVariable, home) {
+// The executable `command` as a PATH search finds it for a child that runs in `cwd` (`pathVariable`, the caller's PATH),
+// with every entry that is, or leads, into the vendor's tree of the cua home `home` skipped before anything there is
+// touched -> the real path of the first one found (the path to run, which is the one checked), or null. Each candidate
+// is spelled as the search spells it, `<entry>/<command>`, and walked with its own components, `..` after a link
+// included, as the kernel walks them; a relative entry, the empty one included, is taken against `cwd`, as it is for
+// the child.
+export function executableOutsideVendorTree(command, pathVariable, home, cwd) {
   for (const dir of (pathVariable ?? '').split(':')) {
-    if (!isAbsolute(dir)) continue;
-    const {real} = outsideVendorTree(join(dir, command), home);
+    const {real} = outsideVendorTree(`${isAbsolute(dir) ? dir : `${cwd}/${dir}`}/${command}`, home);
     try { if (real && statSync(real).isFile()) { accessSync(real, constants.X_OK); return real; } } catch { /* the next entry */ }
   }
   return null;
@@ -68,11 +71,18 @@ export function executableOutsideVendorTree(command, pathVariable, home) {
 // where that entry is a symbolic link, where it resolves by the same kernel-faithful walk (guarding nothing). Whether
 // it is a link is read from the home's own listing, so a home whose runtimes/ is a directory, or absent, has nothing
 // at or under it named by any call (the live judge counts the entry itself, the pre-flight's §3.5); only a link is
-// read, its target walked, and nothing inside the tree.
+// read, its target walked, and nothing inside the tree. A home that is absent (or no directory) has no tree; one that
+// cannot be listed leaves the boundary unknown, which is refused (layout_invalid), never read as "not a link".
 function vendorTreeRoots(home) {
   const spelled = [...new Set([join(resolve(home), 'runtimes'), join(realHome(home), 'runtimes')])];
   const isLink = root => {
-    try { return readdirSync(dirname(root), {withFileTypes: true}).some(entry => entry.name === 'runtimes' && entry.isSymbolicLink()); } catch { return false; }
+    let entries;
+    try { entries = readdirSync(dirname(root), {withFileTypes: true}); } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false;
+      fail('layout_invalid', `the cua home ${dirname(root)} cannot be listed (${error.code ?? error.message}), so whether its runtimes/ leads elsewhere, and so where the vendor's tree lies, cannot be established; nothing is resolved without it`,
+        {hint: `let this user list ${dirname(root)} (chmod u+r)`});
+    }
+    return entries.some(entry => entry.name === 'runtimes' && entry.isSymbolicLink());
   };
   return [...new Set([...spelled, ...spelled.filter(isLink).map(root => outsideVendorTree(root).real).filter(Boolean)])];
 }

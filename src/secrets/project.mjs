@@ -8,7 +8,8 @@
 // .git/modules/), the repository's own top level stands in. Kept apart from store.mjs, which the trusted worker
 // imports and which runs no process.
 import {execFileSync} from 'node:child_process';
-import {basename, dirname, isAbsolute} from 'node:path';
+import {basename, dirname, isAbsolute, resolve} from 'node:path';
+import {CuaError} from '../runtime/errors.mjs';
 import {defaultHome} from '../runtime/layout.mjs';
 import {executableOutsideVendorTree} from '../runtime/vendor-tree.mjs';
 
@@ -27,10 +28,14 @@ export function rootFromRevParse(stdout, cwd) {
 
 // On Linux, git is looked up on `env`'s PATH with every entry that is, or leads, into the vendor's tree of the cua home
 // `home` skipped (src/runtime/vendor-tree.mjs; #171 M6a, the pre-flight's §3.5: `cua serve` runs this first, and a PATH
-// through the vendor's bin must not make it run anything there), and run by the path that lookup checked. No git found
-// there leaves the directory itself. macOS runs `git` from PATH, as before.
+// through the vendor's bin must not make it run anything there), as the PATH search for git running in `cwd` would find
+// it, and run by the path that lookup checked. No git found there, or a home whose tree's boundary cannot be
+// established, leaves the directory itself. macOS runs `git` from PATH, as before.
 export function projectRoot(cwd = process.cwd(), {env = process.env, platform = process.platform, home = defaultHome(env, {platform})} = {}) {
-  const git = platform === 'linux' ? executableOutsideVendorTree('git', env.PATH, home) : 'git';
+  let git = 'git';
+  if (platform === 'linux') {
+    try { git = executableOutsideVendorTree('git', env.PATH, home, resolve(cwd)); } catch (error) { if (!(error instanceof CuaError)) throw error; git = null; }
+  }
   if (!git) return cwd;
   let stdout;
   try {

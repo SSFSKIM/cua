@@ -197,7 +197,7 @@ import {MIN_ENGINE_VERSION, engineVersionOf, isOlder} from '../services/engine/l
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {assertTrustedServicesContained} from './sandbox.mjs';
+import {assertTrustedServicesContained, helperOutsideVendorTree} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {cuaNodeFrom} from '../mcp/surface.mjs';
 import {NODE_FLOOR, NODE_RECORD_FILE, managedNode, nodeLayout, nodeVersion, readNodePointer} from './managed-node.mjs';
@@ -334,7 +334,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     [names.codePaths]: trustedCodePaths.join(':'),
     [names.pipeTimeout]: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
+    ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled, sandbox) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
     ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
   // The engine a macOS computer session drives (nativeEngineFor): cua's own service and the approved bundle, on either
@@ -400,11 +400,12 @@ export function removeLaunchDirs(launch) {
 // The own host's Linux sandbox settings: the pinned helper for this home and architecture (placed by `cua install`; its
 // bytes are checked by the connection's preflight and before each child, not here) and, with the computer surface, the
 // network for the trusted worker alone. The helper is named by its path as the kernel resolves it, outside the vendor's
-// tree (outsideVendorTree), so the host checks and runs the file the preflight checked (sandbox.mjs guardedLinuxHelper);
-// one that leads into the tree keeps its spelling, which the preflight then refuses, and nothing in the tree is named.
-function linuxSandboxEnv(home, arch, surfaces) {
+// tree (outsideVendorTree), so the host checks and runs the file the preflight checked (sandbox.mjs guardedLinuxHelper).
+// A confined launch refuses one that leads into the tree here, at every launch, since a connection's later launches
+// repeat no preflight; a disabled one runs no helper, and keeps the spelling, which names nothing in the tree.
+function linuxSandboxEnv(home, arch, surfaces, sandbox) {
   const helper = helperFor({home, arch});
-  const path = outsideVendorTree(helper.path, home).real ?? helper.path;
+  const path = sandbox === 'disabled' ? outsideVendorTree(helper.path, home).real ?? helper.path : helperOutsideVendorTree({home, path: helper.path});
   return {CUA_REPL_SANDBOX_HELPER: path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
 }
 

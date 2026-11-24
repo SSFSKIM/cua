@@ -387,6 +387,9 @@ export function verifyModuleTree(root, record) {
     const files = packageFiles(root, pkg.path, nested, problems);
     for (const file of files) found.set(`${pkg.path}/${file.path}`, file);
     if (files.length !== pkg.files || payloadDigest(files) !== pkg.digest) problems.push(`${pkg.path}'s files are not the ones installed`);
+    // the record's manifest size too, which the connection's check compares: what verifies here, the open accepts
+    const manifest = files.find(file => file.path === 'package.json');
+    if (manifest && manifest.size !== pkg.manifestSize) problems.push(`${pkg.path}/package.json is ${manifest.size} bytes, recorded as ${pkg.manifestSize}`);
   }
   const recorded = new Set();
   for (const native of record.natives) {

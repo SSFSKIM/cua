@@ -32,6 +32,7 @@ import {CuaError} from './errors.mjs';
 import {readPointer, realHome} from './layout.mjs';
 import {RESTORE_PINS, isRealDirectory, linuxRelease, loadLinuxRuntime, locateRuntime, ownInstaller, pointerObstruction, resolveRuntime, vendorLinuxRuntime} from './manifest.mjs';
 import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
+import {shellWord} from './installer.mjs';
 import {managedNode, nodeLayout, nodeMatchesRecord, readNodeRecord} from './managed-node.mjs';
 import {checkVendorManifest} from './checks.mjs';
 
@@ -113,7 +114,7 @@ function nodeRow({home, env, host, release, pinned, installer, node}) {
     const dir = nodeLayout(realHome(home)).version(pinned);
     const bin = join(dir, 'bin', 'node');
     if (present(bin) && !executable(bin)) return result('runtime.node', 'fail', `${message}; ${bin} is not executable, and the installer never repairs it in place: `
-      + `restore its mode with \`chmod 755 ${bin}\`, or stop any \`cua serve\` using it, move ${dir} aside, then ${ownInstaller({release}).hint}`);
+      + `restore its mode with \`chmod 755 ${shellWord(bin)}\`, or stop any \`cua serve\` using it, move ${dir} aside, then ${ownInstaller({release}).hint}`);
     return result('runtime.node', 'fail', hint ? `${message}; ${hint}` : `${message}; run ${installer}`);
   }
   if (env.CUA_NODE) return result('runtime.node', 'warn', `CUA_NODE=${env.CUA_NODE} (${node.value}) runs sessions here in place of the pinned Node ${pinned}, a named override`);

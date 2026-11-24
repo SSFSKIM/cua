@@ -358,3 +358,83 @@ catch (error) { console.log(error.code); }`;
   assert.equal(run.signal, null, 'it did not block on the FIFO');
   assert.equal(run.stdout.trim(), 'target_occupied', run.stderr);
 });
+
+// ---- the confirm-only review's findings (task 156, fix wave 2) ----
+
+// A directory of the home's own a link into the tree: <home>/sandbox (above the helper), and the staging and engine
+// directories a browser-only session's scoped preflight protects. The open refuses it before anything resolves it.
+test('a home directory that is a link into the tree, the sandbox helper\'s, staging\'s or the engine\'s: the open refuses it, nothing there resolved', t => {
+  for (const [name, surfaces] of [['sandbox', ['browser']], ['sandbox', ['computer']], ['staging', ['browser']], ['engine', ['browser']]]) {
+    const h = homeWithVendorTree(t);
+    const own = join(h.home, name);
+    const planted = join(h.runtimes, `planted-${name}`);
+    if (fs.existsSync(own)) { fs.cpSync(own, planted, {recursive: true}); fs.rmSync(own, {recursive: true}); }
+    else fs.mkdirSync(name === 'sandbox' ? join(planted, 'rust-v0.163.0') : planted, {recursive: true});
+    if (name === 'sandbox') fs.writeFileSync(join(planted, 'rust-v0.163.0', 'codex-linux-sandbox'), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    fs.symlinkSync(planted, own);
+    let error;
+    const seen = recorded(() => { try { session(h, surfaces); } catch (caught) { error = caught; } });
+    assert.ok(error, `${name} (${surfaces}): not refused`);
+    assert.match(error.message, /vendor's tree/, `${name}: ${error.message}`);
+    assert.ok(`${error.message} ${error.hint}`.includes(`move ${own} aside`), `${name}: ${error.message} ${error.hint}`);
+    assert.deepEqual(inVendorTree(seen, h.home), [], `${name} (${surfaces})`);
+  }
+});
+
+// The helper that was outside the tree at the open and is a link into it by a later (lazy or idle) launch: the
+// connection does not repeat its preflight there, so the launch's own construction refuses it.
+test('a helper that becomes a link into the tree after the open: the next confined launch\'s construction refuses it; a disabled one names no path there', t => {
+  const h = homeWithVendorTree(t);
+  const runtime = resolveRuntime({home: h.home, host: LINUX});
+  const replHost = replHostFor({platform: 'linux', arch: LINUX.arch, surfaces: ['browser'], ambient: h.ambient, home: h.home});
+  const launchWith = sandbox => buildLaunch({runtime, home: h.home, sessionId: SESSION, ambient: h.ambient, surfaces: ['browser'], replHost, services: {browser: BROWSER_SERVICE}, sandbox});
+  launchWith('scoped');
+  const {path} = helperFor({home: h.home, arch: LINUX.arch});
+  const planted = join(h.runtimes, 'codex-linux-sandbox');
+  fs.writeFileSync(planted, '#!/bin/sh\nexit 0\n', {mode: 0o755});
+  fs.mkdirSync(dirname(path), {recursive: true});
+  fs.symlinkSync(planted, path);
+  for (const sandbox of ['scoped', 'default']) {
+    let error;
+    const seen = recorded(() => { try { launchWith(sandbox); } catch (caught) { error = caught; } });
+    assert.equal(error?.code, 'sandbox_unavailable', `${sandbox}: ${error?.message ?? 'not refused'}`);
+    assert.ok(error.hint.startsWith(`move ${path} aside, then`), error.hint);
+    assert.deepEqual(inVendorTree(seen, h.home), [], sandbox);
+  }
+  const open = launchWith('disabled');
+  assert.ok(!Object.values(open.env).some(value => value.includes(h.runtimes)), 'a disabled launch names nothing in the tree');
+});
+
+// A home that can be searched but not listed: whether its runtimes/ is a link cannot be read, so the boundary of the
+// vendor's tree cannot be established, and an override is refused rather than approved without it.
+test('a cua home that cannot be listed: an override naming the relocated vendor Node by its physical path is refused, not approved', {skip: process.getuid?.() === 0 && 'root lists any directory'}, t => {
+  const h = homeWithVendorTree(t);
+  const {vendorNode} = relocateTree(t, h);
+  fs.chmodSync(h.home, 0o311);
+  try {
+    const probed = [];
+    let error;
+    try { linuxNode(h, {CUA_NODE: vendorNode}, path => { probed.push(path); return 'v24.22.0'; }); } catch (caught) { error = caught; }
+    assert.equal(error?.code, 'layout_invalid', error?.message ?? 'approved');
+    assert.match(error.message, /cannot be listed/);
+    assert.deepEqual(probed, [], 'the version probe was never handed a path');
+  } finally {
+    fs.chmodSync(h.home, 0o700);
+  }
+});
+
+// The guarded git lookup keeps PATH's meaning: an entry's `..` after a link is the kernel's, and a relative entry is
+// taken against the directory git would run in, as the PATH search did before the guard.
+test('the project lookup on Linux keeps PATH\'s meaning: `..` after a link is the kernel\'s, and a relative entry is the working directory\'s', t => {
+  const h = homeWithVendorTree(t);
+  const scratch = join(h.home, 'path-meaning');
+  const fakeGit = (dir, root) => { fs.mkdirSync(dir, {recursive: true}); fs.writeFileSync(join(dir, 'git'), `#!/bin/sh\necho ${root}/.git\necho ${root}\n`, {mode: 0o755}); };
+  fakeGit(join(scratch, 'deep'), '/kernel');                   // where outside/a/.. leads by the kernel
+  fakeGit(join(scratch, 'outside'), '/lexical');               // where a lexical reading of outside/a/.. lands
+  fs.mkdirSync(join(scratch, 'deep', 'x'));
+  fs.symlinkSync(join(scratch, 'deep', 'x'), join(scratch, 'outside', 'a'));
+  assert.equal(projectRoot(scratch, {env: {PATH: `${join(scratch, 'outside', 'a')}/..`}, platform: 'linux', home: h.home}), '/kernel');
+  const work = join(scratch, 'work');
+  fakeGit(join(work, 'tools'), '/relative');
+  assert.equal(projectRoot(work, {env: {PATH: 'tools:/nonexistent'}, platform: 'linux', home: h.home}), '/relative');
+});

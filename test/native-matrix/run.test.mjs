@@ -450,8 +450,21 @@ test('the finding rows record Finder\'s list range; a list that did not start at
   assert.ok(rows.every(r => !r.invalid && r.showing?.from === 0 && r.showing.of === 205));
   const stuck = await runWith({plan: planOf('finding', {scene: 'finder'}), cell: code => (code.includes(finding)
     ? {invalid: 'Finder\'s list did not start at its first rows', showing: {from: 125, to: 146, of: 205}} : null)});
-  assert.deepEqual(stuck.result.rows.filter(r => r.section === 'finding').map(r => [r.id, r.invalid, r.showing]),
-    [['finder/lines', 'Finder\'s list did not start at its first rows', {from: 125, to: 146, of: 205}]]);
+  // A failed observation leaves every planned finding sample a row (the manifest's targets, lines and ids), each invalid
+  // with the cell's reason, so none is missing.
+  const {manifestOf} = await import('../../scripts/native-matrix/manifest.mjs');
+  const plan = planOf('finding', {scene: 'finder'});
+  const planned = manifestOf({run: stuck.result.meta.run, samples: 1}, plan).filter(r => r.section === 'finding').map(r => r.id).sort();
+  const failed = stuck.result.rows.filter(r => r.section === 'finding');
+  assert.deepEqual(failed.map(r => r.id).sort(), planned);
+  assert.ok(planned.length > 2);
+  assert.ok(failed.every(r => r.ok === false && r.invalid === 'Finder\'s list did not start at its first rows' && r.showing?.from === 125), JSON.stringify(failed[0]));
+  for (const [cell, reason] of [[{cellError: 'boom'}, 'the finding cell failed']]) {
+    const broken = await runWith({plan, cell: code => (code.includes(finding) ? cell : null)});
+    const rows = broken.result.rows.filter(r => r.section === 'finding');
+    assert.deepEqual(rows.map(r => r.id).sort(), planned);
+    assert.ok(rows.every(r => r.invalid === reason), JSON.stringify(rows[0]));
+  }
 });
 
 test('the matrix retains bind and refusal guard snapshots in row-indexed evidence', async () => {

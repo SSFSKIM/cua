@@ -87,22 +87,23 @@ export function unicodeCase({field, method, string}) {
 export const SETTLE_STABLE_MS = 500;
 export const SETTLE_CAP_MS = 2_000;
 const SETTLE_POLL_MS = 100;
+// The clock is monotonic and starts when the first read completes; no read starts once the cap has passed.
 const settledFieldCheck = (scene, expected) => `const __want = ${j(sha256Hex(expected))};
-const __from = Date.now();
-let __value = null, __since = __from, __last = __from, __reads = 0;
+let __value = null, __from = null, __since = null, __last = null, __reads = 0;
 for (;;) {
   const ax = await observe();
-  __last = Date.now(); __reads++;
+  __last = performance.now(); __from ??= __last; __reads++;
   const __index = ${TEXT_FIELDS[scene]};
   if (__index === null) return {invalid: "the field is not in the text"};
   const __now = plain(valueOfIndex(ax, __index) ?? "");
   if (__now !== __value) { __value = __now; __since = __last; }
   if (sha256Hex(__value) === __want || __last - __since >= ${SETTLE_STABLE_MS} || __last - __from >= ${SETTLE_CAP_MS}) break;
   await new Promise(done => setTimeout(done, ${SETTLE_POLL_MS}));
+  if (performance.now() - __from >= ${SETTLE_CAP_MS}) break;
 }
 const __hash = sha256Hex(__value);
 const exact = __hash === __want;
-return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: __last - __from}};`;
+return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: Math.round(__last - __from)}};`;
 
 // Every row of `plan` ({fields, conditions}) in run order. -> [{condition, field, user, regime, method, string, id}].
 export function unicodeRowsOf(plan) {

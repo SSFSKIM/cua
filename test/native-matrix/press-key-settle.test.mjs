@@ -21,16 +21,21 @@ async function runCell(text, apps) {
 }
 // The Electron fixture, its text field (index 5) reading `valueAt(n)` on its nth observation.
 const GOLDEN = fs.readFileSync(new URL('../native-goldens/electron/vendor.txt', import.meta.url), 'utf8').split('\n\nThe focused UI element')[0].split('\n');
-function fixture(valueAt) {
+// `delayOf(n)`: how long the nth observation takes; `started` the times (performance.now) each began.
+function fixture(valueAt, delayOf = () => 0) {
   let n = 0;
-  return {reads: () => n, app: {async getAXState() {
+  const started = [], ended = [];
+  return {reads: () => n, started, ended, app: {async getAXState() {
+    started.push(performance.now());
+    const delay = delayOf(n + 1);
+    if (delay) await new Promise(done => setTimeout(done, delay));
+    ended.push(performance.now());
     const value = valueAt(++n);
     return GOLDEN.map(line => (/^\t+5 /.test(line) ? `${line}${value ? `, Value: ${value}` : ''}` : line)).join('\n');
   }}};
 }
 const korean = {field: 'electron', method: 'pressKey', string: {id: PRESS_KEY.id, keys: PRESS_KEY.keys, text: PRESS_KEY.expected.korean}};
-async function check(valueAt) {
-  const f = fixture(valueAt);
+async function check(valueAt, delayOf, f = fixture(valueAt, delayOf)) {
   globalThis.__m = {ready: true, threw: null};
   try { return {...(await runCell(caseCells('electron', unicodeCase(korean)).check, {electron: f.app})).value, observed: f.reads()}; } finally { delete globalThis.__m; }
 }
@@ -57,6 +62,21 @@ test('a field still changing at the cap ends there, not ok', async () => {
   assert.equal(r.ok, false);
   assert.ok(r.outcome.settleMs >= SETTLE_CAP_MS - 150 && r.outcome.settleMs <= SETTLE_CAP_MS + 300, `ended at ${r.outcome.settleMs} ms`);
   assert.ok(r.outcome.reads > 2);
+});
+
+test('the clock starts when the first read completes: a slow first observation is not counted, and no read starts past the cap', async () => {
+  // The first observation takes 400 ms and already holds 가: settled at the first read, 0 ms after it.
+  const slow = await check(() => '가', n => (n === 1 ? 400 : 0));
+  assert.deepEqual([slow.ok, slow.outcome.reads], [true, 1]);
+  assert.ok(slow.outcome.settleMs < 50, `settled at ${slow.outcome.settleMs} ms`);
+  // Each observation takes 700 ms and the value keeps changing: the cap counts from the first read's completion, and
+  // no observation begins once it has passed.
+  const f = fixture(n => 'ㄱ'.repeat(n), () => 700);
+  const capped = await check(null, null, f);
+  assert.equal(capped.ok, false);
+  const first = f.ended[0];
+  assert.ok(f.started.slice(1).every(t => t - first < SETTLE_CAP_MS), JSON.stringify(f.started.map(t => Math.round(t - first))));
+  assert.ok(capped.outcome.settleMs >= SETTLE_CAP_MS - 700 && capped.outcome.settleMs < SETTLE_CAP_MS + 750, `ended at ${capped.outcome.settleMs} ms`);
 });
 
 test('only the pressKey row polls: the typeText and paste rows keep their one read', () => {

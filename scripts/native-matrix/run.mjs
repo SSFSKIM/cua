@@ -710,8 +710,10 @@ async function findingRows(ctx, scene) {
   // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {}),
     frontKey: measuredReadings(ctx, scene, before.reading, after.reading)};
+  // An observation that failed leaves every planned finding sample its row (./manifest.mjs), each invalid by its reason.
   if (!r.ok || r.value?.invalid) {
-    push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
+    const failed = {...base, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})};
+    for (const id of [...SCENES[scene].targets.map(t => `target.${t.id}`), 'lines', 'ids']) push(ctx, {...failed, id: `${scene}/${id}`});
     return;
   }
   for (const t of r.value.targets) push(ctx, {...base, id: `${scene}/target.${t.id}`, ok: true, outcome: {found: t.found, resolved: t.resolved}});

@@ -9,7 +9,7 @@ import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
-import {CASES, casesOf, PANEL_SEARCH, SAVE_PANEL_NAME} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, casesOf, FOCUS_REASONS, focusVerdict, PANEL_SEARCH, SAVE_PANEL_NAME} from '../../scripts/native-matrix/plan.mjs';
 import {stripCause} from '../../scripts/native-matrix/panels.mjs';
 import {runWith} from './run-doubles.mjs';
 
@@ -413,7 +413,9 @@ async function runCell(text, apps) {
 // `saveName`: the name the Save sheet opens with, wholly selected in its focused name field (AppKit's); `writes`: whether
 // an AX value write takes (pilot C-3: the vendor's setValue("") on the sheet's name field left it non-empty). The trailer
 // shows the selected text in place of the focused element, as the renderer does.
-function standInTextEdit({saveName = '', writes = true} = {}) {
+// `elsewhere`: the sheet opens with another control (4) focused, holding the name's own text selected, and a click on the
+// name field does not take (review finding 5).
+function standInTextEdit({saveName = '', writes = true, elsewhere = false} = {}) {
   const sent = {keys: [], texts: [], values: [], selections: [], clicks: []};
   let up = null, value = '', focused = null, selected = null;
   const CANCEL = 3;
@@ -423,7 +425,8 @@ function standInTextEdit({saveName = '', writes = true} = {}) {
     const trailer = selected !== null ? `Selected text: \`\`\`\n${selected}\n\`\`\`` : null;
     if (up === 'open') return [`Window: "Open", App: TextEdit.`, '0 standard window ID: open-panel', `\t1 search text field (settable) Description: Search${field}`, `\t${CANCEL} button Cancel`, '',
       trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`].join('\n');
-    if (up === 'save') return [`Window: "Untitled", App: TextEdit.`, '0 standard window Untitled', '\t1 sheet ID: save-panel', `\t\t2 text field (settable) ID: saveAsNameTextField${field}`, `\t\t${CANCEL} button Cancel`, '',
+    if (up === 'save') return [`Window: "Untitled", App: TextEdit.`, '0 standard window Untitled', '\t1 sheet ID: save-panel', `\t\t2 text field (settable) ID: saveAsNameTextField${field}`, `\t\t${CANCEL} button Cancel`,
+      ...(elsewhere ? [`\t\t4 text field (settable) ID: tagsField, Value: ${saveName}`] : []), '',
       trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 2 ? 'text field' : 'standard window'}`].join('\n');
     return 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled\n\t1 text entry area (settable) ID: First Text View\n';
   };
@@ -432,13 +435,13 @@ function standInTextEdit({saveName = '', writes = true} = {}) {
     async pressKey(k) {
       sent.keys.push(k);
       if (k === 'super+o') up = 'open';
-      if (k === 'super+s') { up = 'save'; value = saveName; focused = 2; selected = saveName || null; }
+      if (k === 'super+s') { up = 'save'; value = saveName; focused = elsewhere ? 4 : 2; selected = saveName || null; }
       if (k === 'Escape') close();
     },
     async typeText(t) { sent.texts.push(t); value = selected !== null ? value.replace(selected, t) : value + t; selected = null; },
     async setValue(i, v) { sent.values.push([i, v]); if (writes) { value = v; selected = null; } },
     async selectText(i, t) { sent.selections.push([i, t]); if (i === focused && value.includes(t)) selected = t; },
-    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else { focused = i; selected = null; } },
+    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else if (!elsewhere) { focused = i; selected = null; } },
   };
   return {app, sent, open: () => { up = 'open'; }};
 }
@@ -489,6 +492,28 @@ test('a Save sheet name field no value write empties: its name selected whole by
   // The field focused and its name selected by the prepare (the click deselects what AppKit selected at the opening).
   assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
   assert.deepEqual(name.prepare.prepared, ['field selected']);
+});
+// Review finding 5: the name's own text selected in another control, the click on the name field not taking. The trailer
+// shows that selection, so it proves nothing about the name field: the prepare's focus reading is the masked trailer (and
+// cua's focused index another control's), which the row's verdict refuses, no typing sent.
+test('the name\'s text selected in another control, the name field unfocused: the focus is not proven, the row not prepared', async () => {
+  const {caseCells} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const {SAVE_SHEET_OPEN_CELL} = await import('../../scripts/native-matrix/probe-plan.mjs');
+  const stand = standInTextEdit({saveName: 'Untitled', elsewhere: true});
+  const apps = {textedit: stand.app};
+  globalThis.__sheetDoc = 'Untitled';
+  let prepare;
+  try {
+    await runCell(SAVE_SHEET_OPEN_CELL, apps);
+    prepare = (await runCell(caseCells('savePanel', CASES.savePanel.find(c => c.case === 'name')).prepare, apps)).value;
+  } finally { delete globalThis.__sheetDoc; delete globalThis.__m; }
+  // The selection was asked of the name field itself, never taken from the trailer.
+  assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
+  assert.deepEqual(prepare.focus, {index: 2, trailer: 'masked'});
+  assert.equal(focusVerdict(prepare.focus, null).problem, FOCUS_REASONS.masked, 'the vendor: the trailer masked');
+  assert.match(focusVerdict(prepare.focus, {focusedIndex: 4}).problem, /^the field could not be given the focus/, 'cua: another control focused');
+  assert.equal(focusVerdict({index: 2, trailer: 'focused'}, null).problem, null);
+  assert.deepEqual(stand.sent.texts, []);
 });
 test('a field whose value the prepare cannot select whole is not prepared, by a reason that says so, nothing typed', async () => {
   const stand = standInTextEdit({saveName: 'Untitled'});

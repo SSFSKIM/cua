@@ -337,19 +337,25 @@ return {ok: closed && front, outcome: {closed, documentInFront: front}};`});
 // whole, so the text typed replaces it; then read back, awaited up to 3 s; only whether it read back and its length leave
 // the cell. Nothing is written: pilot C-3's vendor left the Save sheet's name field non-empty after setValue(""), the
 // panel service's field taking no AX value write there. The selection is an AX selection both engines make (no key: a
-// prepare's keys pass no key guard), read back in the trailer, which shows it in the focused element's place (so the
-// focus is read before it, a click's own selection read as masked, ./matrix-text.mjs focusReading).
+// prepare's keys pass no key guard), read back in the trailer, which shows it in the focused element's place. So the
+// field's focus is established first and kept as the row's focus reading (`__m.focus`, judged by focusVerdict: cua's own
+// focused index where it reports one, else the trailer, which a selection masks), and the selection is always made on
+// the field itself, never taken from a trailer that may show another control's (review finding 5): a focus not proven
+// on the field leaves the row not prepared, no typing sent.
 const panelTyping = (target, kase, field, text, what) => ({method: 'typeText', case: kase, expect: 'outcome', keys: ['typeText'], regimes: ['frontmost'],
   prepare: `let ax = await observe();
 if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
 let index = ${field};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
 if (focusReading(ax, index) !== "focused") { await __app.click(index); ax = await observe(); index = ${field}; }
-if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: "the field could not be focused"};
+if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
+const trailer = focusReading(ax, index);
 const value = plain(valueOfIndex(ax, index) ?? "");
-if (value !== "" && selectedTextOf(ax) !== value) { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
+if (value !== "") { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
 const selected = selectedTextOf(ax);
 if (value !== "" && (index === null || selected !== value || plain(valueOfIndex(ax, index) ?? "") !== value)) return {ready: false, reason: "the field's value could not be selected whole: " + value.length + " characters, " + (selected === null ? "none" : selected.length) + " selected"};
+if (index === null) return {ready: false, reason: "the field is not in the text"};
+__m.focus = {index, trailer};
 return {ready: true};`,
   act: `await __app.typeText(${j(text)});`,
   check: `let ax = await observe(), value = null;

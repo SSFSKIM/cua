@@ -20,8 +20,9 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   --scene gedit,chrome,chrome-input,over-budget,big-text,gtk-table,calc,retention --ops all --out "$OUT"
 ```
 
-**Where the pinned vendor build comes from (#171 M6b, F7).** Since cua 0.30.0 no cua home holds the vendor's Linux
-release, so `$VENDOR` and `$SKY` come from the comparator fixture: `vendor-fixture.mjs` checks a fixture directory
+**Where the pinned vendor build comes from (#171 M6b, F7).** Since cua 0.30.0 the gate no longer takes the vendor's
+Linux release from a cua home: cua's install no longer places it, and a home that holds one from an older install keeps
+it (ruling 1216) but is never read for it. `$VENDOR` and `$SKY` come from the comparator fixture: `vendor-fixture.mjs` checks a fixture directory
 outside any cua home (`~/.local/share/cua-171/vendor-<arch>-pinned`, or `gate.mjs --vendor-fixture <dir>`) against
 `scripts/linux-engine-gate/vendor-fixture.json`, extracts its tar on first use, and checks every extracted file before
 each use; the gate takes the build and the client from it alone, and refuses a step whose fixture does not check. Each

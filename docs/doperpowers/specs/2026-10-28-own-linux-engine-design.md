@@ -2935,6 +2935,20 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **The homes (1200, #579).** Every Linux home on 0.4.4 is refused until `cua install --engine` runs there. dc-linux171-1e68's own home was brought to the plugin's pins on 11-24 as #579's first live case.
   Date/Author: 2026-11-24, linux171 (plan-executor).
 
+- Decision (2026-11-24, M6b's start; the owner's soak condition (1193) met, rulings 1208, 1211 and 1212): **the soak that gated M6b is over, so M6b starts from main 854103aa5.**
+  - **The condition was met as the owner set it.** 0.4.5 (#585, cua 0.29.21) ran clean.
+    - Its counted reach passed on x64 and on arm64 at H10 (tasks 162 and 163; the 0.4.5 entry above).
+    - No regression appeared on the Linux homes. dc-linux171-1e68's home, the one plugin home measured, went to 0.4.4 under 0.29.20 and then to 0.4.5 (ruling 1200), and every doctor row but the deliberately unset display passes under both 0.29.20 and main's code.
+    - After M6b there is no switch back to the vendor engine on Linux. The owner decided knowing that.
+  - **What M6b carries beyond "Retirement (M6b)"**, ruled before its pre-flight:
+    - 1193 (a): the deb records stay as pin-time provenance, unreachable by install, doctor and launch.
+    - 1193 (b): install removes only the vendor release its own record says it placed.
+    - 1193 (c): `engine_retired`'s sentence.
+    - 1212: `engine_retired` and `engine_outdated` keep `node <this checkout>/bin/cua.mjs install --engine` as their only remedy. The clause "or set CUA_NATIVE_ENGINE=vendor" goes, and a test pins the sentence.
+    - #570: `scripts/sandbox-probe/linux-probes.mjs`.
+  - **Engine installs stay manual (the owner, 1211; #579 closed by #585).** Nothing in M6b installs or updates an engine by itself.
+  Date/Author: 2026-11-24, linux171 (plan-executor).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

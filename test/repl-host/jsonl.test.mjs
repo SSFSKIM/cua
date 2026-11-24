@@ -68,6 +68,32 @@ test('an input error is re-emitted on the reader, as readline did', async () => 
   assert.equal((await error).message, 'boom');
 });
 
+test('an input its owner paused is still read, as readline resumed it', async () => {
+  const input = new PassThrough();
+  input.pause();
+  const reader = lines(input);
+  const seen = [];
+  reader.on('line', line => seen.push(line));
+  const closed = new Promise(resolve => reader.on('close', resolve));
+  input.end('{}\n');
+  const outcome = await Promise.race([closed.then(() => 'closed'), new Promise(resolve => setTimeout(resolve, 1000, 'still paused'))]);
+  assert.deepEqual({outcome, seen}, {outcome: 'closed', seen: ['{}']});
+});
+
+test('after the input ends the reader lets go of it: a later stream error stays with the stream\'s own handler', async () => {
+  const input = new PassThrough();
+  const reader = lines(input);
+  reader.on('line', () => {});
+  const closed = new Promise(resolve => reader.on('close', resolve));
+  input.end('{}\n');
+  await closed;
+  const seen = [];
+  input.on('error', error => seen.push(error.message));
+  assert.doesNotThrow(() => input.emit('error', new Error('late')));
+  assert.deepEqual(seen, ['late']);
+  assert.equal(input.listenerCount('data') + input.listenerCount('end'), 0);
+});
+
 test('stringify and jsonLine escape LS and PS as \\u2028 and \\u2029: the same JSON value, safe for any line reader', () => {
   const value = {t: `a${LS}b${PS}c`, nested: [`${LS}${PS}`]};
   const text = stringify(value);

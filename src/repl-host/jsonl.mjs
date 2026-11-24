@@ -6,8 +6,8 @@
 // title, a tab title, an app id) in two and dropped both halves. So:
 // - lines(input) reads LF-terminated lines only, a trailing CR trimmed (CRLF, which readline also took), multi-byte
 //   UTF-8 characters decoded across chunk boundaries, a last line without LF read at the input's end; it emits 'line'
-//   for each, then 'close' at the end, and re-emits the input's 'error', as readline's interface did (with no
-//   listener on the reader, that error throws, as it did).
+//   for each, then 'close' at the end, and re-emits the input's 'error' until then, as readline's interface did (with
+//   no listener on the reader, that error throws, as it did); it resumes a paused input and lets go of it at the end.
 // - stringify(value) and jsonLine(value) write LS and PS as the escapes \u2028 and \u2029: the same JSON value, which
 //   every reader of cua's output then reads whole, Node readline (Claude Code's MCP client) included.
 // It lives in src/repl-host, a trusted code path of the own host (src/runtime/launch.mjs REPL_HOST_DIR), because the
@@ -26,7 +26,7 @@ export function lines(input) {
   const decoder = new StringDecoder('utf8');
   let rest = '';
   const emit = line => reader.emit('line', line.endsWith('\r') ? line.slice(0, -1) : line);
-  input.on('data', chunk => {
+  const onData = chunk => {
     const text = typeof chunk === 'string' ? chunk : decoder.write(chunk);
     let start = 0;
     for (let end; (end = text.indexOf('\n', start)) !== -1; start = end + 1) {
@@ -35,13 +35,23 @@ export function lines(input) {
       emit(line);
     }
     rest += text.slice(start);
-  });
-  input.on('end', () => {
+  };
+  const onError = error => reader.emit('error', error);
+  // At the end the reader lets go of the input, as readline's close did: a later stream error (a teardown's) is the
+  // stream's own handler's, never thrown from a closed reader with no listener.
+  const onEnd = () => {
+    input.off('data', onData);
+    input.off('end', onEnd);
+    input.off('error', onError);
     const last = rest + decoder.end();
     rest = '';
     if (last) emit(last);
     reader.emit('close');
-  });
-  input.on('error', error => reader.emit('error', error));
+  };
+  input.on('data', onData);
+  input.on('end', onEnd);
+  input.on('error', onError);
+  // As readline did: a stream its owner paused is read too (a 'data' listener alone does not restart one).
+  input.resume();
   return reader;
 }

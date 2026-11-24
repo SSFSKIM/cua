@@ -42,9 +42,9 @@ export function outsideVendorTree(path, home) {
     const next = join(current, part);
     if (inTree(next)) return {lead: next, links};
     let stat;
-    try { stat = lstatSync(next); } catch { return {missing: next}; }
+    try { stat = lstatSync(next); } catch (error) { return {missing: next, rest: pending, links, code: error.code}; }
     if (stat.isSymbolicLink()) {
-      if (links.length >= 40) return {missing: next};
+      if (links.length >= 40) return {missing: next, links, code: 'ELOOP'};
       links.push(next);
       const target = readlinkSync(next);
       pending = [...pathComponents(target), ...pending];
@@ -56,6 +56,21 @@ export function outsideVendorTree(path, home) {
   }
   return {real: current, links};
 }
+// `path` at its real location as the sandbox's deny list takes it (src/runtime/sandbox.mjs realish: a missing tail kept
+// as spelled under the real path of what exists), but found by outsideVendorTree's own walk, so the guard and the
+// resolution are one and cannot disagree (#589, #171 M6b T4) -> {real, links}; {lead, links} where it enters the
+// vendor's tree; or {unresolved, links}: a missing component with a `..` after it, which only a lexical reading could
+// place (realish's would collapse the two, and might land in the tree), or a component that cannot be read or is no
+// directory. A missing tail is appended as spelled, `.` dropped, and the result is kept out of the tree as written too.
+export function realOutsideVendorTree(path, home) {
+  const at = outsideVendorTree(path, home);
+  if (at.lead || at.real !== undefined) return at;
+  if (at.missing === undefined || at.code !== 'ENOENT' || at.rest.includes('..')) return {unresolved: at.missing ?? at.notDirectory, links: at.links ?? []};
+  const real = join(at.missing, ...at.rest.filter(part => part !== '.'));
+  const lead = outsideVendorTree(real, home).lead;
+  return lead ? {lead, links: at.links} : {real, links: at.links};
+}
+
 // The executable `command` as a PATH search finds it for a child that runs in `cwd` (`pathVariable`, the caller's PATH),
 // with every entry that is, or leads, into the vendor's tree of the cua home `home` skipped before anything there is
 // touched -> the real path of the first one found (the path to run, which is the one checked), or null. Each candidate

@@ -55,7 +55,7 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, createLaunchDirs, removeLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {assertRunOutsideVendorTree, buildLaunch, createLaunchDirs, removeLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -95,6 +95,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns, verifyHelper, resolveOwnNode});
+  // On Linux run/ is kept out of the vendor's tree before the session's record is written there (#589, #171 M6b).
+  if (host.platform === 'linux') assertRunOutsideVendorTree(home, sessionId);
   const claim = claimRunSession(home, sessionId);
   let launch;
   let listingLeftover = false;

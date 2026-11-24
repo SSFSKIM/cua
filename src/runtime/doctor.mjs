@@ -83,7 +83,7 @@ import {CuaError} from './errors.mjs';
 import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from './engine.mjs';
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, assertRunOutsideVendorTree, linuxDenyList, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, installedLinuxHelper, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
@@ -337,10 +337,11 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   // scoped and default alike.
   const session = join(owned.run, 'session');
   // On Linux every path of the home this row resolves by its real path is kept out of the vendor's tree before it is
-  // normalized, each just before the check that resolves it: the deny list's state/, remote/, chrome/ and run/ (with the
-  // session directory) here, in scoped and default alike; the scoped check's protected directories and state/codex just
-  // before that check, which default mode never makes. One that leads there is named, and nothing there is resolved
-  // (#171 M6b). A confined launch refuses the deny list's alike (launch.mjs assertDenyRootsOutsideVendorTree, #589).
+  // normalized, each where the check that resolves it runs. The run directory and the deny list's state/, remote/,
+  // chrome/ and run/ are resolved here, in scoped and default alike, by the launch's own guarded resolution
+  // (launch.mjs assertRunOutsideVendorTree and linuxDenyList), so the row refuses exactly what a launch refuses, in its
+  // words (#589). The scoped check's protected directories and state/codex are walked just before that check, which
+  // default mode never makes. One that leads there is named, and nothing there is resolved (#171 M6b).
   const intoTree = (roots, said) => {
     if (!linux) return null;
     for (const root of roots) {
@@ -351,14 +352,13 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
     return null;
   };
   const unchecked = () => 'the sandbox\'s check takes it by its real path, which is not resolved there, so the sandbox is not checked';
-  const denied = intoTree([join(owned.home, 'state'), join(owned.home, 'remote'), join(owned.home, 'chrome'), join(session, 'tmp')],
-    () => 'what JavaScript cells may not read is taken by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict)');
-  if (denied) return denied;
   let deny;
   try {
+    if (linux) assertRunOutsideVendorTree(owned.home, 'session');
     const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
-    assertDenyListShape(list);
-    deny = list.deny;
+    const resolved = linux ? linuxDenyList(list, owned.home) : list;
+    assertDenyListShape(resolved);
+    deny = resolved.deny;
   } catch (error) {
     if (!error.code) throw error;
     return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${error.message}. cua serve and the profile listing refuse to start like this (${error.code})${error.hint ? `: ${error.hint}` : ''}`);

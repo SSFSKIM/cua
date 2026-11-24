@@ -30,6 +30,7 @@ import {homeLayout, realHome} from './layout.mjs';
 import {isRealDirectory, ownInstaller} from './manifest.mjs';
 import {assertTargetFree, download, moveIntoPlace, verifyArchive} from './install.mjs';
 import {unpackTarball} from './tarball.mjs';
+import {stagingOutsideVendorTree} from './vendor-tree.mjs';
 
 export const MODULES_PIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'modules');
 const LOCK_FILE = 'package-lock.json';
@@ -425,7 +426,8 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
   const layout = homeLayout(real);
   const root = join(layout.modules, lock.hash);
   const answer = changed => ({root, moduleDir: join(root, 'node_modules'), lock: lock.hash, changed});
-  // Nothing is read or written through a link where modules/ should be, nor, for a new tree, where staging/ should be.
+  // Nothing is read or written through a link where modules/ should be, nor, for a new tree, where staging/ should be
+  // (vendor-tree.mjs stagingOutsideVendorTree).
   const refuseLinked = dir => {
     if (pathExists(dir) && !isRealDirectory(dir)) fail('target_occupied', `${dir} is a link or not a real directory; cua does not install through it`, {hint: 'move it aside yourself, then run install again'});
   };
@@ -442,11 +444,11 @@ export async function installModuleTree({home, lock = loadModuleLock(), host = m
     return answer(false);
   }
   assertTargetFree(root);
-  refuseLinked(layout.staging);
+  const staging = stagingOutsideVendorTree(real);
 
   mkdirSync(layout.modules, {recursive: true, mode: 0o755});
-  mkdirSync(layout.staging, {recursive: true, mode: 0o700});
-  const stage = mkdtempSync(join(layout.staging, 'modules-'));
+  mkdirSync(staging, {recursive: true, mode: 0o700});
+  const stage = mkdtempSync(join(staging, 'modules-'));
   try {
     const tree = join(stage, 'tree');
     mkdirSync(tree, {mode: 0o755});

@@ -20,7 +20,7 @@ import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {findTool} from './tools.mjs';
 import {ownInstaller} from './installer.mjs';
-import {outsideVendorTree} from './vendor-tree.mjs';
+import {outsideVendorTree, stagingOutsideVendorTree} from './vendor-tree.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const ENGINE_PIN_FILE = join(REPO_ROOT, 'runtime', 'engine', 'linux-engine.json');
@@ -216,8 +216,10 @@ export function findCargo(env = process.env) {
 
 // `cua engine build` on Linux: `cargo build --release` of the checkout's native/linux-engine (in that directory, so
 // its rust-toolchain.toml chooses the toolchain), then the built engine placed as a recorded local build -> {path,
-// version, commit, sha256, build: 'local', changed}. The same build already placed changes nothing. `run` and `cargo`
-// are seams for tests; cargo's own output goes to stderr.
+// version, commit, sha256, build: 'local', changed}. The same build already placed changes nothing. Its placing keeps out
+// of the vendor's tree as install's does (#171 M6b, the pre-flight's §3.4): the engine's paths before they are read, and
+// a staging/ that is a link before it is touched. `run` and `cargo` are seams for tests; cargo's own output goes to
+// stderr.
 export async function buildLinuxEngine({home, sourceRoot = ENGINE_SOURCE, cargo = findCargo(), run = runCommand, host = {platform: process.platform, arch: process.arch}}) {
   if (host.platform !== 'linux') fail('unsupported_platform', `this is the Linux engine's build, and this host is ${host.platform}-${host.arch}`);
   const manifest = join(sourceRoot, 'Cargo.toml');
@@ -234,10 +236,11 @@ export async function buildLinuxEngine({home, sourceRoot = ENGINE_SOURCE, cargo 
   if (!identity) fail('engine_build_failed', `the engine cargo built at ${built} did not answer --version as cua-engine (${answer.error ?? JSON.stringify(String(answer.stdout).trim().slice(0, 80))})`);
   const sha256 = sha256Of(readFileSync(built));
   const real = realHome(home, {create: true});
+  assertEnginePathsOutsideVendorTree(real);
   const placed = inspectLinuxEngine({home: real, arch: host.arch, pin: null});
   const result = changed => ({path: placed.path, version: identity.version, commit: identity.commit, sha256, build: 'local', changed});
   if (placed.build === 'local' && placed.sha256 === sha256 && placed.executable) return result(false);
-  const staging = homeLayout(real).staging;
+  const staging = stagingOutsideVendorTree(real);
   mkdirSync(staging, {recursive: true, mode: 0o700});
   const stage = mkdtempSync(join(staging, 'linux-engine-'));
   try {

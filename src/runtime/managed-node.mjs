@@ -25,6 +25,7 @@ import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {isRealDirectory} from './manifest.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 
 // The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
 export const NODE_FLOOR = 24;
@@ -156,6 +157,22 @@ export function readNodePointer(home) {
   try { json = JSON.parse(text); } catch { json = null; }
   if (!isObject(json) || json.schema !== 1 || typeof json.version !== 'string' || !VERSION.test(json.version)) fail('node_pointer_invalid', `${pointer} is not a valid pointer`);
   return json.version;
+}
+
+// The first path the managed Node's lookup reads in the real home `home` that is, or leads, into the vendor's tree
+// (vendor-tree.mjs outsideVendorTree, which touches nothing there) -> {path, lead, link}, or null: the pointer, then, for
+// `version`, its install record and its bin/node, whose walks pass node/<version>. `link` is the first link inside the
+// home that leads away, the one to move aside. The one guard of launch's lookup (launch.mjs linuxHostNode), of install's
+// (node-install.mjs) and of doctor's (doctor-linux-runtime.mjs), each run before it reads any of them (#171 M6b, the
+// pre-flight's §3.4).
+export function managedNodeIntoVendorTree(home, version) {
+  const {pointer, version: dirOf} = nodeLayout(home);
+  const paths = [pointer, ...(version ? [join(dirOf(version), NODE_RECORD_FILE), join(dirOf(version), 'bin', 'node')] : [])];
+  for (const path of paths) {
+    const {lead, links} = outsideVendorTree(path, home);
+    if (lead) return {path, lead, link: links[0] ?? path};
+  }
+  return null;
 }
 
 // The cua-installed Node of `home` for this host -> {path, version}, or {missing: why}. It never throws: the own

@@ -29,7 +29,7 @@ import {readPointer, realHome} from './layout.mjs';
 import {isRealDirectory, linuxRelease, loadLinuxRuntime, locateRuntime, ownInstaller, pointerObstruction, resolveRuntime} from './manifest.mjs';
 import {moduleRecoveryHint, verifyModuleTree} from './module-tree.mjs';
 import {shellWord} from './installer.mjs';
-import {managedNode, nodeLayout, nodeMatchesRecord, readNodeRecord} from './managed-node.mjs';
+import {managedNode, managedNodeIntoVendorTree, nodeLayout, nodeMatchesRecord, readNodeRecord} from './managed-node.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 const sentence = error => (error.hint ? `${error.message}; ${error.hint}` : error.message);
@@ -42,9 +42,9 @@ const executable = path => { try { accessSync(path, constants.X_OK); return true
 
 // -> {rows, runtime, stop}: `runtime` is what sessions resolve (null when they cannot), `stop` that the record itself
 // failed. `resolveNode` is the session's Node lookup (doctor's one resolution, shared with repl.host), `linuxHelper` the
-// helper's check, `sandbox` the CUA_SHIM_SANDBOX mode (null when invalid), and `pins` the vendor's pins, which only tell
-// a vendor release in current.json by name. `linuxRuntime` (the record) is a seam for tests.
-export function linuxRuntimeChecks({home, env, host, pins, resolveNode, linuxHelper, sandbox, linuxRuntime = () => loadLinuxRuntime({host})}) {
+// helper's check and `sandbox` the CUA_SHIM_SANDBOX mode (null when invalid). `linuxRuntime` (the record) is a seam for
+// tests.
+export function linuxRuntimeChecks({home, env, host, resolveNode, linuxHelper, sandbox, linuxRuntime = () => loadLinuxRuntime({host})}) {
   let parts, release;
   const refused = caught(() => { parts = linuxRuntime(); release = linuxRelease(parts, host.arch); return null; }, error => error);
   if (refused) return {rows: [result('platform', 'fail', sentence(refused))], runtime: null, stop: true};
@@ -57,14 +57,14 @@ export function linuxRuntimeChecks({home, env, host, pins, resolveNode, linuxHel
   const located = caught(() => locateRuntime({home, host}), error => { rows.push(result('runtime.installed', 'fail', sentence(error))); return null; });
   const refusedTree = located && caught(() => { resolveRuntime({home, host}); return null; }, error => error);
   if (refusedTree) rows.push(result('runtime.installed', 'fail', sentence(refusedTree)));
-  else if (located) rows.push(installedRow({runtime: located, pins, release, installer, node, helper, sandbox}));
+  else if (located) rows.push(installedRow({runtime: located, release, installer, node, helper, sandbox}));
   const runtime = refusedTree ? null : located;
   rows.push(located ? modulesRow(located) : result('runtime.modules', 'skip', 'no module tree to verify (see runtime.installed)'));
   rows.push(nodeRow({home, env, host, release, pinned: parts.node.version, installer, node}));
   return {rows, runtime: runtime && {release: runtime.release, root: runtime.root, paths: runtime.paths, parts}, stop: false};
 }
 
-function installedRow({runtime, pins, release, installer, node, helper, sandbox}) {
+function installedRow({runtime, release, installer, node, helper, sandbox}) {
   const missing = [...(node.refused ? [`its Node: ${node.refused.message}`] : []),
     ...(helper.refused && sandbox !== 'disabled' ? [`its sandbox helper: ${helper.refused.message}`] : [])];
   if (missing.length) return result('runtime.installed', 'fail', `cua's own runtime ${runtime.release} is not whole at ${runtime.root}: ${missing.join('; ')}; `
@@ -80,9 +80,10 @@ function installedRow({runtime, pins, release, installer, node, helper, sandbox}
   }
   if (pointer === runtime.release) return result('runtime.installed', unrun ? 'warn' : 'pass', `cua's own runtime ${runtime.release} at ${runtime.root}: `
     + `its module tree, Node and sandbox helper are installed${unrun ? ' but for the helper' : ''}, and current.json names it, the last install that completed here${unrun}`);
+  // A vendor release is told by its name's form alone: no vendor pin is read (#171 M6b).
   const names = pointer === null ? 'no release'
     : pointer.unreadable ? `nothing readable (${pointer.unreadable})`
-      : (pins ?? []).some(pin => pin.release === pointer) || /^\d/.test(pointer) ? `the vendor's release ${pointer}, which an older cua's install wrote`
+      : /^\d/.test(pointer) ? `the vendor's release ${pointer}, which an older cua's install wrote`
         : `another cua's runtime, ${pointer}`;
   return result('runtime.installed', 'warn', `sessions resolve cua's own runtime ${runtime.release} (${runtime.root})${unrun}, but current.json names ${names}: `
     + `no install of this cua has completed here, so a part may be missing or another install's; run ${installer}`);
@@ -119,10 +120,14 @@ function nodeRow({home, env, host, release, pinned, installer, node}) {
     + `this cua's pinned ${pinned}: ${installer} installs the pinned one`);
 }
 
-// What node-install (node-install.mjs) refuses to replace in the real home `home`, for the pinned `version`: a node/
-// that is not a directory, a node/current.json that is not a file (its stagePointer), and a node/<version> that is not
-// that version's recorded install whose bin/node is the recorded bytes (it is never repaired in place).
+// What node-install (node-install.mjs) refuses to replace in the real home `home`, for the pinned `version`: a link that
+// leads one of the paths it reads into the vendor's tree, found as it finds it, before anything there is read
+// (managed-node.mjs managedNodeIntoVendorTree; #171 M6b); a node/ that is not a directory, a node/current.json that is
+// not a file (its stagePointer), and a node/<version> that is not that version's recorded install whose bin/node is the
+// recorded bytes (it is never repaired in place).
 function nodeBlockers(home, {version, platform, arch}) {
+  const into = managedNodeIntoVendorTree(home, version);
+  if (into) return [into.link];
   const {root, pointer, version: dirOf} = nodeLayout(home);
   if (present(root) && !isRealDirectory(root)) return [root];
   const pointerStat = (() => { try { return lstatSync(pointer); } catch { return null; } })();

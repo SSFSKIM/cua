@@ -204,7 +204,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   const onProgress = values.json ? undefined : progressReporter();
   if (platform === 'linux') {
     const {host = {platform, arch: process.arch}, ...seams} = linuxSeams;
-    const {ok, report, error} = await installLinux({values, home, env, host, onProgress, installNode: nodeInstaller, pins: pinsOf, nodePins, ...seams,
+    const {ok, report, error} = await installLinux({values, home, env, host, onProgress, installNode: nodeInstaller, nodePins, ...seams,
       say: values.json ? undefined : print, progress: values.json ? undefined : line => process.stderr.write(`${line}\n`)});
     if (values.json) { print(report); return ok ? 0 : 1; }
     if (!ok) throw new CuaError(error.code, error.message, {hint: error.hint});

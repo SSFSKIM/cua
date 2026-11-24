@@ -11,9 +11,13 @@
 //   5. the pointer, current.json, to the derived release once 2 to 4 are in place, else left as it was. It records what
 //      the last install completed and selects nothing on Linux (§4.3), so an older cua's vendor name there is migrated;
 //   6. cua's engine (install.mjs installLinuxEngine);
-//   7. the Codex CLI's leftovers, as before: removed with `--prune-leftovers`, else named.
+//   7. the vendor's release an older cua's install placed, reported and left in place (retired-tree.mjs: one sentence
+//      per release whose install record says cua placed it, with its path and size; M6b's pre-flight §3);
+//   8. the Codex CLI's leftovers in the home's state/codex: removed with `--prune-leftovers`, else named. Nothing inside a
+//      release is looked at (N4).
 // Nothing of the vendor's is fetched or placed: cua 0.30.0 retired its engine on Linux (M6b), and `--archive` and
-// `--release` are usage errors here (cli.mjs).
+// `--release` are usage errors here (cli.mjs). Every lane that acquires a part refuses a staging/ that is a link before it
+// touches it (vendor-tree.mjs stagingOutsideVendorTree), so nothing is created, unpacked or removed inside the tree.
 //
 // Every step is attempted whatever happened before. The command fails when a common part (2 to 4) failed, or when the
 // engine failed and the home asks for it: when the effective engine setting (CUA_NATIVE_ENGINE, else engine.json's
@@ -32,17 +36,17 @@
 // it.
 //
 // The report (`--json`): {ok, release, changed, modules, sandboxHelper, node, pointer: {previous, current, changed},
-// engine, sessions: {browser, computer, engine, why: {browser?, computer?}}, codexLeftovers?, error?}, where a step that
-// failed is {failed: {code, message, hint?}}, `changed` is whether any step changed anything, `sessions.engine` the
-// engine the setting selects (null when it cannot be read), `why` the refusal of each session that does not open, and
-// `error` the first failure that fails the command, its remedy naming this cua's own installer by its absolute path
-// (manifest.mjs ownInstaller, F9), else a vendor selection's. The vendor's pins are read for the leftovers scan only
-// (manifest.mjs vendorPinsOf), which goes on without the release trees they name when this checkout cannot read them.
+// engine, retired, sessions: {browser, computer, engine, why: {browser?, computer?}}, codexLeftovers?, error?}, where a
+// step that failed is {failed: {code, message, hint?}}, `changed` is whether any step changed anything, `retired` the
+// vendor's releases step 7 names ([{release, path, bytes, installedAt, source}], which never set `changed`),
+// `sessions.engine` the engine the setting selects (null when it cannot be read), `why` the refusal of each session
+// that does not open, and `error` the first failure that fails the command, its remedy naming this cua's own installer
+// by its absolute path (manifest.mjs ownInstaller, F9), else a vendor selection's. No vendor pin is read.
 import {readFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
 import {readPointer, realHome, writePointer} from './layout.mjs';
-import {linuxRelease, loadLinuxRuntime, loadPins, ownInstaller, pointerObstruction, resolveRuntime, vendorPinsOf} from './manifest.mjs';
+import {linuxRelease, loadLinuxRuntime, ownInstaller, pointerObstruction, resolveRuntime} from './manifest.mjs';
 import {installModuleTree} from './module-tree.mjs';
 import {installLinuxEngine, installSandboxHelper} from './install.mjs';
 import {installNode} from './node-install.mjs';
@@ -54,6 +58,7 @@ import {configuredBackends} from '../chrome/client-mode.mjs';
 import {helperFor, sha256Of} from '../sandbox/linux.mjs';
 import {installedLinuxHelper} from './sandbox.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './codex-leftovers.mjs';
+import {retiredTrees} from './retired-tree.mjs';
 
 const failure = (error, code) => (error instanceof CuaError
   ? {code: error.code, message: error.message, ...(error.hint ? {hint: error.hint} : {})}
@@ -70,12 +75,13 @@ function settingOf(env) {
 
 // -> {ok, report, error}. `say` prints a line of the human output, `progress` a progress line (stderr). The installers,
 // the pins, the record and the host are seams for tests (cli.mjs passes its own `deps`), as are the session's Node
-// lookup, the helper's check and the engine selection's inputs (`engine`, launch.mjs nativeEngineFor's).
+// lookup, the helper's check, the engine selection's inputs (`engine`, launch.mjs nativeEngineFor's) and step 7's
+// report (`retired`).
 export async function installLinux({values, home, env = process.env, host = {platform: 'linux', arch: process.arch}, say = () => {}, progress = () => {}, onProgress,
   linuxRuntime = () => loadLinuxRuntime({host}), installModules = installModuleTree, installHelper = installSandboxHelper, installNode: nodeInstaller = installNode,
-  installEngine = installLinuxEngine, enginePin = loadEnginePin, pins: loadVendorPins = loadPins, nodePins = loadNodePins,
-  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = installedLinuxHelper, engine: engineInputs}) {
-  const pinsOf = () => vendorPinsOf(loadVendorPins);
+  installEngine = installLinuxEngine, enginePin = loadEnginePin, nodePins = loadNodePins,
+  resolveOwnNode = () => ownHostNode({ambient: env, home, platform: 'linux', arch: host.arch}), linuxHelper = installedLinuxHelper, engine: engineInputs,
+  retired: findRetired = retiredTrees}) {
   const release = linuxRelease(linuxRuntime(), host.arch);
   const installer = ownInstaller({release});
   const again = `run \`${installer.command}\` again`;
@@ -123,15 +129,15 @@ export async function installLinux({values, home, env = process.env, host = {pla
     : engine.changed ? `installed cua's Linux engine ${engine.version} (${engine.release}) at ${engine.path}`
       : `cua's Linux engine ${engine.version} (${engine.release}) is already installed and verified at ${engine.path}`);
 
-  // 7: the Codex CLI's leftovers.
+  // 7: the vendor's release, reported (M6b, 1216): nothing there is changed.
+  const retired = findRetired({home});
+  for (const line of retired.lines) say(line);
+
+  // 8: the Codex CLI's leftovers, in state/codex only (N4).
   let codexLeftovers = null;
-  if (values['prune-leftovers']) codexLeftovers = await attempt(() => removeCodexLeftovers({home, pins: pinsOf()}), 'prune_failed');
+  if (values['prune-leftovers']) codexLeftovers = await attempt(() => removeCodexLeftovers({home}), 'prune_failed');
   if (codexLeftovers && !codexLeftovers.failed) for (const line of describeRemoval(codexLeftovers)) say(line);
-  else if (!codexLeftovers) {
-    let pins = [];   // pins this checkout cannot load: the scan names no release tree then
-    try { pins = pinsOf(); } catch (error) { if (!(error instanceof CuaError)) throw error; }
-    for (const line of describeLeftovers(findCodexLeftovers({home, pins}))) say(line);
-  }
+  else if (!codexLeftovers) for (const line of describeLeftovers(findCodexLeftovers({home}))) say(line);
 
   const sessions = readiness({home, env, host, installer, resolveOwnNode, linuxHelper, engine: engineInputs});
   say(opensNow(sessions, env));
@@ -146,7 +152,7 @@ export async function installLinux({values, home, env = process.env, host = {pla
   const error = fatal.length ? errorOf(fatal[0])
     : setting?.engine === 'vendor' ? retiredEngine({setting, env, cuaHome: () => realHome(home), after: 'install'}) : undefined;
   const changed = [modules, sandboxHelper, node, pointer, engine].some(outcome => outcome.changed === true);
-  const report = {ok: !error, release, changed, modules, sandboxHelper, node, pointer, engine, sessions,
+  const report = {ok: !error, release, changed, modules, sandboxHelper, node, pointer, engine, retired: retired.trees, sessions,
     ...(codexLeftovers ? {codexLeftovers} : {}), ...(error ? {error} : {})};
   return {ok: !error, report, error};
 }

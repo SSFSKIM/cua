@@ -46,10 +46,12 @@ const causeOf = row => sampleCause(row)?.category ?? null;
 const groupBy = (items, key) => { const out = new Map(); for (const item of items) { const k = key(item); if (!out.has(k)) out.set(k, []); out.get(k).push(item); } return out; };
 const all = () => true;
 const unknown = () => null;
-// The vendor's stop that left its sample of `run` unrun ({reason, after}), or null.
-const stopOf = (vendorRows, run) => vendorRows.find(r => runOf(r) === run && r.unrun)?.unrun ?? null;
+// The vendor's stop that left its sample of `run` numbered `sample` unrun ({reason, after}), or null: matched on the run
+// and the sample, so a run the vendor measured in part before it stopped charges the stop to the unrun samples alone.
+const stopOf = (vendorRows, run, sample) => vendorRows.find(r => runOf(r) === run && sampleOf(r) === sample && r.unrun)?.unrun ?? null;
+const stopFor = (vendorRows, c) => stopOf(vendorRows, runOf(c), sampleOf(c));
 // A cua sample's cause where it has no vendor pair: the vendor's stop, or none to compare with.
-const noPair = (vendorRows, c) => (stopOf(vendorRows, runOf(c)) ? 'vendorStopped' : 'unpaired');
+const noPair = (vendorRows, c) => (stopFor(vendorRows, c) ? 'vendorStopped' : 'unpaired');
 
 // The complete run pairs: runs whose pair is eligible (`pairable`) and where both sides hold the same samples, as many
 // as `planned(run)` gives (null: as many as the other side; 0: the sides' plans differ), every one with a verdict by its
@@ -79,8 +81,9 @@ export function accountOf(vendorRows, cuaRows, cuaCause, {required = 1, pairable
   };
   const pairRuns = [...completeRuns(vendorRows, cuaRows, causeOf, cuaCause, {pairable, planned})].sort((a, b) => a - b);
   // Each run where a cua sample is `vendorStopped`: the vendor's stop, once a run.
-  const stopRuns = [...new Set(cuaRows.filter(r => cuaCause(r) === 'vendorStopped').map(runOf))].sort((a, b) => a - b);
-  const vendorStopped = stopRuns.map(run => ({run, reason: stopOf(vendorRows, run)?.reason ?? null, after: stopOf(vendorRows, run)?.after ?? null}));
+  const stopped = new Map();
+  for (const r of cuaRows.filter(x => cuaCause(x) === 'vendorStopped')) if (!stopped.has(runOf(r))) stopped.set(runOf(r), stopFor(vendorRows, r));
+  const vendorStopped = [...stopped].sort(([a], [b]) => a - b).map(([run, s]) => ({run, reason: s?.reason ?? null, after: s?.after ?? null}));
   return {vendor: side(vendorRows, causeOf), cua: side(cuaRows, cuaCause), pairs: pairRuns.length, pairRuns, qualifies: pairRuns.length >= required,
     ...(vendorStopped.length ? {vendorStopped} : {})};
 }
@@ -112,7 +115,7 @@ export function judgeCell(mode, vendorRows, cuaRows, {departure = null, required
   const held = r => !oracle(r) || r.interference?.ok === true;
   const fixed = mode === 'absolute' || mode === 'pressKey';
   const outcomes = new Map(), notes = new Map(), unreferenced = [];
-  const ownAfterStop = c => ownEffect && Boolean(stopOf(vendorRows, runOf(c)));
+  const ownAfterStop = c => ownEffect && Boolean(stopFor(vendorRows, c));
   const failed = (c, v) => {
     // A proven change of the user's value (the rows behind a user window) fails on its own: no departure, pair or
     // shared failure answers for it.

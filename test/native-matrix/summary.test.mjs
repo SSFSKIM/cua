@@ -1154,3 +1154,18 @@ test('an ownEffect cell after the vendor\'s stop is judged on its own effect: a 
   // A vendor sample merely invalid (no stop) leaves it unpaired, as ever.
   assert.deepEqual(judgeCell('reference', [row('vendor', 1, false, {invalid: 'x'})], [row('cua', 1, true)], {ownEffect: true}).account.cua.noVerdict, {unpaired: 1});
 });
+
+// Fix wave (review of the vendorStopped rule): the stop is matched on the run and the sample. A speed row whose vendor
+// measured sample 1 and left sample 2 unrun has one vendorStopped cua sample (2); sample 1 keeps the complete-run rule's
+// answer (unpaired: the run is no complete pair).
+test('vendorStopped is the stopped sample\'s alone: a stop between two samples of a run', () => {
+  const rows = (engine, samples) => samples.map(([sample, extra]) => ({section: 'speed', id: 'textedit/getAXState', engine, run: 1, sample, ok: true, inCellMs: 40, ...extra}));
+  const stop = {reason: 'x', after: 'textedit/getAXState'};
+  const speed = judgeSpeed(rows('vendor', [[1, {}], [2, {ok: false, invalid: 'not run: the run stopped: x', unrun: stop}]]), rows('cua', [[1, {}], [2, {}]]));
+  assert.deepEqual(speed.account.cua.noVerdict, {unpaired: 1, vendorStopped: 1});
+  assert.deepEqual(speed.account.vendorStopped, [{run: 1, reason: 'x', after: 'textedit/getAXState'}]);
+  // A method row: the vendor's sample 2 of run 1 unrun leaves cua's sample 1 of that run as it was.
+  const m2 = (engine, sample, extra = {}) => ({section: 'method', id: CLICK, engine, run: 1, sample, ok: true, regime: 'frontmost', ...extra});
+  const cell = judgeCell('reference', [m2('vendor', 1, {invalid: 'x'}), m2('vendor', 2, {ok: false, invalid: 'not run', unrun: stop})], [m2('cua', 1), m2('cua', 2)]);
+  assert.deepEqual(cell.account.cua.noVerdict, {unpaired: 1, vendorStopped: 1});
+});

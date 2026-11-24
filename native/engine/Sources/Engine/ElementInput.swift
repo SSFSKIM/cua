@@ -211,7 +211,8 @@ func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () thr
 /// has posted, the app counts as acted on (`acted`, arming the settle) whatever follows, a refusal of the action
 /// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed`, `routeAdvice` and its
 /// delivery guard's record (`delivery`, #324: without it the click's raise reads as one outside any hold, #315's misread)
-/// ride in the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
+/// and #538's `pointerRefusal` (a click refused and carried by the field's press) ride in the method's meta, which keeps
+/// the method's own route. A click refused or failed reports the meta it reached.
 /// #212: the click's events are noted as the focus's click, not the method's input (its activation's own posts are read
 /// as they went, `InputEffects`).
 func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
@@ -229,6 +230,7 @@ func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout Inp
   meta.pointUnconfirmed = clickMeta.pointUnconfirmed
   meta.routeAdvice = clickMeta.routeAdvice
   meta.delivery = clickMeta.delivery
+  meta.pointerRefusal = clickMeta.pointerRefusal
 }
 
 extension Engine {
@@ -355,7 +357,7 @@ extension Engine {
       throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
     }
     meta.pointUnconfirmed = pointing.relation.unconfirmed
-    var pointer = PointerTarget.acceptingFirstMouse
+    var pointer = PointerTarget.acceptingFirstMouse(in: app)
     var pointerHit = pointing.hitElement
     if route == .activation && button == .left {
       let owner = pointing.owner

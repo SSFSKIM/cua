@@ -536,6 +536,13 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     paste's while it runs and until 1 s after its last event, ended by the connection's next execute): {repairs, actions: [{postedAt, repairs, latencyMs}]}, the connection's total and
     the last 8 repaired actions, each keyed by its delivery's postedAt, latencyMs its first repair's from the events;
     each repair is also a `route3.afterAction.repair` signpost event
+  pointerRefusal: a shared-mode pointer refused before its events because no route-3 activation stood for it while
+    another app was in front (#538, ruling 1173), on the refusal (`backgroundClickRefused`, nothing posted) and on the
+    element route that carried it instead (set_value's and select_text's focus fallback click included, ruling 1174):
+    {reason ("keyFocusOnly"), frontmostPid, keyFocusPid (null: none read), keyFocusIsTarget (key focus is the target's
+    serving process or the pointer's own bound app: the state S, else a front lost since the activation's decision or
+    a joined hold's key focus gone)}, read just before the events would have gone; carried by the service as
+    cua/pointerRefusal
   paste: the paste route's value-free diagnostics of its last line (#187), on its result and every error after its first
     line began: {line, lines, notificationSource ("trusted" | "untrusted" | "none"), baselineEmpty, keyFocusAtPaste?
     {holds, frontmost, keyFocusProcess, focusedInWindow (null: unreadable)}, readWait? ("handedOver" | "released" |
@@ -8846,6 +8853,187 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
   - Live proof is M5's sitting C cell `electron/frontmost/click.selection` on GitHub-hosted runners; nothing ran live
     on this Mac.
   Date/Author: 2026-11-23, cursor235's builder for #258.
+- Decision (#538, rulings 1172, 1173 and 1174, 2026-11-23, `fix/538-key-focus-refuse` from 6baf3e36; amends #200's delivery
+  guard and #282's refusal path): **in shared mode, a pointer for which no route-3 activation stands is refused, with
+  nothing posted, when another app is in front at a front read made just before its events.** The state is S: the
+  target holds window-server key focus while another app is frontmost. `believesItHasFocus` counts key focus, so
+  `activate()` exits early, `activated` stays false, and on main `deliver()` posted the pointer's events with no hold, no
+  order repair and no after-action watch (`guard activated, …`), so a mouse down that ordered the target's window
+  forward left it over the person's. The same unguarded post reached a pointer whose target was frontmost when the
+  activation was decided and lost the front before the events, and a pointer joining a standing entry whose activation
+  never ran.
+  - 1172 withdrawn. 1172 took the design note's option (b): run the delivery guard whenever another app is in front,
+    activation or not. The adversarial review of the note found that a guard run in S has no witness and no baseline.
+    No activation read the person's window or the order before the events, so the guard could repair an order that was
+    already so before the click, or count a repair against a window it could not read, and report repairs it never
+    made. A front switch during the guard's own setup went unseen, and dedicated mode's paste would have changed. 1173 replaces it with option (c), the refusal.
+  - The rule (1173, `FakeActivation.deliver`, Activation.swift). For a pointer (`pointer: true`, shared mode's; dedicated
+    mode never calls `deliver`) with no activation standing (`activated` false: its own early exit, or the joined
+    entry's), `deliver` reads the front once more with route 3's identity (`frontmostIsTarget`) as the last step before
+    `post`, judged for the pointer's own bound app (`ranBy`'s `appPid`, ruling 1174). This path makes no Accessibility
+    lookup of its own (the person's window is never read), so nothing lies
+    between the read and the events. Another app in front throws `PointerRefused` carrying the readings
+    (`PointerRefusalRecord`: the frontmost pid, the key-focus pid and whether that is the target's serving process or
+    the app); no app frontmost, or the target's, posts alone as on main. `deliverPointer` then runs #282's path: the
+    lease of the activation that never ran is given back first, then the pointer's element route runs where it has one
+    (a web area's hit, #282 and #315), else the refusal is thrown. The meta's `pointerRefusal` carries `keyFocusOnly`
+    and the readings on both, and the service passes it as cua/pointerRefusal (Interfaces).
+  - The refusal (`keyFocusOnlyRefused`, `backgroundClickRefused`, -10005), in S: "Another app is in front of <App>
+    while <App> holds keyboard focus, so nothing was sent: a <click|drag> sent now could bring <App>'s window over the
+    person's. Act on <App> through its elements' own actions (performSecondaryAction, setValue) or keys (typeText,
+    pressKey), or ask the person to bring <App> to the front." When key focus is not the target's (the front lost since
+    the decision, or a joined hold's key focus gone), the clause "while <App> holds keyboard focus" is left out and the
+    rest is the same. It never asks for a retry (ruling 1174): a pointer joining a still-held never-activated entry
+    would meet the refusal again however often it observed and clicked.
+  - What it reaches: an element click on a strict descendant, an element with neither AXPick nor AXPress, an element's
+    right, middle or multi-click, focusField's fallback click, every coordinate left click route 3 posts, and every drag.
+    A coordinate right click is refused before this by #463 (`contextMenuPoint` reads the front).
+  - Unchanged from main: dedicated mode (no delivery guard by design, #282); the paste route's first ⌘V or Return and
+    type_text's paste route (`pointer` false; `deliver` now throws only for a pointer, and the paste's call sites only
+    added `try`); every delivery with an activation standing (its hold, guard, events and watch); #258's frontmost field
+    carrier, which posts with no activation and rechecks the front itself; scroll (2′, no `deliver`); element actions
+    and keys, which never reach `deliver`.
+  - The proof: `KeyFocusOnlyTests`, 9 tests over the guard seam (`GuardSeam` gains a settable key focus, and mouse-down
+    kinds beyond the left for its `onMouseDown`). S through `deliverClick` and `deliverPointer`: a click, a double click,
+    a right click, a drag and a web-area click with no element route are refused with the sentence, nothing posted, no
+    hold, no raise, the lease given back and `keyFocusOnly` with the readings; a web-area click with an element route
+    takes it, nothing posted, the lease given back before it runs. The front lost after the activation's decision (moved
+    from `beforePosting`), key focus kept or moved: refused with the matching sentence, nothing posted, the person's
+    window never read. A pointer joining a focus hold taken in S, on its own connection or another: refused, the hold's
+    share kept, and no subtype 2 at the hold's end. Pins: no app frontmost and the target frontmost post alone; dedicated
+    mode's click and drag in S post as on main and leave the raise; the paste's event in S, with its own never-run
+    activation or another's, is posted with no guard; and with an activation standing the guarded click and drag post
+    subtype 1, the activation point's click, the action's events and subtype 2 under one hold, repair the raise once,
+    wait #321's least time and leave the watch running, also when the target takes key focus after the activation ran,
+    so M5's background cells keep their outcome. Red: at 6baf3e36 with only the seam's two fields added (f53626da), 4
+    of the 9 fail with 47 assertions: every S scene, the front-lost scene and the joiner are posted (2 to 5 events) with
+    no hold, the target's window left above and no record; the 5 pins pass there as after the fix. The service's test
+    carries cua/pointerRefusal and resets it on the next call. 1767 swift tests (1 skipped), 0 failures; the release build
+    passes on Xcode 27.2.
+  - Ruling 1174, one fix round after the review of 6baf3e36..dfd93038 (rule (c) unchanged):
+    - (P1) `HeldActivations` shares an entry by serving process alone, and the check used the standing activation's
+      `appPid`, so a pointer for app B joining a never-activated entry made for app A on the same serving process was
+      judged against A: posted unguarded with A frontmost, refused with B frontmost. The check now uses `ranBy`'s
+      `appPid` (the pointer's own activation, which `deliverPointer` passes for a joiner too) for both the front and the
+      key-focus comparisons.
+    - (P2) `send()` announced to the agent cursor before the now-throwing `deliver`, so a refused pointer moved the
+      cursor and an element route after it announced a second time. `announce` now runs inside the posting closure, after
+      the refusal; `testTheCursorIsToldAfterTheGuardAndBeforeTheClicksEventsAndNeverForARefusedClick` passes unchanged.
+    - (P2) `focusingClick` copied `delivery` back to set_value's and select_text's meta but not `pointerRefusal`, so a
+      Gecko focus fallback refused and carried by its press lost the record; it is copied now.
+    - (P2) the front-lost sentence's "Observe <App> … and try again" could loop against a held never-activated entry;
+      replaced as above.
+    - (P3) a right or middle click (an element's; a coordinate middle click) refused as "the app": every pointer target
+      its callers build now names the bound app (`PointerTarget.acceptingFirstMouse(in:)`).
+    - Proof: `KeyFocusOnlyTests` grows to 12 (a cross-app joiner on a shared serving process in both front orders; a
+      joiner after key focus left, twice, never told to retry; a right and a middle click naming the app; zero
+      announcements on every refusal and on the element route), and `ValueSettingTests` runs set_value's chain
+      (focusFieldIfNeeded, focusFallbackClick, focusingClick, deliverClick) in S to a successful press that keeps the
+      record. Red at dfd93038 with the tests alone (bc79711f): 5 of 11 `KeyFocusOnlyTests` fail with 15 assertions,
+      one an unexpected throw (B frontmost refused), and the focusing chain loses the record; the P3 test does not
+      compile there. 1771 swift tests (1 skipped), 0 failures; the release build passes on Xcode 27.2.
+    - Left for its own ticket: the registry's sharing by serving process reaches past this check. With an activation
+      standing, a joiner for another bound app is guarded and watched with the entry's `appPid` (`activate`'s sample,
+      `deliver`'s front test and sample, the after-action watch), shares the entry's arm and activation point, and a
+      focus hold or element action for app B on a process another connection holds for app A runs under A's activation.
+  - The test plan asked for the front to switch inside `deliver`'s lookup of the person's window. On this path
+    `deliver` makes no such lookup, so the front-lost scene switches it in the last caller seam before the events and
+    asserts the window was never read.
+  - Residue, logged as #540 to #544 under 1172: #540 (re-run a never-activated entry) now decides between this refusal
+    and a real activation for the joiner; #541 (an S click dropped by a view refusing first mouse) remains for
+    dedicated mode only, since shared mode no longer posts in S. Nothing ran live on this Mac; a hosted probe of S stays
+    optional (1172), its question now whether S occurs often enough for the refusal to cost runs (`pointerRefusal`
+    counts it).
+  Date/Author: 2026-11-23, cursor235's builder for #538.
+- Decision (2026-11-23, #526, rulings 1175 to 1177 and 1179, `fix/526-escape-product` from 3df1fecb): **a selectable
+  element's flattened title, description and value are joined one piece per line, as the vendor joins them; cua prints
+  every line break inside an element's text escaped and fences the selected text past its longest backtick run, where
+  the vendor prints both raw (declared departures); and the harness reads that output on cua's lane.**
+  - The cause is not a multi-line AXValue. M5 pilot B's Finder "go up" row (runs 45226949355 and 45274556933) is a
+    selectable AXRow whose cells' static texts are flattened into it by transformation (1). The vendor's
+    `UIElementTree.Item.flattenedString` (0x10063eb80, decompiled in the #117 Ghidra project) compactMaps the selector
+    over the item and its subtree, trims each piece of `CharacterSet.whitespacesAndNewlines`, drops the empty ones and
+    joins with the small-string literal 0x0a; `transform` (0x1006473d0) calls it for the title, the description and
+    the value. cua's renderer joined with one space and did not trim (B §5 had the join "not read"). The vendor's text
+    carries a raw LF there (the artifacts' bytes: `Value: Name\nDate Modified\nSize\nKind`, 0x0a each). The engine reads
+    each attribute unaltered (Fetch.swift `stringValue`, capped at `maxValueLength` before any rendering), so nothing
+    changes in Swift.
+  - The join rule: `flattenIntoSelectableAncestor` builds each of the three from the node's and its descendants' pieces,
+    trimmed of Foundation's whitespacesAndNewlines exactly as `CharacterSet.whitespacesAndNewlines` answers on macOS 27
+    (U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200B, U+2028, U+2029, U+202F, U+205F, U+3000), empties
+    dropped, joined by "\n". (8) mergeTextOnlySiblings' join (FUN_100646f38) is still unread and keeps one space.
+  - Ruling 1175, the escape: a raw break inside an attribute lets a page or a document put a line into the tree that
+    reads as an element (`[99] button Delete`, or a tab-indented `99 button Delete`), a path for prompt injection, in
+    every free-text field (title, Description, Help, Value, Details, Placeholder, ID, the role description, the window
+    title and app name), the vendor's raw TextEdit document included. The renderer escapes the whole element text after
+    the parts are ordered (`escapeLineBreaks`), so the long-part rule still reads the raw text: LF and CR as `\n` and
+    `\r` (the vendor's own Linux rendering escapes them so) and VT, FF, U+001C–U+001E, NEL, LS and PS as `\uXXXX`; a
+    backslash is left as it is, as on Linux. The header's window title and app name are escaped the same way. A
+    continuation indent was rejected: an element line is itself tab-indented.
+  - Ruling 1176, the model's side: a value copied back from the tree would write a literal backslash-n, so the
+    first-call document says, in one sentence, that breaks show as `\n` or `\r` (others `\uXXXX`) and that `setValue`
+    and `typeText` take real ones: in `agent-cursor.md`'s paragraph on replacing a field's text and at the end of the
+    `macos/accessibility-tree` lookup, so the macOS core carries it with or without the lookups (the surface inventory's
+    "Table 3 amendment (2026-11-23, #526, ruling 1176)"). Linux's tree text is the vendor's own and escapes `\r`, `\n`
+    and `\t`, unmentioned in `core.md` and `linux-engine.md`: the same pitfall, left to its own decision.
+  - Ruling 1177 (#552, closed with #526): the selected text stays raw inside its fence, which is longer than the longest
+    run of backticks in it and at least three (`selectedTextFence`), so the text cannot close it.
+  - Declared in the judges: the `lineBreaks` departure (`scene: "*"`, no count, never over-declared;
+    `test/native-goldens/compare.mjs`, `scripts/repl-parity/native-mac-diff.mjs`, both expected files). Under it a
+    vendor item is keyed and compared by its text with its breaks escaped (index, depth and the parse's boundaries
+    kept, a numbered line holding a CR, LS or PS still its own item), and the header and every trailer by their text as
+    cua prints them, the fence included; it holds only on exact equality, never by a redacted length, and where the
+    vendor's text needs an escape or a longer fence only that form is cua's. The recorded TextEdit goldens' `cua.txt`
+    are re-pinned.
+  - Ruling 1179, the split: this entry's branch is the product part (the renderer, the documentation sentence, the
+    fence, the judges' departure) and the minimum harness support that has to travel with it. The ambiguity machinery
+    of a multi-line value followed by another part (the readers' `{ambiguous}`, the no-verdict cause and its mapping
+    through every runner and judge) is #561's, whose branch starts at `fix/526-multiline-value` 3cd20c39.
+  - The harness support, lane-aware and nothing more. The run's bind records the lane (`goldens-cells.mjs` `BIND(scene,
+    app, engine)`, `globalThis.__axRendering`; the matrix's run and the cursor sitting's sessions pass their engine).
+    `matrix-text.mjs` `valueOfIndex` decoded, on cua's lane only, a multi-line value that is its line's last part
+    (nothing `, ` after `Value: `), and only the escapes the renderer emits (narrowed by rulings 1183 and 1185 below);
+    every other value reads exactly as on main, so a multi-line value followed by another part is cut at its first `, `
+    (#561's residue).
+    `scenes-mac-text.mjs` `indexOfTarget` ends a name at such an escape only on cua's lane, only in the `Value:` part
+    and only when that value ends its line; every other part and the vendor's lane match exactly as before.
+    `selectedTextOf` and `live-checks.mjs` `vendorSelectedText` read a fence of three backticks or more. Ruling 1182:
+    the reader errs only toward a false FAIL; a multi-line value that is not last on its line reads as main reads it and
+    fails a check, and is never found as a target, never a match (tests in `matrix-text.test.mjs`,
+    `scenes-mac.test.mjs` and `multiline-lanes.test.mjs`, which runs #187's and #188's cells and TextEdit's document
+    cells for real on both lanes).
+  - A declared limit (ruling 1182), #561's and #555's: the renderer leaves a literal backslash as it is,
+    so on cua's lane a page's literal `\n` text and a real break print alike and the decoder reads both as a break. No
+    current scene puts a backslash in a value.
+  - Ruling 1183, the scoped review's fix round, one rule for the readers: match only at a real part start, decode only
+    a real final Value part, and on cua's lane a Value part holding an escape the reader did not decode is read as its
+    raw escaped remainder, so an exact check fails, never a prefix. On cua's lane a line holding an escape is read
+    only by its first line (the text before its first escape, the vendor's element line): `indexOfTarget` matches a
+    name ended by a comma there, or a final `Value:` part's first line ended by the escape; `valueOfIndex` gives no
+    value for a `Value: ` after an escape (it may sit in another part's continuation), decodes a final escaped Value
+    part, and reads one with a later part as its raw remainder. The parity runner's bind (`native-mac.mjs`) now passes
+    the lane's engine, as the matrix's and the cursor sitting's do, so a fresh cua lane finds TextEdit's target in
+    cua's golden. The goldens judge's parse keeps a focused trailer's final LF (a value ending in a break) instead of
+    stripping it as a tree's terminator. Tested through the real cells (`multiline-lanes.test.mjs`) and through the
+    parity runner's own bind and action cells on the checked-in cua TextEdit golden (`native-mac-run.test.mjs`). The
+    fence readers accepting a longer fence anywhere in vendor output is #561's.
+  - Ruling 1185 (replacing 1184): on cua's lane `valueOfIndex` decodes, in any app, a Value part that starts at a real
+    part boundary before the line's first escape (the element's first part, anchored after its role words and flags
+    group from the element's start, or a later part after `, `) and is the line's final part (nothing `, ` after it).
+    Any other cua line holding an escape reads as its raw escaped text, from the earlier of the Value part's start and
+    the line's first escape (the first escape when there is no Value part) to the line's end: 1184's never-null rule,
+    kept, so the reading always holds an escape's backslash and never equals "" or an expected value (a real Value
+    after another multi-line part is read raw: an exact check fails, an emptiness check is not ready and the field is
+    emptied). `valueReadingOf` says whether a reading is real; the cells that search a reading for a substring
+    (TextEdit's tree cell, the intervention's `endsWithCell`) require a real one. `indexOfTarget` keeps 1183's
+    first-line rule and anchors a final `Value:` the same way, so a `) ` inside another part's text is no flags group.
+    Why 1184 was withdrawn: its TextEdit-only decode made the live paths that write multi-line values fail on cua's
+    lane with certainty (#187's rows type and paste the two-line Unicode case into Chrome and Electron, #188's click
+    prepares write eight lines into Electron, the matrix's Unicode rows and the Chrome and Electron drag checks hold
+    multi-line values); under 1185 they read back on both lanes (`multiline-lanes.test.mjs`). To #561: a part whose own
+    text holds `Value:` or a fake flags group (adversarial part text), and the residue of a multi-line value followed by
+    another part (raw, a false FAIL). The parity test's action writes into its own temp directory.
+  Date/Author: 2026-11-23, cursor235's builder for #526.
 
 ## Outcomes & Retrospective
 

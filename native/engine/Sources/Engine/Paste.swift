@@ -527,7 +527,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
               remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
               focusEnforcement: PasteFocusEnforcement? = nil, activationNow: () -> Double = monotonicMilliseconds,
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
-              deliver: (() -> Void) -> DeliveryGuardOutcome? = { $0(); return nil },
+              deliver: (() -> Void) throws -> DeliveryGuardOutcome? = { $0(); return nil },
               beforePart: ((Int) throws -> Void)? = nil,
               checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
@@ -570,10 +570,10 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     meta.paste = record
   }
   /// One ⌘V or Return posted through `deliver`; the action interval is the events' own, never the guard's samples.
-  func posting(_ events: () -> Bool) -> Bool {
-    withoutActuallyEscaping(events) { events in
+  func posting(_ events: () -> Bool) throws -> Bool {
+    try withoutActuallyEscaping(events) { events in
       var posted = false
-      if let outcome = deliver({ posted = meta.posting(events) }) { meta.delivery = outcome }
+      if let outcome = try deliver({ posted = meta.posting(events) }) { meta.delivery = outcome }
       return posted
     }
   }
@@ -611,7 +611,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
         probe = (postAt, lag)
-        guard posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
+        guard try posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
         meta.paste?.stage = "read"
 
         // The read wait: its 2 s, or the request's deadline when that comes first.
@@ -660,7 +660,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         // The notification gate is armed before the post, as for a ⌘V: a field's only report of the Return may come while
         // its delivery guard still samples.
         if settles { effect.keyPosted(at: returnAt) }
-        guard posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+        guard try posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
         line += 1
         lastSeen = false
         if settles {
@@ -890,15 +890,16 @@ extension Engine {
       // The activation the paste's events go out under, its own or the one it shares; its guard checks the paste's window.
       let standing = heldActivations.activation(of: target.pid)
       var guarded = false
-      func deliver(_ post: () -> Void) -> DeliveryGuardOutcome? {
-        withoutActuallyEscaping(post) { post in
+      // Never refused: #538's refusal is a pointer's alone (`FakeActivation.deliver`), so the paste's events go as before.
+      func deliver(_ post: () -> Void) throws -> DeliveryGuardOutcome? {
+        try withoutActuallyEscaping(post) { post in
           let posting = { post(); repairWindow.posted(at: system.now()) }  // the window's end runs from the event itself
           guard !guarded, let standing else {
             posting()
             return nil
           }
           guarded = true  // one delivery guard, and one hold, an action
-          return standing.deliver(window: placed.id, watches: watches, repairWindow: repairWindow, ranBy: made, posting)
+          return try standing.deliver(window: placed.id, watches: watches, repairWindow: repairWindow, ranBy: made, posting)
         }
       }
 

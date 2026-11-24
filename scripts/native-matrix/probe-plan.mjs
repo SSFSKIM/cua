@@ -438,5 +438,6 @@ return {finderSelected: __only(ax, ${j(target)}), documentUnchanged: typeof glob
 export const endsWithCell = (scene, text) => cell(`${prelude(scene)}
 // cua-matrix-cell: intervention.landed
 const ax = await observe();
-const value = plain(valueOfIndex(ax, ${TEXT_FIELDS[scene]}) ?? "");
-return {landed: value.endsWith(${j(text)})};`);
+// A real reading of the value, never the end of raw escaped text (#526, ruling 1185).
+const reading = valueReadingOf(ax, ${TEXT_FIELDS[scene]});
+return {landed: reading.real && plain(reading.value ?? "").endsWith(${j(text)})};`);

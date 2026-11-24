@@ -479,3 +479,7 @@ test('bundlePids: the processes running from the bundle, by its path as given or
   assert.deepEqual(bundlePids(processes, ['/var/engine/cua Engine.app', '/private/var/engine/cua Engine.app/']), [35]);
   assert.deepEqual(bundlePids(processes, [null, '']), []);
 });
+
+test('#552: the selected text is read inside a fence longer than three as well', () => {
+  assert.equal(vendorSelectedText('x\nSelected text: ````\na\n```\nb\n````\n\nnote'), 'a\n```\nb');
+});

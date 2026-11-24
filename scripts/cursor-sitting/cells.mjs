@@ -24,8 +24,9 @@ const j = JSON.stringify;
 const head = scene => `${SCENE_MARKER(scene)}\n${prelude(scene)}`;
 
 // The scene's app bound by path for the later cells, and its window's screenshot size kept in `globalThis.__size`.
-export const BIND = (scene, app) => `${SCENE_MARKER(scene)}
-${BIND_APP(scene, app)}
+// `engine` records the lane's rendering for the readers (../native-matrix/goldens-cells.mjs BIND; #526).
+export const BIND = (scene, app, engine = null) => `${SCENE_MARKER(scene)}
+${BIND_APP(scene, app, engine)}
 ${cell(`${head(scene)}
 const shot = await __app.getScreenshot({emit: false});
 const size = jpegSize(shot);

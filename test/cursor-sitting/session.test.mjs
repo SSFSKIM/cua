@@ -99,3 +99,9 @@ test('a session opened with bind false sends only its first cell, and its scene 
   assert.deepEqual(bare.sent, [FIRST]);
   assert.equal((await bare.session.run('/* cursor-sitting:scene electron */ 1')).ok, true, 'the guard knows the scene');
 });
+
+test('#526: the session\'s bind records its engine\'s rendering, so the readers know cua\'s lane', async () => {
+  const {sent} = await opened(undefined);
+  assert.match(sent[1], /globalThis\.__axRendering = "cua";/);
+  assert.match(sent[1], /cua\.getApp\("\/c\/F\.app"\)/);
+});

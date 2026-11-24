@@ -266,6 +266,8 @@ witnesses for macOS 27, which the owner's Macs run.
 
 **The owner's input sources.** The harness never changes the owner's input sources (ruling 1188). Every input-source or HIToolbox write (per-context input, selecting, saving or probing a source) runs only on a GitHub-hosted runner, and refuses anywhere else before touching anything. On the MacBook a lane only reads them. Rows that need a source or setting the owner doesn't have end NO VERDICT `ownerInput`, naming what they needed. The mid-switch, composition and per-context rows never run there. The report counts these rows, so the owner's sitting shows what their machine left unjudged. The hosted runs enable ABC and Korean 2-Set themselves (ruling 1189), so acceptance 3 and 4's input rows are judged there.
 
+**Open and Save panels.** A MacBook lane opens TextEdit's Open and Save panels through each engine. It types a file name into the Save panel, presses Escape, and cancels. It never sends Return or Save, so nothing is written to disk; a test asserts that on both lanes. Only on a hosted runner does the harness move, resize or cancel a panel itself through accessibility. The panels may still remember their own state in the owner's preferences (last folder, expanded or collapsed), as they do after any cancelled save (ruling 1199). The owner is told this at O1.
+
 | | What | When | Minutes | What it proves that hosted cannot |
 |---|---|---|---|---|
 | **O0** | May a kit write TCC rows on a GitHub-hosted runner, never on a Mac of the owner's? | **Answered yes** (ruling 1111; Decision Log, 2026-11-23) | done | – |

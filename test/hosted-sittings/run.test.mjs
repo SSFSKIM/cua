@@ -8,7 +8,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {Writable} from 'node:stream';
 import {join} from 'node:path';
-import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
+import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, PROJECTION_WARN_MINUTES, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
@@ -113,6 +113,36 @@ test('the wall time so far: each step carries the sitting\'s and the job\'s, log
   const bare = await runSitting(plan([step('a')]), {out: '/w/out', exec: async () => ({exit: 0}), keep: () => {}, readText: () => '', readJson: () => null,
     exists: () => false, remove: () => {}, now: () => 0, log: () => {}});
   assert.match(renderSitting(bare), /^Wall time: the sitting 0 min so far \(the job's start unread; its limit is 360 min\)\.$/m);
+});
+
+// Pilot C-2 ran its two lanes' matrices back to back in one job; a slower runner would let the job's limit end it with
+// nothing said beforehand. Before each run step the finish is projected from the run steps measured so far (a step's own
+// family, its id without the run number, else the mean of all of them): past PROJECTION_WARN_MINUTES of the job's limit,
+// the step's note and the report say so. Nothing is split or skipped.
+test('the projected finish: before each run step, from the measured runs; past the warning line the step\'s note and the report say so, and every step still runs', async () => {
+  const minutes = {prepare: 10, 'matrix-vendor-1': 40, 'matrix-vendor-2': 40, 'matrix-cua-1': 150, 'matrix-cua-2': 150};
+  let t = 0, current = null;
+  const lines = [];
+  const report = await runSitting(plan([step('prepare'), step('matrix-vendor-1'), step('matrix-vendor-2'), step('matrix-cua-1'), step('matrix-cua-2'), step('summary', 'verdict')]),
+    {out: '/w/out', exec: async s => { current = s.id; t += (minutes[s.id] ?? 1) * 60000; return {exit: 0}; }, keep: () => {}, readText: () => '', readJson: () => null,
+      exists: () => false, remove: () => {}, now: () => t, log: line => lines.push(line), jobStartedMs: 0});
+  const by = id => report.steps.find(s => s.id === id);
+  assert.equal(current, 'summary', 'every step ran');
+  assert.equal(by('prepare').projected, undefined, 'nothing measured yet');
+  // Before matrix-vendor-2: 50 min in; itself at its family's 40, the two cua runs at the mean of the two measured (25).
+  assert.deepEqual(by('matrix-vendor-2').projected, {finishMs: 140 * 60000, of: 'job', steps: 3, atMean: 2});
+  // Before matrix-cua-2: 240 min in, itself at its family's 150: 390, past the line.
+  assert.deepEqual(by('matrix-cua-2').projected, {finishMs: 390 * 60000, of: 'job', steps: 1, atMean: 0});
+  assert.ok(['prepare', 'matrix-vendor-1', 'matrix-vendor-2', 'matrix-cua-1'].every(id => !/projected/.test(by(id).reason ?? '')));
+  assert.match(by('matrix-cua-2').reason, /^projected before it ran to finish the job's run steps at 390 min of its 360 \(past the 300-min warning line\)$/);
+  assert.ok(lines.some(l => /x matrix-cua-2: projected before it ran to finish the job's run steps at 390 min of its 360/.test(l)), lines.join('\n'));
+  assert.match(renderSitting(report), /^Projected finish: past 300 min before matrix-cua-2 \(390 min of the job's 360\)\.$/m);
+  // Without the job's start the sitting's own time is the basis, said as such.
+  const bare = await runSitting(plan([step('matrix-vendor-1'), step('matrix-vendor-2')]), {out: '/w/out', exec: async () => { t += 400 * 60000; return {exit: 0}; },
+    keep: () => {}, readText: () => '', readJson: () => null, exists: () => false, remove: () => {}, now: () => t, log: () => {}});
+  assert.deepEqual(bare.steps[1].projected.of, 'sitting');
+  assert.match(bare.steps[1].reason, /to finish the sitting's run steps at 800 min/);
+  assert.equal(PROJECTION_WARN_MINUTES, 300);
 });
 
 test('the limit the report names is the sitting job\'s timeout in the workflow, and the job records its start first', () => {

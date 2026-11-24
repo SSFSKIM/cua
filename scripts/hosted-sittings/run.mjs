@@ -71,6 +71,10 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
       entry.log = join(out, 'logs', `${step.id}.log`);
       log(`hosted-sittings: ${plan.sitting} ${step.id}: ${step.label}`);
       if (step.report) remove(step.report);
+      const projected = step.kind === 'run' ? projectedFinish(plan.steps.slice(plan.steps.indexOf(step)), [...done.values()], wall(), jobStartedMs !== null) : null;
+      const late = projected && projected.finishMs > PROJECTION_WARN_MINUTES * 60000 ? projectionText(projected) : null;
+      if (projected) entry.projected = projected;
+      if (late) log(`hosted-sittings: ${plan.sitting} ${step.id}: ${late}`);
       const started = now();
       let result;
       try { result = await exec(step, {logPath: entry.log}); } catch (error) { result = {exit: null, error: error.message}; }
@@ -84,6 +88,7 @@ export async function runSitting(plan, {out, exec = execStep, keep = (from, to) 
       for (const file of step.keep ?? []) {
         try { keep(file, join(out, step.id, basename(file))); } catch (error) { entry.reason = [entry.reason, `${file} not kept (${error.code ?? error.message})`].filter(Boolean).join('; '); }
       }
+      if (late) entry.reason = [entry.reason, late].filter(Boolean).join('; ');
     }
     entry.wall = wall();
     log(`hosted-sittings: ${plan.sitting} ${step.id}: ${entry.status}${entry.reason ? ` (${entry.reason})` : ''}; ${wallText(entry.wall)}`);
@@ -106,6 +111,30 @@ export const JOB_LIMIT_MINUTES = 360;
 const minutes = ms => `${Math.round(ms / 60000)} min`;
 const wallText = w => `the sitting ${minutes(w.sittingMs)} so far${w.jobMs === null ? '' : `, the job ${minutes(w.jobMs)} of its ${JOB_LIMIT_MINUTES}`}`;
 
+// The finish a sitting is heading for, projected before each run step (pilot C-2 ran both lanes' matrices back to back
+// in one job): the time so far (the job's, else the sitting's), then this and every later run step at the mean of its
+// family's measured runs (its id without the run number), or, with none measured, at the mean of every run step measured
+// so far. Verdicts and cleanups are left out, and so is whether a step will be skipped: a warning, never a plan. Past
+// PROJECTION_WARN_MINUTES the step's note, the log and the report say so; nothing is split or skipped.
+export const PROJECTION_WARN_MINUTES = 300;
+const familyOf = id => id.replace(/-\d+$/, '');
+const mean = values => values.reduce((a, b) => a + b, 0) / values.length;
+// -> {finishMs, of: 'job' | 'sitting', steps, atMean} | null (no run step measured yet).
+function projectedFinish(ahead, entries, wallNow, jobKnown) {
+  const measured = entries.filter(e => e.kind === 'run' && e.ms !== null);
+  if (!measured.length) return null;
+  const overall = mean(measured.map(e => e.ms));
+  const runs = ahead.filter(s => s.kind === 'run' && !s.missing);
+  let finishMs = jobKnown ? wallNow.jobMs : wallNow.sittingMs, atMean = 0;
+  for (const s of runs) {
+    const family = measured.filter(e => familyOf(e.id) === familyOf(s.id));
+    if (!family.length) atMean++;
+    finishMs += family.length ? mean(family.map(e => e.ms)) : overall;
+  }
+  return {finishMs: Math.round(finishMs), of: jobKnown ? 'job' : 'sitting', steps: runs.length, atMean};
+}
+const projectionText = p => `projected before it ran to finish the ${p.of}'s run steps at ${minutes(p.finishMs)}${p.of === 'job' ? ` of its ${JOB_LIMIT_MINUTES}` : `, the job's start unread (its limit ${JOB_LIMIT_MINUTES} min)`} (past the ${PROJECTION_WARN_MINUTES}-min warning line)`;
+
 const seconds = ms => (ms === null ? '-' : `${Math.round(ms / 1000)} s`);
 const counted = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 // The report as the job summary's Markdown. A pilot that passed while a judge gave only its expected NO VERDICT, or with
@@ -122,5 +151,7 @@ export function renderSitting(report) {
   const count = status => report.steps.filter(s => s.status === status).length;
   out.push('', `**${unproved ? 'PILOT COMPLETED WITHOUT ACCEPTANCE PROOF' : report.verdict}** (exit ${report.exit}): ${STATUSES.map(s => `${count(s)} ${s}`).join(', ')}.`);
   if (report.wall) out.push('', `Wall time: ${wallText(report.wall)}${report.wall.jobMs === null ? ` (the job's start unread; its limit is ${JOB_LIMIT_MINUTES} min)` : ''}.`);
+  const late = report.steps.find(s => s.projected && s.projected.finishMs > PROJECTION_WARN_MINUTES * 60000);
+  if (late) out.push('', `Projected finish: past ${PROJECTION_WARN_MINUTES} min before ${late.id} (${minutes(late.projected.finishMs)} of ${late.projected.of === 'job' ? `the job's ${JOB_LIMIT_MINUTES}` : 'the sitting, the job\'s start unread'}).`);
   return out.join('\n') + '\n';
 }

@@ -8,7 +8,7 @@
 // "test/linux-engine-diff/*.test.mjs"`, a wrapper that runs `node --test` on its arguments and then checks what remains,
 // so it needs nothing beyond the Node range package.json declares (task 45's review: Node 24's global-setup flag, which
 // it replaced, is not in ^22.14). `npm test` keeps its plain `node --test "<pattern>"`, the form repl-parity's coverage
-// check reads (scripts/repl-parity/coverage.mjs), and ci-kit's `test` gate runs both.
+// check reads (scripts/repl-parity/coverage.mjs), and ci-kit's test shards (test-1, test-2) run both.
 //
 // What is the suite's: the wrapper makes a temporary directory of the suite's own, the suite's test root
 // (`/tmp/cua171-s-*`, test-root.mjs: short, so a test's run keeps its scratch in it rather than in /tmp's production

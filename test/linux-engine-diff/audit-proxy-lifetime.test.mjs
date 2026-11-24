@@ -104,7 +104,7 @@ async function leftBehind(h, { pid, log }) {
 }
 
 // the parent-death signal (setpriv) and the process table read here (/proc) are Linux's, as the harness is; the hosted
-// macOS `test` gate skips these, the Ubuntu `harness-dbus` gate runs them (.github/ci-kit.yml)
+// macOS test shards (test-1, test-2) skip these, the Ubuntu `harness-dbus` gate runs them (.github/ci-kit.yml)
 const skip = process.platform !== 'linux' && 'Linux only: setpriv and /proc';
 
 const cases = [

@@ -27,9 +27,11 @@
 //! `t14-floor` `left` at arm64 twice the load: 241 steps spread over 350 ms, 1.45 ms apart, 0 keepalives, a false ok).
 //! So with the tail, the floor's steps and keepalives end [`TAIL_SPAN`] early ([`steps_floor`]) and the tail fills the
 //! rest of the floor ([`Schedule::InFloor`], ruling 1001): its visits 16 and 8 ms before the floor's end, the release at
-//! the end as the floor alone releases it. A visit that no longer fits is dropped; the release never moves. The 326 ms
-//! boundary only schedules: the gate judges the path against the 350 ms floor, so a path whose last step comes between
-//! the two keeps the gate shut and its tail inside the floor.
+//! the end as the floor alone releases it. A visit that no longer fits is dropped; the release never moves. Two
+//! boundaries, kept apart: the gate judges the path against the 350 ms floor, and the 326 ms one (floor_until, the
+//! floor's steps' end) decides the schedule. A path whose last step comes between the two keeps the gate shut; since
+//! 0.4.5 (#512, ruling 1142 (1)) its tail runs after the path ([`overran`]), and only a path that ended by floor_until
+//! gets its tail inside the floor.
 //!
 //! The motion is one synthetic motion on the background route (SendEvent, never XTEST). On XTEST's routes a motion to
 //! the pointer's own place produces no event (M4's T9), so each visit steps 1 px forward along the path's last segment
@@ -164,12 +166,15 @@ pub fn floor_spaces(paced: Duration, floor_due: Instant, now: Instant) -> (Durat
 /// When the tail's visits and the release come (ruling 1001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Schedule {
-    /// After a path that outlasted the floor (the gate open), or a drop with no floor: [`TAIL_REST`] before each visit
-    /// and before the release, from the tail's start, as the measured form has it.
+    /// After a path that outlasted the 350 ms floor (the gate open), after one whose last step went out past
+    /// floor_until, the 326 ms end of the floor's steps, the gate shut or not ([`overran`], #512), or for a drop with no
+    /// floor: [`TAIL_REST`] before each visit and before the release, from the tail's start, as the measured form has
+    /// it.
     AfterPath,
-    /// Inside the floor (the gate shut): the release at the floor's end, this instant, as the floor alone releases it,
-    /// the visits [`TAIL_REST`] apart before it. A visit whose time has passed when the tail reaches it is dropped, and
-    /// the release never moves.
+    /// Inside the floor (the gate shut and the path's last step by floor_until): the release at the floor's end, this
+    /// instant, as the floor alone releases it, the visits [`TAIL_REST`] apart before it. A visit whose time has passed
+    /// when the tail reaches it is dropped, the release never moves, and the drop is answered unconfirmed ([`unconfirms`],
+    /// #512).
     InFloor(Instant),
 }
 

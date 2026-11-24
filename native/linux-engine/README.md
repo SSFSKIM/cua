@@ -351,10 +351,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   status for each position, which stays in its process, so it cannot hold the drop to the page's own leave (task 158's
   probe). A release dwell (Gecko's
   30 ms, reached by a foreground drag named for Firefox that presses into Chrome) stays on top of the floor, as
-  before. The 326 ms only schedules: the gate judges the path against the 350 ms floor. A floor that spread a path's
+  before. The two boundaries are kept apart: the gate judges the path against the 350 ms floor, and the 326 ms
+  (`floor_until`) decides where the tail runs, inside the floor only for a path whose last step came by it (since 0.4.5,
+  above). A floor that spread a path's
   steps 1.45 ms apart still ended on steps far shorter than Chrome's status lag under load: task 130's `t14-floor` `left` at arm64 twice the load answered one false ok in 30
   through the shut gate, 241 steps spread over 350 ms with no keepalive. The tail costs about 25 ms on the drags whose
-  path outlasts the floor, and nothing on the others. A Chrome source's `drag_handle` end with its drag and drop under
+  path outlasts the 350 ms floor or whose last step comes after the 326 ms (since 0.4.5), and nothing on those whose
+  path ends by the 326 ms, whose tail runs inside the floor. A Chrome source's `drag_handle` end with its drag and drop under
   way (a take by then) gets the tail too (ruling 998, confirmed by 1026; task 132's handle long-left at arm64 twice the
   load answered one false ok in 100 on f9d1f86b): after the end's own rest, two visits from the pointer's own place,
   each the 1 px step along the handle's last segment and back, each followed by 8 ms, then the release; about 16 ms.

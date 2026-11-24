@@ -155,8 +155,11 @@ test('an own window no longer on screen is read as the scene\'s window: another 
 const rect = (x, y, width, height) => ({x, y, width, height});
 const wire = b => [b.x, b.y, b.width, b.height].join(',');
 // `sheetOn`: the window the sheet opens on ('document', or 'scene': the scene's own document); `stray`: a sheet up on
-// the scene document from the start, which no case of the run opened.
-function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null, sheetOn = 'document', stray = false} = {}) {
+// the scene document from the start, which no case of the run opened. `sheetListed`: Accessibility lists the sheet among
+// the app's windows too, so a reading at the sheet's bounds matches the sheet itself, and the reader names the focused
+// sheet 'other' (ax-state now: a focused AXSheet is classified before the direct-equality path) or, as it did before the
+// fix, 'run'.
+function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null, sheetOn = 'document', stray = false, sheetListed = null} = {}) {
   const DOC = {ownerPid: 600, layer: 0, number: 428, bounds: rect(213, 78, 507, 877)};
   const DOCUMENT = {ownerPid: 600, layer: 0, number: 586, bounds: rect(240, 100, 500, 400)};
   const SHEET = {ownerPid: 600, layer: 0, number: 590, bounds: rect(250, 122, 460, 300)};
@@ -177,9 +180,9 @@ function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null, sh
   const focusedEl = () => { const {untitled, sheet} = world(); return sheet ? SHEET : untitled ? DOCUMENT : DOC; };
   const readings = [];
   const io = {state: () => ({scenes: {textedit: {pid: 600, window: {number: 428}}}}), windows, axState: (pid, bounds, sheetAt) => {
-    const {untitled, sheet} = world(), listed = [DOC, ...(untitled ? [DOCUMENT] : [])], at = listed.find(w => wire(w.bounds) === bounds) ?? null, f = focusedEl();
+    const {untitled, sheet} = world(), listed = [...(sheet && sheetListed ? [SHEET] : []), DOC, ...(untitled ? [DOCUMENT] : [])], at = listed.find(w => wire(w.bounds) === bounds) ?? null, f = focusedEl();
     const parent = stray || sheetOn === 'scene' ? DOC : DOCUMENT;
-    const focusedWindow = !at ? 'other' : at === f ? 'run' : f === SHEET && at === parent ? 'sheet' : 'other';
+    const focusedWindow = !at ? 'other' : f === SHEET ? (at === parent ? 'sheet' : at === SHEET ? sheetListed : 'other') : at === f ? 'run' : 'other';
     const main = untitled ? DOCUMENT : DOC;
     return {trusted: true, ok: Boolean(at), found: Boolean(at), failed: [], frontmost, focusedWindow, mainWindow: at === main ? 'run' : 'other',
       focusedWindowElement: {role: f === SHEET ? 'AXSheet' : 'AXWindow', subrole: f === SHEET ? null : 'AXStandardWindow', frame: f.bounds, ...(f === SHEET ? {parentFrame: parent.bounds} : {})},
@@ -354,4 +357,33 @@ test('ruling 1214: a sheet up in a case that opens none is refused, even on the 
   assert.match(fires.alertGuard.detail, /^the textedit app's key window is a sheet on the scene window 428, outside a case that opened it on the run's own window/);
   assert.deepEqual([fires.alertGuard.focused.role, fires.alertGuard.focused.parent], ['AXSheet', 428]);
   assert.equal(result.meta.keyWindowSheets, undefined);
+});
+
+// Fix wave (review of ruling 1214's exemption): Accessibility may list a focused sheet among the app's windows, so the
+// reading at the frontmost window's bounds (the sheet's own, for a scene whose window is its frontmost) matches the sheet
+// itself. Before the fix the reader named it the window read ('run') and the guard let the cell through with no
+// exemption at all; now a focused AXSheet is a sheet wherever the reader placed it, refused outside ruling 1214's case.
+test('ruling 1214: a sheet Accessibility lists directly, up in a case that opens none, is refused whatever the reader named it', async () => {
+  for (const sheetListed of ['run', 'other']) {
+    const calls = [];
+    const te = c4TextEdit(calls, {frontmost: true, stray: true, sheetListed});
+    const plan = {...planOf('concurrent-use-sheet'), sheet: false, intervention: ['fires'], id: 'test'};
+    const {result} = await runWith({plan, cellName: 'concurrent-use-sheet', calls, cell: c4Cells, ops: te.ops});
+    const fires = result.rows.find(r => r.id === 'textedit/intervention.fires');
+    assert.equal(fires.alertGuard?.cause, 'keyWindow', `${sheetListed}: ${JSON.stringify(fires)}`);
+    assert.match(fires.alertGuard.detail, /^the textedit app's key window is (a sheet Accessibility lists as a window of its own \(the scene window 590\)|another of its windows, not the scene window 590)/, sheetListed);
+    assert.deepEqual([fires.alertGuard.focused.role, fires.alertGuard.focused.parent, fires.alertGuard.focused.of], ['AXSheet', 428, 'scene'], sheetListed);
+    assert.equal(result.meta.keyWindowSheets, undefined, sheetListed);
+  }
+});
+test('ruling 1214: with Accessibility listing the sheet directly, C-4\'s sheet variant still holds under its exemption', async () => {
+  for (const sheetListed of ['run', 'other']) {
+    const calls = [];
+    const te = c4TextEdit(calls, {holdAfter: 'sheet.check', sheetListed});
+    const {result} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: c4Cells, ops: te.ops});
+    assert.equal(result.complete, true, `${sheetListed}: ${result.problems.join('; ')}`);
+    assert.deepEqual((result.meta.alertGuards ?? []).filter(g => g.cause === 'keyWindow'), [], sheetListed);
+    for (const s of Object.values(result.meta.keyWindowSheets ?? {})) assert.equal(s.focused.parent, 586, sheetListed);
+    assert.ok(Object.keys(result.meta.keyWindowSheets ?? {}).length >= 2, sheetListed);
+  }
 });

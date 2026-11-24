@@ -114,10 +114,12 @@ export function recordKeyUnread(record, cell) {
 // the scene window not on screen) refuses nothing: the cell goes unchecked and is counted (recordKeyWindowReading), as a
 // key cell's unread key is. -> {category: 'keyWindow', detail} | null.
 // A sheet of the scene window holding the focus (`focusedWindow` 'sheet': ax-state saw the app's AXFocusedWindow be an
-// AXSheet of the window read) holds as that window does only where the caller says it is exempt (`sheetExempt`; ruling
-// 1214: a case that opens a sheet itself, in its own cells, cleanup and reset, the sheet on the run's own window,
-// ../native-matrix/steps.mjs keyWindowGuard). Pilots C-3 and C-4 saw TextEdit's focused window become the sheet super+w
-// or super+s opened on the run's document, and the sheet's cells and cleanup refused. Anywhere else a sheet is refused.
+// AXSheet of the window read) holds as that window does only where the caller names the case's own document
+// (`sheetParent`; ruling 1214: a case that opens a sheet itself, in its own cells, cleanup and reset,
+// ../native-matrix/steps.mjs keyWindowGuard) and the sheet's proved parent (`focused.parent`) is that document. Pilots
+// C-3 and C-4 saw TextEdit's focused window become the sheet super+w or super+s opened on the run's document, and the
+// sheet's cells and cleanup refused. Anywhere else a sheet is refused, and a focused AXSheet is never the scene window
+// itself, even where Accessibility lists it among the app's windows and the reading matched it.
 // A refusal names the window Accessibility held focused when the reading carries it (`focused`, ./key-window.mjs: its
 // number from the window list, frame, role and, on the matrix, `of`: the scene's, the run's own or neither), kept on the
 // cause as `focused`.
@@ -127,14 +129,17 @@ const focusedText = f => (f === null ? 'none' : f === 'unread' ? 'unread' : [
   `${f.number === null ? 'not in the window list, at' : `window ${f.number} at`} ${f.frame ? `${f.frame.x},${f.frame.y} ${f.frame.width}x${f.frame.height}` : 'an unread frame'}`,
   [f.role ?? 'no role', f.subrole].filter(Boolean).join('/'), ...(f.role === 'AXSheet' ? [`a sheet of ${f.parent === null || f.parent === undefined ? 'an unresolved window' : `window ${f.parent}`}`] : []),
   ...(OF_TEXT[f.of] ? [OF_TEXT[f.of]] : [])].join(', '));
-export function keyWindowCause(ownKey, {sheetExempt = false} = {}) {
+export function keyWindowCause(ownKey, {sheetParent = null} = {}) {
   if (ownKey?.trusted !== true || ownKey.ok !== true) return null;
   const {scene, number, frontmost, focusedWindow, mainWindow} = ownKey;
-  if (focusedWindow === 'run' || (focusedWindow === 'sheet' && sheetExempt) || (frontmost === false && focusedWindow === 'none' && mainWindow === 'run')) return null;
+  const sheetRead = focusedWindow === 'run' && ownKey.focused?.role === 'AXSheet';
+  const exempt = focusedWindow === 'sheet' && Number.isSafeInteger(sheetParent) && ownKey.focused?.parent === sheetParent;
+  if ((focusedWindow === 'run' && !sheetRead) || exempt || (frontmost === false && focusedWindow === 'none' && mainWindow === 'run')) return null;
   const which = `the scene window ${number ?? '?'}`;
   const named = 'focused' in ownKey ? {text: ` (Accessibility's focused window: ${focusedText(ownKey.focused)})`, focused: ownKey.focused} : {text: '', focused: undefined};
   const cause = detail => ({category: 'keyWindow', detail: `${detail}${named.text}`, ...(named.focused !== undefined ? {focused: named.focused} : {})});
   if (focusedWindow === 'other') return cause(`the ${scene} app's key window is another of its windows, not ${which}`);
+  if (sheetRead) return cause(`the ${scene} app's key window is a sheet Accessibility lists as a window of its own (${which}), outside a case that opened it on the run's own window`);
   if (focusedWindow === 'sheet') return cause(`the ${scene} app's key window is a sheet on ${which}, outside a case that opened it on the run's own window`);
   return cause(`the ${scene} app holds no key window (its focused window ${ownWindowText(focusedWindow)}, its main window ${mainWindow === 'run' ? which : ownWindowText(mainWindow)}) while ${frontmost === false ? 'in the background' : 'frontmost'}`);
 }

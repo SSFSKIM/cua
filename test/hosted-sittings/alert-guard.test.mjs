@@ -179,7 +179,18 @@ test('the key-window rule: the scene window is its app\'s focused window; an app
 test('the key-window rule: a sheet of the scene window focused holds only where exempt (ruling 1214); a refusal names the focused window', () => {
   const own = (focusedWindow, focused) => ({trusted: true, ok: true, scene: 'textedit', number: 586, frontmost: false, focusedWindow, mainWindow: 'run', ...(focused === undefined ? {} : {focused})});
   const sheet = {number: 590, frame: {x: 10, y: 20, width: 300, height: 200}, role: 'AXSheet', subrole: null, parent: 586, of: 'own'};
-  assert.equal(keyWindowCause(own('sheet', sheet), {sheetExempt: true}), null);
+  assert.equal(keyWindowCause(own('sheet', sheet), {sheetParent: 586}), null);
+  // Exempt only with the sheet's proved parent the case's own document (ruling 1214's third condition).
+  assert.match(keyWindowCause(own('sheet', {...sheet, parent: 428}), {sheetParent: 586}).detail, /is a sheet on the scene window 586, outside a case/);
+  assert.match(keyWindowCause(own('sheet', {...sheet, parent: null}), {sheetParent: 586}).detail, /is a sheet on the scene window 586, outside a case/);
+  assert.match(keyWindowCause(own('sheet'), {sheetParent: 586}).detail, /is a sheet on the scene window 586, outside a case/);
+  // A focused AXSheet is never the window read itself, even where Accessibility lists it among the app's windows and the
+  // bounds lookup matched it: refused as a sheet, exempt or not (fix wave, review of ax-state's direct-equality path).
+  const listed = {...sheet, number: 590, parent: 586};
+  for (const exempt of [{}, {sheetParent: 586}, {sheetParent: 590}]) {
+    const cause = keyWindowCause({...own('run', listed), number: 590}, exempt);
+    assert.equal(cause?.detail, 'the textedit app\'s key window is a sheet Accessibility lists as a window of its own (the scene window 590), outside a case that opened it on the run\'s own window (Accessibility\'s focused window: window 590 at 10,20 300x200, AXSheet, a sheet of window 586, the run\'s own)', JSON.stringify(exempt));
+  }
   // Not exempt (a case that opens no sheet, or a sheet on a window other than the run's own): refused, the sheet named.
   const refusedSheet = keyWindowCause(own('sheet', {...sheet, of: 'scene'}));
   assert.equal(refusedSheet.detail, 'the textedit app\'s key window is a sheet on the scene window 586, outside a case that opened it on the run\'s own window (Accessibility\'s focused window: window 590 at 10,20 300x200, AXSheet, a sheet of window 586, the scene\'s)');

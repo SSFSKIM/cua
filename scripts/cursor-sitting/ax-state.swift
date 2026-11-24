@@ -142,15 +142,19 @@ if args[1] == "window" {
     answer["main"] = NSNull()
   }
   // The app's focused and main windows: none (no value) is a reading; any other failure is not. A sheet of the matched
-  // window holding the focus is its own side; the focused window is described whatever it is.
+  // window holding the focus is its own side; the focused window is described whatever it is. An AXSheet is classified
+  // before the direct-equality path: where Accessibility lists a sheet among the app's windows the bounds lookup can
+  // match the sheet itself, and a focused sheet is never the window read ('other', its parent described by frame).
   answer["focusedWindowElement"] = NSNull()
   for (attribute, key) in [(kAXFocusedWindowAttribute, "focusedWindow"), (kAXMainWindowAttribute, "mainWindow")] {
     let r = read(app, attribute)
     if r.status == .noValue || (r.status == .success && element(r.value) == nil) { answer[key] = "none" }
     else if r.status == .success, let w = element(r.value) {
       let role = read(w, kAXRoleAttribute).value as? String
-      if let run, CFEqual(run, w) { answer[key] = "run" }
-      else if key == "focusedWindow", let run, role == kAXSheetRole as String, sheetOf(w, run) { answer[key] = "sheet" }
+      if role == kAXSheetRole as String {
+        if key == "focusedWindow", let run, !CFEqual(run, w), sheetOf(w, run) { answer[key] = "sheet" } else { answer[key] = "other" }
+      }
+      else if let run, CFEqual(run, w) { answer[key] = "run" }
       else { answer[key] = "other" }
       if key == "focusedWindow" {
         var described: [String: Any] = ["role": role.map { $0 as Any } ?? NSNull(), "subrole": (read(w, kAXSubroleAttribute).value as? String).map { $0 as Any } ?? NSNull(), "frame": rectWire(frame(w))]

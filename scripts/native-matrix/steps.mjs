@@ -201,16 +201,17 @@ function refuse(ctx, cause, reading) {
 export const keyWindowScene = (ctx, scene) => (scene && !ctx.panelOpen && ctx.records?.[scene] ? scene : null);
 // Refused (AlertGuarded, NO VERDICT keyWindow) when the reading shows another key window; otherwise counted under
 // `key`, read (meta.keyWindowRead) or not taken (meta.keyWindowUnread, the cell then sent unchecked). A sheet of the
-// window read holding the focus is exempt only under ruling 1214: the reading was for the run's own window (so the case
-// in force, its cleanup or its reset, is the one that opened it, ownKeyWindowNumber) and that case opens a sheet on it
-// itself (ownWindowOpened's `opensSheet`); anywhere else it is refused. -> the exemption taken ({key, focused}) or null:
-// the caller counts it once the cell is dispatched (sheetSent), never for a cell a later gate kept back.
+// window read holding the focus is exempt only under ruling 1214's three conditions: that case opens a sheet on its own
+// window itself (ownWindowOpened's `opensSheet`), the reading was for that window (so the case in force, its cleanup or
+// its reset, is the one that opened it, ownKeyWindowNumber), and the sheet's proved parent is that window
+// (keyWindowCause's `sheetParent`); anywhere else it is refused. -> the exemption taken ({key, focused}) or null: the
+// caller counts it once the cell is dispatched (sheetSent), never for a cell a later gate kept back.
 function keyWindowGuard(ctx, r, key) {
-  const sheetExempt = r?.ownKey?.own === true && ctx.ownWindow?.opensSheet === true;
-  const cause = keyWindowCause(r?.ownKey, {sheetExempt});
+  const sheetParent = r?.ownKey?.own === true && ctx.ownWindow?.opensSheet === true ? ctx.ownWindow.number : null;
+  const cause = keyWindowCause(r?.ownKey, {sheetParent});
   if (cause) refuse(ctx, cause, keyReading(r));
   recordKeyWindowReading(ctx.meta, key, r?.ownKey ?? null);
-  return sheetExempt && r.ownKey.ok === true && r.ownKey.focusedWindow === 'sheet' ? {key, focused: r.ownKey.focused ?? null} : null;
+  return !cause && sheetParent !== null && r.ownKey.trusted === true && r.ownKey.ok === true && r.ownKey.focusedWindow === 'sheet' ? {key, focused: r.ownKey.focused ?? null} : null;
 }
 // A cell sent under the sheet exemption, kept under its key with the focused window (meta.keyWindowSheets: {count,
 // focused}, the first reading's), which the row it is for carries too (`keyWindowSheet`, ./probe-run.mjs).

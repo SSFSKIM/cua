@@ -479,7 +479,9 @@ function lineText(node, urls) {
 // separators, NEL, LS, PS) as `\uXXXX`. A backslash stays as it is, as the Linux rendering leaves it. Applied to the
 // whole element text after its parts are ordered, so the vendor's long-part rule still reads the raw text [F §2.4], and
 // to the header's window title and app name. The selected text stays raw inside a fence it cannot close (trailer,
-// ruling 1177).
+// ruling 1177). The Linux facade prints with a copy of this rule (src/cua-api/line-breaks.mjs, #558, ruling 1186): a
+// copy, not an import, so this service imports nothing from the facade's directory, which the vendor host does not
+// trust; test/services-engine-render.test.mjs keeps the two equal.
 const LINE_BREAKS = /[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/g;
 export const escapeLineBreaks = text => text.replace(LINE_BREAKS, c => (c === '\n' ? '\\n' : c === '\r' ? '\\r' : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 

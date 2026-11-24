@@ -2791,6 +2791,60 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Ruling 993's bar is not waived: 0.4.5's reach must pass L4d.
     - 0.4.4 ships with L4d recorded as FAIL, because it strictly reduces wrong answers (#487 fails open, #488 fails closed).
 
+- Decision (2026-11-23, #558, rulings 1178 and 1186, `fix/558-linux-escapes` from cf02ca3c5): **the Linux facade's
+  renderer escapes every line break inside an element's text with macOS's rule, where the vendor escapes only CR, LF and tab
+  (a declared departure); a pending drag notice is escaped the same way; and `linux-engine.md` says how the tree shows
+  them.**
+  - Why. #526 (the native engine spec's Decision Log, rulings 1175 and 1177) closed on macOS the path by which a page's,
+    a document's or an app's text forges a tree line (`[99] button Delete`, or a tab-indented `99 button Delete`).
+    The Linux renderer, the vendor's as ported (`src/cua-api/linux-accessibility-tree.mjs` `describe()`), escaped
+    `\r`, `\n` and `\t` and left VT, FF, U+001C–U+001E, NEL, LS and PS raw, so a reader that breaks a line at one of
+    those could still be shown a forged element.
+  - What. `describe()` escapes the whole element text (role, flags, name, Description, Value and Secondary Actions)
+    with `escapeLineBreaks` after the parts are ordered, so the long-part rule still reads the raw text, then a tab as
+    `\t`. LF, CR, tab and a literal backslash print as the vendor prints them; the other breaks print as `\uXXXX`.
+  - Every other place a Linux state puts text on a line, checked:
+    - the element id: the service's decimal number (`src/services/engine/linux/ids.mjs`, the vendor's own numbering
+      under its engine), never page text; unchanged.
+    - `Accessibility source:`: the engine's constant (`at_spi` or `x11`); unchanged.
+    - the pending drag notice, the state's first line: the engine's sentence, which names the app by its
+      `_GTK_APPLICATION_ID` or `WM_CLASS`, both set by the app (`native/linux-engine/src/x11.rs`), so
+      `bind-linux-app.mjs` escapes it with the same rule.
+    - the truncation line: counts and fixed words; unchanged.
+    - a drag's hold notice, written as the cell's output: the engine's constant (`adaptive_hold.rs` `NOTICE`);
+      unchanged.
+    - the Linux state has no header (no window title or app name line) and no trailer (no focused element and no
+      selected text), so there is no fence for #552's class to close. `listApps()` and `listWindows()` return objects,
+      not tree lines.
+  - Two copies, not one (ruling 1186, replacing the branch's first shared definition). The Linux facade prints with
+    `src/cua-api/line-breaks.mjs`, used by the Linux renderer and `bind-linux-app.mjs`; `src/services/engine/render.mjs`
+    keeps its own `escapeLineBreaks`, byte-identical to main's. One shared module could live only in `src/cua-api`: the
+    kernel, which renders Linux trees, reads only `src/cua-api` and `docs/cua-api` under a scoped profile, the Linux
+    default. But the macOS engine service runs in a trusted worker that imports only from the launch's trusted code
+    paths, and on the macOS vendor host those do not include `src/cua-api`. The first version added it there
+    (`launch.mjs`), and the review's one finding (P2) was that this made every facade module importable by that worker.
+    The design session ruled the copy instead: no wider trust, and no change to `launch.mjs` while M6a, which rewrites
+    it, heads to its pull request. `launch.mjs` and the vendor host's trusted paths are main's
+    (`test/runtime-launch.test.mjs` asserts no `src/cua-api` entry there, with or without the sky wrapper);
+    `test/services-engine-render.test.mjs` asserts that the two copies print every Basic Multilingual Plane character
+    alike, each covered break, a backslash and an ordinary character among them, and that `render.mjs` imports only from
+    its own directory.
+  - Declared. The facade scenarios declare the departure (`differs`, citing this entry), so the vendor differential
+    (`test/cua-api/facade-vendor.test.mjs`) requires the records to differ, and pin that LF, CR, tab and a backslash
+    still print as the vendor's. No Linux golden, oracle or engine-diff check depended on the raw form
+    (`test/repl-parity/fixtures/native-state-oracle.mjs` reads the grammar; `scripts/linux-engine-diff` only calls
+    `to_string()`). The vendor runtime is untouched.
+  - The model's side (ruling 1176's sentence, for Linux): `linux-engine.md` ends with "In the accessibility tree, a
+    line break inside an element's text shows as `\n` or `\r` (any other line break as `\uXXXX`) and a tab as `\t`, so
+    each element keeps one line; `typeText` and `paste` take real line breaks and tabs, not the escape." It names
+    `typeText` and `paste` where macOS names `setValue`, which is unavailable on Linux. Every Linux computer surface
+    reads it after `core.md`, under either engine (the surface inventory's "Table 3 amendment (2026-11-23, #558,
+    ruling 1178)").
+  - M6a. It renders Linux tree text only through this `describe()`: `origin/m6a-final-fix` (d08d8c219) leaves
+    `src/cua-api` as main has it, and cua-engine answers a JSON tree, not text. This entry leaves `launch.mjs` as main
+    has it (ruling 1186), so M6a's rewrite of it meets nothing here.
+  Date/Author: 2026-11-23, cursor235's builder for #558.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

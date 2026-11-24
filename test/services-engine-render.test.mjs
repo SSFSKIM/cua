@@ -4,7 +4,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, ANOTHER_SPACE_REMEDY, placementLine} from '../src/services/engine/render.mjs';
+import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, ANOTHER_SPACE_REMEDY, placementLine, escapeLineBreaks} from '../src/services/engine/render.mjs';
+import {escapeLineBreaks as linuxEscapeLineBreaks} from '../src/cua-api/line-breaks.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
@@ -540,4 +541,27 @@ test('#552 (ruling 1177): the selected-text fence is longer than any backtick ru
     assert.deepEqual(read.outside.filter(line => line.startsWith('[99]')), [], JSON.stringify(selected));
     assert.ok(out.endsWith(`\n${fence}\n\n${NOTE}`));
   }
+});
+
+// #558, ruling 1186: the Linux facade carries its own copy of the line-break rule (src/cua-api/line-breaks.mjs), so
+// the macOS engine service imports nothing from the facade's directory and the vendor host's trusted worker never needs
+// it. The two copies must print every character alike: each break the rule covers, a backslash, an ordinary
+// character, and every other code point of the Basic Multilingual Plane.
+test('#558: the macOS renderer\'s line-break rule and the Linux facade\'s copy agree on every character, and the renderer imports nothing outside its directory', () => {
+  const covered = [0x0a, 0x0d, 0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029];
+  for (const code of covered) {
+    const c = String.fromCharCode(code);
+    assert.equal(escapeLineBreaks(`a${c}b`), linuxEscapeLineBreaks(`a${c}b`), code.toString(16));
+    assert.ok(!escapeLineBreaks(c).includes(c), `${code.toString(16)} is escaped`);
+  }
+  assert.equal(escapeLineBreaks('\n'), '\\n');
+  assert.equal(escapeLineBreaks('\r'), '\\r');
+  assert.equal(escapeLineBreaks(String.fromCharCode(0x2029)), `\\${'u'}2029`);
+  for (const plain of ['\\', 'a', '\t']) assert.equal(linuxEscapeLineBreaks(plain), plain);
+  let all = '';
+  for (let code = 0; code <= 0xffff; code++) if (code < 0xd800 || code > 0xdfff) all += String.fromCharCode(code);
+  assert.equal(escapeLineBreaks(all), linuxEscapeLineBreaks(all));
+  const source = readFileSync(new URL('../src/services/engine/render.mjs', import.meta.url), 'utf8');
+  const specifiers = [...source.matchAll(/^import\s[^;]*?from\s+'([^']+)'/gm)].map(m => m[1]);
+  assert.ok(specifiers.every(specifier => specifier.startsWith('./') || specifier.startsWith('node:')), JSON.stringify(specifiers));
 });

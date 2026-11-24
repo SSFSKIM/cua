@@ -6,7 +6,17 @@
 // accessibility_tree(node) defines a non-enumerable to_string (and Node's inspect hook) on the tree and every node in
 // it, and returns it. to_string() prunes and condenses the tree (empty containers collapse, redundant text children
 // fold into their parent, runs of plain text merge) and renders one line per node, tab-indented by depth:
-// "<id> <role> (<states>) <labels>", with control characters escaped. The rendering is the vendor's exactly.
+// "<id> <role> (<states>) <labels>", with control characters escaped. The rendering is the vendor's but for one
+// departure.
+//
+// cua's departure (#558, ruling 1178; docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Decision Log): the
+// vendor escapes only CR, LF and tab in a node's text and leaves every other line break raw, so a page's, a document's
+// or an app's text could put a line into the tree that reads as an element (`[99] button Delete`, or a tab-indented
+// `99 button Delete`) for a reader that breaks a line there. cua escapes the whole node text with macOS's rule
+// (./line-breaks.mjs: LF and CR as `\n` and `\r`, as the vendor does; VT, FF, U+001C-U+001E, NEL, LS and PS as
+// `\uXXXX`; a backslash as it is), then a tab as `\t`, as the vendor does. The text is escaped after its parts are
+// ordered, so the long-part rule still reads the raw text. A node's id is the service's decimal number, never its text.
+import {escapeLineBreaks} from './line-breaks.mjs';
 
 export function accessibility_tree(node) {
   for (const child of node.children) accessibility_tree(child);
@@ -47,8 +57,7 @@ function describe(node) {
   if (secondary?.length) parts.push({title: 'Secondary Actions', text: secondary.join(', ')});
   parts.sort((a, b) => Number(isLong(a.text)) - Number(isLong(b.text)));
   const labelText = parts.map(part => (part.title == null || (parts.length === 1 && part.title !== 'Secondary Actions') ? part.text : `${part.title}: ${part.text}`)).join(', ');
-  return [role, flags.length ? `(${flags.join(', ')})` : '', labelText].filter(Boolean).join(' ')
-    .replaceAll('\r', '\\r').replaceAll('\n', '\\n').replaceAll('\t', '\\t');
+  return escapeLineBreaks([role, flags.length ? `(${flags.join(', ')})` : '', labelText].filter(Boolean).join(' ')).replaceAll('\t', '\\t');
 }
 
 // The node condensed for rendering, or undefined when nothing of it is worth showing.

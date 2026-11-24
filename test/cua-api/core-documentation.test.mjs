@@ -11,6 +11,7 @@ import {readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {applyEdits} from '../../src/repl-host/instructions.mjs';
 import {AGENT_CURSOR_LOOKUPS, create_documentation, read_documentation} from '../../src/cua-api/documentation.mjs';
+import {accessibility_tree} from '../../src/cua-api/linux-accessibility-tree.mjs';
 import {escapeLineBreaks} from '../../src/services/engine/render.mjs';
 
 const DOCS = new URL('../../docs/cua-api/', import.meta.url);
@@ -172,6 +173,21 @@ test('#526: the first-call document on macOS says how the tree shows line breaks
   assert.ok(!(await create_documentation(read_documentation).read_core()).includes(LINE_BREAK_SENTENCE), 'only where cua\'s macOS engine serves the tree');
   // The escapes it names are the renderer's.
   assert.equal(escapeLineBreaks('a\nb\rc\u2028d'), 'a\\nb\\rc\\u2028d');
+});
+
+// #558, ruling 1178: the Linux facade's renderer prints a line break inside an element's text escaped with macOS's
+// rule, and a tab as `\t` as the vendor's does, so the Linux first-call document says so in #526's sentence, naming
+// the Linux calls that take text (`setValue` is unavailable there). linux-engine.md is the whole of it on Linux, with
+// no lookups.
+const LINUX_LINE_BREAK_SENTENCE = 'In the accessibility tree, a line break inside an element\'s text shows as `\\n` or `\\r` (any other line break as `\\uXXXX`) and a tab as `\\t`, so each element keeps one line; `typeText` and `paste` take real line breaks and tabs, not the escape.';
+test('#558: the first-call document on Linux says how the tree shows line breaks and tabs, and that typeText and paste take real ones', async () => {
+  assert.ok((await create_documentation(read_documentation, {linuxEngine: () => true}).read_core()).includes(LINUX_LINE_BREAK_SENTENCE));
+  for (const options of [{}, {agentCursor: () => true}, {agentCursor: () => true, lookups: () => true}]) {
+    assert.ok(!(await create_documentation(read_documentation, options).read_core()).includes(LINUX_LINE_BREAK_SENTENCE), 'only where the computer surface is Linux');
+  }
+  // The escapes it names are the Linux renderer's.
+  const node = {id: '1', role: 'push button', name: `a\nb\rc${String.fromCharCode(0x2028)}d\te`, states: ['enabled'], actions: ['press'], children: []};
+  assert.equal(accessibility_tree(node).to_string(), `1 push button a\\nb\\rc\\${'u'}2028d\\te`);
 });
 
 // cua's own Linux document (the #171 spec's Decision Log, M5 pre-flight, F4): what a Linux computer surface answers

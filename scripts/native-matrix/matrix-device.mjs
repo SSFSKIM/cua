@@ -122,7 +122,7 @@ import {cpus, homedir, loadavg, uptime} from 'node:os';
 import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
-import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
+import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow, sceneWindowOf} from '../hosted-sittings/key-window.mjs';
 import {moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {inputWriteRefusal} from './hitoolbox.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
@@ -241,15 +241,20 @@ function guardReading(io) {
 // its window), the recorded one for Finder, whose process also shows the owner's windows. Not taken (ok false, with
 // why) when the scene is not up or the window list was not read.
 // `own`: the number of a window the run opened on the scene for the case in force (../native-matrix/steps.mjs
-// ownKeyWindowNumber; pilot C-3), read for in place of the scene's own window.
+// ownKeyWindowNumber; pilot C-3), read for in place of the scene's own window while it is on screen; one no longer on
+// screen (closed) is read as no window at all would be: the scene's own lookup, `ownGone` naming the number.
 export function sceneKeyWindow(scene, io, own = null) {
   const record = io.state().scenes?.[scene];
   if (!Number.isSafeInteger(record?.pid) || !Number.isSafeInteger(record?.window?.number)) return {scene, number: null, trusted: null, ok: false, reason: 'the scene is not up in this run'};
   let windows = null;
   try { windows = io.windows(); } catch { windows = null; }
   if (!Array.isArray(windows)) return {scene, number: null, trusted: null, ok: false, reason: 'the window list was unread'};
-  const number = own !== null && /^\d+$/.test(String(own)) ? Number(own) : SCENES[scene]?.process === 'run' ? null : record.window.number;
-  return {...ownKeyWindow(windows, {scene, pid: record.pid, number}, io.axState), ...(own !== null ? {own: true} : {})};
+  const ownNumber = own !== null && /^\d+$/.test(String(own)) ? Number(own) : null;
+  if (ownNumber !== null && sceneWindowOf(windows, {pid: record.pid, number: ownNumber})) {
+    return {...ownKeyWindow(windows, {scene, pid: record.pid, number: ownNumber}, io.axState), own: true};
+  }
+  const number = SCENES[scene]?.process === 'run' ? null : record.window.number;
+  return {...ownKeyWindow(windows, {scene, pid: record.pid, number}, io.axState), ...(own !== null ? {ownGone: ownNumber ?? String(own)} : {})};
 }
 
 // The run's placement of a scene window (`frame` "x,y,w,h"): its recorded window, moved by the frame probe and read

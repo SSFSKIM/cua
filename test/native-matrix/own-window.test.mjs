@@ -122,3 +122,18 @@ test('the device reads for the run\'s own window by its number when asked, else 
   const own = sceneKeyWindow('textedit', io, String(UNTITLED));
   assert.deepEqual([own.number, own.focusedWindow, own.ok, own.own], [UNTITLED, 'run', true, true]);
 });
+
+// Review finding 1: the run's own window gone (its cleanup closed it, an attempt retried) is no reading of its own: the
+// device reads for the scene's window as it would with no own window, so another window holding the key still refuses.
+test('an own window no longer on screen is read as the scene\'s window: another window key still refuses', async () => {
+  const {sceneKeyWindow} = await import('../../scripts/native-matrix/matrix-device.mjs');
+  const {keyWindowCause} = await import('../../scripts/hosted-sittings/alert-guard.mjs');
+  const doc = {ownerPid: 300, number: 428, layer: 0, bounds: {x: 213, y: 78, width: 507, height: 877}};
+  const other = {ownerPid: 300, number: 501, layer: 0, bounds: {x: 240, y: 100, width: 500, height: 400}};
+  // Window 500 (the run's own) is closed; TextEdit's key window is another one, 501, while the list's front is 428.
+  const io = {state: () => ({scenes: {textedit: {pid: 300, window: {number: 428}}}}), windows: () => [doc, other],
+    axState: () => ({trusted: true, ok: true, found: true, failed: [], frontmost: false, focusedWindow: 'other', mainWindow: 'other'})};
+  const gone = sceneKeyWindow('textedit', io, String(UNTITLED));
+  assert.deepEqual([gone.number, gone.ok, gone.focusedWindow, gone.own, gone.ownGone], [428, true, 'other', undefined, UNTITLED]);
+  assert.equal(keyWindowCause(gone)?.category, 'keyWindow');
+});

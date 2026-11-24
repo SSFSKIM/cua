@@ -124,7 +124,8 @@ async function sampledRows(ctx, base, attempt) {
     let cleanupFailed = null;
     if (out.retry && n < PROBE_ATTEMPTS) {
       cleanupFailed = await cleanedUp(out);
-      if (!cleanupFailed) { retries.push(out.row.invalid); lead = out.lead; continue; }
+      // The attempt's own window is closed with its fixture: the next attempt reads for none until it opens its own.
+      if (!cleanupFailed) { ownWindowClosed(ctx); retries.push(out.row.invalid); lead = out.lead; continue; }
     }
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});

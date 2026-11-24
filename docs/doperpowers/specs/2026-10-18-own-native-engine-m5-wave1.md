@@ -338,9 +338,19 @@ session's to add on `docs/117-progress`).
   row gained or lost and the column set changing stay a named FAIL; tccd's own bookkeeping moving alone
   (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`: last_modified, last_reminded, pid, pid_version, boot_uuid, from tccd's
   record of a row in the sitting-2 TCC stream) is recorded and never a failure, so tccd consulting an engine's row
-  during the step cannot fail sitting C. Each lane is
-  bounded (20 min, then SIGTERM, 3 min for its put-back, then SIGKILL) and the step too (45 min, 5 held back for its
-  cleanup and report; a lane with under 5 min left is skipped, recorded).
+  during the step cannot fail sitting C. After its re-review: the tap app checks RUNNER_ENVIRONMENT in its own
+  process first, before it reads, removes or creates any file (the launcher passes it with `open --env`), and
+  consumes its admission only once the admission held. The panel's absence is certified only when every candidate
+  window's identifier (and frame) was read. key-route.json carries each lane's attributed capture (`capture`, the one
+  the section renders) beside the taps' raw events (`rawEvents`), and a tap counts as live through the press only on
+  its own stop line or a kill at the stop. The deadline is the earlier of the step's cap (45 min, provisional) and the
+  job's limit (M5_JOB_STARTED, 360 min) less 15 min for what C does after the step. A lane's grace after SIGTERM is
+  sized to the recovery's own bound (`recoverBoundMs`, about 22 min) plus the step it is in and its close (about 29
+  min in all). The final inventory's reader is compiled before any hold. A lane with too little time left is skipped
+  before its hold, and the whole step is skipped before anything when its set-up and cleanup do not fit, each
+  recorded, INFO. A lane past its bound (20 min, provisional) whose put-back and the final inventory confirm a clean
+  device is INFO with `timedOut` recorded. The begin and preparation before the device's attestation stay where they
+  are: they are the matrix's ordinary hold, put back, and every key-route act comes after the attestation.
 - 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.
   alone, so every Latin and Korean selection in pilot C read the US layout back. All 230 input rows (the 5 probe-cell
   rows and the 225 unicode rows) were invalid. Setup gains an `input sources` step, after `textedit defaults`

@@ -2179,13 +2179,24 @@ on what this step records. It is sitting C's last step, after the counted lanes 
 1. Refuses off a GitHub-hosted macOS runner, before it reads, builds, writes or opens anything. So does every other
    entry point: `native-matrix.mjs cell key-route` (before it begins or writes anything, and before any scene comes up
    unless the device attests this job's run), each `key-route-device.mjs` command, the AX helper (exit 3 before any
-   Accessibility call), and the tap app, which runs only with the one-use admission its guarded launcher writes.
+   Accessibility call), and the tap app, which checks RUNNER_ENVIRONMENT in its own process first (its guarded
+   launcher passes it, `open --env`), before it reads, removes or creates any file, then runs only with the one-use
+   admission the launcher writes. The matrix cell's begin and preparation run before the device's attestation and stay
+   there: they are the matrix's ordinary hold and preparation, used against the owner's Mac in every owner sitting and
+   put back; every act of the key-route's own (the panel, the Escape, the taps, the TCC row) comes after the
+   attestation and refuses without it.
+   It is bounded by the job's clock: its deadline is the earlier of its own cap (45 min, provisional) and the job's
+   limit (360 min from M5_JOB_STARTED) less 15 min for what C does after it (its reports, the screen at the end, the
+   upload). When that leaves too little for its set-up and its cleanup, or the job's start is unread, it is skipped
+   before it reads, builds, grants or holds anything, recorded, INFO.
 2. Reads the two engines' TCC rows (`tcc.mjs engineRows`): every column the access table has, read from the table,
    each row as one quoted tuple, so the compare after misses no column.
 3. Builds the tap app (`scripts/native-matrix/key-route-tap.swift` into
    `~/Library/Caches/cua-harness/key-route/KeyRouteTap.app`, `io.github.ssfskim.cua.key-route-tap`, background-only,
    ad-hoc signed) and grants it Input Monitoring alone through the hosted kit's one TCC writer under O0
    (`grantDiagnosticListen`). Neither engine gets a row. A tap not built or granted is recorded and the lanes still run.
+   Then it compiles the final inventory's window-list reader, before any hold, so the cleanup need not hold back a
+   cold compile (when that fails, its 300 s is held back from every lane, recorded).
 4. For vendor, then cua: `native-matrix cell key-route` on that engine's own lane
    (`scripts/native-matrix/key-route-run.mjs`). The run brings TextEdit up and binds it as every matrix run does, then
    opens the Open panel by ⌘O under the key guard (the matrix's own `OPEN_PANEL`), and:
@@ -2203,28 +2214,34 @@ on what this step records. It is sitting C's last step, after the counted lanes 
      tap covers them), logging Escape keyDowns only, with fields 40 and 41 and the tap that saw each;
    - sends one `pressKey("Escape")` through the lane under the key guard (`KEY_ROUTE_ESCAPE`), stops the taps; the
      Escape's events are read inside the press's own device-clock window only (50 ms before, 500 ms after), the rest
-     kept apart and uncounted;
-   - reads the panel on the device (its AXIdentifier `open-panel`, and the window list at its frame) and, unless that
-     reading says it is gone, cancels it by Accessibility (its Cancel button; never an engine, never a pointer event),
-     tried whatever the reading did; only a reading that says it is gone confirms it closed, and a panel not confirmed
-     closed stops the lane, named.
+     kept apart and uncounted, and only from a tap shown live through the press (its own stop line, or a kill at the
+     stop): one that ended earlier is a failed tap, never one that saw nothing;
+   - reads the panel on the device (its AXIdentifier `open-panel`, and the window list at its frame; its absence
+     certified only when every candidate window's identifier and frame were read) and, unless that reading says it is
+     gone, cancels it by Accessibility (its Cancel button; never an engine, never a pointer event), tried whatever the
+     reading did; only a reading that says it is gone confirms it closed, and a panel not confirmed closed stops the
+     lane, named. The section keeps an unread outcome after the Escape apart from a confirmed AX cancel: "gone at a
+     later reading; no cancel made" against "still up at the AX cancel, which closed it".
    The lane's put-back quits TextEdit. Each lane opens its own TextEdit, so the AX half is read on each, before its
-   press, and the panel is opened afresh between the engines. Each lane is bounded at 20 min (then SIGTERM, 3 min for
-   its put-back, then SIGKILL) and the step at 45 min, 5 of them held back for steps 5 and 6; a lane with under 5 min
-   left is skipped, recorded.
+   press, and the panel is opened afresh between the engines. Each lane is bounded at 20 min (provisional), less when
+   the deadline is nearer, then SIGTERM and a grace sized to the recovery's own bound (the step it is in, 5 min,
+   `recoverBoundMs`, about 22 min, and its close, 2 min), then SIGKILL; a lane with under 5 min left is skipped before
+   its hold, recorded.
 5. Reads the engines' rows again and compares them; then checks what it opened: the tap app (stopped if it still
    runs, then read again), TextEdit, any panel service window on screen.
-6. Writes `key-route/key-route.json` (the artifact) and `key-route/key-route.md` (appended to sitting.md) whatever
+6. Writes `key-route/key-route.json` (the artifact: per lane its record, with the taps' `rawEvents`, and `capture`,
+   the attributed reading the section renders) and `key-route/key-route.md` (appended to sitting.md) whatever
    happened.
 
 **Its status.** The `diagnostic` check gives INFO with a one-line summary per engine (where the Escape was posted, by
 whom, which tap saw it, whether the panel closed; or, when no tap event falls in the press's window, whether the taps
 failed, each cause named, or worked and saw nothing), never C's verdict. A pid field the event did not carry reads
 "unavailable", never 0. A cleanup failure is a FAIL naming each: the engines' rows changed (a grant column's value, a
-row or a duplicate gained or lost, the table's columns themselves) or unread; a lane that wrote no result, ran past its
-bound, whose put-back did not hold or whose approved home was not cleaned (a refused lane aside), whose panel was not
-confirmed closed or whose tap did not exit; the tap still running, TextEdit still running, a panel window on screen;
-or no record written. tccd's own bookkeeping on a row it consults (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`:
+row or a duplicate gained or lost, the table's columns themselves) or unread; a lane that wrote no result, whose
+put-back did not hold or whose approved home was not cleaned (a refused lane aside), whose panel was not confirmed
+closed or whose tap did not exit; the tap still running, TextEdit still running, a panel window on screen; or no
+record written. A lane past its bound whose put-back and the final inventory confirm a clean device is INFO, its
+`timedOut` recorded and noted in the section. tccd's own bookkeeping on a row it consults (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`:
 last_modified, last_reminded, pid, pid_version, boot_uuid) moving alone is recorded in the section, both tuples kept,
 and is never a failure; every other column, one that set does not name included, is a grant column.
 
@@ -2235,7 +2252,11 @@ scene, every device command, the tap's start and stop, the cancel), with nothing
 orchestrator's calls; every TCC write is the tap app's Input Monitoring row and none names an engine; the engines' rows
 snapshotted from the table's own columns and compared as a multiset (a change of `client_type` or `auth_value` alone
 is a FAIL, of `last_reminded` alone a record and no failure); each
-cleanup failure named; the lane and step bounds and the skip; pgrep's exit 1 against its other failures; the lane's
+cleanup failure named; the lane and step bounds from the job's clock, the grace against `recoverBoundMs`, the skips
+before the hold and before anything, a timed-out lane with a clean device as INFO; the stored capture and a tap not
+live through the press; pgrep's exit 1 against its other failures; the tap app's own venue refusal, natively (compiled
+and run here off a runner: exit 3, its admission file untouched, no log; `test/native-matrix/key-route-tap.test.mjs`,
+macOS only); the lane's
 order (⌘O, the AX half, the taps, the Escape, the taps stopped, the panel read, the AX cancel unless it reads gone) on
 the matrix's run doubles, with a panel reading or cancel that fails; the capture's window, its unmatched events and
 its four cases (seen, unavailable field, tap failed, nothing seen); the tap's admission, launch, stop and kill, the tap
@@ -2249,5 +2270,7 @@ made).
   posted;
 - whether `_AXUIElementGetActualPid` resolves by dlsym on macOS 27 (else "unavailable" throughout);
 - whether the 50 ms / 500 ms window around the press holds its events on the runner's clock;
+- whether `open --env` hands the tap's LaunchServices process RUNNER_ENVIRONMENT on the runner's macOS (the installed
+  `open`'s help lists `--env`; when it does not, the tap refuses and the section names a tap that did not report ready);
 - the pids themselves, which are the point.
 

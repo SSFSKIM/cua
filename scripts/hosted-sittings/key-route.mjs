@@ -21,7 +21,8 @@
 //      own process, then read again), TextEdit, a panel window
 //   6. key-route.json (the artifact) and key-route.md (the sitting's section) written whatever happened
 // Exit 0 recorded, its cleanup confirmed (the sitting's check: INFO, never its verdict); 1 a cleanup failure, each named
-// (FAIL): the engines' rows changed or unread; a lane that wrote no result, ran past its bound, did not put back, did not
+// (FAIL): the engines' rows changed in a grant column, gained or lost, or unread (tccd's bookkeeping columns moving
+// alone, tcc.mjs TCC_BOOKKEEPING_COLUMNS, is recorded and no failure); a lane that wrote no result, ran past its bound, did not put back, did not
 // clean its approved home, or left its panel up or its tap running; anything left after.
 import {execFileSync, spawn} from 'node:child_process';
 import * as fs from 'node:fs';
@@ -90,11 +91,12 @@ export async function runKeyRoute({approvedRuntime, approvedEngine, sitting, out
   } finally {
     if (before) {
       try {
-        const changed = rowsChanged(before, io.engineRows());
-        report.tcc.engines = changed ? {unchanged: false, ...changed} : {unchanged: true, rows: before.rows.length};
-        if (changed) {
-          failures.push(`the engines' TCC rows changed during the diagnostic: ${[changed.added.length && `added ${changed.added.join(', ')}`, changed.removed.length && `removed ${changed.removed.join(', ')}`,
-            changed.columns && `the access table's columns ${changed.columns.before.join(', ')} became ${changed.columns.after.join(', ')}`].filter(Boolean).join('; ')}`);
+        const changed = rowsChanged(before, io.engineRows()), grant = changed?.grant;
+        report.tcc.engines = {unchanged: !grant, rows: before.rows.length, bookkeepingColumns: before.bookkeeping, ...(grant ?? {}),
+          ...(changed?.bookkeeping ? {bookkeeping: changed.bookkeeping} : {})};
+        if (grant) {
+          failures.push(`the engines' TCC rows changed during the diagnostic: ${[grant.added.length && `added ${grant.added.join(', ')}`, grant.removed.length && `removed ${grant.removed.join(', ')}`,
+            grant.columns && `the access table's columns ${grant.columns.before.join(', ')} became ${grant.columns.after.join(', ')}`].filter(Boolean).join('; ')}`);
         }
       } catch (error) { failures.push(`the engines' TCC rows could not be read after the diagnostic (${message(error)}): unchanged is unproven`); }
     }

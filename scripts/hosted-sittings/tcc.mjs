@@ -210,23 +210,36 @@ export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} =
   }, deps);
 }
 
+// The access table's bookkeeping columns: what tccd itself rewrites on a row it consults, which grants nothing. tccd's
+// own record of a row (docs/doperpowers/research/2026-10-18-own-native-engine/spike/sit2/u78-tcc.jsonl, its access
+// dumps) carries last_modified and the session's pid, pid version and boot UUID (session_pid, session_pid_version,
+// session_boot_UUID: the table's pid, pid_version and boot_uuid); last_reminded is the reminder's clock. Matched by name
+// against the columns the table has (read from it, so a name it lacks matches nothing): every other column, one this set
+// does not name included, is a grant column.
+export const TCC_BOOKKEEPING_COLUMNS = Object.freeze(['last_modified', 'last_reminded', 'pid', 'pid_version', 'boot_uuid']);
+
 // The two engines' rows as the system database holds them, losslessly: every column the access table has (read from
-// the table itself, so no column a narrower select would omit escapes the compare), each row one SQL tuple of its
-// values as quote() spells them, carried hex-encoded so no value can split a line, sorted. Read before and after a step
-// that must leave them as they were (the key-route diagnostic). A read only, still hosted only (the system database is
-// read through sudo). -> {columns: [name], rows: [tuple]}.
+// the table itself, so no column a narrower select would omit escapes the compare), each row as two SQL tuples of its
+// values as quote() spells them, its grant columns' and its bookkeeping columns', carried hex-encoded so no value can
+// split a line. Read before and after a step that must leave them as they were (the key-route diagnostic). A read only,
+// still hosted only (the system database is read through sudo).
+// -> {columns: [name], bookkeeping: [name], rows: [grant tuple], full: ['<grant tuple> <bookkeeping tuple>']}, sorted.
 export function engineRows({env = process.env, platform = process.platform, store = STORE} = {}) {
   assertGithubHosted(env, platform, 'the TCC reader');
   const columns = String(store.sql(SYSTEM_DB, 'select name from pragma_table_info(\'access\') order by cid;') ?? '').split('\n').filter(Boolean);
-  if (!columns.length || !columns.every(name => /^\w+$/.test(name))) throw new Error('the access table\'s columns could not be read');
+  if (!columns.every(name => /^\w+$/.test(name)) || !columns.includes('service') || !columns.includes('client')) throw new Error('the access table\'s columns could not be read');
   const clients = Object.values(CLIENTS).map(quote).join(', ');
-  const tuple = columns.map(name => `quote("${name}")`).join(' || \', \' || ');
-  const rows = String(store.sql(SYSTEM_DB, `select hex('(' || ${tuple} || ')') from access where client in (${clients});`) ?? '')
-    .split('\n').filter(Boolean).map(line => Buffer.from(line, 'hex').toString('utf8')).sort();
-  return {columns, rows};
+  const bookkeeping = columns.filter(name => TCC_BOOKKEEPING_COLUMNS.includes(name)), grant = columns.filter(name => !bookkeeping.includes(name));
+  const tuple = names => `hex('(' || ${names.length ? names.map(name => `quote("${name}")`).join(' || \', \' || ') : '\'\''} || ')')`;
+  const read = String(store.sql(SYSTEM_DB, `select ${tuple(grant)} || '|' || ${tuple(bookkeeping)} from access where client in (${clients});`) ?? '')
+    .split('\n').filter(Boolean).map(line => line.split('|').map(part => Buffer.from(part, 'hex').toString('utf8')));
+  return {columns, bookkeeping, rows: read.map(([g]) => g).sort(), full: read.map(([g, b]) => `${g} ${b}`).sort()};
 }
-// What changed between two readings of engineRows: the rows compared as multisets (a duplicate gained or lost counts),
-// and the table's columns. -> null when nothing did, else {added, removed, columns?: {before, after}}.
+// What changed between two readings of engineRows, rows compared as multisets (a duplicate gained or lost counts).
+// `grant`: a grant column's value, a row gained or lost, or the table's columns (a failure, named, to the caller);
+// `bookkeeping`: when nothing of that changed, the rows whose bookkeeping columns alone moved (recorded, never a failure).
+// -> null when nothing did, else {grant: {added, removed, columns?: {before, after}} | null, bookkeeping: {columns,
+// added, removed} | null}.
 export function rowsChanged(before, after) {
   const minus = (rows, taken) => {
     const left = new Map();
@@ -235,5 +248,9 @@ export function rowsChanged(before, after) {
   };
   const added = minus(after.rows, before.rows), removed = minus(before.rows, after.rows);
   const columnsChanged = before.columns.join('\n') !== after.columns.join('\n');
-  return added.length || removed.length || columnsChanged ? {added, removed, ...(columnsChanged ? {columns: {before: before.columns, after: after.columns}} : {})} : null;
+  if (added.length || removed.length || columnsChanged) {
+    return {grant: {added, removed, ...(columnsChanged ? {columns: {before: before.columns, after: after.columns}} : {})}, bookkeeping: null};
+  }
+  const moved = {added: minus(after.full, before.full), removed: minus(before.full, after.full)};
+  return moved.added.length || moved.removed.length ? {grant: null, bookkeeping: {columns: before.bookkeeping, ...moved}} : null;
 }

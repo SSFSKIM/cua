@@ -333,8 +333,12 @@ session's to add on `docs/117-progress`).
   The panel is closed only on a reading that says it is gone (the device's after the Escape, or the AX cancel's own),
   and the cancel is tried whatever the reading before it did. A lane's missing result, put-back not held or approved
   home not cleaned (a refused lane aside) is a named failure. The engines' TCC rows are snapshotted losslessly (every
-  column the access table has, compared as a multiset and with the columns); tccd may rewrite a column of an engine's
-  row by itself during the step, which would show as a change, a FAIL to be read rather than trusted. Each lane is
+  column the access table has, compared as a multiset and with the columns). A grant column's change (service,
+  client, client_type, auth_value, auth_reason, csreq, indirect_object_identifier and every column not named below), a
+  row gained or lost and the column set changing stay a named FAIL; tccd's own bookkeeping moving alone
+  (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`: last_modified, last_reminded, pid, pid_version, boot_uuid, from tccd's
+  record of a row in the sitting-2 TCC stream) is recorded and never a failure, so tccd consulting an engine's row
+  during the step cannot fail sitting C. Each lane is
   bounded (20 min, then SIGTERM, 3 min for its put-back, then SIGKILL) and the step too (45 min, 5 held back for its
   cleanup and report; a lane with under 5 min left is skipped, recorded).
 - 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.

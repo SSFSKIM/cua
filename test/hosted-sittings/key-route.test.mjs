@@ -14,7 +14,7 @@ import {KEY_ROUTE_BUDGET_MS, KEY_ROUTE_RESERVE_MS, keyRouteSummary, LANE_GRACE_M
 import {stepSections} from '../../scripts/hosted-sittings/key-route-report.mjs';
 import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
 import {runSitting} from '../../scripts/hosted-sittings/run.mjs';
-import {CLIENTS, DIAGNOSTIC_CLIENT, engineRows, grantDiagnosticListen, O0_COMMIT, rowsChanged, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
+import {CLIENTS, DIAGNOSTIC_CLIENT, engineRows, grantDiagnosticListen, O0_COMMIT, rowsChanged, SERVICES, SYSTEM_DB, TCC_BOOKKEEPING_COLUMNS} from '../../scripts/hosted-sittings/tcc.mjs';
 import {TAP_APP, TAP_BUNDLE_ID} from '../../scripts/native-matrix/key-route-device.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
@@ -31,9 +31,11 @@ function spyStore({rows = []} = {}) {
     sql: (db, statement) => { calls.push(['sql', db, statement]); return statement.startsWith('select') ? (typeof rows === 'function' ? rows(statement) : rows.join('\n')) : ''; },
   }};
 }
-// A store whose access table has `columns` and holds `tuples` (each the row as SQL's quote() spells its values).
+// A store whose access table has `columns` and holds `tuples`: each row [its grant columns' tuple, its bookkeeping
+// columns' tuple], as SQL's quote() spells the values.
 const hex = text => Buffer.from(text, 'utf8').toString('hex').toUpperCase();
-const tableStore = (columns, tuples) => spyStore({rows: statement => (statement.includes('pragma_table_info') ? columns.join('\n') : tuples.map(t => hex(t)).join('\n'))});
+const tableStore = (columns, tuples) => spyStore({rows: statement => (statement.includes('pragma_table_info') ? columns.join('\n')
+  : tuples.map(([grant, kept = '()']) => `${hex(grant)}|${hex(kept)}`).join('\n'))});
 
 test('C: the key-route diagnostic is its own step, the last, after the counted lanes and their judges; never counted, in both forms', () => {
   for (const pilot of [false, true]) {
@@ -90,12 +92,17 @@ test('in a sitting the diagnostic\'s INFO never changes the verdict; its cleanup
 // answer), result (its result.json; null: not written), takesMs (the clock it moves)}; rows are the access tuples.
 const laneResult = (engine, over = {}) => ({complete: true, problems: [], verdict: 'no-verdict', putBack: {ok: true, stopped: true},
   ...over, meta: {preparationCleanup: {removed: true}, keyRoute: {engine, closed: true, cleanup: []}, ...over.meta}});
-function hostedIo({rowsBefore = ['a'], rowsAfter = rowsBefore, leftovers = [{tap: [], textedit: [], panels: 0}], results = {}, buildTap, grantTap, startMs = 0} = {}) {
+function hostedIo({rowsBefore = ['a'], rowsAfter = rowsBefore, keptBefore = '(1)', keptAfter = keptBefore, leftovers = [{tap: [], textedit: [], panels: 0}], results = {}, buildTap, grantTap, startMs = 0} = {}) {
   const calls = [], written = {}, bounds = {};
   let rowReads = 0, leftoverReads = 0, clock = startMs;
   const io = {
     env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', log: () => {}, now: () => clock,
-    engineRows: () => { calls.push(['engineRows']); const rows = rowReads++ === 0 ? rowsBefore : rowsAfter; if (rows instanceof Error) throw rows; return {columns: ['service'], rows}; },
+    engineRows: () => {
+      calls.push(['engineRows']);
+      const first = rowReads++ === 0, rows = first ? rowsBefore : rowsAfter, kept = first ? keptBefore : keptAfter;
+      if (rows instanceof Error) throw rows;
+      return {columns: ['service', 'client', 'last_reminded'], bookkeeping: ['last_reminded'], rows, full: rows.map(r => `${r} ${kept}`)};
+    },
     buildTap: buildTap ?? (() => { calls.push(['buildTap']); return {app: TAP_APP, bundleId: TAP_BUNDLE_ID}; }),
     grantTap: grantTap ?? (app => { calls.push(['grantTap', app]); return {client: DIAGNOSTIC_CLIENT, granted: true}; }),
     runEngine: async (engine, dir, {timeoutMs}) => {
@@ -140,7 +147,7 @@ test('on the runner: the engines\' rows read, the tap built and granted, vendor 
     ['engineRows'], ['leftovers']]);
   const report = JSON.parse(written['/w/out/key-route/key-route.json']);
   assert.deepEqual(report.cleanup, {ok: true, failures: []});
-  assert.deepEqual(report.tcc.engines, {unchanged: true, rows: 1});
+  assert.deepEqual(report.tcc.engines, {unchanged: true, rows: 1, bookkeepingColumns: ['last_reminded']});
   assert.deepEqual(Object.keys(report.engines), ['vendor', 'cua']);
   assert.equal(report.engines.vendor.keyRoute.engine, 'vendor');
   assert.match(written['/w/out/key-route/key-route.md'], /^## The key-route diagnostic \(ruling 1198\)/);
@@ -151,6 +158,12 @@ test('the engines\' rows changed, or unread, is a failure by name; so is a clean
   assert.equal(await runKeyRoute(OPTIONS, changed.io), 1);
   assert.deepEqual(failuresOf(changed.written),
     ['the engines\' TCC rows changed during the diagnostic: added (\'kTCCServiceListenEvent\', \'io.github.ssfskim.cua.engine\', 2); removed (\'kTCCServiceListenEvent\', \'io.github.ssfskim.cua.engine\', 0)']);
+  // tccd's bookkeeping moving alone (last_reminded) is recorded, never a failure; a grant change still is.
+  const kept = hostedIo({keptAfter: '(9)'});
+  assert.equal(await runKeyRoute(OPTIONS, kept.io), 0);
+  const keptReport = JSON.parse(kept.written['/w/out/key-route/key-route.json']);
+  assert.deepEqual(keptReport.tcc.engines, {unchanged: true, rows: 1, bookkeepingColumns: ['last_reminded'], bookkeeping: {columns: ['last_reminded'], added: ['a (9)'], removed: ['a (1)']}});
+  assert.match(kept.written['/w/out/key-route/key-route.md'], /The engines' TCC rows: unchanged \(1 rows; tccd's bookkeeping \(last_reminded\) moved on 1 row, recorded, not a failure\)\./);
   const unread = hostedIo({rowsBefore: new Error('sudo: a password is required')});
   assert.equal(await runKeyRoute(OPTIONS, unread.io), 1);
   assert.deepEqual(failuresOf(unread.written), ['the engines\' TCC rows could not be read before the diagnostic (sudo: a password is required): unchanged is unproven']);
@@ -218,7 +231,7 @@ test('a tap that could not be built or granted is recorded, and both lanes still
 
 test('the TCC writer is asked for the diagnostic\'s own identity only: every write names its tap app and Input Monitoring, never an engine', async () => {
   const {store, calls} = spyStore({rows: statement => (statement.includes('pragma_table_info') ? 'service\nclient'
-    : statement.includes(DIAGNOSTIC_CLIENT) ? `kTCCServiceListenEvent|${DIAGNOSTIC_CLIENT}|2` : hex('(\'kTCCServiceAccessibility\', \'io.github.ssfskim.cua.engine\')'))});
+    : statement.includes(DIAGNOSTIC_CLIENT) ? `kTCCServiceListenEvent|${DIAGNOSTIC_CLIENT}|2` : `${hex('(\'kTCCServiceAccessibility\', \'io.github.ssfskim.cua.engine\')')}|${hex('()')}`)});
   const {io} = hostedIo({grantTap: app => grantDiagnosticListen({bundle: app}, {...HOSTED, store, log: () => {}})});
   io.engineRows = () => engineRows({...HOSTED, store});
   assert.equal(await runKeyRoute(OPTIONS, io), 0);
@@ -247,31 +260,42 @@ test('engineRows: hosted only, every column of the engines\' rows as the table h
   const off = spyStore();
   assert.throws(() => engineRows({env: {}, platform: 'darwin', store: off.store}), /refused: .*GitHub-hosted/);
   assert.deepEqual(off.calls, []);
-  const columns = ['service', 'client', 'client_type', 'auth_value', 'csreq'];
-  const {store, calls} = tableStore(columns, ["('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2, X'FADE')", "('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, NULL)"]);
-  assert.deepEqual(engineRows({...HOSTED, store}), {columns,
-    rows: ["('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, NULL)", "('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2, X'FADE')"]});
+  const columns = ['service', 'client', 'client_type', 'auth_value', 'csreq', 'last_modified', 'pid'];
+  const {store, calls} = tableStore(columns, [["('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2, X'FADE')", '(1792418253, NULL)'],
+    ["('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, NULL)", '(1792418000, 77)']]);
+  assert.deepEqual(engineRows({...HOSTED, store}), {columns, bookkeeping: ['last_modified', 'pid'],
+    rows: ["('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, NULL)", "('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2, X'FADE')"],
+    full: ["('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, NULL) (1792418000, 77)", "('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2, X'FADE') (1792418253, NULL)"]});
   const sql = calls.filter(c => c[0] === 'sql').map(c => c[2]);
   assert.deepEqual(sql[0], 'select name from pragma_table_info(\'access\') order by cid;');
-  assert.equal(sql[1], `select hex('(' || quote("service") || ', ' || quote("client") || ', ' || quote("client_type") || ', ' || quote("auth_value") || ', ' || quote("csreq") || ')') from access where client in ('io.github.ssfskim.cua.engine', 'com.openai.sky.CUAService');`);
+  assert.equal(sql[1], `select hex('(' || quote("service") || ', ' || quote("client") || ', ' || quote("client_type") || ', ' || quote("auth_value") || ', ' || quote("csreq") || ')') || '|' || hex('(' || quote("last_modified") || ', ' || quote("pid") || ')') from access where client in ('io.github.ssfskim.cua.engine', 'com.openai.sky.CUAService');`);
   assert.equal(sql.length, 2);
-  // A table whose columns cannot be read, or read as no names, is unread, never an empty snapshot.
+  // A table whose columns cannot be read, read as no names, or without its service and client, is unread, never an
+  // empty snapshot.
   assert.throws(() => engineRows({...HOSTED, store: tableStore([], []).store}), /the access table's columns could not be read/);
-  assert.throws(() => engineRows({...HOSTED, store: tableStore(['ok', 'bad name'], []).store}), /the access table's columns could not be read/);
+  assert.throws(() => engineRows({...HOSTED, store: tableStore(['service', 'client', 'bad name'], []).store}), /the access table's columns could not be read/);
+  assert.throws(() => engineRows({...HOSTED, store: tableStore(['last_modified'], []).store}), /the access table's columns could not be read/);
+  // The bookkeeping set is named in one place; a table without any of it has a bookkeeping tuple of none.
+  assert.deepEqual([...TCC_BOOKKEEPING_COLUMNS], ['last_modified', 'last_reminded', 'pid', 'pid_version', 'boot_uuid']);
+  assert.deepEqual(engineRows({...HOSTED, store: tableStore(['service', 'client'], [["('s', 'c')"]]).store}), {columns: ['service', 'client'], bookkeeping: [], rows: ["('s', 'c')"], full: ["('s', 'c') ()"]});
 });
 
-test('rowsChanged: a multiset compare of whole rows and of the columns; a column a narrower read would omit counts', () => {
-  const COLS = ['service', 'client', 'client_type', 'auth_value'];
-  const snap = (rows, columns = COLS) => ({columns, rows});
-  assert.equal(rowsChanged(snap(['a', 'b']), snap(['b', 'a'])), null);
-  assert.deepEqual(rowsChanged(snap(['a', 'b']), snap(['b', 'c'])), {added: ['c'], removed: ['a']});
-  // client_type alone moved (a row's identity kind): changed.
-  const before = "('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 0, 2)", after = "('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', 1, 2)";
-  assert.deepEqual(rowsChanged(snap([before]), snap([after])), {added: [after], removed: [before]});
-  // A duplicate gained or lost counts.
-  assert.deepEqual(rowsChanged(snap(['a', 'a']), snap(['a'])), {added: [], removed: ['a']});
-  // The table's columns changed (a column added, dropped or reordered): changed, the rows' compare aside.
-  assert.deepEqual(rowsChanged(snap(['a']), snap(['a'], [...COLS, 'pid'])), {added: [], removed: [], columns: {before: COLS, after: [...COLS, 'pid']}});
+test('rowsChanged: a grant column, a row gained or lost, a duplicate or the column set changing is a grant change; tccd\'s bookkeeping moving alone is recorded apart', () => {
+  const COLS = ['service', 'client', 'client_type', 'auth_value', 'last_modified', 'last_reminded'];
+  const snap = (rows, columns = COLS) => ({columns, bookkeeping: ['last_modified', 'last_reminded'], rows: rows.map(([grant]) => grant), full: rows.map(([grant, kept]) => `${grant} ${kept}`)});
+  const row = (type, value, kept = '(1, 1)') => [`('kTCCServiceListenEvent', 'io.github.ssfskim.cua.engine', ${type}, ${value})`, kept];
+  assert.equal(rowsChanged(snap([row(0, 2), ['b', '()']]), snap([['b', '()'], row(0, 2)])), null);
+  // last_reminded alone moved: bookkeeping, no grant change.
+  assert.deepEqual(rowsChanged(snap([row(0, 2, '(1, 1)')]), snap([row(0, 2, '(1, 9)')])),
+    {grant: null, bookkeeping: {columns: ['last_modified', 'last_reminded'], added: [`${row(0, 2)[0]} (1, 9)`], removed: [`${row(0, 2)[0]} (1, 1)`]}});
+  // auth_value, or client_type alone: a grant change.
+  assert.deepEqual(rowsChanged(snap([row(0, 2)]), snap([row(0, 0)])), {grant: {added: [row(0, 0)[0]], removed: [row(0, 2)[0]]}, bookkeeping: null});
+  assert.deepEqual(rowsChanged(snap([row(0, 2)]), snap([row(1, 2)])), {grant: {added: [row(1, 2)[0]], removed: [row(0, 2)[0]]}, bookkeeping: null});
+  // A row gained, or a duplicate lost.
+  assert.deepEqual(rowsChanged(snap([row(0, 2)]), snap([row(0, 2), ['b', '()']])).grant, {added: ['b'], removed: []});
+  assert.deepEqual(rowsChanged(snap([row(0, 2), row(0, 2)]), snap([row(0, 2)])).grant, {added: [], removed: [row(0, 2)[0]]});
+  // The table's columns changed: a grant change, the rows' compare aside.
+  assert.deepEqual(rowsChanged(snap([row(0, 2)]), snap([row(0, 2)], [...COLS, 'flags'])).grant, {added: [], removed: [], columns: {before: COLS, after: [...COLS, 'flags']}});
 });
 
 test('the section: per engine the Escape\'s posted and receiving pids and the panel; the AX ancestors; cua\'s keyboardTarget; every public route against ActualPid and the selected ancestor', () => {

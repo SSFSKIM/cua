@@ -2220,19 +2220,21 @@ on what this step records. It is sitting C's last step, after the counted lanes 
 **Its status.** The `diagnostic` check gives INFO with a one-line summary per engine (where the Escape was posted, by
 whom, which tap saw it, whether the panel closed; or, when no tap event falls in the press's window, whether the taps
 failed, each cause named, or worked and saw nothing), never C's verdict. A pid field the event did not carry reads
-"unavailable", never 0. A cleanup failure is a FAIL naming each: the engines' rows changed (any column, a duplicate
-gained or lost, the table's columns themselves) or unread; a lane that wrote no result, ran past its bound, whose
-put-back did not hold or whose approved home was not cleaned (a refused lane aside), whose panel was not confirmed
-closed or whose tap did not exit; the tap still running, TextEdit still running, a panel window on screen; or no
-record written. tccd may rewrite a column of an engine's row by itself during the step: that shows as a change, a FAIL
-to be read (the record keeps both tuples) rather than trusted as the diagnostic's doing.
+"unavailable", never 0. A cleanup failure is a FAIL naming each: the engines' rows changed (a grant column's value, a
+row or a duplicate gained or lost, the table's columns themselves) or unread; a lane that wrote no result, ran past its
+bound, whose put-back did not hold or whose approved home was not cleaned (a refused lane aside), whose panel was not
+confirmed closed or whose tap did not exit; the tap still running, TextEdit still running, a panel window on screen;
+or no record written. tccd's own bookkeeping on a row it consults (`TCC_BOOKKEEPING_COLUMNS` in `tcc.mjs`:
+last_modified, last_reminded, pid, pid_version, boot_uuid) moving alone is recorded in the section, both tuples kept,
+and is never a failure; every other column, one that set does not name included, is a grant column.
 
 **Proven by unit tests** (`test/hosted-sittings/key-route.test.mjs`, `test/native-matrix/key-route.test.mjs`): the
 plan's step and its place; the check and its effect on the sitting's verdict; the refusal off a hosted runner at every
 entry point (the step's function and command, the matrix cell before begin and on an unattested device before any
 scene, every device command, the tap's start and stop, the cancel), with nothing read or written; the order of the
 orchestrator's calls; every TCC write is the tap app's Input Monitoring row and none names an engine; the engines' rows
-snapshotted from the table's own columns and compared as a multiset (a change of `client_type` alone counts); each
+snapshotted from the table's own columns and compared as a multiset (a change of `client_type` or `auth_value` alone
+is a FAIL, of `last_reminded` alone a record and no failure); each
 cleanup failure named; the lane and step bounds and the skip; pgrep's exit 1 against its other failures; the lane's
 order (⌘O, the AX half, the taps, the Escape, the taps stopped, the panel read, the AX cancel unless it reads gone) on
 the matrix's run doubles, with a panel reading or cancel that fails; the capture's window, its unmatched events and

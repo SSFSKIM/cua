@@ -64,7 +64,9 @@ function axSection(engine, ax) {
       : cells([r.route, 'yes', r.pids?.length ? r.pids.join(', ') : 'none', yesNo(r.matchesActual), yesNo(r.matchesSelected)]))), ''];
 }
 
-const tccText = engines => (engines?.unchanged === true ? `unchanged (${engines.rows} rows)` : engines
+// The engines' rows: a grant change is CHANGED; tccd's bookkeeping moving alone is said, as recorded and no failure.
+const moved = b => `; tccd's bookkeeping (${b.columns.join(', ')}) moved on ${b.removed.length} row${b.removed.length === 1 ? '' : 's'}, recorded, not a failure`;
+const tccText = engines => (engines?.unchanged === true ? `unchanged (${engines.rows} rows${engines.bookkeeping ? moved(engines.bookkeeping) : ''})` : engines
   ? `CHANGED (added ${engines.added.join(', ') || 'none'}; removed ${engines.removed.join(', ') || 'none'}${engines.columns ? `; the columns ${engines.columns.before.join(', ')} became ${engines.columns.after.join(', ')}` : ''})`
   : 'not compared');
 

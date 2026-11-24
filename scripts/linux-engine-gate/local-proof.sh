@@ -10,10 +10,10 @@
 #   local-proof.sh --part <name> <checkout>                    one part in the foreground (what each part runs)
 #
 # The parts (ci-kit.yml's lines; the apt lines are left out, so the packages must be installed):
-#   npm-test           `npm test` in the checkout (the `test` gate's first half)
+#   npm-test           `npm test` in the checkout (the test-1 and test-2 gates run it as two shards)
 #   npm-test-compare   `npm test` in the compare checkout, when one is named: on the VM some tests fail for platform
 #                      reasons, and by ruling 743 the head passes when it fails nothing the compare checkout doesn't
-#   harness            `npm run test:linux-engine-diff` (the `test` gate's second half)
+#   harness            `npm run test:linux-engine-diff` (the test-2 gate's second half)
 #   harness-dbus       the harness-dbus gate's run line
 #   engine-static      engine-linux: rustup's toolchain and target, fmt, both clippy runs, the musl build
 #   engine-live        engine-linux: cargo test --features live under xvfb-run -a dbus-run-session, GTK required

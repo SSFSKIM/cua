@@ -233,7 +233,9 @@ test('doctor reports both kinds of leftover by name, with the command that remov
   put(join(codexHomeOf(home), 'cache', 'x'));
   put(join(codexHomeOf(home), 'config.toml'));
   const env = {HOME: home};
-  const before = leftoverRow(await inspectRuntime({home, env, pins: [pin], ...passive}));
+  const report = await inspectRuntime({home, env, pins: [pin], ...passive, retired: () => assert.fail('the vendor tree\'s report is Linux\'s (#171 M6b)')});
+  assert.equal(report.retired, undefined, 'macOS reports no retired tree');
+  const before = leftoverRow(report);
   assert.equal(before.status, 'warn');
   assert.ok(before.detail.includes(`${codexHomeOf(home)}: auth.json, cache`), before.detail);
   assert.ok(before.detail.includes(join(root, 'CodexCLI.app')), before.detail);

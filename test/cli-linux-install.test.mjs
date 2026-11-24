@@ -478,11 +478,13 @@ test('an engine setting that cannot be read is reported, and no computer session
   assert.equal(lastLine(text), `${SAID}browser-only sessions open; no computer session opens: ${why} (invalid_setting)`);
 });
 
-test('cua install on Linux reads no vendor pin: one that cannot be loaded changes nothing', async t => {
+test('cua install on Linux reads no vendor pin', async t => {
   const home = scratchHome(t);
   const {deps} = installers(home);
-  deps.pins = () => assert.fail('no vendor pin is read on Linux');
+  let read = 0;
+  deps.pins = () => { read++; return []; };
   const {status, report} = await installJson(deps);
+  assert.equal(read, 0, 'the vendor pins were read');
   assert.equal(status, 0);
   assert.equal(report.modules.changed, true);
   assert.deepEqual(opened(report), {browser: true, computer: true});

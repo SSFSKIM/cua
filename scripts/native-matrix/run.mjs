@@ -484,10 +484,13 @@ function quitLaunched(ctx) {
   } catch (error) { ctx.problems.push(`the run's launched apps could not be quit: ${error.message}`); return null; }
 }
 
-// A row's whole span: every window marked under its key (the attempt's, and its act's inside it). -> [from, to] | null.
-function rowSpan(windows, key) {
+// A concurrent row's windows for R3's witness: the judged one from its act's start (`actFrom`, the oracle's) to the end of
+// every window marked under its key (the check's), and the prepare's before it. -> {at: [from, to] | null, prepare}.
+function witnessWindows(windows, key, actFrom) {
   const own = windows.filter(w => w.kind === 'row' && w.key === key);
-  return own.length ? [Math.min(...own.map(w => w.at[0])), Math.max(...own.map(w => w.at[1]))] : null;
+  if (!own.length || !Number.isFinite(actFrom)) return {at: null, prepare: null};
+  const from = Math.min(...own.map(w => w.at[0])), to = Math.max(...own.map(w => w.at[1]));
+  return {at: [actFrom, to], prepare: from < actFrom ? [from, actFrom] : null};
 }
 
 // The watcher's end: its liveness read once more (alive now and the same pid running the probe: alive throughout),
@@ -510,8 +513,8 @@ function finishWatch(ctx, witnessed = null) {
     const seen = byRow[key] ?? [];
     if (judged.oracle) {
       const concurrent = judged.oracle.userLanded !== undefined && judged.oracle.userLanded !== null;
-      const posts = concurrent && witnessed ? rowPosts(witnessed, {userPid: judged.oracle.userPid, at: rowSpan(ctx.windows, key)}) : null;
-      if (posts) judged.row.witness = {gaps: posts.gaps, others: posts.others, probe: posts.probe};
+      const posts = concurrent && witnessed ? rowPosts(witnessed, {userPid: judged.oracle.userPid, ...witnessWindows(ctx.windows, key, judged.oracle.actFrom)}) : null;
+      if (posts) judged.row.witness = {gaps: posts.gaps, others: posts.others, prepare: posts.prepare, probe: posts.probe};
       judged.row.interference = judgeInterference({...judged.oracle, activations: seen, posts});
       if (judged.row.interference.noVerdict) judged.row.invalid ??= `R3's witness: ${judged.row.interference.noVerdict}`;
     }

@@ -284,9 +284,10 @@ async function concurrentAttempt(ctx, driven, {lead, id, key, span}) {
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
   // A window of the user app's own process on top (ruling 1223, R3; ./oracle.mjs userAppWindow) needs the user's input
   // landed and R3's witness of the cell (ruling 1225): the run adds it when its tap is stopped (./run.mjs finishWatch,
-  // ./witness.mjs rowPosts), the row's span then known.
+  // ./witness.mjs rowPosts), the row's span then known, judged from the act's start (`actFrom`): the prepare before it
+  // runs through the engine under test too, its posts recorded apart.
   return span.end(row, {oracle: {before: before.reading, after: after.reading, named: {before: before.frontWindow?.top ?? null, after: after.frontWindow?.top ?? null}, focus: after.focus ?? null, inputRoute: act.route, scene: driven, userPid: userWindow.pid,
-    userLanded, ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
+    userLanded, actFrom: act.at?.[0] ?? null, ...windowOrderOf(before, after, [SCENES[driven].bundleId], userWindow)}});
 }
 // The window-order oracle's data for a background attempt (./oracle.mjs judgeInterference, #485): the order read before
 // and after its act, the driven app's windows the targets, the user window by its number before the act.

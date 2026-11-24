@@ -15,9 +15,13 @@
 // (./witness-control.swift) to each tapped pid, in no judged cell; the tap must record it under that pid from the
 // helper's pid, else every row's witness has a gap. Its result is kept on the run (meta.witness.controls).
 //
-// Privacy: these are CI artifacts of a public repository. A row records the engine's posts by target pid and kind
-// alone (keyDown, keyUp, flagsChanged, mouseDown, mouseUp, scrollWheel), never a keycode or a character; the run keeps
-// counts.
+// The judged window: from the act's start to the check's end. The attempt's prepare before it (the driven scene's, the
+// user field emptied and focused) runs through the engine under test, whose focus click posts to the user app: what the
+// tap saw there is recorded apart (`prepare`) and never judged.
+//
+// Privacy: these are CI artifacts of a public repository. A row records a post by its target pid, kind (keyDown, keyUp,
+// flagsChanged, mouseDown, mouseUp, scrollWheel), source pid and time, so a failure can be checked against who posted
+// and when; never a keycode or a character. The run keeps counts.
 import {mark} from './steps.mjs';
 
 // The time the control is given to reach the tap before it is told to stop.
@@ -75,11 +79,13 @@ export async function finishWitness(ctx) {
   return {listenAccess: meta.listenAccess, probePids: w.probePids.filter(p => p !== null), tap, controls};
 }
 
-// One cell's posts to the user app's pid as the witness saw them over its span `at` [from, to]: `gaps` (what keeps the
-// witness from deciding: coverage, the control, the person's posts not told from the engine's), `others` (posts by
-// anyone but the probe and the control helper, by target pid and kind alone) and `probe` (the person's, counted).
-// -> {source: 'tap', gaps, others, probe}.
-export function rowPosts(witness, {userPid, at}) {
+// One cell's posts to the user app's pid as the witness saw them over its judged window `at` [from, to] (the act's start
+// to the check's end): `gaps` (what keeps the witness from deciding: coverage, the control, the person's posts not told
+// from the engine's), `others` (posts by anyone but the probe and the control helper) and `probe` (the person's,
+// counted); `prepare` [from, to) the attempt's prepare before it, whose posts by anyone but the probe are recorded and
+// never judged. Each post as {target, kind, source, at}. -> {source: 'tap', gaps, others, prepare, probe}.
+const postOf = ({target, kind, source, at}) => ({target, kind, source, at});
+export function rowPosts(witness, {userPid, at, prepare = null}) {
   const {tap} = witness, gaps = [];
   if (!witness.listenAccess) gaps.push('the witness tap had no Input Monitoring access');
   if (!tap.taps.some(t => t.pid === userPid && t.created === true)) gaps.push(`no witness tap on the user app's pid (${userPid})`);
@@ -99,6 +105,9 @@ export function rowPosts(witness, {userPid, at}) {
   const helpers = witness.controls.map(c => c.by).filter(p => p !== null);
   const probe = inCell.filter(e => witness.probePids.includes(e.source)).length;
   if (from !== null && probe === 0) gaps.push('the probe\'s own typing was not seen under its pid in the cell: the engine\'s posts cannot be told from the person\'s');
-  const others = inCell.filter(e => !witness.probePids.includes(e.source) && !helpers.includes(e.source)).map(({target, kind}) => ({target, kind}));
-  return {source: 'tap', gaps, others, probe};
+  const notPerson = e => !witness.probePids.includes(e.source) && !helpers.includes(e.source);
+  const others = inCell.filter(notPerson).map(postOf);
+  const [pFrom, pTo] = Array.isArray(prepare) ? prepare : [null, null];
+  const before = pFrom === null ? [] : tap.events.filter(e => e.tapPid === userPid && e.at >= pFrom && e.at < pTo && notPerson(e)).map(postOf);
+  return {source: 'tap', gaps, others, prepare: before, probe};
 }

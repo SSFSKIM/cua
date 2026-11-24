@@ -20,10 +20,12 @@ const acted = code => {
 };
 
 // A concurrent run on Chrome whose read after the act finds a popup of TextEdit's own pid on top; the tap's record is
-// made by `events({textedit, probe, control})` from what the run did (TextEdit's pid, the probe's pid and the time it
-// started, the control's answer).
+// made by `events({textedit, probe, control, cells})` from what the run did (TextEdit's pid, the probe's pid and the time
+// it started, the control's answer, each cell's device-clock window by its tag).
 async function r3Run({env = HOSTED, events = () => []} = {}) {
   let acting = false, textedit = null, probe = null, control = null;
+  const calls = [];
+  const cells = () => Object.fromEntries(calls.map(c => [tagOf(c.code), c.at]));
   const ops = {
     scenes: (base, a) => { const out = base(a); if (a[0] === 'up' && a[1] === 'textedit') textedit = out.pid; return out; },
     matrix: (base, a) => {
@@ -39,22 +41,25 @@ async function r3Run({env = HOSTED, events = () => []} = {}) {
     keyRoute: (base, a) => {
       const out = base(a);
       if (a[0] === 'control') control = out.answer;
-      if (a[0] === 'tap' && a[1] === 'stop') out.answer.events = events({textedit, probe, control});
+      if (a[0] === 'tap' && a[1] === 'stop') out.answer.events = events({textedit, probe, control, cells: cells()});
       return out;
     },
   };
-  const run = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', env, ops,
+  const run = await runWith({plan: planOf('concurrent-use', {scene: 'chrome'}), cellName: 'concurrent-use', env, ops, calls,
     cell: c => { if (tagOf(c) !== 'concurrent.act') return null; acting = true; return acted(c); }});
   return {...run, row: run.result.rows.find(r => r.id === 'chrome/concurrent@textedit'), textedit};
 }
-const personTyped = ({textedit, probe}) => [{tapPid: textedit, kind: 'keyDown', target: textedit, source: probe.pid, at: probe.at + 1}];
+// The probe types at its scheduled time, inside the act.
+const personTyped = ({textedit, probe, cells}) => [{tapPid: textedit, kind: 'keyDown', target: textedit, source: probe.pid, at: cells['concurrent.act'][0] + 1}];
 const controlSeen = ({textedit, control}) => [{tapPid: textedit, kind: 'flagsChanged', target: textedit, source: control.pid, at: control.at}];
+// The engine's own click on TextEdit at the cell `tag`'s start (the field's focus click in the prepare, say).
+const engineClick = tag => w => [...personTyped(w), ...controlSeen(w), {tapPid: w.textedit, kind: 'mouseDown', target: w.textedit, source: 4_242, at: w.cells[tag][0]}];
 
 test('R3 through the run: a clean witness passes the row as the user app\'s own window, its witness and the control on the record', async () => {
   const {row, result, steps, textedit} = await r3Run({events: w => [...personTyped(w), ...controlSeen(w)]});
   assert.equal(row.invalid, undefined, JSON.stringify(row.witness));
   assert.deepEqual([row.ok, row.interference.ok, row.interference.topWindowBy], [true, true, 'user app\'s own window']);
-  assert.deepEqual(row.witness, {gaps: [], others: [], probe: 1});
+  assert.deepEqual(row.witness, {gaps: [], others: [], prepare: [], probe: 1});
   assert.deepEqual(validateCellResult(result), []);
   const keyRoute = steps.filter(s => s.startsWith('key-route ')).map(s => args(s).slice(0, 2).join(' '));
   assert.deepEqual(keyRoute, ['tap start', 'control --pid', 'tap stop']);
@@ -62,10 +67,20 @@ test('R3 through the run: a clean witness passes the row as the user app\'s own 
 });
 
 test('R3 through the run: a post to TextEdit\'s pid by another source fails the row, recorded by target and kind alone', async () => {
-  const {row, textedit} = await r3Run({events: w => [...personTyped(w), ...controlSeen(w), {tapPid: w.textedit, kind: 'keyDown', target: w.textedit, source: 4_242, at: w.probe.at + 2, keycode: 12}]});
+  const {row, textedit} = await r3Run({events: w => [...personTyped(w), ...controlSeen(w), {tapPid: w.textedit, kind: 'keyDown', target: w.textedit, source: 4_242, at: w.cells['concurrent.act'][0] + 2, keycode: 12}]});
   assert.deepEqual([row.invalid, row.interference.ok], [undefined, false]);
   assert.deepEqual(row.interference.userAppWindow.failed, ['the engine posted to the user app\'s pid in the cell (tap: 1 event)']);
-  assert.deepEqual(row.witness.others, [{target: textedit, kind: 'keyDown'}]);
+  assert.deepEqual(row.witness.others.map(({target, kind, source}) => ({target, kind, source})), [{target: textedit, kind: 'keyDown', source: 4_242}]);
+});
+
+// Fix wave I1: the prepare's cells run through the engine under test, whose clicks on the user field post to TextEdit.
+test('R3 through the run: the engine\'s post during the prepare is recorded apart and passes; the same post during the act fails', async () => {
+  // Chrome's prepare and the user field's are both `field.empty`: the user's, the later one, the focus click on TextEdit.
+  const {row: prepared} = await r3Run({events: engineClick('field.empty')});
+  assert.deepEqual([prepared.invalid, prepared.interference.ok, prepared.witness.others], [undefined, true, []]);
+  assert.deepEqual(prepared.witness.prepare.map(p => [p.kind, p.source]), [['mouseDown', 4_242]]);
+  const {row} = await r3Run({events: engineClick('concurrent.act')});
+  assert.deepEqual([row.interference.ok, row.witness.others.map(o => o.kind), row.witness.prepare], [false, ['mouseDown'], []]);
 });
 
 test('R3 through the run: the control unseen leaves the row NO VERDICT; off a hosted runner nothing is tapped and it is NO VERDICT too', async () => {

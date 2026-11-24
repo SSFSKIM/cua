@@ -18,12 +18,27 @@ const witnessOf = (over = {}) => ({listenAccess: true, probePids: [PROBE],
 const withEvents = (extra, w = witnessOf()) => ({...w, tap: {...w.tap, events: [...w.tap.events, ...extra]}});
 
 test('a cell the tap covered, its control seen and only the person\'s posts in it: a clean witness, its posts counted', () => {
-  assert.deepEqual(rowPosts(witnessOf(), {userPid: USER, at: SPAN}), {source: 'tap', gaps: [], others: [], probe: 2});
+  assert.deepEqual(rowPosts(witnessOf(), {userPid: USER, at: SPAN}), {source: 'tap', gaps: [], others: [], prepare: [], probe: 2});
+});
+
+// Fix wave I1: the attempt's prepare (the driven scene's, the user field emptied and focused) runs through the engine
+// under test, whose focus click posts to the user app: posts before the act are recorded apart and never judged; the
+// judged window runs from the act's start to the check's end.
+test('a post during the prepare is recorded apart and does not count; the same post during the act does', () => {
+  const engine = at => ({tapPid: USER, kind: 'mouseDown', target: USER, source: ENGINE, at});
+  const PREPARE = [1_500, 2_000];
+  const before = rowPosts(withEvents([engine(1_700)]), {userPid: USER, at: SPAN, prepare: PREPARE});
+  assert.deepEqual(before, {source: 'tap', gaps: [], others: [], prepare: [{target: USER, kind: 'mouseDown', source: ENGINE, at: 1_700}], probe: 2});
+  const during = rowPosts(withEvents([engine(2_200)]), {userPid: USER, at: SPAN, prepare: PREPARE});
+  assert.deepEqual([during.others, during.prepare], [[{target: USER, kind: 'mouseDown', source: ENGINE, at: 2_200}], []]);
+  // Coverage is the judged window's: a tap that came up during the prepare covers the act.
+  const late = witnessOf();
+  assert.deepEqual(rowPosts({...late, tap: {...late.tap, startedAt: 1_800}}, {userPid: USER, at: SPAN, prepare: PREPARE}).gaps, []);
 });
 
 test('a post to the user app\'s pid by anyone but the probe or the control is the engine\'s: recorded by target and kind alone', () => {
   const posts = rowPosts(withEvents([{tapPid: USER, kind: 'keyDown', target: USER, source: ENGINE, at: 2_600, keycode: 12, characters: 'q'}]), {userPid: USER, at: SPAN});
-  assert.deepEqual(posts, {source: 'tap', gaps: [], others: [{target: USER, kind: 'keyDown'}], probe: 2});
+  assert.deepEqual(posts, {source: 'tap', gaps: [], others: [{target: USER, kind: 'keyDown', source: ENGINE, at: 2_600}], prepare: [], probe: 2});
   // Outside the cell, or on another tapped pid, it is not this cell's.
   assert.deepEqual(rowPosts(withEvents([{tapPid: USER, kind: 'keyDown', target: USER, source: ENGINE, at: 3_500}]), {userPid: USER, at: SPAN}).others, []);
   assert.deepEqual(rowPosts(withEvents([{tapPid: 55, kind: 'keyDown', target: 55, source: ENGINE, at: 2_600}]), {userPid: USER, at: SPAN}).others, []);
@@ -67,7 +82,7 @@ test('the run taps the user app\'s pid in events mode, posts the control after i
   assert.deepEqual(ctx.meta.witness.controls, [{scene: 'textedit', pid: USER, posted: true, by: HELPER, at: 7_990, seen: true}]);
   assert.deepEqual([ctx.meta.witness.ready, ctx.meta.witness.startedAt, ctx.meta.witness.stoppedAt, ctx.meta.witness.events, ctx.meta.witness.probes], [true, 1_000, 9_000, 2, 1]);
   assert.deepEqual(ctx.windows.map(w => [w.kind, w.key]), [['harness', 'witness:tap-start'], ['harness', 'witness:control'], ['harness', 'witness:tap-stop']]);
-  assert.deepEqual(rowPosts(witness, {userPid: USER, at: SPAN}), {source: 'tap', gaps: [], others: [], probe: 1});
+  assert.deepEqual(rowPosts(witness, {userPid: USER, at: SPAN}), {source: 'tap', gaps: [], others: [], prepare: [], probe: 1});
 });
 
 test('a control the tap did not see is recorded unseen; a tap that never came up gets no control and no rows witnessed', async () => {
@@ -92,12 +107,13 @@ test('off a hosted runner, or with no concurrent cell, nothing is tapped; off ho
   assert.deepEqual([none.calls, none.ctx.meta.witness, await finishWitness(none.ctx)], [[], undefined, null]);
 });
 
-test('no recorded row field carries a keycode or a character, whatever the tap\'s lines held', () => {
-  const leaky = withEvents([{tapPid: USER, kind: 'keyDown', target: USER, source: ENGINE, at: 2_600, keycode: 12, characters: 'q', unicode: 'q', text: 'q'}]);
-  const posts = rowPosts(leaky, {userPid: USER, at: SPAN});
+test('no recorded row field carries a keycode or a character, whatever the tap\'s lines held; source and time are kept', () => {
+  const leak = at => ({tapPid: USER, kind: 'keyDown', target: USER, source: ENGINE, at, keycode: 12, characters: 'q', unicode: 'q', text: 'q'});
+  const posts = rowPosts(withEvents([leak(1_700), leak(2_600)]), {userPid: USER, at: SPAN, prepare: [1_500, 2_000]});
   const keys = new Set();
   const walk = v => { if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { keys.add(k); walk(x); } };
   walk(posts);
   for (const banned of ['keycode', 'keyCode', 'characters', 'unicode', 'text', 'string']) assert.ok(!keys.has(banned), banned);
-  assert.deepEqual(posts.others, [{target: USER, kind: 'keyDown'}]);
+  assert.deepEqual(posts.others, [{target: USER, kind: 'keyDown', source: ENGINE, at: 2_600}]);
+  assert.deepEqual(posts.prepare, [{target: USER, kind: 'keyDown', source: ENGINE, at: 1_700}]);
 });

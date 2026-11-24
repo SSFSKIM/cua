@@ -311,6 +311,35 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-24, ruling 1222 (the design session, after C-6's preparation review), the not-judged route. Each kind of
+  item takes this route:
+  - **#577's perContext rows**: not judged. They count as neither pass, fail nor missing proof.
+  - **`openPanel/frontmost/typeText.search`**: not judged, naming #588.
+  - **A shared not-interfering item of kind `defect`**: not judged, naming its ticket.
+  - **A shared item of kind `venue`**: not judged only with its recorded evidence (row, engine, run, sample and field,
+    e.g. `interference.windowOrder.after`). Venue is never a default.
+  - **Every other shared item (`unread`, or a defect with no ticket)**: stays in missing proof.
+
+  "Shared" means paired. A cua failing sample is shared only when the vendor sample of the same run and sample failed
+  too.
+
+  The condition covers every not-judged entry, old and new (`NOT_JUDGED_RULES`, `notJudgedRefusal`,
+  `scripts/native-matrix/not-judged.mjs`):
+  - Each entry carries its reason plus a ticket or an evidence reference.
+  - An entry with neither is refused into missing proof, so the verdict becomes NO VERDICT.
+  - The entries are listed with their reason and ticket or evidence wherever the flip and the owner read the verdict:
+    the summary's "Not judged" section (C's summary.md, the three-point report, Acceptance 7's evidence), the
+    `compare` log, and sitting C's sitting.md. Sittings E and F judge no matrix.
+
+  The Korean `r k` judges each engine against 가 alone:
+  - a cua 가 counts even with no valid vendor pair;
+  - a cua ㄱ fails beside a vendor ㄱ, never as shared.
+
+  The Go To escalation's third step cannot be performed. While the dialog is up, it is a sheet on the Save sheet that
+  takes the keys and clicks, and the observation shows only the dialog, so the Save sheet's Cancel has no index. The
+  cell therefore runs Escape ×3, then the CloseButton, then stops. The row records `sheetCancel: 'unreachable'` and
+  `sheetUp` null. The stop text leads with the dialog and each step, and says so. A throw after super+shift+g closes
+  the dialog too.
 - 2026-11-24, ruling 1221 (the design session, on C-6's preparation): three settlements.
   - **Background user windows** (`activateScene`'s `top`, the background pairings' and launch rows' user activations
     only). Pilots C-2 to C-5 left every background cell whose user app is TextEdit or Electron NO VERDICT on both

@@ -95,8 +95,15 @@ gates:
     timeout: 25
     setup: false
     run: |
-      echo "the runner's cached Node: $(ls /opt/hostedtoolcache/node 2>/dev/null | tr '\n' ' ')"
-      n=$(ls -d /opt/hostedtoolcache/node/24.*/x64/bin 2>/dev/null | sort -V | tail -1)
+      cache=${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}
+      echo "the runner's cached Node: $(ls "$cache/node" 2>/dev/null | tr '\n' ' ' || true)"
+      shopt -s nullglob
+      cached=("$cache"/node/24.*/x64/bin)
+      shopt -u nullglob
+      n=
+      if [ "${#cached[@]}" -gt 0 ]; then
+        n=$(printf '%s\n' "${cached[@]}" | sort -V | tail -1)
+      fi
       if [ -n "$n" ]; then
         echo "Node from the tool cache: $n"
         export PATH="$n:$PATH"

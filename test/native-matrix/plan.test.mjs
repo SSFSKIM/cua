@@ -726,6 +726,10 @@ test('Chrome\'s Tab row: a name an earlier row left in the target field is empti
   const stuck = chromeFields();
   stuck.app.pressKey = async () => {};
   assert.deepEqual((await runCase('chrome', 'chrome', stuck.app, 'pressKey', 'tab')).check.value, {ok: false, outcome: {moved: false, focus: 'unfocused'}});
+  // Fix wave M4: a selection that still masks the trailer after the Tab says nothing about the focus: invalid, never FAIL.
+  const masked = chromeFields();
+  masked.app.pressKey = async () => { masked.state.focused = 23; masked.state.name = 'x'; masked.state.selected = 'x'; };
+  assert.deepEqual((await runCase('chrome', 'chrome', masked.app, 'pressKey', 'tab')).check.value, {invalid: 'the focus could not be read: a selection masks the trailer', outcome: {moved: false, focus: 'masked'}});
   // A target field that would not empty leaves the row unprepared, nothing sent.
   const kept = chromeFields({name: 'cua apply 1a2b'});
   const setValue = kept.app.setValue;

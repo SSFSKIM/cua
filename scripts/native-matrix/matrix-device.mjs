@@ -49,6 +49,11 @@
 //       asked `--with hit`: the element at its centre, the post-refusal diagnostic's system-wide hit-test): where a key
 //       case's input lands when its panel could not be placed in the strip (./steps.mjs elementGuardCause; ruling 1203's
 //       fallback). Hosted only -> {answer: {frame: null, refused}, at} off a runner
+//   field-frame --run <dir> --scene <scene> --role <AXRole>
+//       the frame of the one element of <role> in the scene's window, in that window's points, read by Accessibility
+//       outside either engine (../cursor-sitting/ax-state.swift field; fieldFrame): what Chrome's drag grounds its
+//       points on (ruling 1226) -> {answer: {ok, window: {width, height}, field: {x, y, width, height}} | {ok: false,
+//       reason}, at}: numbers only
 //   document --run <dir> --scene <scene> --window <n>
 //       whether the scene's window numbered <n> has a document on disk behind it and unsaved edits, read by Accessibility
 //       at its bounds (documentState; #212's unsaved proof, ruling 1221), no folder read
@@ -266,6 +271,33 @@ export function documentState({scene, window}, io) {
   if (a.ok !== true) return {ok: false, number, ...read, reason: a.found === false ? 'Accessibility lists no window at its bounds'
     : (a.failed ?? []).includes('ambiguous') ? `Accessibility lists ${a.atBounds ?? 'several'} windows at its bounds: which one is the run's cannot be told` : `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
   return {ok: true, number, ...read};
+}
+
+// The frame of the one element of `role` in the scene's window, in that window's points (top-left origin), read by
+// Accessibility outside either engine (../cursor-sitting/ax-state.swift field): what Chrome's drag grounds its points on,
+// the hosted Chrome for Testing window's toolbar and infobars being whatever they are (ruling 1226). Not taken (ok false,
+// with why) when the scene is not up, its window is not on screen, the reader is untrusted, or the window holds not
+// exactly one element of the role: a field that cannot be told is no ground. io: {state, windows, axField(pid,
+// 'x,y,w,h', role)}. -> {ok, window?: {width, height}, field?: {x, y, width, height}, reason?}.
+export function fieldFrame({scene, role}, io) {
+  if (!SCENES[scene]) throw new Error('field-frame needs --scene <scene>');
+  if (!/^AX[A-Za-z]+$/.test(String(role ?? ''))) throw new Error('--role takes an AX role (AXTextArea)');
+  const record = io.state().scenes?.[scene], pid = record?.pid, number = record?.window?.number;
+  if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(number)) return {ok: false, reason: 'the scene is not up in this run'};
+  let windows = null;
+  try { windows = io.windows(); } catch { windows = null; }
+  if (!Array.isArray(windows)) return {ok: false, reason: 'the window list was unread'};
+  const w = sceneWindowOf(windows, {pid, number});
+  if (!w) return {ok: false, reason: `window ${number} is not on screen`};
+  const a = io.axField(pid, [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','), role);
+  if (a?.trusted !== true) return {ok: false, reason: 'the reader is not trusted for Accessibility'};
+  if (a.found === false) return {ok: false, reason: 'Accessibility lists no window at its bounds'};
+  if (a.ok !== true) return {ok: false, reason: `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
+  if (a.count === 0) return {ok: false, reason: `Accessibility lists no element of role ${role} in the window`};
+  if (a.count !== 1) return {ok: false, reason: `Accessibility lists ${a.count} elements of role ${role} in the window: which one is the field cannot be told`};
+  const f = a.frame;
+  if (![f?.x, f?.y, f?.width, f?.height].every(Number.isFinite) || f.width <= 0 || f.height <= 0) return {ok: false, reason: 'a read failed: frame'};
+  return {ok: true, window: {width: w.bounds.width, height: w.bounds.height}, field: {x: f.x - w.bounds.x, y: f.y - w.bounds.y, width: f.width, height: f.height}};
 }
 
 // The front-window probe's top window and the windows it passed over (see read). -> {top, skipped}.
@@ -785,7 +817,7 @@ function parse(argv) {
 export const axStateOf = (dir, {exec = run, compile = compiled} = {}) => axStateReader(args => exec(compile(AX_STATE_SCRIPT, dir), args));
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
-const USAGE = 'usage: matrix-device.mjs compile|read|text-range|focused-text|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|focused-text|field-frame|document|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -803,6 +835,7 @@ export async function main(argv, {io: given = {}} = {}) {
     axState: axStateOf(dir),
     axDocument: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['document', String(pid), bounds])),
     axText: pid => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['text', String(pid)])),
+    axField: (pid, bounds, role) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['field', String(pid), bounds, role])),
     panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
     // A background row's user window raised to the top when its activation's wait missed (ruling 1221, H2), hosted only.
     raiseWindow: (pid, bounds) => {
@@ -865,6 +898,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'source': return timed(() => source(positional[0], {id: flags.source, value: flags.value}, io));
     case 'load': return timed(() => deviceLoad());
     case 'document': return timed(() => documentState({scene: flags.scene, window: flags.window}, io));
+    case 'field-frame': return timed(() => fieldFrame({scene: flags.scene, role: flags.role}, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

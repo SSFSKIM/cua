@@ -198,7 +198,7 @@ const NATIVE_MAC = {
   textedit: 'native-mac textedit (its tree)',
 };
 const GROUNDING = {
-  chrome: 'window points re-grounded on the hosted size: the page has no stylesheet, so the notes field stands at the same window points; the drag\'s layout takes the venue\'s 800x760 (../native-matrix/plan.mjs groundCase)',
+  chrome: 'window points grounded on the notes field\'s frame as read in the run\'s window, toolbar and infobars whatever they are (../native-matrix/plan.mjs chromeDragFromField, ruling 1226); a frame not read leaves the drag invalid',
   electron: 'window points on the fixture\'s size, unchanged at 720x560: its layout (ELECTRON_FIELD_LAYOUT, #259\'s point) holds as it is; only the origin moved',
   finder: 'element-addressed rows; the height is the mini\'s, so the same rows are visible',
   textedit: 'fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare\'s clicks proving each end',

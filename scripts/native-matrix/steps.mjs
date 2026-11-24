@@ -478,12 +478,22 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const key = `row:${ctx.rows.length}`;
   const row = {section, id: id ?? caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene, target, regime, method: c.method, case: c.case, expect: c.expect,
     ...(user ? {user} : {}), ...extra};
-  // Grounded on the frame the run launched its scene at: on a hosted runner the venue's (ruling 1169), else the mini's.
-  const cells = caseCells(target, groundCase(target, c, ctx.meta.venue?.frames ?? null));
   const apps = appsOf(target, user), app = SCENES[regime === 'background' ? user : scene].bundleId;
   let from = null, to = null;
   const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };
   const done = extra => { if (from !== null) mark(ctx, 'row', key, [from, to]); return push(ctx, {...row, ...extra}); };
+  // A case grounded on its field's frame (`fieldFrame`, Chrome's drag, ruling 1226): the frame read on the device by
+  // Accessibility, outside either engine, before anything of the case is sent, and kept on the row; unread, the row is
+  // invalid.
+  let reading = null;
+  if (c.fieldFrame) {
+    try { reading = span(ctx.ops.matrix(['field-frame', '--scene', scene, '--role', c.fieldFrame.role, '--run', ctx.run]))?.answer ?? null; } catch (error) {
+      reading = {ok: false, reason: String(error.message).slice(0, 160)};
+    }
+    if (reading?.ok !== true) return done({invalid: `not prepared: the field's frame was not read (${reading?.reason ?? 'no answer'})`});
+    row.fieldFrame = {window: reading.window, field: reading.field};
+  }
+  const cells = caseCells(target, groundCase(c, reading));
   const keep = (phase, r) => {
     const meta = DIAGNOSED.includes(scene) ? presentMeta(r?.engine) : null;
     if (meta) (row.engineMeta ??= {})[phase] = meta;

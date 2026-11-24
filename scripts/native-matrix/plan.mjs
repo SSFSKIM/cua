@@ -194,10 +194,11 @@ return {ok: equal, outcome: {equal, selection: selectionEvidence(ax, ${find}, __
 // screenshot's pixel space by the window's width) and verified before the drag: a harness click at each end must land
 // in the field (it takes the focus, nothing is selected). The post-state: a selection spanning lines, part of the
 // field's value, the value unchanged. `layout`: {window: [w, h] in points or null (TextEdit: fractions of the shot),
-// from: [x, y], to: [x, y]} (points, or fractions when window is null).
+// from: [x, y], to: [x, y]} (points, or fractions when window is null), or null for a drag whose points the run grounds
+// on its field's frame as read (Chrome's, groundCase): never prepared as the plan wrote it.
 const dragSelect = ({find, value = null, layout}) => ({
   method: 'drag', case: 'select', expect: 'outcome',
-  prepare: `${observed}
+  prepare: layout === null ? 'return {ready: false, reason: "the drag\'s points are grounded on its field\'s frame as read, and none was read"};' : `${observed}
 let now = ax, index = ${find};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
 ${value === null ? '' : `if (plain(valueOfIndex(now, index)) !== ${value}) { await __app.setValue(index, ${value}); now = await observe(); }`}
@@ -538,20 +539,27 @@ __m.index = index; __m.seen = fieldReading(now, index); return {ready: true};`,
   check: `const ax = await observe();
 return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(ax) === "matrix", selection: selectionEvidence(ax, ${named(name)}, __m.seen)}};`,
 });
-// Chrome's drag, in window points. The page has no stylesheet (fixtures/scene-page.mjs: style-src 'none'), so the user
-// agent's default layout puts the notes field (rows 8, cols 60) at the content area's top left, below Chrome's toolbar,
-// whose height does not follow the window's: the field's lines stand at the same window points in any window wide enough
-// for the field and tall enough to show it, the mini's 1000x760 and the hosted runner's 800x760 alike (ruling 1169). Only
-// the window's size, which turns window points into the screenshot's pixels (and whose shape the prepare checks), follows
-// the frame, so the layout is grounded on the frame the run launched Chrome at (groundCase), never the mini's scaled. The
-// prepare's harness click at each end still proves the points land in the field before anything is dragged. Behind a
-// user window those clicks would be background clicks on a web page, which cua refuses by design (backgroundClickRefused,
-// C-7, ruling 1226): the prepare runs with Chrome in front (`prepareInFront`, ./steps.mjs caseRow), the user window
-// brought back before the drag, which is sent behind it as before.
-export const CHROME_DRAG_POINTS = Object.freeze({from: Object.freeze([24, 192]), to: Object.freeze([200, 237])});
-export const chromeDragLayout = ({width, height}) => ({window: [width, height], ...CHROME_DRAG_POINTS});
-const chromeDrag = frame => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: chromeDragLayout(frame)}), framed: 'window points', ground: chromeDrag,
-  prepareInFront: true});
+// Chrome's drag, in window points grounded on the notes field's own frame as the run reads it (ruling 1226). The page
+// has no stylesheet (fixtures/scene-page.mjs: style-src 'none'), so the field (rows 8, cols 60, its only text area) sits
+// at the content area's top left, but that top is wherever Chrome's toolbar and infobars end, which no fixed point knows:
+// fixed points ([24,192] to [200,237]) never landed in the field on the hosted 800x760 Chrome for Testing window, C-2 to
+// C-7. So before the drag the run reads the field's frame by Accessibility, outside either engine (`fieldFrame`, the one
+// element of the role in the scene's window; ./matrix-device.mjs fieldFrame, ./steps.mjs caseRow), and a frame not read
+// leaves the row invalid. From it: the drag starts just inside the field's left edge on its second line and ends in its
+// right part on its fourth (past "delta four"'s end), the line height taken as the field's height (less the user agent's
+// 1 pt border and 2 pt padding each side) over its 8 rows. That is an estimate; the prepare's harness click at each end
+// still proves the points land in the field before anything is dragged. Behind a user window those clicks would be
+// background clicks on a web page, which cua refuses by design (backgroundClickRefused, C-7, ruling 1226): the prepare
+// runs with Chrome in front (`prepareInFront`, ./steps.mjs caseRow), the user window brought back before the drag, which
+// is sent behind it as before. `reading`: field-frame's answer, {window: {width, height}, field: {x, y, width, height}}
+// in window points. -> the dragSelect layout.
+const CHROME_FIELD_INSET = 3;
+export const chromeDragFromField = ({window, field}) => {
+  const line = (field.height - 2 * CHROME_FIELD_INSET) / FIELD_LINES.length, onLine = n => Math.round(field.y + CHROME_FIELD_INSET + line * (n + 0.5));
+  return {window: [window.width, window.height], from: [Math.round(field.x + 8), onLine(1)], to: [Math.round(field.x + field.width * 0.6), onLine(3)]};
+};
+const chromeDrag = reading => ({...dragSelect({find: named('Scene notes'), value: FIELD_VALUE, layout: reading ? chromeDragFromField(reading) : null}), framed: 'window points',
+  fieldFrame: {role: 'AXTextArea'}, ground: chromeDrag, prepareInFront: true});
 const chrome = [
   tree(`ax => { const page = ${named('Scene notes')} !== null && ${named('Apply')} !== null; return {ok: page, outcome: {page}}; }`),
   listApps('chrome'),
@@ -609,8 +617,8 @@ return __m.index === null ? {ready: false, reason: "the button is not in the tex
 const status = ${statusText(named('Scene status'), '/Applied: /')};
 const applied = typeof status === "string" && status.endsWith("Applied: " + __m.name);
 return {ok: applied, outcome: {applied}};`},
-  // The notes field's second to fifth lines, below the toolbar, heading and margins, grounded on the scene's frame.
-  chromeDrag(SCENES.chrome.placement),
+  // The notes field's second to fourth lines, grounded on the field's frame as the run reads it (chromeDragFromField).
+  chromeDrag(null),
   refusal({method: 'setValue', kase: 'notSettable', find: named('Apply'), act: 'await __app.setValue(__m.index, "x");', watch: `[valueOfIndex(ax, ${named('Scene name')}), focusedIndexOf(ax)]`,
     sentence: REFUSALS.notSettable}),
   // The checkbox's selected text range reads settable in Chromium, so both engines refuse at the search, not the
@@ -720,14 +728,10 @@ export const casesOf = (target, regime) => CASES[target].filter(c => !c.regimes 
 // The frontmost method rows judged by their own effect whatever their act answered (`ownEffect`, ./matrix-cells.mjs):
 // one that threw and passed is a write a model was told failed while it worked (./summary.mjs thrownButLanded).
 export const OWN_EFFECT_IDS = Object.freeze(Object.keys(CASES).flatMap(target => casesOf(target, 'frontmost').filter(c => c.ownEffect).map(c => `${target}/frontmost/${c.method}.${c.case}`)));
-// A case as the run sends it, grounded on the frame its scene's window was launched at (ruling 1169): `frames` the venue's
-// (meta.venue.frames, ../hosted-sittings/venue.mjs; null off a hosted runner). A case whose points stand on its window's
-// size (`ground`, Chrome's drag) is rebuilt on that frame; every other case, and every case off a hosted runner, is
-// sent as the plan wrote it, on the mini's frame.
-export const groundCase = (target, c, frames) => {
-  const frame = frames?.[SCENE_OF[target]];
-  return c.ground && frame ? c.ground(frame) : c;
-};
+// A case as the run sends it. A case whose points stand on its field's frame (`fieldFrame` and `ground`, Chrome's drag,
+// ruling 1226) is rebuilt on the frame the run read (`reading`, field-frame's answer); every other case is sent as the
+// plan wrote it.
+export const groundCase = (c, reading) => (c.ground && reading ? c.ground(reading) : c);
 // The cells whose layout rests on the scene's window frame (`framed`: window points, window fractions or the rows its
 // height shows), in both regimes, each background case under every user window it is driven behind: what the venue
 // declares for a frame that differs from the mini's. -> [{id, framed}].

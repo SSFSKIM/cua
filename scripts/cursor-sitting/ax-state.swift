@@ -24,6 +24,11 @@
 //       Chrome's textarea offers AXPress yet): {"trusted", "ok", "failed", "found", "count", "walked", "actions"}: the
 //       window found, how many elements of the role the walk met (breadth first, at most 20000 elements and 64 levels),
 //       and the first one's action names (AXUIElementCopyActionNames), null when none was met. Names only: no text.
+//   ax-state field <pid> <x,y,w,h> <role>
+//       The frame of the one element of <role> under the window at those bounds (the matrix's Chrome drag grounds its
+//       points on its notes field, ruling 1226): {"trusted", "ok", "failed", "found", "count", "walked", "frame"}: the
+//       window found, how many elements of the role the same walk as `actions` met, and the first one's frame (global
+//       top-left points, AXPosition and AXSize), null when none was met or it could not be read. Numbers only: no text.
 //   ax-state document <pid> <x,y,w,h>
 //       Whether the window at those bounds has a document on disk behind it and unsaved edits (#212's unsaved proof,
 //       ruling 1221): {"trusted", "ok", "failed", "found", "document", "edited", "editedFrom"}: `document` whether its
@@ -40,8 +45,8 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 3, ["window", "text", "actions", "document"].contains(args[1]), let pid = Int32(args[2]) else {
-  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>] | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role> | ax-state document <pid> <x,y,w,h>\n".utf8))
+guard args.count >= 3, ["window", "text", "actions", "field", "document"].contains(args[1]), let pid = Int32(args[2]) else {
+  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> [<sheet x,y,w,h>] | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role> | ax-state field <pid> <x,y,w,h> <role> | ax-state document <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 guard AXIsProcessTrusted() else { emit(["trusted": false]); exit(0) }
@@ -100,26 +105,41 @@ func runWindow(_ bounds: String) -> (windows: [AXUIElement], run: AXUIElement?)?
   return (windows, windows.first { at($0, want) })
 }
 
+/// The elements of `role` under `root`, breadth first (at most 20000 elements and 64 levels): how many, how many were
+/// walked, and the first one met.
+func elementsOfRole(_ root: AXUIElement?, _ role: String) -> (count: Int, walked: Int, first: AXUIElement?) {
+  var count = 0, walked = 0
+  var first: AXUIElement?
+  guard let root else { return (0, 0, nil) }
+  var level: [AXUIElement] = [root]
+  var depth = 0
+  while !level.isEmpty, depth < 64, walked < 20_000 {
+    var next: [AXUIElement] = []
+    for e in level where walked < 20_000 {
+      walked += 1
+      if read(e, kAXRoleAttribute).value as? String == role { count += 1; if first == nil { first = e } }
+      next.append(contentsOf: (read(e, kAXChildrenAttribute).value as? [AXUIElement]) ?? [])
+    }
+    level = next
+    depth += 1
+  }
+  return (count, walked, first)
+}
+
+if args[1] == "field" {
+  guard args.count == 5 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
+  guard let (_, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  let (count, walked, first) = elementsOfRole(run, args[4])
+  let found = first.flatMap { frame($0) }
+  if first != nil && found == nil { failed.append("frame") }
+  emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": run != nil, "count": count, "walked": walked, "frame": rectWire(found)])
+  exit(0)
+}
+
 if args[1] == "actions" {
   guard args.count == 5 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
   guard let (_, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
-  let role = args[4]
-  var count = 0, walked = 0
-  var first: AXUIElement?
-  if let run {
-    var level: [AXUIElement] = [run]
-    var depth = 0
-    while !level.isEmpty, depth < 64, walked < 20_000 {
-      var next: [AXUIElement] = []
-      for e in level where walked < 20_000 {
-        walked += 1
-        if read(e, kAXRoleAttribute).value as? String == role { count += 1; if first == nil { first = e } }
-        next.append(contentsOf: (read(e, kAXChildrenAttribute).value as? [AXUIElement]) ?? [])
-      }
-      level = next
-      depth += 1
-    }
-  }
+  let (count, walked, first) = elementsOfRole(run, args[4])
   var actions: Any = NSNull()
   if let first {
     var names: CFArray?

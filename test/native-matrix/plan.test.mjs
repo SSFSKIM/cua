@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
-import {CASES, CHROME_DRAG_POINTS, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, chromeDragLayout, focusVerdict, framedCells, groundCase, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, TYPE_UNCONFIRMED_NOT_TEXT, caseId, chromeDragFromField, focusVerdict, framedCells, groundCase, typeIntoList} from '../../scripts/native-matrix/plan.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
 import {NOTE} from '../../src/services/engine/render.mjs';
@@ -266,29 +266,32 @@ const dragPoints = async (c, shot) => {
   return {ready: prepare.value?.ready, points: app.calls.filter(x => x[0] === 'click').map(x => x[1])};
 };
 
-// Ruling 1169: on a hosted runner Chrome's window is the venue's 800x760, not the mini's 1000x760. The page has no
-// stylesheet, so the notes field stands at the same window points in either window; only the window's size, which turns
-// window points into the screenshot's pixels, follows the frame. The layout is re-grounded on the frame the run
-// launched Chrome at (the venue's), never scaled from the mini's.
-test('ruling 1169: Chrome\'s drag is grounded on the frame the run launched its window at', async () => {
+// Ruling 1226 (replacing 1169's fixed points): Chrome's drag is grounded on the field-frame reading, whichever window
+// it was read in. Unread, the plan's own case is never prepared. Read on the hosted 800x760 window (1x: the shot is
+// 800x760, window points are its pixels) the prepare clicks the field's own points; read on the mini's 2x 1000x760 the
+// same window points are doubled. The mini's golden tree puts the field at 8,224 504x131 in its window (an infobar under
+// the toolbar); the hosted window is narrower, the field the same.
+test('ruling 1226: Chrome\'s drag is grounded on the field frame read; ungrounded, it is never prepared', async () => {
   const drag = casesOf('chrome', 'drag', 'select');
-  assert.equal(groundCase('chrome', drag, null), drag, 'off a hosted runner: the mini\'s layout');
-  assert.equal(groundCase('chrome', drag, {}), drag, 'a venue that names no Chrome frame changes nothing');
-  assert.deepEqual(chromeDragLayout({x: 22, y: 60, width: 800, height: 760}), {window: [800, 760], ...CHROME_DRAG_POINTS});
-  const hosted = groundCase('chrome', drag, {chrome: {x: 22, y: 60, width: 800, height: 760}});
+  assert.equal(groundCase(drag, null), drag);
+  assert.deepEqual(await dragPoints(drag, jpegOf(800, 760)), {ready: false, points: []}, 'no frame read: nothing clicked');
+  const field = {x: 8, y: 224, width: 504, height: 131};
+  const hosted = groundCase(drag, {window: {width: 800, height: 760}, field});
   assert.notEqual(hosted, drag);
-  assert.deepEqual([hosted.method, hosted.case, hosted.expect, hosted.framed], ['drag', 'select', 'outcome', 'window points']);
-  // The hosted display is 1x: an 800x760 window's screenshot is 800x760, so the field's window points are its pixels.
-  assert.deepEqual(await dragPoints(hosted, jpegOf(800, 760)), {ready: true, points: [CHROME_DRAG_POINTS.to, CHROME_DRAG_POINTS.from]});
-  // The mini's layout on the mini's 2x 1000x760 window: the same window points, doubled.
-  assert.deepEqual(await dragPoints(drag, jpegOf(2000, 1520)), {ready: true, points: [[400, 474], [48, 384]]});
-  // What re-grounding replaces: the mini's layout on the hosted shot fails its shape check (0.95 against 0.76), so the
-  // drag would never be prepared.
-  assert.equal((await dragPoints(drag, jpegOf(800, 760))).ready, false);
-  // The other targets' cases are not grounded on a frame of the venue: the fixture keeps its size (its layout is the
-  // mini's), TextEdit's drag is in fractions of its window, Finder's cases address rows.
-  const frames = {chrome: {x: 22, y: 60, width: 800, height: 760}, electron: {x: 102, y: 100, width: 720, height: 560}, finder: {x: 22, y: 80, width: 800, height: 520}};
-  for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target]) assert.equal(groundCase(target, c, frames), c, `${target} ${c.method}.${c.case}`);
+  assert.deepEqual([hosted.method, hosted.case, hosted.expect, hosted.framed, hosted.prepareInFront], ['drag', 'select', 'outcome', 'window points', true]);
+  const {from, to} = chromeDragFromField({window: {width: 800, height: 760}, field});
+  assert.deepEqual({from, to}, {from: [16, 250], to: [310, 282]});
+  assert.deepEqual(await dragPoints(hosted, jpegOf(800, 760)), {ready: true, points: [to, from]});
+  const mini = groundCase(drag, {window: {width: 1000, height: 760}, field});
+  assert.deepEqual(await dragPoints(mini, jpegOf(2000, 1520)), {ready: true, points: [[620, 564], [32, 500]]});
+  // A reading in another window than the shot's fails the prepare's shape check (0.95 against 0.76): never dragged.
+  assert.equal((await dragPoints(mini, jpegOf(800, 760))).ready, false);
+  // The other targets' cases are never grounded on a reading: the fixture keeps its size (its layout is the mini's),
+  // TextEdit's drag is in fractions of its window, Finder's cases address rows.
+  for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target]) {
+    assert.equal(c.fieldFrame, undefined, `${target} ${c.method}.${c.case}`);
+    assert.equal(groundCase(c, {window: {width: 800, height: 760}, field}), c, `${target} ${c.method}.${c.case}`);
+  }
 });
 
 test('the cells grounded on a scene\'s frame are named from the plan, in both regimes', () => {
@@ -736,4 +739,27 @@ test('Chrome\'s Tab row: a name an earlier row left in the target field is empti
   kept.app.setValue = async (index, v) => (index === 23 ? undefined : setValue(index, v));
   const refused = await runCase('chrome', 'chrome', kept.app, 'pressKey', 'tab');
   assert.deepEqual([refused.prepare.value.ready, refused.prepare.value.reason], [false, 'the Tab\'s target field could not be emptied first']);
+});
+
+// Ruling 1226: the fixed points ([24,192] to [200,237]) never landed in the notes field on the hosted 800x760 Chrome for
+// Testing window, C-2 to C-7, either lane, either regime. The drag is grounded on the field's own frame as read (its
+// window points): from just inside its left edge on its second line to its right part on its fourth.
+test('Chrome\'s drag points come from the notes field\'s own frame, inside it, on its second and fourth lines', async () => {
+  const {chromeDragFromField, FIELD_LINES} = await import('../../scripts/native-matrix/plan.mjs');
+  const window = {width: 800, height: 760}, field = {x: 16, y: 187, width: 444, height: 126};
+  const layout = chromeDragFromField({window, field});
+  assert.deepEqual(layout.window, [800, 760]);
+  const inside = ([x, y]) => x > field.x && x < field.x + field.width && y > field.y && y < field.y + field.height;
+  assert.ok(inside(layout.from) && inside(layout.to), JSON.stringify(layout));
+  const line = (field.height - 6) / 8, lineOf = y => Math.floor((y - field.y - 3) / line);
+  assert.deepEqual([lineOf(layout.from[1]), lineOf(layout.to[1])], [1, 3], 'the second line to the fourth: a drag across lines');
+  assert.ok(layout.from[0] - field.x <= 10, 'just inside the left edge, before the line\'s first character');
+  assert.ok(layout.to[0] > field.x + field.width / 2, 'in the field\'s right part');
+  assert.ok(FIELD_LINES.length >= 4);
+  // The case the run sends, rebuilt on that reading, carries these points.
+  const c = CASES.chrome.find(x => x.method === 'drag' && x.case === 'select');
+  assert.deepEqual(c.fieldFrame, {role: 'AXTextArea'});
+  const grounded = c.ground({window, field});
+  assert.ok(grounded.prepare.includes(JSON.stringify(layout)), 'the prepare\'s layout is the field\'s');
+  assert.ok(grounded.prepare.includes('a point of the drag is not in the field'), 'the prepare still proves both points land in the field');
 });

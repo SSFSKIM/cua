@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, documentState, executablePaths, focusedText, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, documentState, executablePaths, fieldFrame, focusedText, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 // A GitHub-hosted runner's environment, where the input source may be written (ruling 1188); the owner's Mac's.
 const HOSTED = {env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}, OWNERS_MAC = {env: {}, platform: 'darwin'};
@@ -606,4 +606,25 @@ test('focused-text: the scene\'s focused text element read by the harness, each 
   assert.deepEqual(focusedText({scene: 'textedit'}, {...io, axText: () => ({trusted: false})}), {ok: false, reason: 'the reader is not trusted for Accessibility'});
   assert.deepEqual(focusedText({scene: 'textedit'}, {...io, axText: () => { throw new Error('the reader did not run'); }}), {ok: false, reason: 'the reader did not run'});
   assert.deepEqual(focusedText({scene: 'finder'}, {...io, state: () => ({scenes: {}})}), {ok: false, reason: 'the scene is not up in this run'});
+});
+
+// Ruling 1226: Chrome's drag grounds its points on its notes field's own frame, read by Accessibility outside either
+// engine (ax-state field): the one element of the role in the scene's window, its frame in that window's points.
+test('field-frame: the one element of a role in the scene\'s window, its frame in window points; unread when it is not exactly one', () => {
+  const asked = [];
+  const chromeState = {scenes: {chrome: {pid: 31, window: {number: 90}}}};
+  const windows = [{ownerPid: 31, number: 90, layer: 0, bounds: {x: 22, y: 60, width: 800, height: 760}}];
+  const answer = over => ({trusted: true, ok: true, failed: [], found: true, count: 1, walked: 140, frame: {x: 38, y: 247, width: 444, height: 126}, ...over});
+  const io = (over = {}) => ({state: () => chromeState, windows: () => windows, axField: (pid, rect, role) => { asked.push([pid, rect, role]); return answer(over); }});
+  assert.deepEqual(fieldFrame({scene: 'chrome', role: 'AXTextArea'}, io()), {ok: true, window: {width: 800, height: 760}, field: {x: 16, y: 187, width: 444, height: 126}});
+  assert.deepEqual(asked, [[31, '22,60,800,760', 'AXTextArea']]);
+  const reason = over => fieldFrame({scene: 'chrome', role: 'AXTextArea'}, io(over)).reason;
+  assert.equal(reason({count: 2}), 'Accessibility lists 2 elements of role AXTextArea in the window: which one is the field cannot be told');
+  assert.equal(reason({count: 0, frame: null}), 'Accessibility lists no element of role AXTextArea in the window');
+  assert.equal(reason({found: false, ok: false, count: 0, frame: null}), 'Accessibility lists no window at its bounds');
+  assert.equal(reason({ok: false, failed: ['frame'], frame: null}), 'a read failed: frame');
+  assert.equal(fieldFrame({scene: 'chrome', role: 'AXTextArea'}, {...io(), axField: () => ({trusted: false})}).reason, 'the reader is not trusted for Accessibility');
+  assert.equal(fieldFrame({scene: 'chrome', role: 'AXTextArea'}, {...io(), windows: () => []}).reason, 'window 90 is not on screen');
+  assert.equal(fieldFrame({scene: 'electron', role: 'AXTextArea'}, io()).reason, 'the scene is not up in this run');
+  assert.throws(() => fieldFrame({scene: 'chrome', role: 'textarea'}, io()), /--role takes an AX role/);
 });

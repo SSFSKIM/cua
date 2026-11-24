@@ -226,6 +226,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         case 'load': return {answer: {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10}, at};
         case 'document': return {answer: {ok: true, number: Number(args[args.indexOf('--window') + 1]), found: true, document: false, edited: true, editedFrom: 'window'}, at};
         case 'focused-text': return {answer: {ok: true, role: 'AXTextArea', characters: 0, selected: {location: 0, length: 0}, failed: [], errors: {}}, at};
+        case 'field-frame': return {answer: {ok: true, window: {width: 800, height: 600}, field: {x: 8, y: 160, width: 504, height: 131}}, at};
         default: return {};
       }
     }),

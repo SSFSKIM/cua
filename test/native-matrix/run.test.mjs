@@ -157,9 +157,9 @@ test('a hosted run asks every alert check to hold replayd\'s capture alert; a ru
 });
 
 // Ruling 1169: on a hosted runner the device's runner record carries the venue setup chose; the run keeps it as
-// meta.venue, and every case whose points stand on its window's size is grounded on the venue's frame: Chrome's drag on
-// the hosted 800x760, never the mini's 1000x760.
-test('a hosted run keeps the device\'s venue and grounds Chrome\'s drag on its frame; off a runner the mini\'s layout', async () => {
+// meta.venue. Chrome's drag is grounded on its field's frame as read (ruling 1226), never on the venue's frame: on and
+// off a runner alike, the layout is the one the field-frame reading gives.
+test('a hosted run keeps the device\'s venue; Chrome\'s drag is grounded on the field frame read, on and off a runner', async () => {
   const env = {RUNNER_ENVIRONMENT: 'github-hosted', ImageOS: 'macos26', ImageVersion: '1', GITHUB_RUN_ID: '7', GITHUB_RUN_ATTEMPT: '1'};
   const venue = {frames: {chrome: {x: 22, y: 60, width: 800, height: 760}}, differences: []};
   const runner = runnerRecord(env, {install: {home: '/H', release: 'r'}, engine: {bundle: BUNDLE, build: 'b', engineVersion: '0.5.0'}, vm: {id: 'v', platformUuid: 'P', bootedAt: 'B'}, venue});
@@ -168,10 +168,12 @@ test('a hosted run keeps the device\'s venue and grounds Chrome\'s drag on its f
   assert.deepEqual(hosted.result.meta.venue, venue);
   assert.equal(hosted.result.meta.runner.venue, undefined, 'the attestation keeps the run\'s identity; the venue is its own block');
   const prepares = r => r.calls.map(c => c.code).filter(code => code.includes('const layout = {"window":'));
-  assert.ok(prepares(hosted).length > 0 && prepares(hosted).every(code => code.includes('const layout = {"window":[800,760],"from":[24,192],"to":[200,237]}')));
+  // The dry device's reading: an 800x600 window, the field at 8,160 504x131 in it.
+  const dry = 'const layout = {"window":[800,600],"from":[16,186],"to":[310,218]}';
+  assert.ok(prepares(hosted).length > 0 && prepares(hosted).every(code => code.includes(dry)));
   const mini = await runWith({plan});
   assert.equal(mini.result.meta.venue, undefined);
-  assert.ok(prepares(mini).length > 0 && prepares(mini).every(code => code.includes('const layout = {"window":[1000,760],"from":[24,192],"to":[200,237]}')));
+  assert.ok(prepares(mini).length > 0 && prepares(mini).every(code => code.includes(dry)));
 });
 
 test('a paste or typeText act is sent only between two alert checks; an alert before it stops the run with nothing sent', async () => {
@@ -518,4 +520,25 @@ test('a run records the lane that ran first in its run number and its own positi
   const first = await runWith({engine: 'cua', firstLane: 'cua'});
   assert.deepEqual(first.result.meta.laneOrder, {first: 'cua', position: 1});
   assert.equal((await runWith({engine: 'cua'})).result.meta.laneOrder, undefined);
+});
+
+// Ruling 1226: the run reads the notes field's frame before Chrome's drag (outside either engine) and sends the drag
+// grounded on it; a frame not read leaves the row invalid, nothing of it sent.
+test('Chrome\'s drag is grounded on the field frame the device reads; unread, the row is invalid and nothing is sent', async () => {
+  const field = {ok: true, window: {width: 800, height: 760}, field: {x: 16, y: 187, width: 444, height: 126}};
+  const sent = [], asked = [];
+  const plan = {id: 'test', frontmost: ['chrome'], speed: false, finding: false, background: [], launch: []};
+  const run = answer => runWith({plan, ops: {matrix: (base, a) => (a[0] === 'field-frame' ? (asked.push(a), {answer, at: [1, 2]}) : base(a))},
+    lane: code => { if (code.includes('a point of the drag is not in the field')) sent.push(code); }});
+  const read = await run(field);
+  const row = read.result.rows.find(r => r.id === 'chrome/frontmost/drag.select');
+  assert.ok(!/frame was not read/.test(row.invalid ?? ''), JSON.stringify(row));
+  assert.deepEqual(row.fieldFrame, {window: field.window, field: field.field}, 'the reading kept on the row');
+  assert.ok(sent.length >= 1 && sent[0].includes('"window":[800,760]'), sent[0]?.slice(0, 200));
+  assert.deepEqual(asked[0].slice(0, 5), ['field-frame', '--scene', 'chrome', '--role', 'AXTextArea']);
+  sent.length = 0;
+  const unread = await run({ok: false, reason: 'Accessibility lists no element of role AXTextArea in the window'});
+  const invalid = unread.result.rows.find(r => r.id === 'chrome/frontmost/drag.select');
+  assert.equal(invalid.invalid, 'not prepared: the field\'s frame was not read (Accessibility lists no element of role AXTextArea in the window)');
+  assert.deepEqual(sent, [], 'nothing of the case sent');
 });

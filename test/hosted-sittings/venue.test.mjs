@@ -14,7 +14,7 @@ import {
 } from '../../scripts/hosted-sittings/venue.mjs';
 import {SCENES, textEditDocument} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {FINDER_FRAME} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {CHROME_DRAG_POINTS, ELECTRON_FIELD_LAYOUT, NOT_APPLICABLE} from '../../scripts/native-matrix/plan.mjs';
+import {chromeDragFromField, ELECTRON_FIELD_LAYOUT, NOT_APPLICABLE} from '../../scripts/native-matrix/plan.mjs';
 import {POINTERDOWN} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const rect = (x, y, width, height) => ({x, y, width, height});
@@ -396,11 +396,10 @@ test('the read-back of a panel placed at a negative x plans the frame asked; a c
 // toolbar, so its content area starts lowest) gives Apply's frame. The pair's width is bounded from above (each
 // character at most 9 pt, the button's padding and border 16 pt, two separating spaces 5 pt each), so its line neither
 // wraps nor leaves the hosted 800x760 window, scrollbar taken off. The window keeps the mini's height, so the whole page
-// (down to its Section heading) still fits, which NOT_APPLICABLE's chrome.scroll states. The drag's window points lie
-// inside the window and within the notes field's width; whether they lie within its height is not shown here: in this
-// tree (an infobar) the field spans y 224-355 and y 192 lies above it, so their height rests on the content area's top,
-// which the infobar moves. Only the prepare's harness clicks, at run time, prove each end lands in the field.
-test('the pointerdown pair and the whole page lie inside the hosted Chrome frame, by the mini\'s measured layout; the drag\'s points inside the window', () => {
+// (down to its Section heading) still fits, which NOT_APPLICABLE's chrome.scroll states. The drag's points come from the
+// notes field's frame as read (ruling 1226): on this tree's field (an infobar puts it at y 224-355, where the old fixed
+// y 192 lay above it) both lie inside it. The prepare's harness clicks, at run time, prove each end lands in the field.
+test('the pointerdown pair and the whole page lie inside the hosted Chrome frame, by the mini\'s measured layout; the drag\'s points inside the field', () => {
   const nodes = JSON.parse(readFileSync(new URL('../native-goldens/chrome/skyshot.json', import.meta.url), 'utf8')).nodes;
   const win = nodes.find(n => n.role === 'AXWindow').frame;
   const inWindow = node => ({x: node.frame.x - win.x, y: node.frame.y - win.y, width: node.frame.width, height: node.frame.height});
@@ -415,13 +414,13 @@ test('the pointerdown pair and the whole page lie inside the hosted Chrome frame
   assert.ok(section.y + section.height <= hosted.height, `the page ends ${section.y + section.height} pt down: it fits, nothing to scroll`);
   assert.equal(NOT_APPLICABLE.chrome.scroll, 'the scene page fits its window: nothing to scroll');
   const notes = inWindow(nodes.find(n => n.role === 'AXTextArea' && n.title === 'Scene notes'));
-  for (const [x, y] of [CHROME_DRAG_POINTS.from, CHROME_DRAG_POINTS.to]) {
-    assert.ok(x > notes.x && x < notes.x + notes.width, `x ${x} within the field's width`);
-    assert.ok(y > 0 && y < hosted.height, `y ${y} inside the window`);
-  }
-  // In this tree the upper point is above the field: the field's height is not what this test proves.
   assert.deepEqual([notes.y, notes.y + notes.height], [224, 355]);
-  assert.ok(CHROME_DRAG_POINTS.from[1] < notes.y);
+  const layout = chromeDragFromField({window: hosted, field: notes});
+  assert.deepEqual(layout.window, [800, 760]);
+  for (const [x, y] of [layout.from, layout.to]) {
+    assert.ok(x > notes.x && x < notes.x + notes.width && x < hosted.width, `x ${x} within the field's width`);
+    assert.ok(y > notes.y && y < notes.y + notes.height, `y ${y} within the field's height`);
+  }
 });
 
 // Review finding 4: the lanes' panel placements are paired by the opening they were made for (the case or pairing,

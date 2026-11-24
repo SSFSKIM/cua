@@ -3,11 +3,11 @@
 // activated with no code-signature step. Runs on any host: the Linux host is injected, and the fixture deb is a few harmless files.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readFileSync, readdirSync, realpathSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
-import {parsePin, resolveRuntime} from '../src/runtime/manifest.mjs';
-import {scratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
+import {parsePin, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {scratch, debFixture, fixturePin, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const noSignatures = async () => { throw new Error('no code-signature check may run for a linux pin'); };
@@ -41,16 +41,22 @@ for (const arch of ['x64', 'arm64']) {
   });
 }
 
-test('an installed Linux release resolves, re-installs as a no-op without the archive, and runtime use selects it', async t => {
+test('an installed Linux release resolves, re-installs as a no-op without the archive; runtime use refuses it, naming CUA_NATIVE_ENGINE=vendor', async t => {
   const ctx = setup(t);
   await install(ctx);
-  const runtime = resolveRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
+  const runtime = vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
   assert.equal('codexCli' in runtime.paths, false);
   assert.equal(runtime.paths.skyLinuxBin, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
   const again = await install(ctx, {archivePath: join(ctx.dir, 'gone.deb')});
   assert.equal(again.changed, false);
-  assert.equal((await useRuntime({home: ctx.home, release: ctx.pin.release, pins: [ctx.pin], verifySignatures: noSignatures, host: ctx.host})).release, ctx.pin.release);
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin], host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));
+  // On Linux the pointer names cua's own runtime (#171 M6a, the pre-flight's §4.3): the vendor's tree serves only the
+  // vendor's engine.
+  await assert.rejects(useRuntime({home: ctx.home, release: ctx.pin.release, pins: [ctx.pin], verifySignatures: noSignatures, host: ctx.host}), err => {
+    assert.equal(err.code, 'release_refused');
+    assert.match(err.hint, /CUA_NATIVE_ENGINE=vendor/);
+    return true;
+  });
+  assert.throws(() => vendorLinuxRuntime({home: ctx.home, pins: [ctx.pin], host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));
 });
 
 test('a missing ar, tar or xz is refused before any download, naming the tool and the package that provides it', async t => {
@@ -95,4 +101,44 @@ test('a Linux pin is refused on a macOS host before anything is read', async t =
   const ctx = setup(t);
   await assert.rejects(install(ctx, {host: {platform: 'darwin', arch: 'arm64'}}), expectCode('unsupported_platform'));
   assert.equal(existsSync(ctx.home), false);
+});
+
+// #171 M6a: on Linux the vendor's tree is a lane of cua install, kept for CUA_NATIVE_ENGINE=vendor; it never takes the
+// pointer, which names cua's own runtime there (src/runtime/linux-install.mjs).
+test('with activate false the vendor\'s tree is placed and verified, and the pointer is left as it was', async t => {
+  const ctx = setup(t);
+  const fresh = await install(ctx, {activate: false});
+  assert.equal(fresh.changed, true);
+  assert.equal(pointer(ctx.home), null);
+  const own = 'cua-linux-x64-e0.4.3-n24.22.0-s0.163.0-m000000000000';
+  writeFileSync(join(ctx.home, 'current.json'), JSON.stringify({schema: 1, release: own}));
+  const again = await install(ctx, {activate: false});
+  assert.equal(again.changed, false);
+  assert.equal(pointer(ctx.home), own);
+});
+
+// A runtimes/ that is a file blocks every release under it: the refusal names that file, never a runtimes/<release> that
+// cannot exist (T2's deferred Minor, where install surfaces it).
+test('a runtimes/ that is a file is refused as what stands in the way, and left as it is', async t => {
+  const ctx = setup(t);
+  mkdirSync(ctx.home, {recursive: true});
+  writeFileSync(join(ctx.home, 'runtimes'), 'not a directory');
+  const blocking = join(realpathSync(ctx.home), 'runtimes');
+  await assert.rejects(install(ctx), err => {
+    assert.equal(err.code, 'target_occupied');
+    assert.equal(err.message, `${blocking} exists and was not installed by cua; it is left untouched`);
+    assert.doesNotMatch(`${err.message} ${err.hint}`, /runtimes\/0\.0\.1/);
+    return true;
+  });
+  assert.equal(readFileSync(blocking, 'utf8'), 'not a directory');
+});
+
+// Fix wave 1 (b): macOS's install is as it was: that check is the Linux vendor lane's.
+test('on macOS a runtimes/ that is a file fails as it did, with the filesystem\'s own error', async t => {
+  const ctx = setup(t);
+  mkdirSync(ctx.home, {recursive: true});
+  writeFileSync(join(ctx.home, 'runtimes'), 'not a directory');
+  const darwin = {platform: 'darwin', arch: 'arm64'};
+  await assert.rejects(installRuntime({home: ctx.home, manifest: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), archivePath: ctx.archive.deb, host: darwin, verifySignatures: noSignatures}),
+    err => { assert.equal(err.code, 'EEXIST', err.message); return true; });
 });

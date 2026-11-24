@@ -51,7 +51,7 @@ const QUOTED = [
   ['Accessibility tree truncated: at least <n> elements not shown (<reason>)', [LINUX_DOCUMENT, README], 'src/cua-api/bind-linux-app.mjs',
     'Accessibility tree truncated: at least ${total} elements not shown (${reason})'],
   ['clipboard update timed out', [README], 'native/linux-engine/src/copy.rs', 'CopyRoute::Text => "clipboard update timed out",'],
-  ['cua-engine <found> is older than 0.4.4, which this cua needs; run cua install --engine', [README], 'src/services/engine/linux/client.mjs',
+  ['cua-engine <found> is older than 0.4.4, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine`', [README], 'src/services/engine/linux/client.mjs',
     'cua-engine ${found} is older than ${MIN_ENGINE_VERSION}, which this cua needs; ${REMEDY}'],
 ];
 

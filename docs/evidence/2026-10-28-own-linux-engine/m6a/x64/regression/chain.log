@@ -1,0 +1,11 @@
+2026-11-23T22:12:44Z pre source-install: no hold, 24G free
+2026-11-23T22:13:17Z source-install exit 0: {"ok":true,"release":"cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d","sessions":{"browser":true,"computer":true,"engine":"cua","alternate":{"engine":"vendor","override":"CUA_NATIVE_ENGINE=vendor","opens":true},"why":{}},"vendor":{"release":"26.928.40906-linux-x64"},"engine":{"version":"0.4.4"}}
+2026-11-23T22:13:17Z pre parity: no hold, 24G free
+2026-11-23T22:53:06Z parity exit 0
+2026-11-23T22:53:06Z pre accept: no hold, 24G free
+2026-11-23T22:56:36Z accept exit 0
+2026-11-23T22:56:36Z pre device: no hold, 24G free
+2026-11-23T22:57:45Z device exit 0
+2026-11-23T22:57:45Z pre fallback: no hold, 24G free
+2026-11-23T23:00:50Z fallback exit 0
+2026-11-23T23:00:50Z all parts passed

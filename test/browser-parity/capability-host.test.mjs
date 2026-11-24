@@ -88,7 +88,7 @@ test('the scratch home puts the host on the cua route with the runtime cloned an
   mkdirSync(join(source.dir, 'runtimes', 'r1', 'cua_node'), {recursive: true});
   writeFileSync(join(source.dir, 'runtimes', 'r1', 'cua_node', 'marker'), 'runtime');
   writeFileSync(join(source.dir, 'current.json'), JSON.stringify({schema: 1, release: 'r1'}));
-  const home = prepareCapabilityHome({source: source.dir});
+  const home = prepareCapabilityHome({source: source.dir, platform: 'darwin'});
   t.after(() => home.cleanup());
   assert.equal(readPointer(home.dir), 'r1');
   assert.equal(readFileSync(join(home.dir, 'runtimes', 'r1', 'cua_node', 'marker'), 'utf8'), 'runtime');
@@ -103,10 +103,75 @@ test('the scratch home puts the host on the cua route with the runtime cloned an
   assert.equal(existsSync(home.dir), false);
 });
 
+// #171 M6a: on Linux the scratch home copies cua's own runtime as the source resolves it (the record's release, its
+// module tree, and the Node, helper and engine it holds), never the vendor's tree under runtimes/, and never by the
+// pointer, which there records and selects nothing; the copy must resolve to the source's release.
+test('on Linux the scratch home copies the source\'s own parts and resolves to its release; the vendor tree stays behind', async t => {
+  const {fakeInstalledEngine, fakeManagedNode, fakeModuleTree} = await import('../fixtures/own-linux-runtime.mjs');
+  const {resolveRuntime} = await import('../../src/runtime/manifest.mjs');
+  const {writePointer} = await import('../../src/runtime/layout.mjs');
+  const host = {platform: 'linux', arch: 'x64'};
+  const source = shortScratch('cua-src-');
+  t.after(() => source.cleanup());
+  const {release, root} = fakeModuleTree(source.dir, host);
+  writePointer(source.dir, release);
+  fakeManagedNode(source.dir, host);
+  fakeInstalledEngine(source.dir, '0.4.4');
+  mkdirSync(join(source.dir, 'sandbox', 'rust-v0.163.0'), {recursive: true});
+  writeFileSync(join(source.dir, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox'), 'helper fixture');
+  mkdirSync(join(source.dir, 'runtimes', '26.928.40906-linux-x64'), {recursive: true});
+  writeFileSync(join(source.dir, 'runtimes', '26.928.40906-linux-x64', 'marker'), 'vendor tree');
+  const home = prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'});
+  t.after(() => home.cleanup());
+  assert.equal(home.release, release);
+  assert.equal(resolveRuntime({home: home.dir, host}).release, release, 'the copy resolves to the source\'s release');
+  assert.equal(readPointer(home.dir), release);
+  assert.equal(readFileSync(join(home.dir, 'modules', root.split('/').pop(), 'install.json'), 'utf8'), readFileSync(join(root, 'install.json'), 'utf8'));
+  for (const part of ['node/current.json', 'sandbox/rust-v0.163.0/codex-linux-sandbox', 'engine/linux/cua-engine', 'engine/linux/install.json'])
+    assert.equal(readFileSync(join(home.dir, part), 'utf8'), readFileSync(join(source.dir, part), 'utf8'), part);
+  assert.equal(existsSync(join(home.dir, 'runtimes')), false, 'nothing of the vendor tree is copied');
+  assert.equal(chromeRoute(home.dir), 'cua');
+});
+
+test('on Linux a source home cua\'s own runtime does not resolve in is refused, whatever its pointer and vendor tree say', async t => {
+  const {fakeModuleTree} = await import('../fixtures/own-linux-runtime.mjs');
+  const {writePointer} = await import('../../src/runtime/layout.mjs');
+  const source = shortScratch('cua-src-');
+  t.after(() => source.cleanup());
+  // the home an older cua's install leaves: the vendor tree and the vendor's name in the pointer, no module tree
+  mkdirSync(join(source.dir, 'runtimes', '26.928.40906-linux-x64', 'cua_node'), {recursive: true});
+  writePointer(source.dir, '26.928.40906-linux-x64');
+  // The refusal keeps resolution's own remedy (task 151, fix wave 1): this checkout's installer by its absolute path and
+  // the release it installs, never a bare `cua install`, which an older checkout's cua on PATH answers without fixing it.
+  const {ownInstaller} = await import('../../src/runtime/manifest.mjs');
+  const {release} = fakeModuleTree(join(source.dir, 'elsewhere'), {platform: 'linux', arch: 'x64'});
+  const installer = ownInstaller({release});
+  const refusal = error => {
+    assert.match(error.message, /^no installed runtime in .*: cua's Linux runtime \S+ is not installed .*its module tree .* is missing/s);
+    assert.ok(error.message.includes(installer.hint), error.message);
+    assert.doesNotMatch(error.message, /run `cua install` first/);
+    assert.equal(error.code, 'runtime_not_installed');
+    assert.equal(error.hint, installer.hint);
+    return true;
+  };
+  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), refusal);
+  // Something at the tree's path that is no install of this lock: the remedy names it, to be moved aside first.
+  const {realpathSync} = await import('node:fs');
+  const tree = fakeModuleTree(source.dir, {platform: 'linux', arch: 'x64'});
+  writePointer(source.dir, release);
+  writeFileSync(join(tree.root, 'install.json'), '{}');
+  const root = realpathSync(tree.root);   // as resolution names it (macOS's /tmp is /private/tmp)
+  assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'linux', arch: 'x64'}), error => {
+    assert.ok(error.message.includes(`move ${root} aside, then ${installer.hint}`), error.message);
+    assert.equal(error.hint, `stop any \`cua serve\` using it, move ${root} aside, then ${installer.hint}`);
+    return true;
+  });
+});
+
 test('a home without an installed runtime is refused', () => {
   const source = shortScratch('cua-src-');
   try {
-    assert.throws(() => prepareCapabilityHome({source: source.dir}), /no installed runtime/);
+    assert.throws(() => prepareCapabilityHome({source: source.dir, platform: 'darwin'}), /no installed runtime/);
   } finally { source.cleanup(); }
 });
 

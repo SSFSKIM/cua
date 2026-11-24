@@ -222,3 +222,43 @@ test('engineAnsweredProblem: the launcher shim counts only as the lane\'s engine
   // a non-shim cua-engine under the supervisor still fails as before
   assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...own, parent: 'supervisor.mjs'}, own]}, 'run'), /a child of supervisor\.mjs, not of the trusted worker/);
 });
+
+// #171 M6a (the pre-flight's finding 13): the vendor lane's engine is found where the vendor selection finds it,
+// manifest.mjs vendorLinuxRuntime (the host's pinned release under runtimes/, by its pin, never through the pointer, which
+// on Linux names cua's own runtime and selects nothing). The witness keeps its contract: it can fail a lane or report,
+// never make one pass by itself, so an answer it cannot attribute to the lane's executable is never a pass.
+test('expectedEngine: the vendor lane reads the vendor tree as the vendor selection does, and what it cannot attribute never passes', async t => {
+  const {expectedEngine} = await import('../../scripts/repl-parity/engine-answered.mjs');
+  const {fakeInstalledHome} = await import('../fixtures/installed-home.mjs');
+  const {fakeModuleTree} = await import('../fixtures/own-linux-runtime.mjs');
+  const {homeLayout, writePointer} = await import('../../src/runtime/layout.mjs');
+  const {loadPins, selectPin, vendorLinuxRuntime} = await import('../../src/runtime/manifest.mjs');
+  const vendor = exe => ({exe, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'});
+  const host = {platform: 'linux', arch: 'x64'};
+  // A home cua's own install left: the own runtime, its pointer the derived release, and the vendor tree beside it.
+  const home = fakeInstalledHome(t, {host});
+  writePointer(home, fakeModuleTree(home, host).release);
+  const pin = selectPin(loadPins(), host);
+  const sky = fs.realpathSync(join(homeLayout(home).runtimes, pin.release, pin.layout.skyLinuxBin));
+  const tree = () => vendorLinuxRuntime({home, host});
+  assert.deepEqual(expectedEngine({engine: 'vendor', home, runtime: tree}), {requested: 'vendor', expected: sky, error: null});
+  assert.equal(engineAnsweredProblem({requested: 'vendor', expected: sky, observed: [vendor(sky)]}, 'run'), null, 'the tree\'s own helper answering is sound');
+  // The default lookup is the vendor selection's, never resolveRuntime's: on this host it reads this host's own pin.
+  const byDefault = expectedEngine({engine: 'vendor', home});
+  if (process.platform === 'linux' && process.arch === 'x64') assert.deepEqual(byDefault, {requested: 'vendor', expected: sky, error: null});
+  else assert.match(byDefault.error ?? '', /the vendor's (?:Linux tree is for a Linux host|release \S+ is not installed)/);
+  // The tree gone: no expected engine, so whatever answers, the lane fails.
+  fs.rmSync(join(homeLayout(home).runtimes, pin.release), {recursive: true});
+  const gone = expectedEngine({engine: 'vendor', home, runtime: tree});
+  assert.equal(gone.expected, null);
+  assert.match(gone.error, /the vendor's release \S+ is not installed/);
+  assert.match(engineAnsweredProblem({...gone, observed: [vendor(sky)]}, 'run'), /^run: no expected vendor engine \(the vendor's release/);
+  // A helper of another tree (another release, another home) is not the lane's, whatever its kind.
+  assert.match(engineAnsweredProblem({requested: 'vendor', expected: sky, observed: [vendor(join(homeLayout(home).runtimes, 'other', 'sky_linux_x64'))]}, 'run'),
+    /answered, not the requested vendor engine/);
+  // No observation, or one that names no service, is never a pass either.
+  assert.match(engineAnsweredProblem({requested: 'vendor', expected: sky, observed: []}, 'run'), /no engine process answered/);
+  const {service, ...unattested} = vendor(sky);
+  assert.equal(service, 'vendor');
+  assert.match(engineAnsweredProblem({requested: 'vendor', expected: sky, observed: [unattested]}, 'run'), /carries no service evidence/);
+});

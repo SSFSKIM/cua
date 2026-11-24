@@ -35,7 +35,7 @@ function installed(home,release='r1'){
 
 test('managed remote scratch installs freshly and inspects its own Node without inheriting a source override',t=>{
  const {source,ambient,archives}=fixture(t);let invocation,inspection;
- const scratch=prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{invocation=options;installed(options.home);},inspect:options=>{inspection=options;return {path:join(options.home,'node','24.test','bin','node'),version:'v24.18.0'};}});
+ const scratch=prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{invocation=options;installed(options.home);},inspect:options=>{inspection=options;return {path:join(options.home,'node','24.test','bin','node'),version:'v24.18.0'};}});
  t.after(()=>scratch.cleanup());
  assert.ok(invocation,'managed scratch must invoke the installer, not clone the source runtime');
  assert.equal(typeof scratch.then,'undefined','preparation remains synchronous');
@@ -52,14 +52,14 @@ test('managed remote scratch installs freshly and inspects its own Node without 
 
 test('fresh install release drift is rejected and its scratch is removed',t=>{
  const {source,ambient,archives}=fixture(t);let home;
- assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home,'r2');},inspect:()=>{throw Error('release must be checked first');}}),/release/i);
+ assert.throws(()=>prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home,'r2');},inspect:()=>{throw Error('release must be checked first');}}),/release/i);
  assert.equal(existsSync(home),false);
 });
 
 test('a cached pinned engine is in the managed scratch home before the install runs (#171)',t=>{
  const {source,ambient}=fixture(t),engine=join(archiveCacheDir(source),'cua-engine-0.1.0-linux-x64');writeFileSync(engine,'engine fixture');
  const archives=()=>({...CACHED(source),engine});let seen;
- const scratch=prepareCapabilityHome({source,ambient,archives,placeEngine:(home,file)=>placeCachedEngine(home,file,{pins:{engine:{archive:{sha256:createHash('sha256').update('engine fixture').digest('hex')}}}}),scratchRoot:join(ambient.HOME,'.cp'),install:options=>{seen=readFileSync(join(options.home,'engine','linux','cua-engine'),'utf8');installed(options.home);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+ const scratch=prepareCapabilityHome({platform:'darwin',source,ambient,archives,placeEngine:(home,file)=>placeCachedEngine(home,file,{pins:{engine:{archive:{sha256:createHash('sha256').update('engine fixture').digest('hex')}}}}),scratchRoot:join(ambient.HOME,'.cp'),install:options=>{seen=readFileSync(join(options.home,'engine','linux','cua-engine'),'utf8');installed(options.home);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
  t.after(()=>scratch.cleanup());
  assert.equal(seen,'engine fixture');
  assert.equal(statSync(join(scratch.dir,'engine','linux','cua-engine')).mode&0o777,0o755);
@@ -69,20 +69,20 @@ test('managed scratch rejects an unmanaged or wrong-major Node and removes the f
  const {source,ambient,archives}=fixture(t);
  for(const ownNode of [{path:'/external/node',version:'v24.18.0'},{version:'v22.18.0'}]){
   let home;
-  assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home);},inspect:()=>({...ownNode,path:ownNode.path??join(home,'node','22.test','bin','node')})}),/managed Node/);
+  assert.throws(()=>prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home);},inspect:()=>({...ownNode,path:ownNode.path??join(home,'node','22.test','bin','node')})}),/managed Node/);
   assert.equal(existsSync(home),false);
  }
 });
 
 test('installer failures remove the scratch instead of falling back to a copied runtime',t=>{
  const {source,ambient,archives}=fixture(t);let home;
- assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;throw Error('install failed');}}),/install failed/);
+ assert.throws(()=>prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;throw Error('install failed');}}),/install failed/);
  assert.equal(existsSync(home),false);
 });
 
 test('the default managed installer runs the checkout CLI with its isolated environment, from the prepared archive cache',t=>{
  const {source,ambient,archives}=fixture(t);let invocation;
- const scratch=prepareCapabilityHome({source,ambient:{...ambient,CUA_NATIVE_ENGINE:'cua'},archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+ const scratch=prepareCapabilityHome({platform:'darwin',source,ambient:{...ambient,CUA_NATIVE_ENGINE:'cua'},archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
  t.after(()=>scratch.cleanup());
  const cache=archiveCacheDir(source);
  assert.equal(invocation[0],process.execPath);assert.deepEqual(invocation[1],['bin/cua.mjs','install','--archive',join(cache,'r1-linux-x64.deb'),'--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz')]);
@@ -92,7 +92,7 @@ test('the default managed installer runs the checkout CLI with its isolated envi
 
 test('an absent or damaged archive cache refuses before any scratch exists or anything installs',t=>{
  const {source,ambient,archives}=fixture(t),scratchRoot=join(ambient.HOME,'.cp');let installs=0;
- const attempt=options=>prepareCapabilityHome({source,ambient,scratchRoot,install:()=>{installs++;},inspect:()=>{throw Error('nothing installed');},...options});
+ const attempt=options=>prepareCapabilityHome({platform:'darwin',source,ambient,scratchRoot,install:()=>{installs++;},inspect:()=>{throw Error('nothing installed');},...options});
  // The default resolver reads the prepared home's cache under the checked-in pins; this fixture home has none of theirs.
  assert.throws(()=>attempt({}),/never download.*cleanup-prepared.*prepare again/s);
  rmSync(join(archiveCacheDir(source),'node-v24.0.0-linux-x64.tar.gz'));
@@ -103,11 +103,11 @@ test('an absent or damaged archive cache refuses before any scratch exists or an
 test('an installer refusing a cached archive asks for a fresh preparation and removes the scratch',t=>{
  const {source,ambient,archives}=fixture(t);let home;
  const refusal=Object.assign(Error('Command failed: node bin/cua.mjs install\ncua: archive SHA-256 is 00; the pin expects 11 [archive_hash_mismatch]\n  pass the pinned ChatGPT archive, or omit --archive to download it'),{status:1});
- assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(file,args,options)=>{home=options.env.CUA_HOME;throw refusal;}}),
+ assert.throws(()=>prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(file,args,options)=>{home=options.env.CUA_HOME;throw refusal;}}),
   error=>/archive_hash_mismatch/.test(error.message)&&/managed fixtures never download.*cleanup-prepared.*prepare again/s.test(error.message)&&error.cause===refusal);
  assert.equal(existsSync(home),false);
  // Other installer failures keep their own message.
- assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:()=>{throw Error('install failed');}}),error=>error.message==='install failed');
+ assert.throws(()=>prepareCapabilityHome({platform:'darwin',source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:()=>{throw Error('install failed');}}),error=>error.message==='install failed');
 });
 
 // Every remote fixture entry builds its scratch through the shared preparation from the prepared home (CUA_HOME),
@@ -181,8 +181,64 @@ test('binder attests the underlying own Node before replacing it with the truste
 test('legacy and local doubles still copy synchronously and never invoke an installer or Node inspection',t=>{
  const {source,ambient}=fixture(t);
  for(const env of [{...ambient,CUA_PARITY_NODE_MODE:'legacy'},{...ambient,CUA_PARITY_REMOTE:'0'}]){
-  const scratch=prepareCapabilityHome({source,ambient:env,install:()=>{throw Error('local install forbidden');},inspect:()=>{throw Error('local Node inspection forbidden');}});
+  const scratch=prepareCapabilityHome({platform:'darwin',source,ambient:env,install:()=>{throw Error('local install forbidden');},inspect:()=>{throw Error('local Node inspection forbidden');}});
   try{assert.equal(typeof scratch.then,'undefined');assert.equal(readFileSync(join(scratch.dir,'runtimes','r1','marker'),'utf8'),'source runtime');assert.notEqual(scratch.nodeMode,'managed');}
   finally{scratch.cleanup();}
  }
+});
+
+// #171 M6a, the whole managed preparation on Linux: the source is the own runtime it resolves (its pointer the derived
+// release, no vendor tree needed), the scratch is installed through the checkout's CLI from the prepared cache, the
+// module tree's tarballs included (--modules-dir), and the fresh home is checked by resolving it to the source's release.
+const LINUX={platform:'linux',arch:'x64'};
+const MODULE_CACHE={file:'alpha-1.0.0.tgz',bytes:Buffer.from('module fixture')};
+const LINUX_PINS={...PINS,modules:{dir:'modules',packages:[{file:MODULE_CACHE.file,archive:{url:`https://registry.npmjs.org/alpha/-/${MODULE_CACHE.file}`,length:MODULE_CACHE.bytes.length,integrity:'sha512-unchecked-by-the-cache'}}]}};
+async function linuxFixture(t){
+ const {fakeManagedNode,fakeModuleTree}=await import('../fixtures/own-linux-runtime.mjs');
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-managed-linux-'))),source=join(root,'source'),user=join(root,'user');
+ mkdirSync(source);mkdirSync(user);
+ const {release}=fakeModuleTree(source,LINUX);writePointer(source,release);fakeManagedNode(source,LINUX);
+ mkdirSync(join(archiveCacheDir(source),'modules'),{recursive:true,mode:0o700});
+ for(const {file,bytes} of Object.values(CACHE))writeFileSync(join(archiveCacheDir(source),file),bytes);
+ writeFileSync(join(archiveCacheDir(source),'modules',MODULE_CACHE.file),MODULE_CACHE.bytes);
+ t.after(()=>rmSync(root,{recursive:true,force:true}));
+ // What `cua install` leaves in a fresh Linux home: cua's own runtime, the pointer naming it.
+ const installed=home=>{fakeModuleTree(home,LINUX);fakeManagedNode(home,LINUX);writePointer(home,release);};
+ const {managedNode}=await import('../../src/runtime/managed-node.mjs');
+ const inspect=({home})=>{const node=managedNode(home,{host:LINUX});return {path:node.path,version:`v${node.version}`};};
+ return {source,release,installed,inspect,archives:home=>cachedArchives(home,{pins:LINUX_PINS}),
+  ambient:{HOME:user,PATH:'/usr/bin:/bin',CUA_PARITY_REMOTE:'1',CUA_PARITY_NODE_MODE:'managed',CUA_NODE:'/source-node-must-not-be-inherited'}};
+}
+
+test('the managed Linux preparation: the source\'s own runtime, installed from the cache with its module tarballs, the fresh home resolved',async t=>{
+ const {resolveRuntime}=await import('../../src/runtime/manifest.mjs');
+ const {source,release,installed,inspect,archives,ambient}=await linuxFixture(t);let invocation;
+ const scratch=prepareCapabilityHome({...LINUX,source,ambient,archives,inspect,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);}});
+ t.after(()=>scratch.cleanup());
+ const cache=archiveCacheDir(source);
+ assert.deepEqual(invocation[1],['bin/cua.mjs','install','--archive',join(cache,'r1-linux-x64.deb'),'--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz'),'--modules-dir',join(cache,'modules')]);
+ assert.equal(invocation[2].env.CUA_HOME,scratch.dir);assert.equal(invocation[2].env.CUA_NODE,undefined);
+ assert.equal(scratch.release,release);
+ assert.equal(resolveRuntime({home:scratch.dir,host:LINUX}).release,release);
+ assert.equal(scratch.nodeMode,'managed');assert.equal(scratch.ownNode.path,join(scratch.dir,'node','24.22.0','bin','node'));
+ assert.equal(existsSync(join(source,'runtimes')),false,'the source needed no vendor tree');
+ assert.equal(existsSync(join(scratch.dir,'runtimes')),false);
+});
+
+test('a managed Linux scratch whose fresh install does not resolve to the source\'s release is removed, whatever its pointer says',async t=>{
+ const {fakeModuleTree}=await import('../fixtures/own-linux-runtime.mjs');
+ const {source,release,inspect,archives,ambient}=await linuxFixture(t);
+ for(const leave of [
+  home=>writePointer(home,release),                                                                   // the pointer alone
+  home=>{const {root}=fakeModuleTree(home,LINUX);writeFileSync(join(root,'install.json'),'{}');writePointer(home,release);},   // a tree that is no install of this lock
+ ]){
+  let home;
+  assert.throws(()=>prepareCapabilityHome({...LINUX,source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{home=args[2].env.CUA_HOME;leave(home);},
+   inspect:()=>{throw Error('the release is checked first');}}),/Fresh scratch runtime release differs from prepared source/);
+  assert.equal(existsSync(home),false);
+ }
+ // a source whose own runtime does not resolve is refused before any scratch or install
+ rmSync(join(source,'modules'),{recursive:true});let installs=0;
+ assert.throws(()=>prepareCapabilityHome({...LINUX,source,ambient,archives,inspect,scratchRoot:join(ambient.HOME,'.cp'),run:()=>{installs++;}}),/no installed runtime in .*is not installed/s);
+ assert.equal(installs,0);assert.deepEqual(existsSync(join(ambient.HOME,'.cp'))?readdirSync(join(ambient.HOME,'.cp')):[],[]);
 });

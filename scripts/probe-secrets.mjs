@@ -267,15 +267,17 @@ async function sandboxDisabledConnection(runtime) {
   steps.push(await closeSecretSession(c, 'real serve (sandbox disabled): close'));
 }
 
-// A model cell tries to create a uniquely named importable module in every trusted code root. Whatever it wrote is
-// removed, in the trusted roots and in its own directories, and the trusted roots are checked again before the step
-// is recorded: the probe must leave cua's checkout and the installed runtime as it found them.
+// A model cell tries to create a uniquely named importable module in every trusted code root, and in the module tree
+// cells import from: the vendor's on macOS, cua's own on Linux (#171 M6a, the ModuleTree, which is not trusted code
+// there but is where a planted import would be found). Whatever it wrote is removed, in those roots and in its own
+// directories, and the roots are checked again before the step is recorded: the probe must leave cua's checkout and the
+// installed runtime as it found them.
 async function plantModules(c, runtime, mode) {
   const roots = [
     {label: 'state/codex', path: join(runtime.home, 'state', 'codex')},
     {label: 'src/services', path: dirname(SKY_SERVICE)},
     ...SERVICE_SUPPORT_DIRS.map(path => ({label: `src/${basename(path)}`, path})),
-    {label: 'vendor modules', path: runtime.paths.moduleDir},
+    {label: runtime.manifest.platform === 'linux' ? 'module tree' : 'vendor modules', path: runtime.paths.moduleDir},
   ];
   const name = `cua-m5-planted-${randomUUID()}.mjs`;
   const out = cellOutput(await c.js(plantCell(roots.map(root => root.path), name)));

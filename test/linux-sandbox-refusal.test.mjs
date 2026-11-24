@@ -17,8 +17,11 @@ import {assertSandboxConfines} from '../src/runtime/sandbox.mjs';
 import {bwrapUserns} from '../src/runtime/linux-desktop.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends, listingSandboxMode} from '../src/profiles/inventory.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {ownInstaller, resolveRuntime, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {verifyHelper} from '../src/sandbox/linux.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {fakeInstalledEngine} from './fixtures/own-linux-runtime.mjs';
+import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
@@ -79,6 +82,20 @@ test('the real check: a helper with the pinned bytes but no execute bits is refu
   await assertSandboxConfines('scoped', {platform: 'linux', launch, probe});
 });
 
+// #171 M6a (F9, the pre-flight's C11): each refusal of the helper names this checkout's own installer by its absolute
+// path, never a bare `cua install`, which a `cua` from another checkout would answer.
+test('every refusal of the helper names this checkout\'s own installer, by its absolute path', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-helper-hint-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const path = join(dir, 'codex-linux-sandbox');
+  const pinned = createHash('sha256').update('#!/bin/sh\n').digest('hex');
+  const cases = [['no helper named', () => verifyHelper({})], ['not installed', () => verifyHelper({path, sha256: pinned})],
+    ['other bytes', () => { writeFileSync(path, '#!/bin/sh\nexit 1\n', {mode: 0o755}); verifyHelper({path, sha256: pinned}); }]];
+  if (process.getuid?.() !== 0) cases.push(['not executable', () => { writeFileSync(path, '#!/bin/sh\n'); chmodSync(path, 0o644); verifyHelper({path, sha256: pinned}); }]);
+  for (const [what, check] of cases)
+    assert.throws(check, error => error.code === 'sandbox_unavailable' && error.hint.includes(ownInstaller().command) && !/(^|[^/])`cua install`/.test(error.hint), what);
+});
+
 test('the real check: a confined Linux connection whose helper is not installed is refused before any runtime starts', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
   const env = {PATH: process.env.PATH, HOME: process.env.HOME, CUA_SHIM_SURFACES: 'browser', DISPLAY: ':0'};
@@ -105,6 +122,7 @@ test('a confined Linux connection where user namespaces are refused is refused b
 
 test('the Linux computer surface defaults to scoped and is checked like any confined connection; disabled is never checked', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);   // the computer surface needs cua's engine since #171 M6a
   const base = {PATH: process.env.PATH, HOME: process.env.HOME, DISPLAY: ':0'};
   for (const [env, calls] of [[base, 1], [{...base, CUA_SHIM_SURFACES: 'browser'}, 1], [{...base, CUA_SHIM_SANDBOX: 'disabled'}, 0]]) {
     const probe = counted('pass'), verifyHelper = helperCheck();
@@ -132,6 +150,7 @@ test('the profile listing runs under CUA_SHIM_SANDBOX (scoped unless told otherw
 // connection the model's cells already run unconfined, so refusing its listing would protect nothing.
 test('a disabled connection lists its profiles under disabled, unprobed, where a scoped listing would be refused', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);   // the computer surface needs cua's engine since #171 M6a
   const userHome = join(home, 'user');
   const extension = join(userHome, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
@@ -149,7 +168,8 @@ test('a disabled connection lists its profiles under disabled, unprobed, where a
   // Linux runs cua's own host; the fake release's upstream stands in for its supervisor, in the listing too.
   const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'};
   const runtime = resolveRuntime({home, host: LINUX});
-  const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
+  const prepareLaunch = launch => ({...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
   const verifyHelper = helperCheck();
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, resolveOwnNode: ownNode, prepareLaunch, verifyHelper,
     listBackends: () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox: 'disabled', probeUserns: probe, verifyHelper, resolveOwnNode: ownNode, prepareLaunch}),

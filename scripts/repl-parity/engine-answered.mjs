@@ -2,14 +2,14 @@
 // (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; Decision Log M1b.2): on Linux no js
 // result attests its engine, so the harness reads the trusted worker's child itself, by its executable
 // (/proc/<pid>/exe, never its command line). A lane is sound only when the engine it requested answered, at the
-// executable the lane names (the pinned runtime's sky_linux_<arch> on the vendor lane; the installed or named
+// executable the lane names (the vendor tree's sky_linux_<arch> on the vendor lane; the installed or named
 // cua-engine on the cua lane), as the trusted worker's child, and nothing else did; from M3 each engine must also run
 // behind its own lane's service (the worker's CUA_SKY_SERVICE: @oai/sky's, or cua's own Linux service). Used on the device by
 // test/repl-parity/serve-native.mjs and scripts/native-baseline/linux.mjs, and judged on the controller.
 import * as nodeFs from 'node:fs';
 import {basename, join} from 'node:path';
 import {Writable} from 'node:stream';
-import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {vendorLinuxRuntime} from '../../src/runtime/manifest.mjs';
 import {linuxEnginePath} from '../../src/runtime/linux-engine.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
@@ -121,9 +121,12 @@ export function engineWitness(output, {record, sample}) {
 }
 
 // The executable a lane's engine must run from, in the cua home `home` the lane serves -> {requested, expected (its real
-// path, or null), error}: the vendor lane's is the home's runtime's sky_linux_<arch>; the cua lane's is `engineBin`
-// (CUA_LINUX_ENGINE_BIN, --engine-bin) when named, else the engine installed in the home. Device side.
-export function expectedEngine({engine, home, engineBin, runtime = () => resolveRuntime({home}), fs = nodeFs}) {
+// path, or null), error}: the vendor lane's is the sky_linux_<arch> of the home's vendor tree, found as the vendor
+// selection finds it (`runtime`, by default manifest.mjs vendorLinuxRuntime: the host's pinned vendor release, never
+// the pointer, which on Linux names cua's own runtime since #171 M6a); the cua lane's is `engineBin`
+// (CUA_LINUX_ENGINE_BIN, --engine-bin) when named, else the engine installed in the home. A lane whose executable
+// cannot be found has none expected, which engineAnsweredProblem refuses whatever answered. Device side.
+export function expectedEngine({engine, home, engineBin, runtime = () => vendorLinuxRuntime({home}), fs = nodeFs}) {
   try {
     if (engine === 'vendor') return {requested: engine, expected: fs.realpathSync(runtime().paths.skyLinuxBin), error: null};
     const path = engineBin ?? linuxEnginePath(fs.realpathSync(home));

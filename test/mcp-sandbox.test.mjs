@@ -194,3 +194,20 @@ test('the own run directory may lie in its home\'s deny target, and in no other 
   const apart = protectedPaths({trustedCodePaths: [], denied: [store, '/h/cua'], ownRoots: ['/h/cua/run/s'], ownHolders: ['/h/cua', '/h/cua/run']});
   assert.deepEqual(sandboxConflicts({protectedPaths: apart, writeRoots: scopedWriteRoots({cwd: '/h/cua/run/s'})}), []);
 });
+
+// #171 M6a: a Linux launch carries $CUA_HOME/modules (`modulesRoot`), cua's ModuleTree: no trusted code, but what cells
+// import and the CLI loads classic-level from, so no scoped write root may overlap it, either way round.
+test('assertSandboxFits refuses a scoped launch whose write roots overlap cua\'s module trees; other modes pass', t => {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const home = join(realpathSync(s.dir), 'cua');
+  const modules = join(home, 'modules');
+  mkdirSync(join(modules, 'abc', 'node_modules'), {recursive: true});
+  const launch = (cwd, tmpdir) => ({cwd, sessionTmp: join(cwd, 'tmp'), modulesRoot: modules, env: {TMPDIR: tmpdir, CUA_REPL_TRUSTED_CODE_PATHS: ''}, replHost: {host: 'cua'}});
+  assertSandboxFits('scoped', launch(join(home, 'run', 'sess'), join(home, 'run', 'sess', 'tmp')));
+  for (const [cwd, tmpdir, inside] of [[join(home, 'run', 'sess'), home, 'contains'], [join(modules, 'abc', 'run', 'sess'), join(home, 'elsewhere'), 'lies inside']]) {
+    assert.throws(() => assertSandboxFits('scoped', launch(cwd, tmpdir)), error => error.code === 'sandbox_conflict' && error.message.includes(`${inside} cua's module trees ${modules}`), `${inside}: ${cwd}`);
+    assert.doesNotThrow(() => assertSandboxFits('default', launch(cwd, tmpdir)));
+    assert.doesNotThrow(() => assertSandboxFits('disabled', launch(cwd, tmpdir)));
+  }
+});

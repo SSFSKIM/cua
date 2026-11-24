@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdirSync,mkdtempSync,readFileSync,readdirSync,realpathSync,rmSync,statSync,symlinkSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,realpathSync,rmSync,statSync,symlinkSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 import {archiveCacheDir,cachedArchives,fetchArchives,installArgs,pinnedArchives,placeCachedEngine,prepareArchiveCache} from '../../scripts/repl-parity/archive-cache.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
 import {loadNodePins,selectNodePin} from '../../src/runtime/managed-node.mjs';
+import {installModuleTree,loadModuleLock,loadModuleProvenance,localTarballName,pinnedClosure,readModuleTree} from '../../src/runtime/module-tree.mjs';
+import {LINUX_ARM64,LINUX_X64,writeFixtureModules} from '../fixtures/module-registry.mjs';
 
 const SCRIPT=fileURLToPath(new URL('../../scripts/repl-parity/archive-cache.mjs',import.meta.url));
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -77,7 +79,7 @@ test('the checked-in pins name exactly the archives preparation fetches',()=>{
   const vendor=selectPin(loadPins(),host),node=selectNodePin(loadNodePins(),host),pins=pinnedArchives({host});
   assert.deepEqual(pins.vendor,{file:`${vendor.release}-${host.platform}-${host.arch}.${host.platform==='linux'?'deb':'zip'}`,archive:vendor.archive});
   assert.deepEqual(pins.node,{file:`node-v${node.version}-${host.platform}-${host.arch}.tar.gz`,archive:node.archive});
-  for(const {archive} of Object.values(pins))assert.match(archive.url,/^https:\/\//);
+  for(const [role,{archive}] of Object.entries(pins))if(role!=='modules')assert.match(archive.url,/^https:\/\//);
  }
  assert.throws(()=>pinnedArchives({host:{platform:'linux',arch:'x64'},nodePins:[]}),/No Node is pinned/);
 });
@@ -123,6 +125,59 @@ test('a cached engine whose bytes no longer hash to the pin is refused with the 
  const scratch=home(t),damaged=join(prepared,'damaged-engine');writeFileSync(damaged,Buffer.from('other bytes'));
  assert.throws(()=>placeCachedEngine(scratch,damaged,{pins}),/cleanup-prepared.*prepare again/s);
  assert.throws(()=>statSync(join(scratch,'engine','linux','cua-engine')),/ENOENT/,'nothing damaged is left where cua install looks');
+});
+
+// #171 M6a: on Linux cua's own runtime is the ModuleTree, cua's install of the lock's closure for the host
+// (src/runtime/module-tree.mjs). Preparation caches each tarball of that closure as the installer fetches it (the
+// canonical URL, no redirect, the pinned length, checked against its SHA-512), under the name `--modules-dir` reads, and
+// every fresh install takes the directory with `--modules-dir`: it checks each tarball again and downloads none.
+const MODULES=(()=>{const dir=mkdtempSync(join(tmpdir(),'cua-archive-modules-'));process.on('exit',()=>rmSync(dir,{recursive:true,force:true}));
+ const written=writeFixtureModules(join(dir,'pins'));return {...written,lock:loadModuleLock(written.dir),provenance:loadModuleProvenance(written.dir)};})();
+const modulePins=host=>pinnedArchives({host,modulePins:{lock:MODULES.lock,provenance:MODULES.provenance}}).modules;
+test('the Linux module tree joins the cache: each tarball of the host\'s closure, by its pinned length and integrity, and --modules-dir names it',async t=>{
+ const host={platform:'linux',arch:'x64'},closure=pinnedClosure(MODULES.lock,MODULES.provenance,LINUX_X64);
+ const modules=modulePins(host);
+ assert.equal(modules.dir,'modules');
+ assert.deepEqual(modules.packages,[...new Map(closure.map(p=>[localTarballName(p.name,p.version),{file:localTarballName(p.name,p.version),archive:{url:p.resolved,length:p.length,integrity:p.integrity}}])).values()]);
+ assert.deepEqual(modulePins({platform:'linux',arch:'arm64'}).packages.map(p=>p.file).sort(),[...new Set(pinnedClosure(MODULES.lock,MODULES.provenance,LINUX_ARM64).map(p=>localTarballName(p.name,p.version)))].sort());
+ assert.equal(pinnedArchives({host:{platform:'darwin',arch:'arm64'}}).modules,undefined,'macOS installs no module tree');
+ const prepared=home(t),all={...PINS,modules},{urls,fetch:serve}=MODULES;
+ const requests=[];const fetch=async(url,init)=>{requests.push(init?.redirect);return url in served?network().fetch(url):serve(url);};
+ const archives=await fetchArchives(prepared,{pins:all,fetch});
+ assert.equal(archives.modules,join(archiveCacheDir(prepared),'modules'));
+ assert.deepEqual(readdirSync(archives.modules).sort(),modules.packages.map(p=>p.file).sort());
+ assert.deepEqual([...urls].sort(),modules.packages.map(p=>p.archive.url).sort(),'each tarball fetched once');
+ assert.ok(requests.slice(2).every(r=>r==='error'),'a module tarball is taken from its canonical URL only, as the installer takes it');
+ assert.equal(statSync(archives.modules).mode&0o777,0o700);
+ assert.deepEqual(cachedArchives(prepared,{pins:all}),archives);
+ assert.deepEqual(installArgs(archives),['install','--archive',archives.vendor,'--node-archive',archives.node,'--modules-dir',archives.modules]);
+ // What the cache holds is what the installer reads: a fresh home installs the tree from it, and downloads nothing.
+ const fresh=home(t);
+ const tree=await installModuleTree({home:fresh,lock:MODULES.lock,provenance:MODULES.provenance,host:LINUX_X64,dir:archives.modules,fetch:async url=>{throw new Error(`downloaded ${url}`);}});
+ assert.equal(tree.changed,true);
+ assert.equal(readModuleTree(fresh,MODULES.lock,LINUX_X64)?.record.source,'dir');
+});
+
+test('a module tarball that is not its pin\'s is refused at preparation, and a cache missing one sends the fixture back to prepare',async t=>{
+ const modules=modulePins({platform:'linux',arch:'x64'}),all={...PINS,modules},first=modules.packages[0];
+ const damaged=home(t);
+ const fetch=async url=>url in served?network().fetch(url):url===first.archive.url?new Response(Buffer.alloc(first.archive.length,0x61),{headers:{'content-length':String(first.archive.length)}}):MODULES.fetch(url);
+ await assert.rejects(fetchArchives(damaged,{pins:all,fetch}),error=>error.code==='archive_hash_mismatch');
+ assert.deepEqual(existsSync(join(archiveCacheDir(damaged),'modules'))?readdirSync(join(archiveCacheDir(damaged),'modules')):[],[],'no unverified tarball is kept');
+ assert.throws(()=>cachedArchives(damaged,{pins:all}),/cleanup-prepared/);
+ const prepared=home(t),archives=await fetchArchives(prepared,{pins:all,fetch:async url=>url in served?network().fetch(url):MODULES.fetch(url)});
+ rmSync(join(archives.modules,first.file));
+ assert.throws(()=>cachedArchives(prepared,{pins:all}),new RegExp(`${first.file.replace(/\./g,'\\.')}.*cleanup-prepared.*prepare again`,'s'));
+ writeFileSync(join(archives.modules,first.file),Buffer.alloc(first.archive.length+1));
+ assert.throws(()=>cachedArchives(prepared,{pins:all}),/cleanup-prepared/,'a tarball of another length');
+});
+
+test('the checked-in Linux pins cache the 23 tarballs of each architecture\'s closure',()=>{
+ for(const arch of ['x64','arm64']){
+  const {packages}=pinnedArchives({host:{platform:'linux',arch}}).modules;
+  assert.equal(packages.length,23,arch);
+  for(const {file,archive} of packages){assert.match(archive.url,/^https:\/\/registry\.npmjs\.org\//);assert.match(archive.integrity,/^sha512-/);assert.ok(archive.length>0);assert.match(file,/\.tgz$/);}
+ }
 });
 
 test('the synchronous preparation face fetches in one child and returns the verified paths',t=>{

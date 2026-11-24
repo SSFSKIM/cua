@@ -1,0 +1,10 @@
+installing cua's Linux runtime cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d
+installed cua's module tree at /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c
+installed cua's sandbox helper at /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/node/24.22.0
+current.json now names cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-mb71dc1f8185d, cua's own runtime
+installed cua's Linux engine 0.4.4 (linux-engine-v0.4.4) at /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/engine/linux/cua-engine
+installing the vendor's release 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installed the vendor's release 26.928.40906-linux-x64 at /Users/new/.local/share/cua-171/t8/reg/logs/accept/home/cua/runtimes/26.928.40906-linux-x64, kept for CUA_NATIVE_ENGINE=vendor
+sessions here, by what is installed and set: browser-only sessions open; computer sessions open on cua's engine, which this home selects; with CUA_NATIVE_ENGINE=vendor they would open on the vendor's engine

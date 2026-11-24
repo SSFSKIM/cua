@@ -19,6 +19,7 @@ import {createHash} from 'node:crypto';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from '../runtime/errors.mjs';
+import {ownInstaller} from '../runtime/installer.mjs';
 
 export const HELPER_NAME = 'codex-linux-sandbox';
 export const HELPER_PIN_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'sandbox', 'linux-sandbox.json');
@@ -85,22 +86,24 @@ export function helperFor({home, arch, pin = loadHelperPin()}) {
 // helper the pin does not name, a helper that would fail at spawn is refused before anything starts, and nothing runs
 // unconfined in its place. Checked whole on every call (the helper is a few MB), so a file replaced or made
 // non-executable after an earlier check is caught at the next launch.
+// Each remedy names this checkout's own installer by its absolute path (#171 M6a, F9).
 export function verifyHelper(helper) {
   const {path, sha256} = helper ?? {};
+  const install = `\`${ownInstaller().command}\``;
   if (typeof path !== 'string' || typeof sha256 !== 'string')
-    fail('sandbox_unavailable', 'this launch names no Linux sandbox helper, so no JavaScript cell or trusted service can be confined; nothing was started', {hint: 'run cua from a checkout whose runtime/sandbox/linux-sandbox.json pins the helper, then `cua install`'});
+    fail('sandbox_unavailable', 'this launch names no Linux sandbox helper, so no JavaScript cell or trusted service can be confined; nothing was started', {hint: `run cua from a checkout whose runtime/sandbox/linux-sandbox.json pins the helper, then ${install}`});
   let bytes;
   try { bytes = readFileSync(path); } catch (error) {
     fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} is not installed (${error.code ?? 'unreadable'}), so no JavaScript cell or trusted service can be confined; nothing was started`,
-      {hint: 'run `cua install` to fetch and verify it, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
+      {hint: `run ${install} to fetch and verify it, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`});
   }
   let executable = false;
   try { executable = statSync(path).isFile() && (accessSync(path, constants.X_OK), true); } catch { executable = false; }
   if (!executable) fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} is not an executable file, so no JavaScript cell or trusted service can be confined; nothing was started`,
-    {hint: 'run `cua install` to restore its mode, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
+    {hint: `run ${install} to restore its mode, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`});
   const actual = sha256Of(bytes);
   if (actual !== sha256) fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} has SHA-256 ${actual}, not the pinned ${sha256}; it is not run, and nothing was started`,
-    {hint: `remove ${dirname(path)} and run \`cua install\` to place the pinned helper again`});
+    {hint: `remove ${dirname(path)} and run ${install} to place the pinned helper again`});
   return helper;
 }
 

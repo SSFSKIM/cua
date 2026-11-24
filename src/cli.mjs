@@ -8,8 +8,9 @@ import {hostname} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
-import {installLinuxEngine, installMacosEngine, installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
-import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin, refuseUnpinned} from './runtime/linux-engine.mjs';
+import {installMacosEngine, installRuntime, useRuntime} from './runtime/install.mjs';
+import {installLinux} from './runtime/linux-install.mjs';
+import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin} from './runtime/linux-engine.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
 import {approveEngine, buildEngine, candidateRunningText, engineStatus, holdersText, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
@@ -62,10 +63,10 @@ export const usageFor = platform => {
   const {archive, home} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
   const darwin = (PLATFORM_USAGE[platform] ? platform : 'darwin') === 'darwin';
   return `usage: cua <command>
-  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime, then the pinned
+${darwin ? `  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime, then the pinned
           [--node-archive <node tarball> | --no-node]          Node 24 cua's own REPL host runs on (a local
                                                                nodejs.org tarball, or none: the host uses your Node)
-${darwin ? `          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and last cua's engine, built and signed as engine build
+          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and last cua's engine, built and signed as engine build
                                                                does when CUA_NATIVE_ENGINE or ~/.config/cua/engine.json
                                                                selects it, beside the approved one, which keeps serving
                                                                until engine approve (the owner at the console) puts the
@@ -73,11 +74,15 @@ ${darwin ? `          [--engine] [--engine-sign adhoc] [--sign-wait <ms>]  and l
                                                                makes it required (without it a failed build is only
                                                                reported); --engine-sign adhoc and --sign-wait are
                                                                engine build's --sign and --sign-wait
-` : `          [--sandbox-helper <file>]                            and first cua's pinned sandbox helper (a local copy of
-                                                               the release asset instead of the download)
-          [--engine]                                           then cua's pinned Linux engine, which install places in
-                                                               any case: --engine makes it required (without it a missing
-                                                               pin or a failed step is only reported)
+` : `  install [--json]                                             install cua's own runtime: its module tree, its sandbox
+          [--modules-dir <dir>] [--sandbox-helper <file>]      helper and the pinned Node 24 (local copies of the module
+          [--node-archive <node tarball> | --no-node]          tarballs, the helper asset or the nodejs.org tarball; or
+                                                               no Node: sessions then need CUA_NODE); then cua's pinned
+          [--engine]                                           engine and the vendor's release, each tried whatever
+          [--archive <${archive}>] [--release <id>]           happened before: a failed one fails the command only
+                                                               when it is asked for, by --engine or --archive/--release,
+                                                               or by the engine CUA_NATIVE_ENGINE (else engine.json)
+                                                               selects
 `}          [--prune-leftovers]                                  then remove what the Codex CLI left in this home (its
                                                                CODEX_HOME files, a release's unused ${darwin ? 'CodexCLI.app' : 'codex file'}):
                                                                only once every cua using this home is updated, since
@@ -106,7 +111,7 @@ ${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build
                                                                --release) and install it in CUA_HOME as a local build
   engine status [--json]                                       the installed engine's version, build and SHA-256 against
                                                                this cua's pin
-`}  runtime use <release> [--json]                               activate another verified installed release
+`}  runtime use <release> [--json]                               ${darwin ? 'activate another verified installed release' : 'verify cua\'s own runtime again and record it as installed'}
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
                                                                this project's, ~/.config/claude-secrets/projects/<slug>/KEY),
@@ -166,27 +171,25 @@ function progressReporter() {
   };
 }
 
-// The runtime first, then, with --prune-leftovers, the Codex CLI's leftovers in this home are removed
+// On Linux, cua's own runtime and then each engine's lane, every step attempted (src/runtime/linux-install.mjs; #171 M6a).
+// On macOS the runtime first, then, with --prune-leftovers, the Codex CLI's leftovers in this home are removed
 // (src/runtime/codex-leftovers.mjs: each named in the output, none of them a failure; without it install only says
-// they are there), then on Linux cua's sandbox helper (#115 M3: what confines both
-// children there; --sandbox-helper takes a local copy of the pinned asset instead of downloading it), then on Linux
-// cua's own engine (#171: required with --engine, which refuses a cua with no engine pin before anything is installed;
-// without it a missing pin or a failed step is reported and the install goes on), then the own
-// REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
-// or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
-// install without the tarball), and a platform with no Node pin has none to take. Either way the own host then runs on
-// CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused. Last, on
-// macOS, cua's engine (#117 M4, installMacosEngine): built and signed when the setting selects it or --engine asks,
-// and left pending for `cua engine approve` with the owner at the console; install never approves it. --engine means
-// the same on both platforms: cua's engine is required, so only with it does the engine step's failure fail the
+// they are there), then the own REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16),
+// each verified and activated on its own. A failed Node step fails the command after the runtime is in place, saying
+// so; --no-node skips the Node step (an offline install without the tarball), and a platform with no Node pin has none
+// to take. Either way the own host then runs on CUA_NODE or the user's Node 24, else sessions keep the vendor host.
+// Last, on macOS, cua's engine (#117 M4, installMacosEngine): built and signed when the setting selects it or --engine
+// asks, and left pending for `cua engine approve` with the owner at the console; install never approves it. --engine
+// means the same on both platforms: cua's engine is required, so only with it does the engine step's failure fail the
 // install (on macOS after everything else is in place, saying so).
-// `deps` is a test seam of this module API only (the installers, the pins, the home, the host and, for the macOS
-// engine's selection, the environment); the CLI passes none.
-async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installHelper = installSandboxHelper, installEngine = installLinuxEngine,
-  installMacosEngine: macosEngineInstaller = installMacosEngine, enginePin = loadEnginePin, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform, env = process.env} = {}) {
+// `deps` is a test seam of this module API only (the installers, the pins, the home, the host, the environment the
+// engine setting is read from and, on Linux, the record); the CLI passes none.
+async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installMacosEngine: macosEngineInstaller = installMacosEngine,
+  pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform, env = process.env, ...linuxSeams} = {}) {
   const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}, engine: {type: 'boolean'},
-    'engine-sign': {type: 'string'}, 'sign-wait': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
-  if (values['sandbox-helper'] !== undefined && platform !== 'linux') throw new UsageError('install takes --sandbox-helper on Linux only');
+    'engine-sign': {type: 'string'}, 'sign-wait': {type: 'string'}, 'modules-dir': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
+  for (const [flag, given] of [['--sandbox-helper', values['sandbox-helper'] !== undefined], ['--modules-dir', values['modules-dir'] !== undefined]])
+    if (given && platform !== 'linux') throw new UsageError(`install takes ${flag} on Linux only`);
   if (values.engine && platform !== 'linux' && platform !== 'darwin') throw new UsageError('install takes --engine on macOS and Linux only');
   if ((values['engine-sign'] !== undefined || values['sign-wait'] !== undefined) && platform !== 'darwin')
     throw new UsageError('install takes --engine-sign and --sign-wait on macOS only (the Linux engine is not signed)');
@@ -195,13 +198,18 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   // A malformed --sign-wait is the command's error before anything is installed; CUA_SIGN_WAIT_MS is read only by an
   // engine step that runs.
   if (values['sign-wait'] !== undefined) signWaitMs({flag: values['sign-wait']});
-  // --engine requires the engine, so on Linux a cua with no pin for it refuses before anything is installed.
-  const linuxEnginePin = values.engine && platform === 'linux' ? enginePin() : null;
-  if (values.engine && platform === 'linux' && !linuxEnginePin) refuseUnpinned();
+  const onProgress = values.json ? undefined : progressReporter();
+  if (platform === 'linux') {
+    const {host = {platform, arch: process.arch}, ...seams} = linuxSeams;
+    const {ok, report, error} = await installLinux({values, home, env, host, onProgress, installRuntime: runtimeInstaller, installNode: nodeInstaller, pins: pinsOf, nodePins, ...seams,
+      say: values.json ? undefined : print, progress: values.json ? undefined : line => process.stderr.write(`${line}\n`)});
+    if (values.json) { print(report); return ok ? 0 : 1; }
+    if (!ok) throw new CuaError(error.code, error.message, {hint: error.hint});
+    return 0;
+  }
   const pins = pinsOf();
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
   const nodePin = values['no-node'] ? null : selectNodePin(nodePins());
-  const onProgress = values.json ? undefined : progressReporter();
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
   const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
   if (!values.json) print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
@@ -217,44 +225,8 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   }
   if (!values.json) for (const line of codexLeftovers ? describeRemoval(codexLeftovers) : describeLeftovers(findCodexLeftovers({home, pins}))) print(line);
 
-  let sandboxHelper = null;
-  if (platform === 'linux') {
-    try {
-      sandboxHelper = await installHelper({home, path: values['sandbox-helper'], onProgress});
-    } catch (error) {
-      const code = error instanceof CuaError ? error.code : 'sandbox_helper_install_failed';
-      const why = error instanceof CuaError ? error.message : `${error.code ?? 'error'}: ${error.message}`;
-      const remedy = `${result.release} is installed and active; for the helper, run cua install again, or pass --sandbox-helper <file> with the pinned asset (confined sessions are refused without it, CUA_SHIM_SANDBOX=disabled runs unconfined)`;
-      throw new CuaError(code, `cua's sandbox helper was not installed: ${why}`, {hint: error.hint ? `${error.hint}; ${remedy}` : remedy, cause: error});
-    }
-    if (!values.json) print(sandboxHelper.changed ? `installed cua's sandbox helper at ${sandboxHelper.path}` : `cua's sandbox helper is already installed and verified at ${sandboxHelper.path}`);
-  }
-
-  // cua's Linux engine (#171): required with --engine; otherwise a missing pin or a failure is said and the install
-  // goes on, since only a session that selects cua's engine (CUA_NATIVE_ENGINE=cua) needs it.
-  let linuxEngine = null;
-  if (platform === 'linux') {
-    try {
-      const pin = linuxEnginePin ?? enginePin();
-      linuxEngine = pin ? await installEngine({home, pin}) : {skipped: 'unpinned'};
-    } catch (error) {
-      const code = error instanceof CuaError ? error.code : 'linux_engine_install_failed';
-      const why = error instanceof CuaError ? error.message : `${error.code ?? 'error'}: ${error.message}`;
-      if (values.engine) {
-        const remedy = `${result.release} is installed and active; for the engine, run cua install --engine again`;
-        throw new CuaError(code, `cua's Linux engine was not installed: ${why}`, {hint: error.hint ? `${remedy}; ${error.hint}` : remedy, cause: error});
-      }
-      linuxEngine = {failed: {code, message: why}};
-    }
-    if (!values.json) print(linuxEngine.skipped
-      ? 'cua\'s Linux engine is not pinned in this cua yet (runtime/engine/linux-engine.json comes with its first release), so none was installed: sessions that select it (CUA_NATIVE_ENGINE=cua) are refused until one is; cua engine build installs a local build'
-      : linuxEngine.failed ? `cua's Linux engine was not installed: ${linuxEngine.failed.message} (${linuxEngine.failed.code}); sessions that select it are refused until it is: run cua install --engine to retry`
-        : linuxEngine.changed ? `installed cua's Linux engine ${linuxEngine.version} (${linuxEngine.release}) at ${linuxEngine.path}`
-          : `cua's Linux engine ${linuxEngine.version} (${linuxEngine.release}) is already installed and verified at ${linuxEngine.path}`);
-  }
-
   let node;
-  const ownNodeFallback = `cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else ${platform === 'linux' ? 'sessions are refused (Linux has no vendor host)' : 'sessions keep the vendor host'}`;
+  const ownNodeFallback = 'cua\'s own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host';
   if (!nodePin) {
     node = {skipped: values['no-node'] ? 'no_node' : 'unpinned'};
     if (!values.json) print(values['no-node'] ? `skipped the pinned Node (--no-node): ${ownNodeFallback}` : `no Node is pinned for ${process.platform}-${process.arch}: ${ownNodeFallback}`);
@@ -290,8 +262,8 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
       : macosEngine.status === 'warn' ? `cua's engine was not installed: ${macosEngine.message} (${macosEngine.code}); ${macosEngine.hint}`
         : `${engineBuildText(macosEngine)}${afterBuildText(macosEngine)}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}), ...(sandboxHelper ? {sandboxHelper} : {}),
-    ...(linuxEngine ? {engine: linuxEngine} : {}), ...(macosEngine ? {engine: macosEngine} : {}), node});
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}),
+    ...(macosEngine ? {engine: macosEngine} : {}), node});
 }
 
 async function doctor(args) {
@@ -307,10 +279,12 @@ async function doctor(args) {
   return report.ok ? 0 : 1;
 }
 
-async function runtime(args) {
+// `cua runtime use <release>`: on Linux it names only this cua's own runtime (install.mjs useRuntime). `deps` ({home,
+// host}) is a test seam.
+async function runtime(args, {home = defaultHome(), host} = {}) {
   if (args[0] !== 'use') throw new UsageError('runtime takes the subcommand "use"');
   const {values, positionals} = parse(args.slice(1), {}, 1);
-  const result = await useRuntime({home: defaultHome(), release: positionals[0]});
+  const result = await useRuntime({home, release: positionals[0], ...(host ? {host} : {})});
   if (values.json) print({ok: true, release: result.release, root: result.root});
   else print(`active release is now ${result.release}`);
 }
@@ -981,7 +955,7 @@ function rollbackText(rollback) {
 
 const COMMANDS = {install, doctor, runtime, serve, secrets, profiles, chrome, remote, agent, devices, engine};
 
-// `deps` reaches only the install and engine handlers, as their test seams.
+// `deps` reaches only the install, engine and runtime handlers, as their test seams.
 export async function main(argv, deps) {
   const [command, ...rest] = argv;
   const json = rest.includes('--json');
@@ -989,7 +963,7 @@ export async function main(argv, deps) {
     if (command === 'help' || command === '--help' || command === '-h') { print(USAGE); return 0; }
     const handler = COMMANDS[command];
     if (!handler) throw new UsageError(command ? `unknown command "${command}"` : 'missing command');
-    return (await (handler === install || handler === engine ? handler(rest, deps) : handler(rest))) ?? 0;
+    return (await ([install, engine, runtime].includes(handler) ? handler(rest, deps) : handler(rest))) ?? 0;
   } catch (error) {
     if (error instanceof UsageError) {
       process.stderr.write(`cua: ${error.message}\n${USAGE}\n`);

@@ -139,3 +139,32 @@ test('a browser-surface serve names the browser surface and cua\'s browser servi
   assert.doesNotMatch(script, /computer@2025-06-18\.json/);
   assert.match(preflightScript({host: 'cua', display: ':0'}), /computer@2025-06-18\.json/);
 });
+
+// #171 M6a: on Linux a serve's runtime is cua's own, the release the home resolves (its pointer records and selects
+// nothing), and the vendor's sky_linux runs, on the vendor engine's lane, from the vendor tree, which is the root the
+// helper classification calls the pinned runtime. Elsewhere the pointer's release and its tree, as before.
+test('the runtime a serve uses: on Linux the own release it resolves and the vendor tree\'s root; elsewhere the pointer\'s', async t => {
+  const {servedRuntime} = await import('../../scripts/native-baseline/remote.mjs');
+  const {fakeInstalledHome} = await import('../fixtures/installed-home.mjs');
+  const {fakeModuleTree} = await import('../fixtures/own-linux-runtime.mjs');
+  const {homeLayout, writePointer} = await import('../../src/runtime/layout.mjs');
+  const {rmSync} = await import('node:fs');
+  const {join} = await import('node:path');
+  const host = {platform: 'linux', arch: 'x64'};
+  const home = fakeInstalledHome(t, {host});   // the vendor tree, its name in the pointer, and the own module tree
+  const vendorRoot = join(homeLayout(home).runtimes, '26.928.40906-linux-x64');
+  const {release} = fakeModuleTree(home, host);
+  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: vendorRoot}, 'the vendor\'s name in the pointer selects nothing');
+  writePointer(home, release);
+  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: vendorRoot});
+  rmSync(vendorRoot, {recursive: true});
+  assert.deepEqual(servedRuntime({home, host}), {release, runtimeRoot: null}, 'no vendor tree: no sky_linux is the pinned runtime\'s');
+  rmSync(homeLayout(home).modules, {recursive: true});
+  const none = servedRuntime({home, host});
+  assert.equal(none.release, null);
+  assert.match(none.runtimeError, /cua's Linux runtime \S+ is not installed .*module tree .* is missing/);
+  const darwin = fakeInstalledHome(t, {host: {platform: 'darwin', arch: 'arm64'}});
+  assert.deepEqual(servedRuntime({home: darwin, host: {platform: 'darwin', arch: 'arm64'}}), {release: '26.928.40906-darwin-arm64', runtimeRoot: join(darwin, 'runtimes', '26.928.40906-darwin-arm64')});
+  // the device's preflight reports what servedRuntime says
+  assert.match(preflightScript({host: 'cua', display: ':0'}), /servedRuntime\(\{home\}\)/);
+});

@@ -5,15 +5,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {chmodSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, forgeActiveRuntime, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand, openCommand, openInvocation, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
-import {mapExtensionDirectories} from '../src/profiles/directory-map.mjs';
+import {loadClassicLevel, mapExtensionDirectories} from '../src/profiles/directory-map.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
 
 const DARWIN = {platform: 'darwin', arch: 'arm64'};
 
@@ -606,4 +607,24 @@ test('unreadable Chrome cannot bypass a binding made on the ChatGPT extension an
   const {profiles: [p]} = await profileReadiness({home, chrome, listBackends: failing(Object.assign(new Error('bounded launch failed'), {code: 'runtime_unresponsive'}))});
   assert.equal(p.liveReason, 'backends_unlistable');
   assert.match(reasonText(p), /runtime_unresponsive/);
+});
+
+// #171 M6a (the pre-flight's §1.1): `cua profiles bind` maps profile directories with the classic-level of the module
+// directory the runtime resolves (src/cli.mjs passes runtime.paths.moduleDir), which on Linux is cua's ModuleTree, never
+// the vendor's tree beside it.
+test('on Linux the profile map loads classic-level from cua\'s ModuleTree, not the vendor\'s tree', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = realpathSync(s.dir);
+  const LINUX = {platform: 'linux', arch: 'x64'};
+  const {root: vendorRoot} = forgeActiveRuntime(home, {}, {host: LINUX});
+  const runtime = resolveRuntime({home, host: LINUX});
+  assert.ok(runtime.paths.moduleDir.startsWith(join(home, 'modules') + '/'), runtime.paths.moduleDir);
+  const stub = (dir, name) => {
+    mkdirSync(join(dir, 'classic-level'), {recursive: true});
+    writeFileSync(join(dir, 'classic-level', 'index.js'), `exports.ClassicLevel = class ${name} {};\n`);
+  };
+  stub(runtime.paths.moduleDir, 'FromModuleTree');
+  stub(join(vendorRoot, 'cua_node', 'lib', 'node_modules'), 'FromVendorTree');
+  assert.equal(loadClassicLevel(runtime.paths.moduleDir).name, 'FromModuleTree');
 });

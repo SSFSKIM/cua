@@ -84,7 +84,8 @@
 //       preference as they read now; the owner's saved before the first switch (./live-device.mjs saveInputSource,
 //       first record wins), a source selected through `--probe input-source` and read back, the preference written and
 //       read back, and the saved ones restored with the record kept, so the put-back's input-source step verifies them
-//       again. Off a hosted runner every write (save, select, per-context, a scheduled input-source probe) is refused
+//       again. `state` also names the sources the runner's setup could not enable (`venueMissing`, ruling 1189), which
+//       the run never selects. Off a hosted runner every write (save, select, per-context, a scheduled input-source probe) is refused
 //       before it is made: the run reads the owner's values and leaves the rows they do not allow NO VERDICT
 //   load --run <dir>
 //       the Mac's load averages over 1, 5 and 15 minutes, its uptime and its core count (the run's record of the load it
@@ -104,7 +105,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow} from '../hosted-sittings/key-window.mjs';
-import {moveRefusal} from '../hosted-sittings/runner.mjs';
+import {moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {inputWriteRefusal} from './hitoolbox.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
@@ -408,8 +409,11 @@ export async function source(action, {id, value} = {}, io) {
   const refused = inputRefusal(io);
   if (refused && ['save', 'select', 'per-context'].includes(action)) throw new Error(`source ${action}: refused: ${refused}`);
   switch (action) {
-    case 'state': return {writable: !refused, ...(refused ? {refused} : {}), ...reading(io.probe(['input-source', 'current'])), perContext: io.readPerContext()};
-    case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
+    // `venueMissing`: the sources this runner's setup could not enable (ruling 1189), never selected by the run.
+    case 'state': return {writable: !refused, ...(refused ? {refused} : {}), ...reading(io.probe(['input-source', 'current'])), perContext: io.readPerContext(),
+      venueMissing: io.venueInputMissing?.() ?? []};
+    // A baseline the restore could not put back is refused by the save itself ({refused}): the run switches nothing.
+    case 'save': { const out = io.saveInput(); return {kept: out.kept, ...(out.refused ? {refused: out.refused} : {}), saved: out.saved ? {source: out.saved.source?.id ?? null, perContext: out.saved.perContext ?? null} : null}; }
     case 'current': return reading(io.probe(['input-source', 'current']));
     case 'select': {
       if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
@@ -635,6 +639,7 @@ export async function main(argv, {io: given = {}} = {}) {
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
     probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, probeStuck: live.probeStuck, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
     saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
+    venueInputMissing: () => venueInputMissingOf(readRunnerRecord()) ?? [],
     electronRecord: () => electronRecordIn(dir),
     ...given,
   };

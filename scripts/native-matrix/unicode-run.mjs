@@ -19,7 +19,8 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {ownerInputCause, ownerInputMarks} from './owner-input.mjs';
+import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
+import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
@@ -38,14 +39,18 @@ export async function unicodeSection(ctx, plan) {
       const mine = rows.filter(r => r.condition === condition);
       if (!mine.length) continue;
       const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
-      const unset = condition !== 'perContext' && ctx.perContextOff !== true
-        ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
-      const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition]) : null;
+      const venue = venueInputCause(ctx.venueMissing, SELECTS[condition]);
       for (const field of plan.fields) {
         const ofField = mine.filter(r => r.field === field);
         if (!ofField.length) continue;
         await ctx.checkpoint();
-        if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...ownerInputMarks(owned)}); continue; }
+        if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
+        // Off a hosted runner the owner's values are read again at each field: they may have changed since the last.
+        if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `unicode ${condition}:${field}`);
+        const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition], ctx.venueReadOnly) : null;
+        const unset = condition !== 'perContext' && ctx.perContextOff !== true
+          ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
+        if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, owned)}); continue; }
         if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
         if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
         else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
@@ -71,23 +76,28 @@ export const OWNER_NEEDS = Object.freeze({
   perContext: {perContext: true, switch: `${KOREAN_2SET} selected with the driven scene in front and ${ABC} with the user window in front`},
 });
 
-// A source selected through the probe and read back, with the keyboard layout read beside it; off a hosted runner
-// never selected (the owner's changed during the run: it does not hold). -> whether it holds.
+// The sources each condition selects: one the runner's setup could not enable leaves its rows NO VERDICT `venue`
+// (ruling 1189), never run under the US layout.
+export const SELECTS = Object.freeze({latin: [ABC], korean: [KOREAN_2SET], midSwitch: [ABC, KOREAN_2SET], composing: [ABC, KOREAN_2SET], perContext: [ABC, KOREAN_2SET]});
+
+// A source selected through the probe and read back, with the keyboard layout read beside it; off a hosted runner, or
+// one the venue could not enable, never selected (it does not hold). -> whether it holds.
 function useSource(ctx, id, when) {
-  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not selected off a hosted runner (ruling 1188)'}); return false; }
+  if (ctx.venueMissing?.includes(id)) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: 'not enabled on this runner (ruling 1189)'}); return false; }
+  if (ctx.ownerInput) { ctx.meta.unicode.readings.push({when, select: id, held: false, refused: ctx.venueReadOnly ?? 'not selected off a hosted runner (ruling 1188)'}); return false; }
   const out = device(ctx, ['source', 'select', '--source', id]);
   const held = out?.selected === true && out.current === id;
   ctx.meta.unicode.readings.push({when, select: id, held, layout: out?.layout ?? null});
   return held;
 }
 // The source the scene now in front reads, established there: read, selected when it reads another, read back.
-// -> whether it holds.
+// -> {held, read: the source read first}.
 function establishSource(ctx, id, when) {
   const out = device(ctx, ['source', 'current']);
   const current = out?.current ?? null;
-  if (current !== id) return useSource(ctx, id, when);
+  if (current !== id) return {held: useSource(ctx, id, when), read: current};
   ctx.meta.unicode.readings.push({when, current, held: true, layout: out?.layout ?? null});
-  return true;
+  return {held: true, read: current};
 }
 const sourceName = id => (id === ABC ? 'Latin' : 'Korean');
 const notHeld = (id, scene) => `the ${sourceName(id)} source did not hold with ${scene} in front`;
@@ -101,18 +111,24 @@ export const REFOCUS_THROUGH = UNICODE_USERS;
 // already holds focus reads back as the current source while the keyboard layout stays the previous one, the focused
 // client's input method never engaging and keys arriving raw (MAWS B2); a switch the client sees on its focus does
 // engage. So Korean counts only when the reading after the refocus shows 2-Set as the source and its own layout. The
-// reading before the refocus is kept beside it (`pre-refocus`), never judged. -> null when it holds, else why not.
+// reading before the refocus is kept beside it (`pre-refocus`), never judged. -> null when it holds, else {why,
+// mismatch}: `mismatch` ({needed, read, text}) when a reading, before or after the refocus, was another source (off a
+// hosted runner, where nothing is selected, the owner's switch), null when the cause was something else (an
+// activation, the layout).
+const mismatchOf = (needed, read, where) => ({needed, read, text: `the source read ${read ?? 'nothing'} ${where}`});
 function koreanIn(ctx, target, when) {
-  if (!establishSource(ctx, KOREAN_2SET, `${when} pre-refocus`)) return notHeld(KOREAN_2SET, target);
+  const pre = establishSource(ctx, KOREAN_2SET, `${when} pre-refocus`);
+  if (!pre.held) return {why: notHeld(KOREAN_2SET, target), mismatch: mismatchOf(KOREAN_2SET, pre.read, `with ${target} in front`)};
   const other = [REFOCUS_THROUGH[target], ...Object.keys(ctx.records)].find(scene => scene && scene !== target && ctx.records[scene]);
   const away = other ? activate(ctx, other) : null;
   const back = away?.ok ? activate(ctx, target) : null;
-  if (!back?.ok) return `${target} could not be refocused after the Korean source was selected (${!other ? 'no other scene is up' : !away?.ok ? `${other} did not come to the front` : `${target} did not come back to the front`})`;
+  if (!back?.ok) return {why: `${target} could not be refocused after the Korean source was selected (${!other ? 'no other scene is up' : !away?.ok ? `${other} did not come to the front` : `${target} did not come back to the front`})`, mismatch: null};
   const out = device(ctx, ['source', 'current']);
   const current = out?.current ?? null, layout = out?.layout ?? null;
   const held = current === KOREAN_2SET && layout === HANGUL_LAYOUT;
   ctx.meta.unicode.readings.push({when: `${when} post-refocus`, current, layout, held});
-  return held ? null : `the Korean source did not engage in ${target} after its refocus: the source read ${current ?? 'nothing'}, the layout ${layout ?? 'nothing'}`;
+  return held ? null : {why: `the Korean source did not engage in ${target} after its refocus: the source read ${current ?? 'nothing'}, the layout ${layout ?? 'nothing'}`,
+    mismatch: current === KOREAN_2SET ? null : mismatchOf(KOREAN_2SET, current, `in ${target} after its refocus`)};
 }
 const rowBase = (ctx, r) => ({section: 'unicode', id: r.id, engine: ctx.engine, sample: ctx.n, ok: false, scene: r.field, target: r.field, regime: r.regime, method: r.method,
   case: r.string.id, expect: 'outcome', condition: r.condition, ...(r.user ? {user: r.user} : {})});
@@ -128,8 +144,16 @@ async function frontmostRows(ctx, field, rows, source) {
   if (skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: skipped}); return; }
   if (!front?.ok) { for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
   const when = `${rows[0].condition}:${field}`;
-  const why = source === KOREAN_2SET ? koreanIn(ctx, field, when) : establishSource(ctx, source, when) ? null : notHeld(source, field);
-  if (why) { for (const r of rows) invalidRow(ctx, r, why); return; }
+  let failed = null;
+  if (source === KOREAN_2SET) failed = koreanIn(ctx, field, when);
+  else { const latin = establishSource(ctx, source, when); if (!latin.held) failed = {why: notHeld(source, field), mismatch: mismatchOf(source, latin.read, `with ${field} in front`)}; }
+  // Off a hosted runner nothing was selected: another source read, before or after a refocus, is the owner's switch.
+  if (failed?.mismatch && ctx.ownerInput) {
+    const cause = `${ctx.venueReadOnly ?? INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${failed.mismatch.text}`;
+    for (const r of rows) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, cause)});
+    return;
+  }
+  if (failed) { for (const r of rows) invalidRow(ctx, r, failed.why); return; }
   for (const r of rows) await caseRow(ctx, field, 'frontmost', unicodeCase(r), options(r));
 }
 
@@ -162,7 +186,7 @@ async function behindUserPrepared(ctx, field, user) {
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
   if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const korean = koreanIn(ctx, user, `composing@${user}`);
-  if (korean) return {invalid: `no composition in progress: ${korean}`};
+  if (korean) return {invalid: `no composition in progress: ${korean.why}`};
   const prepared = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user));
   if (!prepared.ok || !prepared.value?.ready) return {invalid: `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
   const userWindow = userWindowOf(read(ctx).reading, ctx.records[user].pid);
@@ -242,12 +266,12 @@ async function perContextRows(ctx, field, rows) {
     for (const r of rows) push(ctx, {...rowBase(ctx, r), ...error.row});
     return;
   }
-  const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : 'the driven field was not prepared';
+  const engaged = driven?.ok === true && driven.value?.ready === true ? koreanIn(ctx, field, `perContext:${field}`) : {why: 'the driven field was not prepared'};
   const korean = engaged === null;
   const userFront = activate(ctx, user);
   const latin = userFront?.ok === true && useSource(ctx, ABC, `perContext@${user}`);
   const userWindow = latin ? userWindowOf(read(ctx).reading, ctx.records[user].pid) : null;
-  const before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged}`
+  const before = !on ? 'the per-context preference did not read on' : !korean ? `the driven scene's Korean source was not established while it was in front: ${engaged.why}`
     : !latin ? 'the Latin source was not selected with the user window in front' : !userWindow ? `the user window (${user}) was not in front` : null;
   if (before) { for (const r of rows) invalidRow(ctx, r, before); return; }
   const done = [];
@@ -279,7 +303,7 @@ async function midSwitchRow(ctx, r) {
   const skipped = notActivated(ctx, field);
   if (skipped) return push(ctx, {...rowBase(ctx, r), frontKey: skipped});
   if (!front?.ok) return invalidRow(ctx, r, `${field} did not come to the front`);
-  if (!establishSource(ctx, ABC, `midSwitch:${field}`)) return invalidRow(ctx, r, notHeld(ABC, field));
+  if (!establishSource(ctx, ABC, `midSwitch:${field}`).held) return invalidRow(ctx, r, notHeld(ABC, field));
   const retries = [];
   let preMs = PRE_MS.textedit;
   for (let n = 1; n <= PROBE_ATTEMPTS; n++) {

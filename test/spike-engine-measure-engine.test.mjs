@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {approveEngine, stopEngine, engineStatus, buildProblems, assertApprovedBuild, EngineRefusal} from '../scripts/spike/engine/measure/engine-control.mjs';
-import {rpc, writeApproved, readApproved, probeCopyDir, main as engineDevice} from '../scripts/spike/engine/measure/engine-device.mjs';
+import {inputSource, rpc, writeApproved, readApproved, probeCopyDir, main as engineDevice} from '../scripts/spike/engine/measure/engine-device.mjs';
 import {engineOps} from '../scripts/spike/engine/measure/device.mjs';
 import {startFakeEngine, EngineFailure} from './helpers/fake-engine.mjs';
 
@@ -255,4 +255,17 @@ test('an unreachable engine is thrown with the reason and no errorName', () => {
     assert.deepEqual(error.data, {});
     return true;
   });
+});
+
+// Ruling 1188: the spike's probe (E's lane) selects an input source only on a GitHub-hosted runner; reading the
+// current one runs anywhere. The native probe does not check where it runs (#567), so the caller refuses first.
+test('the spike\'s input-source probe: a selection off a hosted runner is refused before anything launches; a reading is not one', () => {
+  const launched = [];
+  const exec = (cmd, args) => { launched.push(args); fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return ''; };
+  const owners = {env: {}, platform: 'darwin'};
+  assert.throws(() => inputSource('/A/cua Engine.app', 'com.apple.inputmethod.Korean.2SetKorean', {exec, ...owners}), /GitHub-hosted runner/);
+  assert.deepEqual(launched, []);
+  assert.deepEqual(inputSource('/A/cua Engine.app', 'current', {exec, ...owners}), {id: 'com.apple.keylayout.ABC'});
+  assert.deepEqual(inputSource('/A/cua Engine.app', 'com.apple.keylayout.ABC', {exec, env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'}), {id: 'com.apple.keylayout.ABC'});
+  assert.equal(launched.length, 2);
 });

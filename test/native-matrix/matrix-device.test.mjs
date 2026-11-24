@@ -358,7 +358,8 @@ test('source: the owner\'s source and preference saved before the first switch (
   const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current, layout}; current = args[1]; return {selected: true, current: {id: current, layout}}; },
     readPerContext: () => perContext, writePerContext: value => { perContext = value; }, ...HOSTED,
     saveInput: () => ({kept: false, saved: {source: {id: 'com.apple.keylayout.ABC'}, perContext: false}}), restoreInput: async ({keep}) => ({keep, sourceRestored: true, perContextRestored: true})};
-  assert.deepEqual(await source('state', {}, io), {writable: true, current: 'com.apple.keylayout.ABC', layout: 'com.apple.keylayout.ABC', perContext: false});
+  assert.deepEqual(await source('state', {}, io), {writable: true, current: 'com.apple.keylayout.ABC', layout: 'com.apple.keylayout.ABC', perContext: false, venueMissing: []});
+  assert.deepEqual((await source('state', {}, {...io, venueInputMissing: () => ['com.apple.inputmethod.Korean.2SetKorean']})).venueMissing, ['com.apple.inputmethod.Korean.2SetKorean'], 'the sources the runner could not enable (ruling 1189)');
   assert.deepEqual(await source('save', {}, io), {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}});
   assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io),
     {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'}, 'the layout read beside the source');
@@ -382,7 +383,7 @@ test('source and probe off a hosted runner: state reads the owner\'s values and 
       readPerContext: () => null, writePerContext: value => touched.push(`write ${value}`), saveInput: () => touched.push('save'),
       restoreInput: async () => ({sourceRestored: true, perContextRestored: true}), probeLaunch: args => touched.push(args.join(' '))};
     const read = await source('state', {}, io);
-    assert.deepEqual({...read, refused: undefined}, {writable: false, refused: undefined, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext: null});
+    assert.deepEqual({...read, refused: undefined}, {writable: false, refused: undefined, current: 'com.apple.keylayout.US', layout: 'com.apple.keylayout.US', perContext: null, venueMissing: []});
     assert.match(read.refused, /ruling 1188/);
     await assert.rejects(() => source('save', {}, io), /source save: refused: .*ruling 1188/);
     await assert.rejects(() => source('select', {id: 'com.apple.keylayout.ABC'}, io), /source select: refused/);

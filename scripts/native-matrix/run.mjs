@@ -71,6 +71,7 @@ import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
 import {activate, activated, activationOf, AlertGuarded, AlertHeld, appsOf, caseRow, device, focusOf, js, keyReading, mark, notActivated, PASTING, push, read, readKey, readKeyAt, sendKeys, skippedReadings, step, Stop,
   TEXTEDIT, guardLane, guardRow, noteGuard} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
+import {malformedBaseline, ownerInputNow} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
@@ -229,10 +230,11 @@ async function runOnce(options, io) {
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
   // ownerInput: off a hosted runner, the owner's {source, perContext}, which nothing changes (ruling 1188); null on one.
+  // venueMissing: the input sources the runner's setup could not enable (ruling 1189), never selected.
   // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
   // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, out: dryRun ? null : dir, electronExported: false};
+    watcher: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, venueMissing: [], out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -359,23 +361,32 @@ async function runOnce(options, io) {
 async function inputSections(ctx, plan) {
   if (!(plan.concurrent?.length || plan.sheet || plan.intervention?.length || plan.unicode?.fields.length)) return;
   const state = device(ctx, ['source', 'state']);
-  if (state?.writable !== true) {
-    ctx.ownerInput = {source: state?.current ?? null, perContext: state?.perContext ?? null};
-    ctx.perContextOff = ctx.ownerInput.perContext === false;
-    ctx.latin = ctx.perContextOff && ctx.ownerInput.source === ABC;
-    ctx.meta.inputSource = {written: false, refused: state?.refused ?? 'the device did not say it may write the input source', owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
+  // The sources the runner's setup could not enable (ruling 1189): never selected; the rows needing them are NO VERDICT
+  // `venue` (./owner-input.mjs venueInputCause).
+  ctx.venueMissing = Array.isArray(state?.venueMissing) ? state.venueMissing : [];
+  // Read only: off a hosted runner (ruling 1188), or on one whose baseline the restore could not put back (`venue`,
+  // the preference read malformed), refused before anything is written or selected.
+  const readOnly = async (refused, venue = null) => {
+    // The first reading; the probe cells and the Unicode fields read again at each boundary (./owner-input.mjs).
+    ownerInputNow(ctx, state, 'start');
+    if (venue) ctx.venueReadOnly = venue;
+    ctx.meta.inputSource = {written: false, refused, owner: ctx.ownerInput, perContextOff: ctx.perContextOff, latin: ctx.latin};
     await probeCells(ctx, plan);
     if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
-    return;
-  }
+  };
+  if (state?.writable !== true) return readOnly(state?.refused ?? 'the device did not say it may write the input source');
+  const unsupported = malformedBaseline(state.perContext);
+  if (unsupported) return readOnly(unsupported, unsupported);
+  // The save validates its own reading too: one malformed by now is refused there, with no record and nothing switched.
   const saved = device(ctx, ['source', 'save']);
+  if (saved?.refused) return readOnly(saved.refused, saved.refused);
   ctx.meta.inputSource = {savedNow: saved?.kept === false};
   try {
     const off = device(ctx, ['source', 'per-context', '--value', 'off']);
-    const latin = device(ctx, ['source', 'select', '--source', ABC]);
+    const latin = ctx.venueMissing.includes(ABC) ? null : device(ctx, ['source', 'select', '--source', ABC]);
     ctx.perContextOff = off?.perContext === false;
     ctx.latin = ctx.perContextOff && latin?.selected === true && latin.current === ABC;
-    Object.assign(ctx.meta.inputSource, {perContextOff: ctx.perContextOff, latin: ctx.latin});
+    Object.assign(ctx.meta.inputSource, {perContextOff: ctx.perContextOff, latin: ctx.latin, ...(ctx.venueMissing.length ? {venueMissing: ctx.venueMissing} : {})});
     await probeCells(ctx, plan);
     if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
   } finally {

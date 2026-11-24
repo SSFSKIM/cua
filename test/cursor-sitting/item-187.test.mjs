@@ -13,7 +13,7 @@ import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {ADDENDUM_FILE, AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
   item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, READ_TIMEOUT, readTimedOut, legacyTimeout, releaseOf,
-  premiseOpens, RELAUNCH_STABLE_POLLS, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+  premiseOpens, RELAUNCH_STABLE_POLLS, restoreOf, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {cellOutcome, ITEMS as ISO, repPremise} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
@@ -393,6 +393,18 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
   const failedSource = evidence();
   failedSource[ITEMS.end] = endItem({ok: false, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: KOREAN_2SET}, problem: 'read back 2-Set'});
   assert.match(item187Markdown(judge187(failedSource)), /owner's input source NOT restored/);
+  // Off a hosted runner (ruling 1188) the end selects nothing: the read that stands in for it is no failed put-back
+  // when the owner's recorded source still holds, and names what it read when it does not.
+  const noWrite = (current, holds) => ({ok: holds, which: 'owner', switched: false, written: false, holds, requested: 'com.apple.keylayout.ABC', current: {id: current},
+    ...(holds ? {reason: 'com.apple.keylayout.ABC is already the current source: nothing selected'} : {problem: `the step needs com.apple.keylayout.ABC, and the current source reads ${current}: nothing is selected`})});
+  const held = evidence();
+  held[ITEMS.end] = endItem(noWrite('com.apple.keylayout.ABC', true));
+  assert.deepEqual(restoreOf(held[ITEMS.end], {recorded: true, stopped: null}), {ok: true, requested: 'com.apple.keylayout.ABC', current: 'com.apple.keylayout.ABC', written: false, why: null});
+  assert.equal(judge187(held).overall.why.some(w => /input source/.test(w)), false);
+  assert.match(item187Markdown(judge187(held)), /owner's input source held \(com\.apple\.keylayout\.ABC, read; nothing selected off a hosted runner\)/);
+  const moved = evidence();
+  moved[ITEMS.end] = endItem(noWrite(KOREAN_2SET, false));
+  assert.match(judge187(moved).overall.why.join('; '), /the owner's recorded input source com\.apple\.keylayout\.ABC does not hold, nothing selected off a hosted runner: the step needs com\.apple\.keylayout\.ABC, and the current source reads com\.apple\.inputmethod\.Korean\.2SetKorean/);
 });
 
 test('the bar\'s watchers: a gap past 50 ms, an unreconciled total, a tail raise or an unattributed raise each fail it; a raise inside the kit\'s own setup does not', () => {

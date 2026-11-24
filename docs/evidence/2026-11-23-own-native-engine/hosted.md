@@ -1988,38 +1988,56 @@ false`), reused it, wrote the preference off again, and failed the same way. Eve
 **"Unset" is restorable (ruling 1181).** `scripts/native-matrix/hitoolbox.mjs` holds every read and write of the
 domain.
 
-- **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`).
-- **Unsetting.** `unsetPerContext` makes the domain as it was:
+- **Reading.** `readPerContextState` reads the exact typed key from one snapshot (`defaults export`, then `plutil
+  -type` and `-extract … raw` on that one output): the dictionary's presence and the key's value come from the same
+  reading. A string where the dictionary belongs, or a number where the Boolean belongs, is `{malformed: why}`, never
+  "unset". A malformed owner's value is never written back: the restore holds only while it still reads as saved, and
+  the failure says to set it by hand. A hosted run whose baseline reads malformed therefore writes nothing: the
+  matrix refuses at its first reading, and the save refuses its own reading too (no record, `{refused}`), so no `off`
+  write or selection follows a valid first reading that went malformed. The run reads only, and the rows needing a
+  write are NO VERDICT `venue` (a disposable runner's precondition, not the owner's state) naming why; so are the
+  live harness's Korean checks.
+- **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`), taken with the
+  value from the same typed read.
+- **Unsetting.** `unsetPerContext` runs `scripts/native-matrix/unset-per-context.sh`, the one implementation, which a
+  person can run by hand too. Off a GitHub-hosted runner it refuses before any defaults call, whatever the domain's
+  spelling (a path may be the owner's own plist), unless run with `--manual-recovery`: the owner's own recovery, the
+  mode every failure names. The tests' scratch domains pass the hosted environment or the mode.
   1. It reads the domain through cfprefsd: `defaults export com.apple.HIToolbox -`.
-  2. It extracts the dictionary and removes the one key with plutil: `plutil -extract AppleGlobalTextInputProperties
-     xml1 -o - -`, then `plutil -remove TextInputGlobalPropertyPerContextInput -o - -`.
-  3. It writes back only that top-level key: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties
+  2. With the dictionary, or the key in it, already absent it prints `none` and writes nothing: it is safe to repeat.
+     A dictionary key that is not a dictionary stops it, nothing written.
+  3. It extracts the dictionary and removes the one key with plutil (`plutil -extract AppleGlobalTextInputProperties
+     xml1`, then `plutil -remove TextInputGlobalPropertyPerContextInput`). Under `set -e` an export, type check,
+     extraction or removal that fails stops it before any write, and so does a removal that prints no property list:
+     defaults never receives an empty value or a string.
+  4. It writes back only that top-level key: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties
      '<the XML>'`. defaults parses an XML property list value, so every remaining value keeps its type: integer, real,
      date, data and nested collections. `defaults read-type` then confirms the key is still a dictionary.
-  4. When the record says the dictionary was absent before the run and nothing else is left in it, it deletes the key
-     instead: `defaults delete com.apple.HIToolbox AppleGlobalTextInputProperties`.
+  5. With `--delete-if-empty` (the record says the dictionary was absent before the run) and nothing else left in it,
+     it deletes the key instead: `defaults delete com.apple.HIToolbox AppleGlobalTextInputProperties`.
 - **What it never does.** No other top-level key is written: the input sources the owner may switch during a run
   stay theirs. There is no domain import and no plist file edit, which cfprefsd's cache would override.
 - **Old records.** A record saved before this change has no `perContextDict`. Restoring it leaves an empty dictionary
   rather than delete one the owner may have had.
-- **The tests.** `test/native-matrix/hitoolbox.test.mjs` runs the real defaults and plutil against a scratch property
-  list standing in for the domain. It checks that the other nested keys come back byte for byte, that the only write
-  is the one key, that an owner's change to another top-level key during the run survives, and that the delete happens
-  only when the run created the dictionary. It also runs the failure's own command through a shell.
+- **The tests.** `test/native-matrix/hitoolbox.test.mjs` runs the real defaults, plutil and script against a scratch
+  property list standing in for the domain. It checks the typed reads (malformed included), that the other nested
+  keys come back byte for byte, that an owner's change to another top-level key during the run survives, that the
+  delete happens only when the run created the dictionary, that a second run writes nothing, and that an export,
+  extraction, type check or removal that fails (a stand-in tool) leaves the domain unchanged. It also runs the
+  failure's own command through a shell, twice.
 
 **Read back after a settle.** `restoreInputSource` restores the source and the preference in rounds, as Finder's keys
 are (`RESTORE_SETTLE_MS` 1 s, `RESTORE_ROUNDS` 3). Each round selects the source and writes the preference where
 either differs, waits the settle, and reads both again. It ends at the first round that wrote nothing and read both as
 the owner's, so a successful restore takes one round past its last write. A value the text input system writes back
 late is therefore written again. A restore that does not hold after three rounds fails, naming the preference, the
-owner's value and the exact command that sets it back. It never names a System Settings toggle, which cannot express
-"unset":
+owner's value and the exact command that sets it back; so does a restore whose read, write or probe throws, which
+keeps the record. It never names a System Settings toggle, which cannot express "unset":
 
 - on: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true`
 - off: the same with `-bool false`
-- unset: `defaults write com.apple.HIToolbox AppleGlobalTextInputProperties "$(defaults export com.apple.HIToolbox - | plutil -extract AppleGlobalTextInputProperties xml1 -o - - | plutil -remove TextInputGlobalPropertyPerContextInput -o - -)"`.
-  When the dictionary was absent before the run, the command is `defaults delete com.apple.HIToolbox
-  AppleGlobalTextInputProperties` if that key is its only one, otherwise the rewrite above.
+- unset: `sh scripts/native-matrix/unset-per-context.sh --manual-recovery` from the harness checkout, with
+  `--delete-if-empty` when the dictionary was absent before the run.
 
 **A record a failed run left.** The record is removed only once both values read back. One that stays now refuses
 the next run's `begin` (`scripts/native-matrix/live-device.mjs`). The refusal names the record, the owner's source and
@@ -2037,7 +2055,12 @@ their typing in every app. Every selection and every HIToolbox write therefore r
 - matrix-device's `source save|select|per-context` and `probe input-source`;
 - `saveInputSource`;
 - the cursor sitting's selection. The owner's recorded yes no longer switches anything there; the series' own source
-  check decides, as with no yes.
+  check decides, as with no yes;
+- the spike's `engine-device.mjs` `inputSource` selection (`scripts/spike/engine/measure/`).
+
+The native probes themselves (`Probe.swift`'s `input-source`, `scripts/cursor-sitting/input-source.swift`) do not
+check the venue: they select whatever they are asked. Every harness caller therefore checks before it runs one, and a
+new caller must too. Moving the check into the probes waits for the next engine bump (#567).
 
 Off a hosted runner the harness only reads:
 
@@ -2047,10 +2070,20 @@ Off a hosted runner the harness only reads:
   conditions switch a source during the row, so they never run there.
 - Every row the owner's values do not allow is NO VERDICT `ownerInput` (`scripts/native-matrix/owner-input.mjs`,
   `front-key.mjs` `sampleCause`). Its cause names the preference or source and the value the row needed.
+- The owner may switch during a run, so the matrix reads `source state` again at each probe sample and each Unicode
+  field (`owner-input.mjs` `ownerInputNow`), never trusting the first reading. A change is kept in
+  `meta.inputSource.drift` (`{at, from, to}`), and the rows it rules out are `ownerInput`. A Latin or Korean source that
+  does not hold with the field in front is the owner's there too, so `ownerInput`, not a generic invalid row.
 - `summary.mjs` counts `ownerInput` per side in the NO VERDICT line and per cell, so the report shows what the owner's
-  machine could not judge.
+  machine could not judge. The per-context rows stay out of the verdict (ruling 1119), but the not-judged section
+  counts their `ownerInput` and `venue` samples.
 - The live harness's `input-source` check is NO VERDICT. Its paste check's Korean window measures type_text only when
-  the owner is already on Korean 2-Set with the preference off; otherwise type_text is NO VERDICT with its cause.
+  the owner is already on Korean 2-Set with the preference off; otherwise type_text is NO VERDICT with its cause. A
+  measured failure in the same check (a paste that did not land, the clipboard's types changed) is the headline,
+  NOT PASSED, with type_text's NO VERDICT named beside it.
+- The cursor sitting's selection becomes a read (`input-source.mjs` `switchSource`): the step holds only when the
+  source it needs is already current, and its result says nothing was written (`written: false`, `holds`). #187's end
+  verifies that the owner's recorded source still holds, without selecting it, and a held one is no failed put-back.
 - A record found there (one left before this ruling) is only read: it is removed once the owner's values read back as
   saved, and named otherwise.
 
@@ -2064,3 +2097,68 @@ Off a hosted runner the harness only reads:
 The next hosted C pilot proves the first. The input sections' restore should read `meta.inputSource.restored: true`.
 The put-back's input-source step should then read `perContextRestored: true` and remove the record, and the save-sheet
 lanes should begin.
+
+### The runner's input sources (ruling 1189)
+
+**What pilot C also showed.** The hosted image enables U.S. alone. Every Latin and Korean selection read
+`com.apple.keylayout.US` back, so all 5 probe-cell rows and all 225 unicode rows were invalid. Fixing the restore lets
+C complete, but without this step its input rows could never be judged.
+
+**The step.** A new setup step, `input sources`, runs after `textedit defaults` and before the runs
+(`scripts/hosted-sittings/input-sources.mjs`, `input-sources.swift`). It is hosted only: the module asserts it
+(`assertGithubHosted`), and the Swift helper's `enable` refuses off a GitHub-hosted runner itself, before any TIS call,
+however it is run; its `list` is a read and runs anywhere. Each helper call is bounded (120 s); one that outlives it
+is recorded, its sources missing.
+
+- **What it enables.** com.apple.keylayout.ABC, then com.apple.inputmethod.Korean (the input method, never
+  selectable itself), then com.apple.inputmethod.Korean.2SetKorean (its mode).
+- **How.** TISEnableInputSource, the call System Settings makes. It never writes AppleEnabledInputSources and never
+  selects a source: the runs select through the approved bundle's probe.
+- **The IDs** were read from macOS's own data, not from memory:
+  - KoreanIM.app's `KIM_Extension.appex` Info.plist (`TISInputSourceID` com.apple.inputmethod.Korean; `tsInputModeListKey`
+    holding com.apple.inputmethod.Korean.2SetKorean).
+  - The helper's read-only `list` on macOS 27. ABC is `TISTypeKeyboardLayout`, selectable. The Korean input method is
+    `TISTypeKeyboardInputMethodModeEnabled`, enable-capable and not selectable. 2SetKorean is `TISTypeKeyboardInputMode`,
+    selectable.
+- **No restore.** The VM is thrown away after the job, as with TextEdit's preferences.
+
+**The read-back.** A fresh process (`input-sources.swift list`) reads the sources after a 1 s settle, up to 3 times.
+
+- A source a run selects holds only when TIS's enabled list (`TISCreateInputSourceList`, enabled only) lists it,
+  enabled and selectable. The input method holds when it is listed and enabled. A mode is usable only with its input
+  method.
+- The preference's value (com.apple.HIToolbox AppleEnabledInputSources, read through cfprefsd) is recorded beside the
+  list and never judged: the rows depend on the list.
+- Both readings go into `venue.inputSources` in the runner's record, and sitting.md's venue section renders a table:
+  each source's enable status, its place in TIS's list, the preference, and whether it held.
+
+**A source that does not hold.** It does not fail the setup or the sitting.
+
+- It is named in `venue.inputSources.missing`, and the device's `source state` passes it on (`venueMissing`,
+  `scripts/hosted-sittings/runner.mjs` `venueInputMissingOf`).
+- The run never selects it. Every row that selects it is NO VERDICT `venue`, its cause naming the source: the probe
+  cells and the Latin rows need ABC, the Korean rows need 2-Set, and the mid-switch, composition and per-context rows
+  need both. None runs under the US layout to be judged.
+- `summary.mjs` counts `venue` per side in its NO VERDICT line.
+- The live harness reads the same record: without Korean 2-Set, its paste check's Korean window and its
+  `input-source` check save and select nothing, and type_text is NO VERDICT `venue`. A measured plain-text or Markdown
+  failure in the same check stays its headline.
+
+**Unproven until a hosted run:**
+
+- whether TISEnableInputSource takes from the job's process on the runner, and whether the enabled list shows the
+  sources in a fresh process without a logout. The step's read-back answers both: if not, the rows are NO VERDICT
+  `venue`, named;
+- whether a source just enabled can be selected by the approved bundle's probe at once. The matrix reads each
+  selection back, as before.
+
+**The time it adds.** The step itself takes seconds: three swift runs, each compiling its script first, about 10 s on
+a runner, plus up to 3 s of settles. Each C run will also run its input rows for real, where pilot C's ended
+invalid at once:
+- the five probe cells, each a scheduled probe and up to three attempts;
+- the 225 unicode rows, each a facade call, with source reads and selections around each group.
+
+Pilot C's matrix-vendor-1 took 1408 s with those rows invalid. From the measured rows' cost (method rows about 0.47 s
+of wall each, speed rows about 0.44 s) and the probes' launches (about 1 to 2 s each), expect roughly 3 to 6 minutes
+more per run, so a full C sitting grows by about 20 to 35 minutes. That is an estimate until the next pilot measures it.
+

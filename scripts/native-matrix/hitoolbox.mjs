@@ -10,13 +10,15 @@
 // The one key (ruling 1181: every preference the harness changes is restored and read back). The per-context
 // preference is a key inside a dictionary, com.apple.HIToolbox AppleGlobalTextInputProperties
 // TextInputGlobalPropertyPerContextInput. Setting it uses `defaults write … -dict-add`. Putting back an owner's "unset"
-// removes just that nested key: the dictionary is read through cfprefsd (`defaults export`), the key removed by plutil,
-// and the dictionary written back as that one top-level key's value (`defaults write <domain> <key> <XML>`, which keeps
-// every value's type, integer, real, date and data included). The dictionary's other keys, and every other key of
+// removes just that nested key (./unset-per-context.sh, the one implementation, which a person can also run): the
+// dictionary is read through cfprefsd (`defaults export`), the key removed by plutil, and the dictionary written back
+// as that one top-level key's value (`defaults write <domain> <key> <XML>`, which keeps every value's type, integer,
+// real, date and data included). The dictionary's other keys, and every other key of
 // the domain (the input sources the owner may switch during a run), are never written. A dictionary the run created
 // (absent before it, empty once the key is gone) is deleted, so the domain is as the owner had it. Never a whole-domain
 // import, never an edit of the plist file, which cfprefsd's cache would override.
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {assertGithubHosted, isGithubHosted} from '../hosted-sittings/runner.mjs';
 
 export const HITOOLBOX = 'com.apple.HIToolbox';
@@ -29,8 +31,6 @@ export const PER_CONTEXT_NAME = `the per-context input preference (${HITOOLBOX} 
 const PREFERENCE_MS = 15_000;
 const run = (cmd, args, options = {}) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: PREFERENCE_MS, ...options});
 const failure = error => String(error.stderr || error.message).trim().slice(0, 200);
-// How `defaults read` says a key is unset (exit 1): macOS 26 "does not exist", macOS 27 "Could not find key".
-const UNSET = /does not exist|Could not find/;
 
 // Why the harness may not write the input source or this domain here, or null on a GitHub-hosted runner. `at`: the
 // device's {env, platform}, the process's by default.
@@ -41,21 +41,27 @@ export const assertInputWrite = (what, {env = process.env, platform = process.pl
 // current one (`input-source current`) writes nothing.
 export const selectsSource = args => args[0] === 'input-source' && args[1] !== 'current';
 
-// `defaults read com.apple.HIToolbox AppleGlobalTextInputProperties` (old-style text): the per-context preference,
-// true or false, or null when it is not set.
-export function parsePerContext(text) {
-  const match = new RegExp(`${PER_CONTEXT_KEY}\\s*=\\s*(\\d+);`).exec(String(text ?? ''));
-  return match ? match[1] !== '0' : null;
-}
-
-// The dictionary's presence and the preference's value. -> {dict: boolean, value: true | false | null}.
+// The preference read as typed, from one snapshot of the domain (`defaults export` through cfprefsd, then plutil on
+// its output): the dictionary's presence and the key's value. A key that is not a Boolean, or a top-level value that is
+// not a dictionary, is malformed, never "unset". -> {dict: boolean, value: true | false | null | {malformed: why}}.
+const NO_VALUE = /No value at that key path/;
 export function readPerContextState({exec = run} = {}) {
-  let text;
-  try { text = exec('/usr/bin/defaults', ['read', HITOOLBOX, GLOBAL_PROPERTIES]); } catch (error) {
-    if (error.status === 1 && UNSET.test(String(error.stderr ?? ''))) return {dict: false, value: null};
-    throw new Error(`could not read ${PER_CONTEXT_NAME}: ${failure(error)}`);
-  }
-  return {dict: true, value: parsePerContext(text)};
+  let exported;
+  try { exported = exec('/usr/bin/defaults', ['export', HITOOLBOX, '-']); } catch (error) { throw new Error(`could not read ${PER_CONTEXT_NAME}: ${failure(error)}`); }
+  const type = keyPath => {
+    try { return exec('/usr/bin/plutil', ['-type', keyPath, '-'], {input: exported}).trim(); } catch (error) {
+      if (NO_VALUE.test(String(error.stderr ?? ''))) return null;
+      throw new Error(`could not read ${PER_CONTEXT_NAME}: ${failure(error)}`);
+    }
+  };
+  const dictType = type(GLOBAL_PROPERTIES);
+  if (dictType === null) return {dict: false, value: null};
+  if (dictType !== 'dictionary') return {dict: true, value: {malformed: `${GLOBAL_PROPERTIES} is a ${dictType}, not a dictionary`}};
+  const keyType = type(`${GLOBAL_PROPERTIES}.${PER_CONTEXT_KEY}`);
+  if (keyType === null) return {dict: true, value: null};
+  if (keyType !== 'bool') return {dict: true, value: {malformed: `${PER_CONTEXT_KEY} is a ${keyType}, not a Boolean`}};
+  const raw = exec('/usr/bin/plutil', ['-extract', `${GLOBAL_PROPERTIES}.${PER_CONTEXT_KEY}`, 'raw', '-o', '-', '-'], {input: exported}).trim();
+  return {dict: true, value: raw === 'true'};
 }
 
 // The preference set on or off (the dictionary's other keys kept: -dict-add).
@@ -64,43 +70,32 @@ export function writePerContext(value, {exec = run, env, platform} = {}) {
   exec('/usr/bin/defaults', ['write', HITOOLBOX, GLOBAL_PROPERTIES, '-dict-add', PER_CONTEXT_KEY, '-bool', value ? 'true' : 'false']);
 }
 
-// The preference unset again: the nested key removed and only the one top-level key written back, or deleted when the
-// run created it (`dictBefore` false, the saved record's) and nothing else is left in it. `dictBefore` unknown (a
-// record saved before it was kept) leaves an empty dictionary rather than delete one the owner may have had.
-// -> {changed: 'none' | 'rewritten' | 'deleted'}.
-const EMPTY_DICT = /<plist[^>]*>\s*<dict\s*\/>\s*<\/plist>/;
-export function unsetPerContext({dictBefore, exec = run, env, platform} = {}) {
+// The preference unset again through ./unset-per-context.sh: the nested key removed and only the one top-level key
+// written back, or deleted when the run created it (`dictBefore` false, the saved record's) and nothing else is left in
+// it. `dictBefore` unknown (a record saved before it was kept) leaves an empty dictionary rather than delete one the
+// owner may have had. It fails closed and writes nothing when the key is already absent. `domain`: a scratch plist's
+// path in tests. -> {changed: 'none' | 'rewritten' | 'deleted'}.
+export const UNSET_SCRIPT = fileURLToPath(new URL('./unset-per-context.sh', import.meta.url));
+export function unsetPerContext({dictBefore, exec = run, env, platform, domain = HITOOLBOX} = {}) {
   assertInputWrite('unsetting the per-context input preference', {env, platform});
-  const domain = exec('/usr/bin/defaults', ['export', HITOOLBOX, '-']);
-  let dict, rest;
-  try { dict = exec('/usr/bin/plutil', ['-extract', GLOBAL_PROPERTIES, 'xml1', '-o', '-', '-'], {input: domain}); } catch (error) {
-    if (/No value at that key path/.test(String(error.stderr ?? ''))) return {changed: 'none'};
-    throw new Error(`could not read ${GLOBAL_PROPERTIES} from ${HITOOLBOX}: ${failure(error)}`);
+  let out;
+  // The script guards itself too (hosted or --manual-recovery): it gets the environment this call was judged on.
+  const scriptEnv = {...process.env, ...(env ?? {})};
+  try { out = exec('/bin/sh', [UNSET_SCRIPT, ...(dictBefore === false ? ['--delete-if-empty'] : []), domain], {env: scriptEnv}).trim(); } catch (error) {
+    throw new Error(`could not unset ${PER_CONTEXT_NAME}: ${failure(error)}`);
   }
-  try { rest = exec('/usr/bin/plutil', ['-remove', PER_CONTEXT_KEY, '-o', '-', '-'], {input: dict}); } catch (error) {
-    if (/No value to remove/.test(String(error.stderr ?? ''))) return {changed: 'none'};
-    throw new Error(`could not remove ${PER_CONTEXT_KEY} from ${GLOBAL_PROPERTIES}: ${failure(error)}`);
-  }
-  if (dictBefore === false && EMPTY_DICT.test(rest)) {
-    exec('/usr/bin/defaults', ['delete', HITOOLBOX, GLOBAL_PROPERTIES]);
-    return {changed: 'deleted'};
-  }
-  exec('/usr/bin/defaults', ['write', HITOOLBOX, GLOBAL_PROPERTIES, rest]);
-  // defaults stores a value it cannot parse as a property list as a string: a dictionary that came back as anything
-  // else is a broken write, never a restore.
-  const type = exec('/usr/bin/defaults', ['read-type', HITOOLBOX, GLOBAL_PROPERTIES]);
-  if (!/dictionary/.test(type)) throw new Error(`${GLOBAL_PROPERTIES} was written back as ${type.trim()}, not a dictionary`);
-  return {changed: 'rewritten'};
+  if (!['none', 'rewritten', 'deleted'].includes(out)) throw new Error(`could not unset ${PER_CONTEXT_NAME}: the script printed ${JSON.stringify(out.slice(0, 80))}`);
+  return {changed: out};
 }
 
 // The owner's value as a person reads it.
-export const ownerValueName = value => (value === true ? 'on' : value === false ? 'off' : 'unset');
+export const ownerValueName = value => (value === true ? 'on' : value === false ? 'off' : value?.malformed ? `malformed (${value.malformed})` : 'unset');
 // The exact command that sets the preference back to the owner's value (`dictBefore`: whether the dictionary existed
-// before the run). For "unset" it is what unsetPerContext runs, as one shell line; a System Settings toggle cannot
-// express it.
+// before the run). For "unset" it is the script unsetPerContext runs, from the harness checkout, in its owner's
+// manual-recovery mode (off a hosted runner a plain run refuses the real domain); a System Settings toggle cannot
+// express it. Each is safe to repeat.
 export function perContextCommand(owner, {dictBefore} = {}) {
-  if (owner !== null) return `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} -dict-add ${PER_CONTEXT_KEY} -bool ${owner ? 'true' : 'false'}`;
-  const rewrite = `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} "$(defaults export ${HITOOLBOX} - | plutil -extract ${GLOBAL_PROPERTIES} xml1 -o - - | plutil -remove ${PER_CONTEXT_KEY} -o - -)"`;
-  if (dictBefore !== false) return rewrite;
-  return `defaults delete ${HITOOLBOX} ${GLOBAL_PROPERTIES} when ${PER_CONTEXT_KEY} is its only key (the dictionary was absent before the run; \`defaults read ${HITOOLBOX} ${GLOBAL_PROPERTIES}\` shows it), else ${rewrite}`;
+  if (owner === true || owner === false) return `defaults write ${HITOOLBOX} ${GLOBAL_PROPERTIES} -dict-add ${PER_CONTEXT_KEY} -bool ${owner ? 'true' : 'false'}`;
+  if (owner?.malformed) return `none: the owner's value was saved malformed (${owner.malformed}); set ${PER_CONTEXT_NAME} by hand`;
+  return `sh scripts/native-matrix/unset-per-context.sh --manual-recovery${dictBefore === false ? ' --delete-if-empty' : ''} (in the harness checkout)`;
 }

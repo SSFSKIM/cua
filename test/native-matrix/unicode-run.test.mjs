@@ -174,6 +174,29 @@ test('Korean counts only on its layout after the target is refocused: a selectio
     JSON.stringify(raw.result.rows[0]));
 });
 
+// Off a hosted runner nothing is selected, so a source that reads otherwise during the refocus is the owner's switch:
+// NO VERDICT ownerInput. A refocus whose activation failed is not: it stays a generic invalid row.
+test('off a hosted runner: a source switched during the Korean refocus is NO VERDICT ownerInput; a failed refocus activation stays invalid', async () => {
+  const plan = {...planOf('korean', {scene: 'textedit'}), unicode: {fields: ['textedit'], conditions: ['korean']}};
+  const owner = {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...KOREAN, perContext: false};
+  const run = ({readAfterRefocus = KOREAN, refocusFails = false}) => {
+    let reads = 0;
+    return runWith({plan, cellName: 'korean', ops: {matrix: (base, a) => {
+      if (a[0] === 'source' && a[1] === 'state') return {...base(a), answer: owner};
+      if (a[0] === 'source' && a[1] === 'current') { reads += 1; return {...base(a), answer: reads === 1 ? KOREAN : readAfterRefocus}; }
+      // Only the refocus fails: the activation away from textedit once its source was read.
+      if (refocusFails && reads > 0 && a[0] === 'step' && a[1] === 'activate' && a[2] !== 'textedit') { const out = base(a); return {...out, answer: {...out.answer, ok: false, reason: 'did not come to the front'}}; }
+      return base(a);
+    }}});
+  };
+  const switched = await run({readAfterRefocus: LATIN});
+  assert.ok(switched.result.rows.length > 0 && switched.result.rows.every(r => sampleCause(r).category === 'ownerInput'), JSON.stringify(switched.result.rows[0]));
+  assert.match(switched.result.rows[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.inputmethod\.Korean\.2SetKorean, and the source read com\.apple\.keylayout\.ABC in textedit after its refocus$/);
+  assert.deepEqual(sources(switched.steps).filter(s => !['current', 'state'].includes(s)), [], 'nothing selected');
+  const failed = await run({refocusFails: true});
+  assert.ok(failed.result.rows.length > 0 && failed.result.rows.every(r => !r.ownerInput && /^textedit could not be refocused after the Korean source was selected/.test(r.invalid)), JSON.stringify(failed.result.rows[0]));
+});
+
 test('the per-context condition reads the driven scene\'s source again for a while after bringing it back, since the switch follows the activation', async () => {
   const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['perContext']}};
   // Chrome's context reads Latin on the first reading after it comes back, Korean on the second.
@@ -356,7 +379,7 @@ test('off a hosted runner: the rows the owner\'s source allows run; the rest are
   const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
   assert.equal(code, 0, JSON.stringify(result.problems));
   assert.deepEqual(validateCellResult(result), []);
-  assert.deepEqual(sources(steps).filter(s => s !== 'current'), ['state'], 'never saved, selected, written or restored');
+  assert.deepEqual(sources(steps).filter(s => !['current', 'state'].includes(s)), [], 'never saved, selected, written or restored: only read');
   assert.deepEqual(matrixSteps(steps, 'probe').filter(a => a[1] === 'input-source'), [], 'no switch scheduled');
   assert.deepEqual(result.meta.inputSource, {written: false, refused: owner.refused, owner: {source: KOREAN_2SET, perContext: false}, perContextOff: true, latin: false});
   const byCondition = c => result.rows.filter(r => r.condition === c);
@@ -371,4 +394,62 @@ test('off a hosted runner: the rows the owner\'s source allows run; the rest are
   assert.match(byCondition('latin')[0].ownerInput, /the row needs the input source com\.apple\.keylayout\.ABC, the owner's is com\.apple\.inputmethod\.Korean\.2SetKorean$/);
   assert.match(byCondition('midSwitch')[0].ownerInput, /the row needs the input source switched to com\.apple\.inputmethod\.Korean\.2SetKorean during its typing$/);
   assert.match(byCondition('perContext')[0].ownerInput, /the per-context input preference \(com\.apple\.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput\) on, the owner's is off, and /);
+});
+
+// The owner may switch during a run: off a hosted runner each field's rows are held against a reading taken at that
+// field, never the run's first. Here the owner is on Korean at the start and on ABC from the first field on: the Latin
+// rows run, the Korean ones are NO VERDICT ownerInput naming ABC, and the change is kept.
+test('off a hosted runner the owner\'s values are read again at each field: a change is followed and kept, and its rows are NO VERDICT ownerInput', async () => {
+  let reads = 0, current = KOREAN;
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'state') {
+      reads += 1;
+      if (reads > 1) current = LATIN;
+      return {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...current, perContext: false}};
+    }
+    return a[0] === 'source' && a[1] === 'current' ? {...base(a), answer: current} : base(a);
+  }};
+  const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  const byCondition = c => result.rows.filter(r => r.condition === c);
+  const fields = new Set(result.rows.map(r => `${r.condition}:${r.scene}`)).size;
+  assert.equal(sources(steps).filter(s => s === 'state').length, 1 + fields, 'the start, then once at each condition\'s field');
+  assert.ok(byCondition('latin').length > 0 && byCondition('latin').every(r => r.ok === true && !r.ownerInput), JSON.stringify(byCondition('latin')[0]));
+  assert.ok(byCondition('korean').length > 0 && byCondition('korean').every(r => sampleCause(r).category === 'ownerInput'));
+  assert.match(byCondition('korean')[0].ownerInput, /the row needs the input source com\.apple\.inputmethod\.Korean\.2SetKorean, the owner's is com\.apple\.keylayout\.ABC$/);
+  assert.deepEqual(result.meta.inputSource.drift, [{at: `unicode latin:${byCondition('latin')[0].scene}`, from: {source: KOREAN_2SET, perContext: false}, to: {source: LATIN.current, perContext: false}}]);
+  assert.deepEqual(sources(steps).filter(s => !['current', 'state'].includes(s)), [], 'never saved, selected, written or restored');
+  // A change inside the field, after its boundary's reading: the source read with the field in front decides, and the
+  // rows are NO VERDICT ownerInput, not a generic invalid one.
+  const inside = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'state' ? {...base(a), answer: {writable: false, refused: 'off a GitHub-hosted runner … (ruling 1188)', ...LATIN, perContext: false}}
+    : a[0] === 'source' && a[1] === 'current' ? {...base(a), answer: KOREAN} : base(a))};
+  const late = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops: inside});
+  const latin = late.result.rows.filter(r => r.condition === 'latin');
+  assert.ok(latin.length > 0 && latin.every(r => sampleCause(r).category === 'ownerInput'), JSON.stringify(latin[0]));
+  assert.match(latin[0].ownerInput, /ruling 1188.*; the row needs the input source com\.apple\.keylayout\.ABC, and the source read com\.apple\.inputmethod\.Korean\.2SetKorean with textedit in front$/);
+});
+
+// Ruling 1189: a source the runner's setup could not enable is never selected; every row selecting it is NO VERDICT
+// `venue`, naming it, and never runs under the US layout to be judged.
+test('a source the venue could not enable: its rows are NO VERDICT venue naming it, never selected; the rest run', async () => {
+  const ops = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'state') { const out = base(a); return {...out, answer: {...out.answer, venueMissing: [KOREAN_2SET]}}; }
+    return base(a);
+  }};
+  const {code, steps, result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.deepEqual(validateCellResult(result), []);
+  assert.ok(!sources(steps).some(s => s.includes('2SetKorean')), 'Korean 2-Set never selected');
+  assert.deepEqual(matrixSteps(steps, 'probe').filter(a => a[1] === 'input-source'), [], 'no switch to it scheduled');
+  assert.deepEqual(result.meta.inputSource.venueMissing, [KOREAN_2SET]);
+  const byCondition = c => result.rows.filter(r => r.condition === c);
+  assert.ok(byCondition('latin').length > 0 && byCondition('latin').every(r => r.ok === true && !r.invalid), 'the Latin rows need ABC only');
+  for (const c of ['korean', 'midSwitch', 'composing', 'perContext']) {
+    assert.ok(byCondition(c).length > 0, c);
+    for (const r of byCondition(c)) {
+      assert.deepEqual(sampleCause(r), {category: 'venue', detail: r.venueInput}, c);
+      assert.match(r.venueInput, /^the runner's setup could not enable com\.apple\.inputmethod\.Korean\.2SetKorean \(TISEnableInputSource did not read it back as enabled and selectable in TIS's list; ruling 1189\): the row needs it, and is never run under the US layout$/);
+    }
+  }
 });

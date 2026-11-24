@@ -405,6 +405,18 @@ test('the per-context rows are out of the verdict: absent from the manifest, nev
     '**Korean and Unicode**: 171 of 171 rows pass on cua; 54 perContext rows are not judged (below).'])
     assert.ok(text.includes(part), part);
   assert.ok(text.indexOf('## Not judged') > text.indexOf('## What changes for a user'), 'the three-point report\'s order');
+  assert.doesNotMatch(text, /of the invalid samples/, 'named only when a not-judged row has such a cause');
+  // Off a hosted runner (ruling 1188) every per-context row is NO VERDICT ownerInput, and on a hosted one a source the
+  // venue could not enable makes them NO VERDICT venue (ruling 1189). Still out of the verdict, but counted where they
+  // are listed, so the report shows what the run could not take.
+  const cause = 'off a GitHub-hosted runner … (ruling 1188); the row needs …';
+  const marked = (engine, marks) => (rows, run) => [...rows, ...planned.map(id => ({section: 'unicode', id, engine, sample: run, ...marks}))];
+  const owned = judged({vendor: {axMs: 50, resolved: 9, tweak: marked('vendor', {ok: false, ownerInput: cause, invalid: cause})},
+    cua: {axMs: 40, tweak: marked('cua', {ok: false, venueInput: 'the runner\'s setup could not enable …', invalid: 'the runner\'s setup could not enable …'})}});
+  assert.deepEqual([owned.verdict, owned.blocking, owned.missing], ['PASS', [], []]);
+  assert.deepEqual(owned.notJudged.find(n => n.id === PER_CONTEXT), {id: PER_CONTEXT, condition: 'perContext', cause: NOT_JUDGED.perContext, recorded: true,
+    vendor: {ok: 0, valid: 0, invalid: 3, ownerInput: 3}, cua: {ok: 0, valid: 0, invalid: 3, venue: 3}});
+  assert.ok(renderSummary(owned).includes(`${NOT_JUDGED.perContext}\n\nOf the invalid samples, \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua 0, vendor 162; \`venue\` (an input source the runner's setup could not enable, ruling 1189): cua 162, vendor 0.\n`), renderSummary(owned));
 });
 
 // The review's regression: only ruling 1119's per-context rows are out of the verdict, by section and condition. An
@@ -711,6 +723,15 @@ test('ruling 1188: a row the owner\'s input source did not allow is NO VERDICT o
   assert.match(text, /^- \*\*NO VERDICT\*\*: 1 cua and 1 vendor sample\(s\) without a verdict; of them `alert` .*: cua 0, vendor 0; `ownerInput` \(the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188\): cua 1, vendor 1;/m);
   assert.ok(text.includes('| ownerInput 1 | ownerInput 1 | no |'), text);
   assert.doesNotMatch(renderSummary(judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}})), /`ownerInput`/, 'named only when a row has it');
+});
+
+test('ruling 1189: a row whose source the runner could not enable is NO VERDICT venue, counted per side and per cell', () => {
+  const cause = 'the runner\'s setup could not enable com.apple.keylayout.ABC (TISEnableInputSource did not read it back as enabled and selectable in TIS\'s list; ruling 1189): the row needs it, and is never run under the US layout';
+  const venued = (rows, run) => (run === 2 ? set(CLICK, {ok: false, venueInput: cause, invalid: cause})(rows) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: venued}, cua: {axMs: 40, tweak: venued}});
+  const row = j.methods.find(x => x.id === CLICK);
+  assert.deepEqual([row.verdict, row.account.vendor.noVerdict, row.account.cua.noVerdict], ['no-verdict', {venue: 1}, {venue: 1}]);
+  assert.match(renderSummary(j), /`venue` \(a frame split, or an input source the runner's setup could not enable, ruling 1189\): cua 1, vendor 1;/);
 });
 
 test('an activate step that did not take front and key is NO VERDICT, not FAIL; a hosted sample without readings is NO VERDICT', () => {

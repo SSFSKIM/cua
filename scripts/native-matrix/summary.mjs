@@ -106,10 +106,15 @@ export function readResults(dirs) {
   return {results, problems};
 }
 
-const sampleCounts = rows => { const valid = rows.filter(r => !r.invalid); return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length}; };
+// A not-judged row's samples; of the invalid, those the owner's input values (ruling 1188) or the runner's input
+// sources (ruling 1189) left without a reading, when there are any: out of the verdict, still reported.
+const sampleCounts = rows => {
+  const valid = rows.filter(r => !r.invalid), owned = rows.filter(r => r.ownerInput).length, venue = rows.filter(r => r.venueInput).length;
+  return {ok: valid.filter(r => r.ok === true).length, valid: valid.length, invalid: rows.length - valid.length, ...(owned ? {ownerInput: owned} : {}), ...(venue ? {venue} : {})};
+};
 // Every not-judged row of the plan and any other not-judged row a run recorded (./not-judged.mjs: by section and
 // condition, never by a row's own mark), with its cause and what each engine read; `recorded` is false for a row of the
-// plan no lane recorded. -> [{id, condition, cause, recorded, vendor: {ok, valid, invalid}, cua: {…}}], by id.
+// plan no lane recorded. -> [{id, condition, cause, recorded, vendor: {ok, valid, invalid, ownerInput?, venue?}, cua: {…}}], by id.
 function notJudgedOf(excluded, plan = FULL_PLAN) {
   const planned = unicodeRowsOf(plan.unicode).filter(r => Object.hasOwn(NOT_JUDGED, r.condition)).map(r => ({id: r.id, condition: r.condition, cause: NOT_JUDGED[r.condition]}));
   const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, {id: r.id, condition: unicodeConditionOf(r.id), cause: exclusionOf(r)}])).values()];
@@ -452,7 +457,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     // Ruling 1168: where every sample's vendor pair could not be the reference, the missing proof is the vendor's.
     return `${SECTION_NAMES[c.section]}: ${c.id} ${unpaired ? 'has no cua sample with a valid vendor sample of its run (ruling 1116)'
       : only('reference') ? 'has no vendor sample that registered the pointerdown (ruling 1168)'
-      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169)' : 'has no valid cua sample'}`;
+      : only('venue') ? 'has no cua sample from a run pair that stood on one frame (ruling 1169) with the input sources it selects enabled on the runner (ruling 1189)' : 'has no valid cua sample'}`;
   });
   const unqualified = cells.filter(c => !c.qualifies);
   const missing = [
@@ -544,7 +549,10 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   // Ruling 1188: the rows the owner's Mac could not judge, its input source or preference not theirs, per side.
   const ownerInput = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.ownerInput ?? 0), 0);
   const owned = ownerInput('cua') + ownerInput('vendor');
-  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
+  // Ruling 1189: the rows an input source the runner could not enable left unjudged (and any frame split), per side.
+  const venue = side => j.cells.reduce((n, c) => n + (c.account[side].noVerdict.venue ?? 0), 0);
+  const venued = venue('cua') + venue('vendor');
+  out.push(`- **NO VERDICT**: ${without('cua')} cua and ${without('vendor')} vendor sample(s) without a verdict; of them \`alert\` (an alert in front or key, or the alert guard's refusal): cua ${alerted('cua')}, vendor ${alerted('vendor')}${owned ? `; \`ownerInput\` (the owner's input source or per-context preference not the row's, never changed off a GitHub-hosted runner, ruling 1188): cua ${ownerInput('cua')}, vendor ${ownerInput('vendor')}` : ''}${venued ? `; \`venue\` (a frame split, or an input source the runner's setup could not enable, ruling 1189): cua ${venue('cua')}, vendor ${venue('vendor')}` : ''}; ${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length} cells do not qualify.`, '');
 
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {
@@ -590,7 +598,12 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push('## Not judged', '', 'The plan\'s rows a ruling put out of the judged matrix: they run and are reported, and count as neither pass nor fail, nor as missing proof. cua ok/valid, then the vendor\'s; "not recorded" where that lane has no sample of the row, which is distinct from an invalid sample.', '');
     const recorded = c => (c.valid + c.invalid ? counts(c) : 'not recorded');
     for (const [condition, list] of groupBy(j.notJudged, n => n.condition)) {
-      out.push(`### ${condition}`, '', list[0].cause, '', '| row | cua ok | vendor ok |', '|---|---|---|');
+      // The input causes among the invalid samples (rulings 1188 and 1189), so the report shows what the run could not take.
+      const sum = (side, key) => list.reduce((n, entry) => n + (entry[side][key] ?? 0), 0);
+      const causes = [['ownerInput', 'the owner\'s input source or per-context preference not the row\'s, never changed off a GitHub-hosted runner, ruling 1188'],
+        ['venue', 'an input source the runner\'s setup could not enable, ruling 1189']].filter(([key]) => sum('cua', key) + sum('vendor', key))
+        .map(([key, what]) => `\`${key}\` (${what}): cua ${sum('cua', key)}, vendor ${sum('vendor', key)}`);
+      out.push(`### ${condition}`, '', list[0].cause, '', ...(causes.length ? [`Of the invalid samples, ${causes.join('; ')}.`, ''] : []), '| row | cua ok | vendor ok |', '|---|---|---|');
       for (const n of list) out.push(`| ${n.id} | ${recorded(n.cua)} | ${recorded(n.vendor)} |`);
       out.push('');
     }

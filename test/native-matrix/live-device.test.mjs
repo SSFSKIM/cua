@@ -308,7 +308,7 @@ function fakeInput({current = ABC, perContext = false, dict = true, select = id 
   return {state, io: {
     savedInputSource: saved, ...at,
     sleep: async () => { state.sleeps += 1; settle(state); },
-    readPerContextDict: () => state.dict,
+    readPerContextState: () => ({dict: state.dict, value: state.perContext}),
     unsetPerContext: ({dictBefore}) => { state.writes.push(`unset (dictBefore ${dictBefore})`); state.perContext = null; if (dictBefore === false) state.dict = false; },
     probe: args => {
       state.probes.push(args.join(' '));
@@ -436,7 +436,7 @@ test('restoreInputSource: a value that will not stay fails after the bounded rou
   const commands = {
     on: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool true',
     off: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties -dict-add TextInputGlobalPropertyPerContextInput -bool false',
-    unset: 'defaults write com.apple.HIToolbox AppleGlobalTextInputProperties "$(defaults export com.apple.HIToolbox - | plutil -extract AppleGlobalTextInputProperties xml1 -o - - | plutil -remove TextInputGlobalPropertyPerContextInput -o - -)"',
+    unset: 'sh scripts/native-matrix/unset-per-context.sh --manual-recovery (in the harness checkout)',
   };
   for (const [name, owner] of [['on', true], ['off', false], ['unset', null]]) {
     const file = join(scratch(), 'input-source.json');
@@ -454,6 +454,40 @@ test('restoreInputSource: a value that will not stay fails after the bounded rou
   }
 });
 
+// A restore whose read, write or probe throws keeps the record and still names the owner's values and the commands.
+test('restoreInputSource: a restore that throws keeps the record and names the owner\'s source, value and the command that sets it', async () => {
+  for (const [what, breakIo] of [['the unset', io => { io.unsetPerContext = () => { throw new Error('could not unset the per-context input preference: exit 1'); }; }],
+    ['the read', io => { io.readPerContext = () => { throw new Error('could not read the per-context input preference: cfprefsd'); }; }]]) {
+    const file = join(scratch(), 'input-source.json');
+    fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: null, perContextDict: false}));
+    const {io} = fakeInput({perContext: true});
+    io.savedInputSource = file;
+    breakIo(io);
+    const out = await restoreInputSource({io});
+    assert.deepEqual([out.sourceRestored, out.perContextRestored], [false, false], what);
+    assert.match(out.error, /could not (unset|read) the per-context input preference/);
+    assert.ok(out.reason.includes(`the owner's input source is ${ABC}: select it in the menu bar's input menu; the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) is the owner's unset: set it back with sh scripts/native-matrix/unset-per-context.sh --manual-recovery --delete-if-empty (in the harness checkout)`), out.reason);
+    assert.equal(fs.existsSync(file), true, `${what}: the record stays`);
+  }
+});
+
+// A value saved malformed (a string where the dictionary belongs) is never "unset" and never written: it holds only as
+// it was read.
+test('restoreInputSource: an owner\'s malformed value is never written; it holds only while it reads as saved', async () => {
+  const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
+  const file = join(scratch(), 'input-source.json');
+  fs.writeFileSync(file, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: malformed, perContextDict: true}));
+  const changed = fakeInput({perContext: false});
+  changed.io.savedInputSource = file;
+  const out = await restoreInputSource({io: changed.io});
+  assert.deepEqual([out.perContextRestored, out.perContextWritten, changed.state.writes], [false, false, []]);
+  assert.match(out.reason, /owner's value, malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\) \(it reads after 3 rounds off\): set it back with none: .* by hand/);
+  const held = fakeInput({perContext: {...malformed}});
+  held.io.savedInputSource = file;
+  const ok = await restoreInputSource({io: held.io});
+  assert.deepEqual([ok.perContextRestored, ok.reason, held.state.writes, fs.existsSync(file)], [true, undefined, [], false]);
+});
+
 test('saveInputSource: the record keeps whether the preference\'s dictionary existed; off a hosted runner nothing is saved', async () => {
   for (const dict of [true, false]) {
     const file = join(scratch(), 'input-source.json');
@@ -462,6 +496,22 @@ test('saveInputSource: the record keeps whether the preference\'s dictionary exi
     saveInputSource({io});
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).perContextDict, dict);
   }
+  // The value and the dictionary's presence are saved from one typed read, never two separate exports.
+  const once = join(scratch(), 'input-source.json');
+  const {io: single} = fakeInput({perContext: null, dict: false});
+  let reads = 0;
+  Object.assign(single, {savedInputSource: once, readPerContext: () => { throw new Error('a second, separate read'); },
+    readPerContextState: () => { reads += 1; return {dict: false, value: null}; }});
+  saveInputSource({io: single});
+  const record = JSON.parse(fs.readFileSync(once, 'utf8'));
+  assert.deepEqual([reads, record.perContext, record.perContextDict], [1, null, false]);
+  // A malformed preference is no baseline a restore can put back: refused, no record, so nothing is switched behind it.
+  const bad = join(scratch(), 'input-source.json');
+  const {io: malformed} = fakeInput({perContext: {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'}});
+  malformed.savedInputSource = bad;
+  const refused = saveInputSource({io: malformed});
+  assert.match(refused.refused, /reads malformed \(AppleGlobalTextInputProperties is a string, not a dictionary\): a restore could not put it back/);
+  assert.equal(fs.existsSync(bad), false);
   const file = join(scratch(), 'input-source.json');
   const {io} = fakeInput({at: OWNERS_MAC});
   io.savedInputSource = file;
@@ -483,7 +533,7 @@ test('off a hosted runner: the input-source check selects nothing and is NO VERD
   const differs = await restoreInputSource({io});
   assert.deepEqual([differs.sourceRestored, differs.perContextRestored, differs.perContextWritten], [false, false, false]);
   assert.match(differs.skipped, /ruling 1188/);
-  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with defaults write com\.apple\.HIToolbox AppleGlobalTextInputProperties "\$\(defaults export/);
+  assert.match(differs.reason, /did not read back as the owner's, com\.apple\.keylayout\.ABC .*owner's value, unset \(it reads on\): set it back with sh scripts\/native-matrix\/unset-per-context\.sh --manual-recovery \(in the harness checkout\)/);
   assert.equal(fs.existsSync(io.savedInputSource), true);
   Object.assign(state, {current: ABC, perContext: null});
   const holds = await restoreInputSource({io});
@@ -508,6 +558,44 @@ test('pasteCheck off a hosted runner: the Korean window reads the owner\'s value
   assert.deepEqual([met.input.probes.filter(p => p !== 'input-source current'), met.input.writes, met.input.current], [[], [], KOREAN_2SET]);
 });
 
+// Ruling 1189 on the live device: a hosted runner whose setup could not enable Korean 2-Set skips the Korean window
+// before anything is saved or selected; type_text is NO VERDICT venue, and a measured paste failure still fails.
+test('pasteCheck and inputSourceCheck on a hosted runner without Korean 2-Set: nothing saved or selected, NO VERDICT venue; a measured failure still fails', async () => {
+  const lacking = pasteDevice({venueMissing: [KOREAN_2SET]});
+  const out = await pasteRun(lacking);
+  assert.deepEqual([out.verdict.pass, out.verdict.failed], [false, []]);
+  assert.match(out.verdict.noVerdict, /could not enable com\.apple\.inputmethod\.Korean\.2SetKorean .*ruling 1189/);
+  assert.deepEqual(out.steps.inputSource, {written: false, venueMissing: [KOREAN_2SET]});
+  assert.equal(out.steps.typeText.venueInput, out.verdict.noVerdict);
+  assert.equal(lacking.client.calls.some(c => c.method === 'type_text'), false);
+  assert.deepEqual([lacking.input.probes, lacking.input.writes, fs.existsSync(lacking.file)], [[], [], false], 'nothing read, saved, selected or written for Korean');
+  const alsoFailed = await pasteRun(pasteDevice({venueMissing: [KOREAN_2SET], clipboardAfter: 'another digest'}));
+  assert.deepEqual([alsoFailed.verdict.pass, alsoFailed.verdict.failed, alsoFailed.verdict.noVerdict], [false, ['clipboardTypesUnchanged'], undefined]);
+  assert.match(alsoFailed.verdict.typeTextNoVerdict, /ruling 1189/);
+  const {state, io} = fakeInput();
+  Object.assign(io, {savedInputSource: join(scratch(), 'input-source.json'), venueInputMissing: () => [KOREAN_2SET]});
+  const check = await inputSourceCheck({io});
+  assert.deepEqual([check.verdict.pass, check.verdict.failed], [false, []]);
+  assert.match(check.verdict.noVerdict, /could not enable com\.apple\.inputmethod\.Korean\.2SetKorean .*ruling 1189/);
+  assert.deepEqual([state.probes, state.writes, fs.existsSync(io.savedInputSource)], [[], [], false]);
+});
+
+// A baseline the save refuses (malformed) leaves the live Korean checks unswitched: NO VERDICT venue, nothing selected.
+test('pasteCheck and inputSourceCheck on a hosted runner whose per-context baseline reads malformed: nothing selected or written, NO VERDICT venue', async () => {
+  const malformed = {malformed: 'AppleGlobalTextInputProperties is a string, not a dictionary'};
+  const device = pasteDevice({perContext: malformed});
+  const out = await pasteRun(device);
+  assert.deepEqual([out.verdict.pass, out.verdict.failed], [false, []]);
+  assert.match(out.verdict.noVerdict, /reads malformed .*: a restore could not put it back/);
+  assert.equal(out.steps.typeText.venueInput, out.verdict.noVerdict);
+  assert.deepEqual([device.input.probes.filter(p => p !== 'input-source current'), device.input.writes, fs.existsSync(device.file)], [[], [], false]);
+  const {state, io} = fakeInput({perContext: malformed});
+  io.savedInputSource = join(scratch(), 'input-source.json');
+  const check = await inputSourceCheck({io});
+  assert.match(check.verdict.noVerdict, /reads malformed/);
+  assert.deepEqual([state.probes.filter(p => p !== 'input-source current'), state.writes, fs.existsSync(io.savedInputSource)], [[], [], false]);
+});
+
 test('launchProbe: an input-source selection off a hosted runner is refused before anything is launched; a reading is not a selection', () => {
   const run = scratch(), device = probeDevice();
   for (const args of [['input-source', ABC], ['input-source', KOREAN_2SET, '--at', '1700000000000']]) {
@@ -528,7 +616,7 @@ test('begin: an input-source record a run left unrestored refuses the next run, 
   const out = await begin({run, commit: 'c1', io});
   assert.equal(out.refusals.length, 1);
   assert.ok(out.refusals[0].startsWith(`an input-source record a run left unrestored, ${savedInputSource}: the owner's input source com.apple.keylayout.US and the per-context input preference (com.apple.HIToolbox AppleGlobalTextInputProperties TextInputGlobalPropertyPerContextInput) unset; before begin, run on the device: node scripts/native-matrix/live-device.mjs input-source-restore`), out.refusals[0]);
-  assert.match(out.refusals[0], /defaults delete com\.apple\.HIToolbox AppleGlobalTextInputProperties when/);
+  assert.match(out.refusals[0], /set the preference with sh scripts\/native-matrix\/unset-per-context\.sh --manual-recovery --delete-if-empty \(in the harness checkout\), then remove the record/);
   assert.deepEqual(calls, [], 'nothing saved, the engine untouched');
   assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
   fs.rmSync(savedInputSource);
@@ -1129,7 +1217,7 @@ const ENGINE_PID = 31;
 const CURSOR_WINDOW = {ownerPid: ENGINE_PID, ownerName: 'cua Engine', ownerBundleId: 'io.github.ssfskim.cua.engine', layer: 0, number: 990, name: 'cua Agent Cursor',
   bounds: {x: 0, y: 0, width: 1512, height: 982}};
 function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0,
-  cursor = false, enginePids = cursor ? [ENGINE_PID] : [], at = HOSTED, current = ABC} = {}) {
+  cursor = false, enginePids = cursor ? [ENGINE_PID] : [], at = HOSTED, current = ABC, venueMissing = []} = {}) {
   const file = join(scratch(), 'input-source.json');
   const {state: input, io: inputIo} = fakeInput({current, perContext, at, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
@@ -1151,7 +1239,7 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     frontmost: () => ({pid: screen.front.pid, bundleId: screen.front === TEXTEDIT ? 'com.apple.TextEdit' : 'com.apple.finder'}),
     frontWindow: ({skipPids = []} = {}) => (screen.cursor && !skipPids.includes(ENGINE_PID) ? {topWindow: {ownerPid: ENGINE_PID, number: CURSOR_WINDOW.number, bounds: CURSOR_WINDOW.bounds}}
       : {topWindow: {ownerPid: screen.front.pid, number: screen.front.window.number, bounds: screen.front.window.bounds}}),
-    enginePids: () => enginePids,
+    enginePids: () => enginePids, venueInputMissing: () => venueMissing,
     keyboardLayout: () => ({inputSourceId: input.current, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'})});
   const execute = client.execute.bind(client);
   client.execute = async (method, args, options) => {

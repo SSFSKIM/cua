@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
-import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, cellIo, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runCell, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, cellIo, checkHeadline, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runCell, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
 import {JOURNAL_FILE, parseJournal, putBackBoundMs, recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
 import {execFileSync} from 'node:child_process';
 import {controllerCheckout} from '../../scripts/native-matrix/goldens.mjs';
@@ -295,6 +295,18 @@ test('cleanup: the put-back alone, and the vendor home from a preparation a dead
   assert.equal(await runLive({command: 'cleanup', device: 'mini', preparation}, io(device)), 0);
   assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live recover', 'scenes frontmost', 'cleanup /h'], 'the recovery stops a serve still running before its home goes');
   assert.equal(fs.existsSync(preparation), false);
+});
+
+// The headline: a measured failure is NOT PASSED whatever else could not be judged; NO VERDICT only when nothing that
+// was measured failed, and a sub-result's NO VERDICT is named beside a failure, never in its place.
+test('checkHeadline: a failure takes precedence over NO VERDICT, which stays named beside it', () => {
+  const cause = 'off a GitHub-hosted runner …; the row needs the input source Korean';
+  assert.equal(checkHeadline({complete: true, pass: true, check: {verdict: {pass: true}}}), 'PASS');
+  assert.equal(checkHeadline({complete: false, pass: false}), 'INCOMPLETE');
+  assert.equal(checkHeadline({complete: true, pass: false, check: {verdict: {pass: false, failed: [], noVerdict: cause, typeTextNoVerdict: cause}}}), `complete, NO VERDICT (${cause})`);
+  assert.equal(checkHeadline({complete: true, pass: false, check: {verdict: {pass: false, failed: ['textLands'], typeTextNoVerdict: cause}}}),
+    `complete, NOT PASSED (failed: textLands; type_text NO VERDICT beside it: ${cause})`);
+  assert.equal(checkHeadline({complete: true, pass: false, check: {verdict: {pass: false, failed: ['userStaysInFront']}}}), 'complete, NOT PASSED (failed: userStaysInFront)');
 });
 
 test('checkPassed: each check\'s own bar', () => {

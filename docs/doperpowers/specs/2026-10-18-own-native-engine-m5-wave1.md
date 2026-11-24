@@ -288,6 +288,22 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-23, ruling 1189 (the design session, after pilot C, run 45299196290): a fresh hosted image enables U.S.
+  alone, so every Latin and Korean selection in pilot C read the US layout back. All 230 input rows (the 5 probe-cell
+  rows and the 225 unicode rows) were invalid. Setup gains an `input sources` step, after `textedit defaults`
+  (`scripts/hosted-sittings/input-sources.mjs`, `input-sources.swift`). It enables com.apple.keylayout.ABC, then the
+  Korean input method com.apple.inputmethod.Korean, then its mode com.apple.inputmethod.Korean.2SetKorean, through
+  TISEnableInputSource, the call System Settings makes. The IDs were read from KoreanIM.app's KIM_Extension
+  Info.plist (tsInputModeListKey) and from TISCreateInputSourceList on macOS 27. The step never writes the preference
+  and never selects a source; it runs hosted only, behind `assertGithubHosted`, and restores nothing, since the VM is
+  thrown away. Each source is read back in a fresh process after a 1 s settle, up to 3 reads: the sources a run
+  selects must be listed by TIS's enabled list, enabled and selectable; the input method must be enabled. The
+  preference's value (AppleEnabledInputSources) is recorded beside it and never judged. Both readings go into
+  `venue.inputSources` and into sitting.md's venue section. A source that does not read back does not fail the
+  sitting. It is named in `venue.inputSources.missing`; the device's `source state` passes it on (`venueMissing`);
+  the run never selects it; and every row that selects it is NO VERDICT `venue`, naming it (probe cells: ABC; Latin:
+  ABC; Korean: 2-Set; mid-switch, composition and per-context: both). It never runs under the US layout to be
+  judged. `summary.mjs` counts `venue` per side in its NO VERDICT line.
 - 2026-11-23, the input source after pilot C (run 45299196290) and ruling 1188 (the design session; detail in
   `docs/evidence/2026-11-23-own-native-engine/hosted.md`, "The input source"): matrix-vendor-1 ran its 571 rows and
   ended INCOMPLETE because the put-back could not restore the per-context preference, unset on a fresh runner, which

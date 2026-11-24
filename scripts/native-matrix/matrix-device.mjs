@@ -42,7 +42,7 @@
 //   panel state --run <dir> --window <number>
 //       the known panel's window read from the window list, no write, anywhere -> {answer: {state: closed | open |
 //       unread}, at}: what decides each step of a panel's close (./panels.mjs closePanel)
-//   panel element --run <dir> --window <number> --element focused|search
+//   panel element --run <dir> --window <number> --element focused|search|name
 //       the frame of the known panel's focused element (in that window) or its search field, read by the same helper
 //       with no write -> {answer: {found, frame, inWindow, pid, focusedElement?}, at} (`frame` null when unread;
 //       `focusedElement`, for focused: the app's focused element's role, subrole and AXIdentifier): where a key case's
@@ -340,7 +340,7 @@ export async function cancelPanel({window}, io) {
 // search field), read by the AX helper (./panel-ax.swift element), no write. Hosted only, as every helper command.
 // io: {state(), screen(), panelAx(args), env?, platform?}. -> {found, frame, inWindow, pid} | {frame: null, refused}.
 export function panelElement({window, element}, io) {
-  if (!['focused', 'search'].includes(element)) throw new Error('--element is focused or search');
+  if (!['focused', 'search', 'name'].includes(element)) throw new Error('--element is focused, search or name');
   const refused = moveRefusal(io, null);
   if (refused) return {frame: null, refused: refused.refused};
   const shown = panelWindowOf(io, window);
@@ -348,8 +348,10 @@ export function panelElement({window, element}, io) {
   const frame = ax?.frame && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(ax.frame[k])) ? ax.frame : null;
   const named = v => (typeof v === 'string' ? v.slice(0, 80) : null);
   const el = ax?.focusedElement;
+  const hit = ax?.hit;
   return {found: ax?.found === true, frame, inWindow: ax?.inWindow ?? null, pid: shown.ownerPid,
-    ...(el && typeof el === 'object' ? {focusedElement: {role: named(el.role), subrole: named(el.subrole), identifier: named(el.identifier)}} : {})};
+    ...(el && typeof el === 'object' ? {focusedElement: {role: named(el.role), subrole: named(el.subrole), identifier: named(el.identifier)}} : {}),
+    ...(hit && typeof hit === 'object' ? {hit: {role: named(hit.role), subrole: named(hit.subrole), identifier: named(hit.identifier), isField: typeof hit.isField === 'boolean' ? hit.isField : null}} : {})};
 }
 // The window list read with no write (allowed anywhere, as the alert guard's reads are): whether the known panel's
 // window is on screen (`open`), gone (`closed`), or the list was not read (`unread`), never gone for a list unread. The

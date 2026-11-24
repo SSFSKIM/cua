@@ -468,7 +468,10 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (prepared.value.focus) {
     const verdict = focusVerdict(prepared.value.focus, prepared.engine?.observation ?? null);
     row.focusReadBy = verdict.by;
-    if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
+    // Rejected though the prepare was ready: its readings kept as a refused prepare's are (the review of
+    // b12c7121a..2a2dd8dd6, minor 6): the field, the trailer's reading and the engine's own focused index.
+    if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`,
+      prepareSeen: {field: prepared.value.focus.index ?? null, trailer: prepared.value.focus.trailer ?? null, engineIndex: prepared.engine?.observation?.focusedIndex ?? null}});
   }
   // A caret case (#258, #259, ./caret.mjs): the field's range read on the device, outside either engine, before the act
   // (it must be the one the prepare made, or nothing is sent) and after it, inside the row's window.

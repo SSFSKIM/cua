@@ -419,16 +419,19 @@ async function runCell(text, apps) {
 // name field does not take (review finding 5).
 // `write`: how setValue lands, given the value and {set(text), close()}; it may throw (by default it sets the value
 // when `writes`).
-function standInTextEdit({saveName = '', writes = true, elsewhere = false, write = null} = {}) {
+// `blind`: the trailer never names a focused element (an engine's focus read that cannot see the panel's), the click
+// taking all the same; `vanish`: once clicked, the Open panel's search field leaves the text (its re-find fails).
+function standInTextEdit({saveName = '', writes = true, elsewhere = false, write = null, blind = false, vanish = false} = {}) {
   const sent = {keys: [], texts: [], values: [], selections: [], clicks: []};
-  let up = null, value = '', focused = null, selected = null;
+  let up = null, value = '', focused = null, selected = null, clicked = false;
   const CANCEL = 3;
   const close = () => { up = null; value = ''; focused = null; selected = null; };
   const render = () => {
     const field = `${value ? `, Value: ${value}` : ''}`;
     const trailer = selected !== null ? `Selected text: \`\`\`\n${selected}\n\`\`\`` : null;
-    if (up === 'open') return [`Window: "Open", App: TextEdit.`, '0 standard window ID: open-panel', `\t1 search text field (settable) Description: Search${field}`, `\t${CANCEL} button Cancel`, '',
-      trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`].join('\n');
+    const focusLine = blind ? [] : [`The focused UI element is ${focused ?? 0} ${focused === 1 ? 'search text field' : 'standard window'}`];
+    if (up === 'open') return [`Window: "Open", App: TextEdit.`, '0 standard window ID: open-panel', ...(vanish && clicked ? [] : [`\t1 search text field (settable) Description: Search${field}`]), `\t${CANCEL} button Cancel`, '',
+      ...(trailer ? [trailer] : focusLine)].join('\n');
     if (up === 'save') return [`Window: "Untitled", App: TextEdit.`, '0 standard window Untitled', '\t1 sheet ID: save-panel', `\t\t2 text field (settable) ID: saveAsNameTextField${field}`, `\t\t${CANCEL} button Cancel`,
       ...(elsewhere ? [`\t\t4 text field (settable) ID: tagsField, Value: ${saveName}`] : []), '',
       trailer ?? `The focused UI element is ${focused ?? 0} ${focused === 2 ? 'text field' : 'standard window'}`].join('\n');
@@ -449,7 +452,7 @@ function standInTextEdit({saveName = '', writes = true, elsewhere = false, write
       if (writes) { value = v; selected = null; }
     },
     async selectText(i, t) { sent.selections.push([i, t]); if (i === focused && value.includes(t)) selected = t; },
-    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else if (!elsewhere) { focused = i; selected = null; } },
+    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else { clicked = true; if (!elsewhere) { focused = i; selected = null; } } },
   };
   return {app, sent, open: () => { up = 'open'; }};
 }
@@ -741,13 +744,70 @@ test('a panel typing row not prepared for the focus keeps the prepare\'s reading
   const cell = code => (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')
     ? {ready: false, reason: FOCUS_REASONS.unfocused, seen} : dev.cell(code));
   const focusedElement = {role: 'AXOutline', subrole: null, identifier: 'ListView'};
-  const matrix = (base, a) => (a[0] === 'panel' && a[1] === 'element'
-    ? {answer: {found: true, frame: rect(10, 100, 300, 200), inWindow: true, pid: 300, focusedElement}, at: [1, 2]} : dev.ops.matrix(base, a));
-  const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}});
+  const field = rect(560, 96, 220, 22), hit = {role: 'AXTextField', subrole: 'AXSearchField', identifier: null, isField: true};
+  const asked = [];
+  const matrix = (base, a) => {
+    if (a[0] !== 'panel' || a[1] !== 'element') return dev.ops.matrix(base, a);
+    asked.push(flag(a, 'element'));
+    return {answer: flag(a, 'element') === 'focused' ? {found: true, frame: rect(10, 100, 300, 200), inWindow: true, pid: 300, focusedElement} : {found: true, frame: field, inWindow: null, pid: 300, hit}, at: [1, 2]};
+  };
+  const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
   const row = result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search');
   assert.equal(row.invalid, `not prepared: ${FOCUS_REASONS.unfocused}`);
   assert.deepEqual(row.prepareSeen, seen);
-  assert.deepEqual(row.deviceFocus, {inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement});
+  // (a) the click missed: the device's focus is elsewhere, the field's centre hits the field itself.
+  assert.deepEqual(row.deviceFocus, {inWindow: true, frame: rect(10, 100, 300, 200), ...focusedElement, field: {kind: 'search', frame: field, hit}, fieldFocused: false});
+  assert.deepEqual(asked, ['focused', 'search']);
   // Only that row reads it: a row prepared reads nothing more.
   assert.equal(result.rows.filter(r => r.deviceFocus).length, 1);
+});
+
+// Ruling 1214, item 2: what is recorded tells the vendor lane's three cases apart. (a) the click missed: the trailer
+// names another element after it and the device's focus is not the field; (b) the focus read is blind: the trailer names
+// none while the device shows the field focused; (c) the field was not found again: `after.field` null.
+test('the prepare\'s readings for the three cases: a missed click, a blind focus read, a field not found again', async () => {
+  const {caseCells} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const search = CASES.openPanel.find(c => c.method === 'typeText' && c.case === 'search');
+  const seenOf = async options => {
+    const stand = standInTextEdit(options);
+    stand.open();
+    try { return (await runCell(caseCells('openPanel', search).prepare, {textedit: stand.app})).value; } finally { delete globalThis.__m; }
+  };
+  const missed = await seenOf({elsewhere: true});
+  assert.deepEqual(missed.seen, {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: 0, reading: 'unfocused'}});
+  const blind = await seenOf({blind: true});
+  assert.deepEqual(blind.seen, {before: {field: 1, focused: null, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: null, reading: 'unfocused'}});
+  const vanished = await seenOf({vanish: true});
+  assert.deepEqual(vanished.seen, {before: {field: 1, focused: 0, reading: 'unfocused'}, clicked: true, after: {field: null, focused: 1, reading: null}});
+  for (const p of [missed, blind, vanished]) assert.equal(p.reason, FOCUS_REASONS.unfocused);
+});
+
+test('the device tells a blind focus read: the panel\'s focused element is the field, at the field\'s frame', async () => {
+  const seen = {before: {field: 1, focused: null, reading: 'unfocused'}, clicked: true, after: {field: 1, focused: null, reading: 'unfocused'}};
+  const dev = panelDevice({alerts: []});
+  const cell = code => (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')
+    ? {ready: false, reason: FOCUS_REASONS.unfocused, seen} : dev.cell(code));
+  const field = rect(560, 96, 220, 22), hit = {role: 'AXTextField', subrole: 'AXSearchField', identifier: null, isField: true};
+  const matrix = (base, a) => (a[0] === 'panel' && a[1] === 'element'
+    ? {answer: flag(a, 'element') === 'focused' ? {found: true, frame: field, inWindow: true, pid: 300, focusedElement: {role: 'AXTextField', subrole: 'AXSearchField', identifier: null}}
+      : {found: true, frame: field, inWindow: null, pid: 300, hit}, at: [1, 2]} : dev.ops.matrix(base, a));
+  const {result} = await runWith({engine: 'vendor', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
+  const row = result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search');
+  assert.equal(row.deviceFocus.fieldFocused, true);
+  assert.equal(row.prepareSeen.after.focused, null);
+});
+
+// Review of b12c7121a..2a2dd8dd6, minor 6: a prepare that was ready but whose focus the row's verdict rejected (cua's own
+// focused index another control's) keeps its readings too: the field, the trailer and the engine's index.
+test('a prepare ready but its focus rejected by the verdict keeps the field, the trailer and the engine\'s index, and the device\'s reading', async () => {
+  const dev = panelDevice({alerts: []});
+  const cell = code => (code.includes('__m.ready = __r?.ready') && code.includes(FOCUS_REASONS.unfocused) && code.includes('the Open panel is not up')
+    ? {ready: true, focus: {index: 1, trailer: 'masked'}, _meta: {'cua/observation': {focusedIndex: 4, focusedRole: 'AXOutline'}}} : dev.cell(code));
+  const matrix = (base, a) => (a[0] === 'panel' && a[1] === 'element'
+    ? {answer: {found: true, frame: rect(10, 100, 300, 200), inWindow: true, pid: 300, focusedElement: {role: 'AXOutline', subrole: null, identifier: null}}, at: [1, 2]} : dev.ops.matrix(base, a));
+  const {result} = await runWith({engine: 'cua', plan: {...PANEL_PLAN, background: []}, cell, ops: {matrix}, env: {RUNNER_ENVIRONMENT: 'github-hosted'}});
+  const row = result.rows.find(r => r.id === 'openPanel/frontmost/typeText.search');
+  assert.match(row.invalid, /^not prepared: the field could not be given the focus/);
+  assert.deepEqual(row.prepareSeen, {field: 1, trailer: 'masked', engineIndex: 4});
+  assert.equal(row.deviceFocus.role, 'AXOutline');
 });

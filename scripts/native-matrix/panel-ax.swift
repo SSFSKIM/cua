@@ -11,7 +11,7 @@
 //       window in the window list, a child in AX) is the panel, `kind` "sheet": a sheet takes no position of its own, so
 //       its parent is moved by the sheet's offset from the frame's origin ("parentPosition", that write's AXError),
 //       position stays null, and the sheet's frame is read back.
-//   panel-ax element <pid> <x,y,w,h> focused|search
+//   panel-ax element <pid> <x,y,w,h> focused|search|name
 //       A read, no write: the frame of an element of that window (or sheet), where the alert guard checks a key case's
 //       input lands when the panel could not be placed clear of the alerts (ruling 1203's fallback): `focused`, the
 //       app's AXFocusedUIElement when it lies in that window; `search`, its first AXSearchField (breadth first, as
@@ -19,7 +19,10 @@
 //       "focusedElement"?}: `frame` null when no such element was found or its frame unread; for `focused`,
 //       `focusedElement` names the app's focused element wherever it lies ({"role", "subrole", "identifier"}: its
 //       AXIdentifier, an app's constant, cut at 80 characters; null when there is none), pilot C-4's question of
-//       whether a panel field the trailer showed unfocused held the focus.
+//       whether a panel field the trailer showed unfocused held the focus. `name`: the Save sheet's name field (the
+//       first element whose AXIdentifier is saveAsNameTextField). For `search` and `name`, `hit` names the element
+//       Accessibility finds at the field's centre ({"role", "subrole", "identifier", "isField"}: the field or one under
+//       it), where a click on the field lands (ruling 1214), null when the field or its frame was not read.
 //   panel-ax cancel <pid> <x,y,w,h>
 //       That window (or sheet, found as `move` finds it) cancelled: its AXCancelButton pressed; else the first AXButton titled Cancel (or 취소) under it,
 //       breadth first (at most 5000 elements, 40 levels); else the window's own AXCancel action.
@@ -38,8 +41,8 @@ func emit(_ object: [String: Any]) {
 }
 let args = CommandLine.arguments
 guard args.count >= 4, ["move", "cancel", "element"].contains(args[1]), let pid = Int32(args[2]), args.count == (args[1] == "cancel" ? 4 : 5),
-      args[1] != "element" || ["focused", "search"].contains(args[4]) else {
-  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search | panel-ax cancel <pid> <x,y,w,h>\n".utf8))
+      args[1] != "element" || ["focused", "search", "name"].contains(args[4]) else {
+  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 if ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
@@ -150,7 +153,17 @@ if args[1] == "element" {
         if inside { found = focused }
       }
     } else {
-      found = walk(window, { (read($0, kAXSubroleAttribute) as? String) == kAXSearchFieldSubrole })
+      found = args[4] == "search" ? walk(window, { (read($0, kAXSubroleAttribute) as? String) == kAXSearchFieldSubrole })
+        : walk(window, { (read($0, kAXIdentifierAttribute) as? String) == "saveAsNameTextField" })
+      answer["hit"] = NSNull()
+      if let field = found, let box = frame(field) {
+        var hit: AXUIElement?
+        if AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(box.midX), Float(box.midY), &hit) == .success, let hit {
+          let named = { (attribute: String) -> Any in (read(hit, attribute) as? String).map { String($0.prefix(80)) as Any } ?? NSNull() }
+          answer["hit"] = ["role": named(kAXRoleAttribute), "subrole": named(kAXSubroleAttribute), "identifier": named(kAXIdentifierAttribute),
+                           "isField": CFEqual(hit, field) || walk(field, { CFEqual($0, hit) }) != nil]
+        }
+      }
     }
   }
   answer["inWindow"] = inWindow

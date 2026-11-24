@@ -157,7 +157,7 @@ test('panel element: the focused element\'s or the search field\'s frame read by
       assert.deepEqual(out.answer, {found: true, frame: field, inWindow: element === 'focused' ? true : null, pid: 300}, element);
     }
     assert.deepEqual(asked, [['element', '300', '0,80,880,448', 'focused'], ['element', '300', '0,80,880,448', 'search']]);
-    await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'cancel'], {io}), /focused or search/);
+    await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'cancel'], {io}), /focused, search or name/);
     const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), screen: () => assert.fail('nothing read')};
     assert.deepEqual((await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused'], {io: off})).answer, {frame: null, refused: MOVE_REFUSED_OFF_HOSTED});
   });
@@ -180,5 +180,18 @@ test('panel element focused: the focused element\'s role, subrole and identifier
         focusedElement: {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField'}})};
     const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused'], {io});
     assert.deepEqual(out.answer, {found: true, frame: field, inWindow: true, pid: 300, focusedElement: {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField'}});
+  });
+});
+
+// Ruling 1214, item 2: the field's own reading (`search`, or the Save sheet's `name`) with the element hit at its centre.
+test('panel element search|name: the field\'s frame and the element at its centre', async () => {
+  await withRun(async dir => {
+    const field = rect(560, 96, 220, 22), hit = {role: 'AXTextField', subrole: null, identifier: 'saveAsNameTextField', isField: true};
+    const asked = [];
+    const io = {...HOSTED, screen: () => ({windows: [DOCUMENT, panelOf(rect(0, 80, 880, 448))], displays: [rect(0, 0, 1920, 1080)]}),
+      panelAx: args => { asked.push(args[3]); return {trusted: true, found: true, windows: 2, kind: 'window', element: args[3], inWindow: null, frame: field, walked: 9, hit}; }};
+    const out = await main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'name'], {io});
+    assert.deepEqual(out.answer, {found: true, frame: field, inWindow: null, pid: 300, hit});
+    assert.deepEqual(asked, ['name']);
   });
 });

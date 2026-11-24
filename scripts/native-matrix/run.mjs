@@ -624,25 +624,39 @@ const TIMING_MARKS = Object.freeze(['invalid', 'frontKey', 'alertGuard', 'alertH
 // input lands on (ctx.elementGuard, ./steps.mjs elementGuardCause); any other case (the panel's observation) runs as
 // ever.
 const ownerSittingMarks = detail => ({ok: false, ownerSitting: detail, invalid: detail});
-// A panel case not prepared for its field's focus (pilot C-4) keeps the device's reading of the panel's focused element
-// beside the prepare's own (`deviceFocus`: whether it lies in the panel, its frame, role, subrole and AXIdentifier, read
-// outside either engine by ./panel-ax.swift; or why it was not read): a click that missed the field and a trailer that
-// cannot see the panel service's focused element read differently there.
+// A panel case not prepared for its field's focus (pilot C-4) keeps the device's reading beside the prepare's own
+// (`deviceFocus`), read outside either engine by ./panel-ax.swift: the panel's focused element (whether it lies in the
+// panel, its frame, role, subrole and AXIdentifier) and the case's field (`field`: its frame and the element hit at its
+// centre, `hit.isField` whether a click there lands on it), and whether the focused element is that field
+// (`fieldFocused`: its frame the field's, or the field's own subrole or identifier). With the prepare's `seen` that
+// tells a click that missed (the field not focused on the device), a focus read blind to the panel service's element
+// (the field focused on the device, the trailer naming none) and a field not found again (`after.field` null) apart
+// (ruling 1214); or why a part was not read.
 const unfocusedRow = row => typeof row?.invalid === 'string' && row.invalid.startsWith('not prepared: ') && Object.values(FOCUS_REASONS).some(r => row.invalid.includes(r));
-function deviceFocusOf(ctx) {
+const FIELD_ELEMENTS = Object.freeze({openPanel: {kind: 'search', is: e => e?.subrole === 'AXSearchField'}, savePanel: {kind: 'name', is: e => e?.identifier === 'saveAsNameTextField'}});
+const sameFrame = (a, b) => Boolean(a && b) && ['x', 'y', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) <= 2);
+function panelElementRead(ctx, window, element) {
+  try { return device(ctx, ['panel', 'element', '--window', String(window), '--element', element]); } catch (error) {
+    if (error instanceof Stop) throw error;
+    return {refused: String(error?.message ?? error).split('\n')[0].slice(0, 160)};
+  }
+}
+function deviceFocusOf(ctx, target) {
   const windows = ctx.panelWindows ?? [];
   if (windows.length !== 1) return {unread: windows.length ? `${windows.length} panel windows` : 'the panel\'s window is not known'};
-  let answer;
-  try { answer = device(ctx, ['panel', 'element', '--window', String(windows[0]), '--element', 'focused']); } catch (error) {
-    if (error instanceof Stop) throw error;
-    return {unread: String(error?.message ?? error).split('\n')[0].slice(0, 160)};
-  }
+  const answer = panelElementRead(ctx, windows[0], 'focused');
   if (answer?.refused) return {unread: answer.refused};
-  return {inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
+  const focused = {inWindow: answer?.inWindow ?? null, frame: answer?.frame ?? null, ...(answer?.focusedElement ?? {role: null, subrole: null, identifier: null})};
+  const known = FIELD_ELEMENTS[target];
+  if (!known) return focused;
+  const field = panelElementRead(ctx, windows[0], known.kind);
+  if (field?.refused) return {...focused, field: {kind: known.kind, unread: field.refused}, fieldFocused: null};
+  return {...focused, field: {kind: known.kind, frame: field?.frame ?? null, hit: field?.hit ?? null},
+    fieldFocused: answer?.inWindow === true && (known.is(answer.focusedElement) || sameFrame(answer.frame, field?.frame))};
 }
 async function panelCase(ctx, target, regime, c, options = {}) {
   const row = await panelCaseRow(ctx, target, regime, c, options);
-  if (unfocusedRow(row)) row.deviceFocus = deviceFocusOf(ctx);
+  if (unfocusedRow(row)) row.deviceFocus = deviceFocusOf(ctx, target);
   return row;
 }
 async function panelCaseRow(ctx, target, regime, c, options) {

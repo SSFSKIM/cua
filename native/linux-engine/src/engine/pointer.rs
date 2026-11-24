@@ -382,6 +382,33 @@ pub(super) struct GateRead {
     pub(super) last_step_after_take_ms: Option<f64>,
 }
 
+/// Whether, and why, a drop at the release sync's gate (`gate`; None: no take, or no Chrome drop the engine lets drop)
+/// is answered unconfirmed with option (c)'s notice (`release_sync::unconfirms`): its tail (`synced`) dropped a visit
+/// (#512, ruling 1142 (2)), or the gate opened with option (c) on (`unconfirm_outlasted`).
+pub(super) fn unconfirmed_at_gate(
+    gate: Option<GateRead>,
+    unconfirm_outlasted: bool,
+    synced: Option<&crate::release_sync::Synced>,
+) -> Option<crate::release_sync::Unconfirm> {
+    gate.and_then(|g| crate::release_sync::unconfirms(g.open, unconfirm_outlasted, synced))
+}
+
+/// What confirms a drag's drop at its release (`handle::confirming`: its drop window `confirm`, whether the window
+/// manager takes the activation request, the cursor an Electron source showed), after the hold's extension, and with
+/// `unconfirmed` ([`unconfirmed_at_gate`]) an activation-only drop becomes `Confirming::Outlasted`, answered unconfirmed
+/// with option (c)'s notice.
+pub(super) fn drop_confirming(
+    confirm: Option<Window>,
+    supported: bool,
+    cursor: Option<Option<bool>>,
+    extended_take: bool,
+    unconfirmed: Option<crate::release_sync::Unconfirm>,
+) -> super::handle::Confirming {
+    super::handle::confirming(confirm, supported, cursor)
+        .after_hold(extended_take)
+        .after_outlasted(unconfirmed.is_some())
+}
+
 /// Where a drop's path ended against its take and floor_until (`release_sync::overran`, #512, ruling 1142 (1)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PathEnd {
@@ -616,7 +643,10 @@ fn drag_along(
         // steps are scheduled to: the tail's earlier boundary is no evidence that the path outlasted the floor (ruling
         // 1001)
         let mut floor_spaced_last = false;
-        // when the path's last step went out, which a drop's floor_until is held to (#512)
+        // when the server acknowledged the path's last step, which a drop's floor_until is held to (#512; F2 as ruled):
+        // the motion is stamped after its checked request returns, and the server dispatches it to the window before
+        // that reply, so the stamp is no earlier than when the window can have had it. A step acknowledged past
+        // floor_until takes the after-path tail, the safe side, though it went out a round trip before
         let mut last_sent = None;
         // when the sample being sent was due
         let mut due = Instant::now();
@@ -1536,8 +1566,7 @@ impl Engine {
         // the drop's activation unconfirmed
         // and whether the drop is answered unconfirmed with option (c)'s notice: its tail dropped a visit (#512, ruling
         // 1142 (2)), or option (c) is on and the gate opened
-        let unconfirmed = gate_read
-            .and_then(|g| crate::release_sync::unconfirms(g.open, self.cfg.dnd_unconfirm_outlasted, synced.as_ref()));
+        let unconfirmed = unconfirmed_at_gate(gate_read, self.cfg.dnd_unconfirm_outlasted, synced.as_ref());
         let outlasted = unconfirmed.is_some();
         if let Some(read) = gate_read {
             let mut record = match &synced {
@@ -1656,9 +1685,7 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = super::handle::confirming(confirm, supported, cursor)
-                    .after_hold(extended_take)
-                    .after_outlasted(outlasted);
+                let confirming = drop_confirming(confirm, supported, cursor, extended_take, unconfirmed);
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,
@@ -2149,10 +2176,13 @@ mod tests {
     }
 
     /// #512's item 1 through `drag_along` itself, on the X display (XTEST on the desktop route, a real `DndWatch`): a
-    /// Chrome drop whose path's last step goes out after floor_until while the floor spaced it, so the gate stays shut,
-    /// takes the after-path tail, and its record says the path overran. Its steps are paced 10 ms apart, slower than the
-    /// floor schedules them (76 ms over 8 steps): the last goes out about 80 ms after the take, past floor_until (76) and
-    /// short of the floor's end (100) by more than the keepalive, so the 100 ms floor spaces it.
+    /// Chrome drop whose path's last step goes out after floor_until takes the after-path tail, and its record says the
+    /// path overran. Its steps are paced 10 ms apart, slower than the floor schedules them (76 ms over 8 steps): the last
+    /// goes out no sooner than 80 ms after the take, past floor_until (76), whatever the scheduler adds. With no pause it
+    /// also comes short of the floor's end (100) by more than the keepalive, so the floor spaces it and the gate stays
+    /// shut; a pause can open the gate instead, which schedules the tail after the path too, so the test holds the
+    /// overrun and the schedule, not the gate (the gate shut is `release_sync`'s constructed rows).
+    /// `overran` stubbed false fails it either way.
     #[test]
     #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
     fn a_drag_s_overrun_is_its_last_sample_against_floor_until() {
@@ -2252,18 +2282,70 @@ mod tests {
         let held = held_for_take.expect("the hold's record");
         assert_eq!(held["floor_until_ms"], json!(76.0), "{held}");
         let gate = gate.expect("the gate read");
-        assert!(
-            !gate.open,
-            "the floor spaced the last step, so the gate stays shut: {gate:?}"
-        );
         assert!(gate.overran, "{gate:?}");
         let after = gate
             .last_step_after_take_ms
             .expect("the take came before the last step");
-        assert!(after > 76.0 && after < 100.0, "{after} ms");
+        assert!(after > 76.0, "{after} ms");
         let synced = synced.expect("the tail ran");
         assert_eq!(synced.schedule, Schedule::AfterPath, "{synced:?}");
         assert_eq!((synced.motions, synced.visits_dropped), (4, 0));
+    }
+
+    /// #512's fail-closed rule through the drag's own confirmation decision (ruling 1142 (2)): a Chrome drop whose
+    /// in-floor tail dropped a visit, its gate shut and option (c) off, whose only confirmation is Chrome's activation
+    /// request, is answered unconfirmed at once with option (c)'s notice; the same drop with no visit dropped is still
+    /// confirmed by the activation.
+    #[test]
+    fn a_dropped_visit_turns_an_activation_only_drop_into_option_c_s_unconfirmed_answer() {
+        use super::super::handle::Confirming;
+        use crate::release_sync::{Form, Schedule, Synced};
+        let shut = GateRead {
+            open: false,
+            keepalives: 0,
+            last_spaced: true,
+            overran: false,
+            last_step_after_take_ms: Some(320.0),
+        };
+        let tail = |visits_dropped| Synced {
+            form: Form::Tail,
+            schedule: Schedule::InFloor(Instant::now()),
+            motions: 4 - 2 * visits_dropped,
+            visits_dropped,
+            added: Duration::from_millis(24),
+            past_floor: Some(Duration::ZERO),
+        };
+        let chrome = Some(18_874_370);
+        let decide = |synced: &Synced| {
+            let unconfirmed = unconfirmed_at_gate(Some(shut), false, Some(synced));
+            drop_confirming(chrome, true, None, false, unconfirmed)
+        };
+        let dropped = decide(&tail(1));
+        assert_eq!(dropped, Confirming::Outlasted);
+        assert!(dropped.unconfirmed(), "answered unconfirmed at once, not waited for");
+        let end = dropped.unconfirmed_end(None);
+        assert_eq!(end, crate::dnd::WatchEnd::Outlasted);
+        let notice = crate::dnd::pending_notice("Google Chrome", &end);
+        assert!(
+            notice.starts_with(
+                "Pending from your last drag, an unconfirmed drop: your drag into Google Chrome began a drag and drop \
+                 and went on past the engine's settle time"
+            ),
+            "{notice}"
+        );
+        // nothing dropped: the activation still confirms it, as in 0.4.4
+        assert_eq!(decide(&tail(0)), Confirming::Activation(18_874_370));
+        // and a drop with no gate read (no take) is left as it is
+        assert_eq!(
+            drop_confirming(
+                chrome,
+                true,
+                None,
+                false,
+                unconfirmed_at_gate(None, false, Some(&tail(1)))
+            ),
+            Confirming::Activation(18_874_370)
+        );
     }
 
     #[test]

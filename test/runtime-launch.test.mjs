@@ -186,6 +186,20 @@ test('with the sky wrapper registered on macOS, cua\'s engine service directory 
   assert.ok(!browserOnly.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(ENGINE_SERVICE_DIR));
 });
 
+// #558, ruling 1186: the Linux facade's line-break rule is a copy in src/cua-api, not shared with the macOS engine
+// service, so the macOS vendor host's trusted worker never gains the facade's directory: with the sky wrapper (and with
+// the browser surface too) its trusted paths are exactly the vendor modules, cua's sandbox and compat executable, the
+// services' directories, src/secrets and the engine service's directory.
+test('the macOS vendor host trusts no src/cua-api, with or without the sky wrapper (#558, ruling 1186)', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  for (const options of [{services: {sky: SKY_SERVICE}}, {surfaces: ['computer', 'browser'], services: {sky: SKY_SERVICE, browser: BROWSER_SERVICE}}, {}]) {
+    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, ...options});
+    const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
+    assert.ok(!trusted.some(dir => dir === CUA_API_DIR || dir.startsWith(`${CUA_API_DIR}/`)), JSON.stringify(trusted));
+    if (options.services?.sky) assert.deepEqual(trusted.slice(0, 6), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR]);
+  }
+});
+
 test('without a store the launch tells the trusted worker why, so a secret reference fails with that reason', t => {
   const {home, runtime} = fixtureRuntime(t);
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsUnavailable: 'secrets_disabled'});

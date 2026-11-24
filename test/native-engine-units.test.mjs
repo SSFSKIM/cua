@@ -3,7 +3,7 @@
 // rule, the byte estimate, enablement's rules and the engine's settings. They run in-process on fake element handles
 // (application handles for unused pids; nothing is sent to any process), so no permission is involved.
 //
-// In CI the ci-kit gate named by CUA_ENGINE_UNITS_GATE (`engine-swift`, set on the `test` gate in .github/ci-kit.yml)
+// In CI the ci-kit gate named by CUA_ENGINE_UNITS_GATE (`engine-swift`, set on the test shards in .github/ci-kit.yml)
 // runs this same suite (`swift test --package-path native/engine`, debug, no filter) on the same runner image. ci-kit
 // gives every gate job CI_KIT_GATES, the names of the gates its run selected; when that gate is among them the suite is
 // left to it. Everywhere else, local `npm test` included, the suite runs here.

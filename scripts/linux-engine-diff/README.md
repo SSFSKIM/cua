@@ -575,7 +575,7 @@ variants included; their evidence is written either way. The run's `end` row kee
     harness's own X tools inherit the parent's XAUTHORITY, so the parent sets XAUTHORITY to that display's own file or
     to a nonexistent path; applications on any private display get a nonexistent path regardless (`app-env.mjs`). The harness's suite runs as `npm run
     test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
-    47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
+    47, so it runs on the whole declared Node range, and ci-kit's `test-2` gate runs it) that gives the suite a
     temporary directory of its own and fails it, naming each, on any process it started that still names a run's
     scratch directory or profile when it ends, and on any scratch directory it left; each is then ended or removed.
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of

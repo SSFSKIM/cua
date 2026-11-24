@@ -10,7 +10,7 @@
 //
 // Platform-independent by construction: no Chrome, no GUI, and the relay's peer check is given a stand-in addon that
 // admits this process (the check itself is pinned in chrome-client-mode.test.mjs; here it only has to let the vendor
-// side through), so the tests run in the `test` gate on any runner.
+// side through), so the tests run in the test shards (test-1, test-2) on any runner.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {connect, createServer} from 'node:net';

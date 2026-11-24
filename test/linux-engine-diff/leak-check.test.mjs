@@ -197,15 +197,16 @@ test("a suite whose tests fail fails the check too, whatever it left", () => {
   assert.doesNotMatch(run.stderr, /SUITE LEAK/);
 });
 
-// The design session's ruling (task 47, B3): the cleanup check gates CI. ci-kit's `test` gate runs the harness suite
-// through it, after `npm test`, whose plain `node --test "<pattern>"` form repl-parity's coverage check reads.
-test("ci-kit's test gate runs the harness suite through its cleanup check, and npm test keeps the form coverage.mjs reads", () => {
+// The design session's ruling (task 47, B3): the cleanup check gates CI. One of ci-kit's test shards runs the harness
+// suite through it, after its share of `npm test`, whose plain `node --test "<pattern>"` form repl-parity's coverage
+// check and the shards (scripts/test-shard.mjs) read.
+test("a ci-kit test shard runs the harness suite through its cleanup check, and npm test keeps the form coverage.mjs reads", () => {
   const config = readFileSync(join(REPO, '.github', 'ci-kit.yml'), 'utf8');
-  const gate = config.match(/^ {2}- name: test\n((?: {4}.*\n)+)/m)?.[1];
-  assert.ok(gate, 'the test gate');
-  assert.match(gate, /^ {4}run: npm test && npm run test:linux-engine-diff$/m);
+  const gates = [...config.matchAll(/^ {2}- name: (test-\d+)\n((?: {4}.*\n)+)/gm)];
+  const withHarness = gates.filter(([, , body]) => /^ {4}run: node scripts\/test-shard\.mjs \d+\/\d+ && npm run test:linux-engine-diff$/m.test(body));
+  assert.equal(withHarness.length, 1, `the test shards: ${gates.map(([, name]) => name).join(', ')}`);
   const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'));
-  // scripts/repl-parity/coverage.mjs's own reading of npm test
+  // scripts/test-shard.mjs's reading of npm test, which coverage.mjs takes from it
   assert.match(pkg.scripts.test, /^node --test ["']?([^"'\s]+)["']?$/);
 });
 

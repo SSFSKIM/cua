@@ -345,8 +345,13 @@ test('pasteVerdict off a hosted runner: nothing written needs no restore; type_t
   };
   const out = pasteVerdict(steps);
   assert.deepEqual([out.pass, out.failed, out.noVerdict], [false, [], 'off a GitHub-hosted runner …; the row needs the input source Korean']);
+  assert.equal(out.typeTextNoVerdict, out.noVerdict);
   const met = pasteVerdict({...steps, precondition: {selected: false, readBack: KOREAN_2SET, perContextOff: true, met: true}, typeText: {measured: true, ok: true, route: 'paste', lands: true}});
   assert.deepEqual([met.pass, met.failed, met.noVerdict], [true, [], undefined], 'the owner already on the window\'s values: measured, nothing to restore');
+  // A measured failure takes precedence: the check failed, and the Korean row's NO VERDICT stays beside it as a sub-result.
+  const failedToo = pasteVerdict({...steps, text: {ok: true, route: 'paste', posted: true, lands: false}, clipboard: {typesUnchanged: false}});
+  assert.deepEqual([failedToo.pass, failedToo.failed, failedToo.noVerdict, failedToo.typeTextNoVerdict],
+    [false, ['textLands', 'clipboardTypesUnchanged'], undefined, 'off a GitHub-hosted runner …; the row needs the input source Korean']);
 });
 
 test('restoreTarget: the owner\'s saved source, ABC only when nothing was saved', () => {

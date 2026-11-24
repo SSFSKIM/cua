@@ -324,9 +324,11 @@ export function pasteVerdict(steps) {
     ? `engine finding: type_text keyed (route ${typeText.route}) with Korean 2-Set selected and read back and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
     : null;
   // type_text unmeasured because the owner's input source or preference is not the window's (ruling 1188): never a
-  // pass, never a failure, NO VERDICT with its cause.
-  const noVerdict = typeText?.ownerInput ?? null;
-  return {pass: failed.length === 0 && !noVerdict, failed, ...(noVerdict ? {noVerdict} : {}), typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
+  // pass, never a failure. It is the check's NO VERDICT only when nothing measured failed; beside a failure it stays a
+  // sub-result (`typeTextNoVerdict`), and the failure is the headline.
+  const typeTextNoVerdict = typeText?.ownerInput ?? null;
+  const noVerdict = failed.length ? null : typeTextNoVerdict;
+  return {pass: failed.length === 0 && !noVerdict, failed, ...(noVerdict ? {noVerdict} : {}), ...(typeTextNoVerdict ? {typeTextNoVerdict} : {}), typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
     recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null, perContext: inputSource?.perContext ?? null, sourceAfter: typeText?.sourceAfter ?? null}};
 }
 

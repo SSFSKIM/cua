@@ -258,10 +258,20 @@ export async function runLive(options, io) {
     write();
   }
   if (result.recovery?.manual) log(`the recovery needs you: ${result.recovery.manual}`);
-  // A check the owner's Mac could not make, its input source or preference not the check's (ruling 1188): NO VERDICT.
-  const noVerdict = result.check?.verdict?.noVerdict;
-  log(`${command} ${result.complete ? (result.pass ? 'PASS' : noVerdict ? `complete, NO VERDICT (${noVerdict})` : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
+  log(`${command} ${checkHeadline(result)}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
   return exitCode(result.pass ? 0 : 1);
+}
+
+// The result's headline. A measured failure is NOT PASSED, naming what failed and any sub-result's NO VERDICT beside it;
+// a check the owner's Mac could not make, its input source or preference not the check's (ruling 1188), with nothing
+// measured failing, is NO VERDICT.
+export function checkHeadline(result) {
+  if (!result.complete) return 'INCOMPLETE';
+  if (result.pass) return 'PASS';
+  const verdict = result.check?.verdict ?? {};
+  if (verdict.noVerdict) return `complete, NO VERDICT (${verdict.noVerdict})`;
+  const beside = verdict.typeTextNoVerdict ? `; type_text NO VERDICT beside it: ${verdict.typeTextNoVerdict}` : '';
+  return `complete, NOT PASSED${verdict.failed?.length ? ` (failed: ${verdict.failed.join(', ')}${beside})` : ''}`;
 }
 
 // The recovery (./live-device.mjs recover: the harness's work still running on the device stopped, then the put-back),

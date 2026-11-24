@@ -2890,6 +2890,19 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - F10's credit holds. 0.4.4's diff touches only the drop path: 8 files, two of them beyond the pre-flight's list, read and found text-neutral. H's engine tree equals the tag, and the pin hashes equal the assets. The service's diff from da7585c3 is MIN 0.4.4 and F9's remedy only.
     - Serve start to first answer, head minus the older cua, median of 20: −41, +22 and +5 ms.
 
+- Decision (2026-11-24, the owner's, carried by the design session; ruling 1193): **the soak that gates M6b ends once 0.4.5 has run clean. That means 0.4.5's counted reach passes on x64 and on arm64, and no regression appears on the Linux homes. M6b starts as soon as 0.4.5 merges, with no further go.**
+  - The owner decided this knowing that after M6b there is no switch back to the vendor engine on Linux: `CUA_NATIVE_ENGINE=vendor` is refused as `engine_retired`.
+  - **0.4.5 (1193 R1–R3).** It carries #512 (items 1, 2 and 4, with item 3 decided in its pre-flight from the engine code and one probe) and #572. #497 stays out, so the reach measures one change to the drop path.
+    - The reach is H1, H2, L4a, and L4d at 993's bar, on both arches, on private displays.
+    - arm64's ×300 development measurement and its counted reach run on dc-linux171arm-996d before its lease ends (about 2026-11-26T01:00Z, not extended). The hosted ubuntu-24.04-arm runner is the fallback, and the pre-flight checks it.
+  - **M6b's forks (1193).**
+    - (a) The two Linux deb records stay as pin-time provenance beside `runtime/modules/`, the authenticator `scripts/modules-pin.mjs` needs. They are never installable, and a test shows that install, doctor and launch can't reach them. Authenticating a bump with npm's registry signatures is #574, a later ticket shared with #117 M6.
+    - (b) `cua install` on Linux removes only the vendor release that its own install record says it placed, verified against that record, and reports the removal with its size.
+      - It deletes nothing else under `runtimes/`. A `runtimes/` entry it didn't place is named in the report and left in place.
+      - Doctor shows nothing for a removed release.
+    - (c) The `engine_retired` sentence is as "Retirement (M6b)" says.
+  Date/Author: 2026-11-24, linux171 (plan-executor), recording the owner's decision and ruling 1193.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

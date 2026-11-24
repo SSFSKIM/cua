@@ -61,7 +61,7 @@ the engine's side for three reasons:
 
 **#572: LS and PS in JSONL.**
 - `wire.rs`: a new `pub fn jsonl(value: &impl Serialize) -> String` calls `serde_json::to_string`, then replaces U+2028
-  with ` ` and U+2029 with ` `. Those characters can occur only inside JSON strings, so the value is
+  with `\u2028` and U+2029 with `\u2029`. Those characters can occur only inside JSON strings, so the value is
   unchanged.
 - Every JSONL writer uses it: `Response::to_line`, `Engine::stats_line`, `standalone_stats_line`, `exit_stats_line`, and
   the `focus_out` and exit `eprintln!`s in `engine.rs` (lines 599 and 1056).

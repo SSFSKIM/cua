@@ -167,7 +167,8 @@ const WRITES = new Set(['mkdir', 'mkdirat', 'mknod', 'mknodat', 'symlink', 'syml
 /**
  * What a traced call did to the paths it names, by its name and its flags (#171 M6b, T6: the calls under runtimes/ an
  * install or a doctor run may make): `exec`; `lstat` (a stat that follows no link: lstat, or the at-forms and statx with
- * AT_SYMLINK_NOFOLLOW); `stat` (one that follows); `opendir` (a read-only open of a directory); `open` (any other
+ * AT_SYMLINK_NOFOLLOW); `fstat` (a stat of an open descriptor, an at-form with an empty path and AT_EMPTY_PATH); `stat`
+ * (one that follows); `opendir` (a read-only open of a directory); `open` (any other
  * read-only open); `write` (an open that may create, truncate or change, or a call that changes what a path names or
  * holds); `unlink`; `rename`; else the call's own name (access, readlink, chdir...).
  */
@@ -176,6 +177,8 @@ export function callKind(name, call) {
   if (EXEC.test(`${name}(`)) return 'exec';
   if (['lstat', 'lstat64', 'oldlstat'].includes(name)) return 'lstat';
   if (['stat', 'stat64', 'oldstat'].includes(name)) return 'stat';
+  // The at-forms with an empty path and AT_EMPTY_PATH stat the open descriptor itself (Node's fstat): no path is looked up.
+  if (['newfstatat', 'fstatat64', 'statx'].includes(name) && args[1] === '""' && /AT_EMPTY_PATH/.test(args[name === 'statx' ? 2 : 3] ?? '')) return 'fstat';
   if (['newfstatat', 'fstatat64'].includes(name)) return /AT_SYMLINK_NOFOLLOW/.test(args[3] ?? '') ? 'lstat' : 'stat';
   if (name === 'statx') return /AT_SYMLINK_NOFOLLOW/.test(args[2] ?? '') ? 'lstat' : 'stat';
   if (OPENS.has(name)) {

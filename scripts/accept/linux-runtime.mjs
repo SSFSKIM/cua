@@ -45,7 +45,7 @@ import {loadClassicLevel} from '../../src/profiles/directory-map.mjs';
 import {APPROVED_OLDER, CELLS, ENGINE_HINT_LITERAL, OUTDATED_ENGINE, VENDOR_RELEASES, boundaryProblems, controlProblems, doctorRefusalProblems, doctorRowsProblems, emptyHomeProblems,
   execRoleProblems, fetchLogProblems, fixtureProblems, inheritedOverrides, installProblems, noFetchProblems, notNamedProblems, olderProblems, outdatedOverrideMessage,
   parsePhases, refusedAsProblems, reinstallProblems, retiredInstallProblems, retiredLineProblems, retiredMessage, retiredSentence, runVerdict, runtimesCallProblems,
-  snapshotProblems, staticEngineProblems, toolProblems, traceProblems, treeSnapshot, witnessOf, initializeAnswered} from './linux-runtime-cells.mjs';
+  snapshotProblems, staticEngineProblems, toolProblems, traceProblems, treeSnapshot, vendorReleaseFor, witnessOf, initializeAnswered} from './linux-runtime-cells.mjs';
 import {cuaEngineProblems, noEngineProblems, ownNodeProblems, startWatch} from './linux-runtime-watch.mjs';
 import {environmentVerdict} from './linux-runtime-pilot.mjs';
 import {summarizeTraceFile, TRACE_ARGS} from './linux-trace.mjs';
@@ -318,8 +318,9 @@ async function main() {
   // This checkout's install command as every refusal names it: its own bin/cua.mjs by absolute path.
   const installer = `node ${CLI} install`;
   const pin = loadEnginePin();
-  // The vendor release this arch's install placed before M6b, by its name (VENDOR_RELEASES): no pin is read for it.
-  const vendorName = VENDOR_RELEASES[arch];
+  // The vendor release this arch's install placed before M6b, by its name (retired-tree.mjs's constants): no pin and no
+  // provenance record is read for it.
+  const vendorName = vendorReleaseFor(arch);
   const releases = Object.values(VENDOR_RELEASES);
   const settingsPath = join(process.env.HOME ?? '', '.config', 'cua', 'engine.json');
   const report = {driver: 'm6b-acceptance-13', leg: option('--leg') ?? null, arch, node: process.version, head: gitHead(REPO), release, installer, vendorRelease: vendorName,
@@ -412,9 +413,9 @@ async function main() {
     const doctor = await tracedDoctor(`doctor-${what}`, env, facts);
     cell.runs.push({what: `doctor under ${what}`, ...projectExec(doctor)});
     check(cell, `under ${what}, doctor's engine and repl.host rows fail with the sentence and the hint`, doctorRefusalProblems(doctor.report, expected));
-    // Doctor's own sandbox probes run the helper and bubblewrap; no engine, worker or host is started.
-    check(cell, `under ${what}, doctor executed ${allowed.length ? 'no engine, worker or host but the override\'s --version, once' : 'no engine, worker or host'}`,
-      execRoleProblems(doctor.summary, {helper: facts.helper, allowed, allowRoles: ['helper', 'bwrap']}));
+    // Doctor's sandbox.userns probe runs bubblewrap (on `true`); no engine, helper, worker or host is started.
+    check(cell, `under ${what}, doctor executed ${allowed.length ? 'no engine, helper, worker or host but the override\'s --version, once' : 'no engine, helper, worker or host'}`,
+      execRoleProblems(doctor.summary, {helper: facts.helper, allowed, allowRoles: ['bwrap']}));
   }
 
   try {
@@ -455,7 +456,8 @@ async function main() {
     const control = controlProblems(setup.log, {deb});
     const olderDoctor = await r.cua('older-doctor', ['doctor', '--json'], {cli: olderCli, env: uEnv, minutes: 5});
     const vendorRow = readJson(olderDoctor.out)?.checks?.find(c => c.name === 'runtime.vendor') ?? null;
-    const tree = join(uHome, 'runtimes', vendorName);
+    // The tree's path as install and doctor name it: under the home's real path.
+    const tree = join(real(uHome), 'runtimes', vendorName);
     const setupProblems = olderProblems({commit: report.older.commit, clean: report.older.clean, exit: setup.code, pointer: readPointer(uHome), release, vendorRelease: vendorName,
       recorded: recordedTree(uHome, vendorName).resolves, vendorRow});
     report.upgradedHome = {home: uHome, install: projectExec(setup), deb, control, vendorRow: vendorRow && {status: vendorRow.status, detail: vendorRow.detail}, problems: setupProblems};

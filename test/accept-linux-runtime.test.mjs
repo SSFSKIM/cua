@@ -490,6 +490,10 @@ test('callKind and execArgv read a call\'s own text', () => {
   assert.equal(callKind('open', 'open("/a", O_RDONLY|O_DIRECTORY) = 3'), 'opendir');
   assert.equal(callKind('creat', 'creat("/a", 0644) = 3'), 'write');
   assert.equal(callKind('lstat', 'lstat("/a", {...}) = 0'), 'lstat');
+  assert.equal(callKind('statx', 'statx(21</a/install.json>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {...}) = 0'), 'fstat');
+  assert.equal(callKind('newfstatat', 'newfstatat(3</a>, "", {st_mode=S_IFREG|0644, ...}, AT_EMPTY_PATH) = 0'), 'fstat');
+  // A named path with AT_EMPTY_PATH is still looked up.
+  assert.equal(callKind('statx', 'statx(AT_FDCWD</w>, "/a", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {...}) = 0'), 'stat');
   assert.equal(callKind('readlink', 'readlink("/a", "b", 4095) = 1'), 'readlink');
   assert.equal(callKind('execveat', 'execveat(3</d>, "x", ["x"], 0x1 /* 0 vars */, 0) = 0'), 'exec');
   assert.deepEqual(execArgv('execveat(3</d>, "x", ["x", "-v"], 0x1 /* 0 vars */, 0) = 0'), ['x', '-v']);

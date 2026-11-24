@@ -7,14 +7,18 @@
 import {createHash} from 'node:crypto';
 import {lstatSync, readdirSync, readFileSync, readlinkSync} from 'node:fs';
 import {basename, join, posix, relative, sep} from 'node:path';
+import {RETIRED_RELEASES} from '../../src/runtime/retired-tree.mjs';
 import {traceVerdict} from './linux-trace.mjs';
 
 // The cua before M6b whose install makes the upgraded home: main's tip that the M6b branch starts from (0.4.5's merge,
 // #585). Its install places cua's own runtime and the vendor's release, as every home updated from main holds them
 // (F11). A counted run takes no other.
 export const APPROVED_OLDER = '854103aa58b56521ba85afb4b392e1f3c5a8287d';
-// The only vendor releases a cua install ever placed on Linux, by name (fe09732c8 pinned these two): the U cells' tree.
-export const VENDOR_RELEASES = Object.freeze({x64: '26.928.40906-linux-x64', arm64: '26.928.40906-linux-arm64'});
+// The only vendor releases a cua install ever placed on Linux, by architecture: the U cells' tree. Their names are
+// retired-tree.mjs's own constants (T2), which install and doctor report from; no pin and no provenance record is read.
+export const VENDOR_RELEASES = Object.freeze(Object.fromEntries(['x64', 'arm64'].map(arch => [arch, Object.keys(RETIRED_RELEASES).find(name => name.endsWith(`-linux-${arch}`)) ?? null])));
+/** The vendor release a cua install placed on a Linux machine of `arch` before M6b, by name; null for any other. */
+export const vendorReleaseFor = arch => (Object.hasOwn(VENDOR_RELEASES, arch) ? VENDOR_RELEASES[arch] : null);
 // The release that retired the vendor's engine on Linux, as every sentence below names it (ruling 1215's F1).
 const RETIRED_IN = '0.30.0';
 // The hint every Linux engine refusal carries (§2.1).
@@ -304,7 +308,7 @@ export function toolProblems(summary) {
 /**
  * The traced calls an install or doctor run made under `<home>/runtimes/` (U1, U2): the trace is whole; every call there
  * names runtimes/ itself or a path under one of `releases`; each is an lstat (runtimes/ itself takes nothing else), a
- * read-only open of a directory, or the one open of a release's install.json, which happens exactly `recordOpens`
+ * read-only open of a directory, a stat of a descriptor so opened, or the one open of a release's install.json, which happens exactly `recordOpens`
  * times; nothing is executed, written, renamed or removed there.
  */
 export function runtimesCallProblems(summary, {home, releases, recordOpens = 1}) {
@@ -321,7 +325,8 @@ export function runtimesCallProblems(summary, {home, releases, recordOpens = 1})
       const [name] = rel.split('/');
       if (rel && !releases.includes(name)) { problems.push(`a call outside the two release names: ${call.kind} of ${path}`); continue; }
       const record = releases.some(release => rel === `${release}/install.json`);
-      if (call.kind === 'lstat' || (rel && call.kind === 'opendir')) continue;
+      // A stat of a descriptor already opened (fstat) looks nothing up: the open was judged.
+      if (call.kind === 'lstat' || (rel && (call.kind === 'opendir' || call.kind === 'fstat'))) continue;
       if (call.kind === 'open' && record) { opens += 1; continue; }
       problems.push(`${call.kind} of ${path}`);
     }
@@ -349,7 +354,7 @@ const words = e => [e.program, ...(e.argv ?? []).slice(1)].join(' ');
  * What a refused open or a doctor run executed (E3, U0): the trace is whole; no exec, done or attempted, of an engine,
  * the sandbox helper (`helper`), bubblewrap, a REPL host process or anything under runtimes/, but `allowed` [{program,
  * argv}], each of which ran exactly once with exactly that argument vector (the override's `--version`). `allowRoles`
- * names roles a run may exec on its own account (doctor's sandbox probes run the helper and bubblewrap).
+ * names roles a run may exec on its own account (doctor's sandbox.userns probe runs bubblewrap).
  */
 export function execRoleProblems(summary, {helper, allowed = [], allowRoles = []}) {
   if (!summary) return ['no trace'];

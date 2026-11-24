@@ -3,6 +3,7 @@
 // fetch log, a refused open's sentence and what its trace shows launched, the traced install's and doctor's calls under
 // runtimes/, the retired tree's report, and the trees' snapshots. Each judge has its negative control here: a missing
 // record never passes.
+import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
@@ -12,7 +13,8 @@ import {APPROVED_OLDER, CELLS, ENGINE_HINT_LITERAL, FIXTURE_STEPS, FORBIDDEN_ROW
   emptyHomeProblems, engineRowProblems, execRoleProblems, fetchLogProblems, fixtureProblems, inheritedOverrides, initializeAnswered, installProblems, launchedProblems, noFetchProblems,
   notNamedProblems, olderProblems, outdatedOverrideMessage, parsePhases, parseRefusal, refusedAsProblems, reinstallProblems, retiredInstallProblems, retiredLineProblems,
   retiredMessage, retiredReportProblems, retiredSentence, runVerdict, runtimesCallProblems, snapshotProblems, staticEngineProblems, toolProblems, traceProblems, treeSnapshot,
-  witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
+  vendorReleaseFor, witnessOf} from '../scripts/accept/linux-runtime-cells.mjs';
+import {RETIRED_RELEASES} from '../src/runtime/retired-tree.mjs';
 import {loggedFetch, readFetchLog} from '../scripts/accept/fetch-log.mjs';
 import {summarizeTrace} from '../scripts/accept/linux-trace.mjs';
 import {cuaEngineProblems, foldSample, newWatch, noEngineProblems, nothingLaunchedProblems, ownNodeProblems, sampleTree, watchRecord} from '../scripts/accept/linux-runtime-watch.mjs';
@@ -110,8 +112,34 @@ test('no cell runs the vendor\'s engine, and the driver reads no Linux pin and n
   assert.match((await import('../scripts/accept/linux-text.mjs')).argumentProblem(['--read-only']), /removed in cua 0\.30\.0/);
   const driver = source('linux-runtime.mjs');
   assert.doesNotMatch(driver, /vendorLinuxRuntime|loadPins|selectPin|runtime\/provenance|'rollback'/);
-  // The vendor's release by its name alone, for each architecture the hosted legs run.
+  // The vendor's release by its name alone, for each architecture the hosted legs run: retired-tree.mjs's constants,
+  // every one of them, and nothing for another architecture.
   assert.deepEqual(VENDOR_RELEASES, {x64: '26.928.40906-linux-x64', arm64: '26.928.40906-linux-arm64'});
+  assert.deepEqual(Object.values(VENDOR_RELEASES).sort(), Object.keys(RETIRED_RELEASES).sort());
+  assert.equal(vendorReleaseFor(process.arch), {x64: '26.928.40906-linux-x64', arm64: '26.928.40906-linux-arm64'}[process.arch] ?? null);
+  assert.equal(vendorReleaseFor('ia32'), null);
+  assert.equal(vendorReleaseFor('constructor'), null);
+  assert.match(driver, /const vendorName = vendorReleaseFor\(arch\);/);
+});
+
+// The driver's start, run for real up to its preconditions (with no private display it never passes them): the lines
+// before them, the release names among them, must not throw. A Linux pin lookup there failed only once T4 removed the
+// pins (the coordinator's note on task 170).
+test('the driver starts and stops at its preconditions, having named the release and the vendor\'s release without a pin', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-driver-start-'));
+  try {
+    const env = {...process.env, DISPLAY: '', CUA_HOME: join(dir, 'cua')};
+    delete env.CUA_NATIVE_ENGINE;
+    const run = spawnSync(process.execPath, [new URL('../scripts/accept/linux-runtime.mjs', import.meta.url).pathname, '--out', join(dir, 'run', 'artifact'), '--older', dir, '--phases', 'E'],
+      {env, encoding: 'utf8', timeout: 60_000});
+    assert.equal(run.status, 1, run.stderr);
+    const report = JSON.parse(readFileSync(join(dir, 'run', 'artifact', 'runtime.json'), 'utf8'));
+    assert.match(report.error, /^preconditions: /);
+    assert.match(report.error, /the display "" is not a private one/);
+    assert.equal(report.vendorRelease, vendorReleaseFor(process.arch));
+    assert.match(report.release, /^cua-linux-/);
+    assert.equal(report.verdict.pass, false);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
 const passed = fixture => ({fixture, status: 'PASS', steps: FIXTURE_STEPS[fixture].map(name => ({name, status: 'PASS'}))});
@@ -489,6 +517,7 @@ const readsOfTree = [
   `500   statx(AT_FDCWD</repo>, "${R6}", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = 0`,
   `500   statx(AT_FDCWD</repo>, "${R6}/install.json", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = 0`,
   `500   openat(AT_FDCWD</repo>, "${R6}/install.json", O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = 21<${R6}/install.json>`,
+  `500   statx(21<${R6}/install.json>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_ALL, stx_mode=S_IFREG|0600, ...}) = 0`,
   `500   openat(AT_FDCWD</repo>, "${R6}", O_RDONLY|O_CLOEXEC|O_DIRECTORY) = 22<${R6}>`,
   `500   statx(AT_FDCWD</repo>, "${R6}/cua_node", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = 0`,
   `500   statx(AT_FDCWD</repo>, "${H}/runtimes/26.928.40906-linux-arm64", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x7ffc) = -1 ENOENT (No such file or directory)`,

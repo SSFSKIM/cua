@@ -683,3 +683,22 @@ test("a row carries its drag's or its handle end's release_sync, null where the 
   assert.equal(releaseSyncOf({ hold: {} }), null);
   assert.equal(releaseSyncOf({}), null);
 });
+
+test("both rows a trial emits carry release_sync: a drag's its engine's, a refused aim's null (#512's item 4)", async () => {
+  const { refusedAimRow, releaseRecords } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const sync = { schedule: 'after_path', overran: true, visits_dropped: 0, unconfirmed: null };
+  const drag = releaseRecords({ after_release: { confirmed_by: 'Activation(7)' }, release_sync: sync, drop_cursor: { read: false } });
+  assert.deepEqual(Object.keys(drag), ['after_release', 'release_sync', 'drop_cursor']);
+  assert.deepEqual(drag.release_sync, sync);
+  assert.deepEqual(releaseRecords({ handle: { release_sync: { ran: true }, drop_cursor: { read: false } } }), {
+    after_release: undefined,
+    release_sync: { ran: true },
+    drop_cursor: { read: false },
+  });
+  const before = { dnd: {} };
+  const refused = refusedAimRow({ load: 'load2', family: 'electron', named: { id: 5, x: 1, y: 2, other: 'left out' }, lane: 'named', cell: 'plain', base: 'plain', cover: null, i: 3, block: 0, cold: true, aim: { refused: 'the press lands outside the source' }, before });
+  assert.equal(refused.skipped, 'the press lands outside the source');
+  assert.equal(refused.after, before);
+  assert.ok(Object.hasOwn(refused, 'release_sync'), 'the refused row names release_sync');
+  assert.equal(refused.release_sync, null);
+});

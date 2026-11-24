@@ -10,7 +10,7 @@
 // ignored; any method not recorded gets -32601 with a sentence, a line that is not JSON -32700. Resolves on EOF.
 import {readFileSync} from 'node:fs';
 import {dirname, isAbsolute} from 'node:path';
-import {createInterface} from 'node:readline';
+import {jsonLine, lines as jsonLines} from '../repl-host/jsonl.mjs';
 
 export const RECORDED_RESPONSES = JSON.parse(readFileSync(new URL('./app-server-responses.json', import.meta.url), 'utf8')).responses;
 
@@ -37,11 +37,11 @@ function answer(line, responses) {
 
 export function serveAppServer({input, output, responses}) {
   return new Promise((resolve, reject) => {
-    const lines = createInterface({input, crlfDelay: Infinity});
+    const lines = jsonLines(input);
     lines.on('line', line => {
       if (!line.trim()) return;
       const reply = answer(line, responses);
-      if (reply) output.write(`${JSON.stringify(reply)}\n`);
+      if (reply) output.write(jsonLine(reply));
     });
     lines.on('close', resolve);
     input.on('error', reject);

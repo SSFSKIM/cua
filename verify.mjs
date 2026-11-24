@@ -51,7 +51,6 @@ import {spawn, spawnSync} from 'node:child_process';
 import {existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
-import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {defaultHome} from './src/runtime/layout.mjs';
@@ -65,6 +64,7 @@ import {
 import {approvedEngineFacts, cuaNodes as cuaNodesOf, LaneUsageError, pinLane, selectLane} from './scripts/probe/pinned-engine.mjs';
 import {readWindows} from './scripts/accept/window-close.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
+import {jsonLine, lines} from './src/repl-host/jsonl.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
 const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
@@ -153,8 +153,8 @@ let nextId = 0;
 report.elicitationsDeclined = 0;
 // The bind in flight ({asked, accepted, error}): only it may be approved, and only for --bind's app.
 let binding = null;
-const send = msg => server.stdin.write(JSON.stringify(msg) + '\n');
-createInterface({input: server.stdout}).on('line', line => {
+const send = msg => server.stdin.write(jsonLine(msg));
+lines(server.stdout).on('line', line => {
   const msg = JSON.parse(line);
   if (msg.method === 'elicitation/create' && msg.id !== undefined) {
     if (binding && isAppApproval(msg, options.bind)) {

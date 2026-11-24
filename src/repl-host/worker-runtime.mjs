@@ -14,6 +14,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { lifelineWatched } from "./lifeline.mjs";
+import { jsonLine } from "./jsonl.mjs";
 
 // cua: the process's time zone is settled now, while it starts. A sandboxed process's first local-time use asks
 // launchd for the notification service (ICU's host time-zone detection -> tzset -> notify_register_tz ->
@@ -347,7 +348,7 @@ export function createWorkerRuntime({ cwd, env, homeDir, tmpDir }) {
   });
 
   function send(message) {
-    process.stdout.write(`${JSON.stringify(message)}\n`);
+    process.stdout.write(jsonLine(message));
   }
 
   function createExecState(message, extra = {}) {

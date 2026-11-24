@@ -64,11 +64,11 @@
 // `open` is the connection opener, a seam for tests.
 import {randomUUID} from 'node:crypto';
 import {PassThrough} from 'node:stream';
-import {createInterface} from 'node:readline';
 import {openConnection} from './connection.mjs';
 import {remoteCursor} from '../runtime/cursor-identity.mjs';
 import {credentialMatches} from '../remote/device.mjs';
 import {WORK_TOOLS, statusResult} from './surface.mjs';
+import {jsonLine, lines, stringify} from '../repl-host/jsonl.mjs';
 
 // MCP-Protocol-Version values accepted on any request; a session also accepts the version its runtime negotiated.
 const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18', '2025-11-25']);
@@ -184,11 +184,11 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   const sseEvent = (stream, msg) => {
     const n = ++stream.n;
-    const event = `id: ${stream.id}-${n}\ndata: ${JSON.stringify(msg)}\n\n`;
+    const event = `id: ${stream.id}-${n}\ndata: ${stringify(msg)}\n\n`;
     stream.events.push({n, event});
     stream.res?.write(event);
   };
-  const toGet = (session, msg) => session.get.res.write(`data: ${JSON.stringify(msg)}\n\n`);
+  const toGet = (session, msg) => session.get.res.write(`data: ${stringify(msg)}\n\n`);
 
   // The agent log's record of a request the runtime makes of the client (an app approval, typically) and of its
   // answer: method, id, the elicitation's action and the wait. Never a message's text or fields.
@@ -272,7 +272,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       protocolVersion: null, inbound: Promise.resolve(), streamlessSince: Date.now()};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
-    createInterface({input: output}).on('line', line => {
+    lines(output).on('line', line => {
       if (!line.trim()) return;
       const msg = JSON.parse(line);
       if (msg.method === undefined) deliverResponse(session, msg);
@@ -302,7 +302,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     return session;
   }
 
-  const send = (session, messages) => session.input.write(messages.map(m => `${JSON.stringify(m)}\n`).join(''));
+  const send = (session, messages) => session.input.write(messages.map(jsonLine).join(''));
 
   // Runs `step` once every message POSTed before it has reached the connection, so arrival order holds while a js call
   // waits for the console check.

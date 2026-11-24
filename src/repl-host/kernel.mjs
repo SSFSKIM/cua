@@ -33,6 +33,7 @@ import {
   trackExecBackgroundOperation,
 } from "./worker-runtime.mjs";
 import { watchLifeline } from "./lifeline.mjs";
+import { jsonLine } from "./jsonl.mjs";
 
 // cua: a cell busy in synchronous code never lets the kernel read its stdin's end, so a watcher thread ends it once
 // its supervisor is gone (./lifeline.mjs). First, so the setting has left the environment before anything copies it.
@@ -1501,7 +1502,7 @@ function sendFatalExecResultSync(kind, error) {
     error: `node_repl kernel ${kind}: ${formatErrorMessage(error)}; kernel reset. Catch or handle async errors (including Promise rejections and EventEmitter 'error' events) to avoid kernel termination.`,
   };
   try {
-    fs.writeSync(process.stdout.fd, `${JSON.stringify(payload)}\n`);
+    fs.writeSync(process.stdout.fd, jsonLine(payload));
   } catch {
     // Best effort only; the host will still surface stdout EOF diagnostics.
   }

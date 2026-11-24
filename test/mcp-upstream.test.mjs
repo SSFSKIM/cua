@@ -59,6 +59,17 @@ test('relays JSON-RPC both ways and a clean EOF exit needs no signal', async t =
   if (reported) assert.equal(reported.code, 0);
 });
 
+// #565: node:readline (Node 24 and later) ends a line at U+2028 and U+2029, which JSON.stringify leaves raw. The
+// runtime's answer carrying them raw is read whole, and what cua sends carries them escaped, so the runtime's own line
+// reader reads it whole too.
+test('LS and PS cross the runtime\'s stdio whole both ways', async t => {
+  const LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
+  const {request} = start(t, 'echo');
+  const code = `separators${PS}${LS}`;
+  const answer = await request(1, 'tools/call', {name: 'js', arguments: {code}});
+  assert.equal(answer.result.content[0].text, `${code}|Inbox${LS}draft${PS}end`);
+});
+
 test('non-JSON runtime output is dropped and reported, never relayed', async t => {
   const {request, messages, diagnostics} = start(t, 'noise');
   const reply = await request(1, 'ping');

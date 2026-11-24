@@ -1992,14 +1992,17 @@ domain.
   -type` and `-extract … raw` on that one output): the dictionary's presence and the key's value come from the same
   reading. A string where the dictionary belongs, or a number where the Boolean belongs, is `{malformed: why}`, never
   "unset". A malformed owner's value is never written back: the restore holds only while it still reads as saved, and
-  the failure says to set it by hand. A hosted matrix run whose baseline reads malformed therefore writes nothing: it
-  reads only, as off a hosted runner, and the rows needing a write are `ownerInput` naming why.
+  the failure says to set it by hand. A hosted run whose baseline reads malformed therefore writes nothing: the
+  matrix refuses at its first reading, and the save refuses its own reading too (no record, `{refused}`), so no `off`
+  write or selection follows a valid first reading that went malformed. The run reads only, and the rows needing a
+  write are NO VERDICT `venue` (a disposable runner's precondition, not the owner's state) naming why; so are the
+  live harness's Korean checks.
 - **Saving.** The saved record keeps whether the dictionary existed before the run (`perContextDict`), taken with the
   value from the same typed read.
 - **Unsetting.** `unsetPerContext` runs `scripts/native-matrix/unset-per-context.sh`, the one implementation, which a
-  person can run by hand too. Against the real domain it refuses off a GitHub-hosted runner, before any defaults call,
-  unless run with `--manual-recovery`: the owner's own recovery, the mode every failure names. A scratch path domain
-  (the tests') runs anywhere.
+  person can run by hand too. Off a GitHub-hosted runner it refuses before any defaults call, whatever the domain's
+  spelling (a path may be the owner's own plist), unless run with `--manual-recovery`: the owner's own recovery, the
+  mode every failure names. The tests' scratch domains pass the hosted environment or the mode.
   1. It reads the domain through cfprefsd: `defaults export com.apple.HIToolbox -`.
   2. With the dictionary, or the key in it, already absent it prints `none` and writes nothing: it is safe to repeat.
      A dictionary key that is not a dictionary stops it, nothing written.

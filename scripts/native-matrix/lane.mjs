@@ -18,6 +18,7 @@ import {boundedExec, journaledScript, SSH_OPTIONS} from './live.mjs';
 export const CELL_MS = 60_000, BIND_MS = 120_000;
 const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 const MATRIX_DEVICE = 'scripts/native-matrix/matrix-device.mjs';
+const KEY_ROUTE_DEVICE = 'scripts/native-matrix/key-route-device.mjs';
 const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
 // Every lane call's device-clock window: the code wrapped so the REPL prints, after the cell's own marker, the device's
@@ -46,7 +47,7 @@ export function helpersOf(output, runtimeRoot, engineBundle) {
 }
 
 // The device steps, each a bounded ssh whose node launch is journaled in the run's journal once `journalTo(run)` named
-// it (./live.mjs boundedExec). -> {home, scenes, goldens, live, matrix, prepare, cleanup, preflight, serveSpec, helpers, journalTo}.
+// it (./live.mjs boundedExec). -> {home, scenes, goldens, live, matrix, keyRoute, prepare, cleanup, preflight, serveSpec, helpers, journalTo}.
 export function matrixOps(device, {exec = execFileSync} = {}) {
   const journal = {run: null};
   const bounded = boundedExec(exec, journal);
@@ -56,6 +57,7 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
     home: base.home, scenes: base.scenes, goldens: base.goldens, prepare: base.prepare, cleanup: base.cleanup,
     live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
     matrix: args => cli(MATRIX_DEVICE, args),
+    keyRoute: args => cli(KEY_ROUTE_DEVICE, args),
     preflight: ({host, engine, approvedEngine, prepared}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
     serveSpec: ({pre, prepared, host, engine}) => {
       const serve = serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir,
@@ -229,6 +231,12 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     serveSpec: step('serve', {command: 'ssh', args: ['dry']}),
     helpers: step('helpers', () => (engine === 'cua' ? `00:00 ${approvedEngine}/Contents/MacOS/cua-engine --probe watch-activations\n00:00 ${approvedEngine}/Contents/MacOS/cua-engine`
       : `00:00 ${home}/runtime/SkyComputerUseService`)),
+    // The key-route diagnostic's device (./key-route-device.mjs): the panel read once, the taps seeing nothing, the
+    // panel gone after the Escape.
+    keyRoute: step('key-route', argv => ({at: [clock(), clock()], answer: {
+      read: {trusted: true, pid: records.textedit?.pid ?? null, actualPid: 'unavailable', chain: [], processes: {}, routes: [], cuaKeyboardTarget: records.textedit?.pid ?? null},
+      tap: argv[1] === 'start' ? {launched: true, ready: true, pid: ++pid, listenAccess: true, taps: []} : {exited: true, killed: false, why: 'stop', events: []},
+      panel: {trusted: true, up: false}, cancel: {found: false, closed: true}}[argv[0]] ?? {}})),
     journalTo: () => {},
   };
 }

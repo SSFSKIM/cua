@@ -29,6 +29,10 @@
 //       T3b's staged onboarding, sitting D's last step (scripts/hosted-sittings/onboarding.mjs): cua's engine's TCC rows
 //       set stage by stage, a relaunch at each, the product's answers recorded to <file>, which the sitting's check judges
 //       (scripts/hosted-sittings/onboarding-judge.mjs). Exit 0 every stage ran, 1 the run stopped (recorded), 2 refused.
+//   node scripts/hosted-sittings.mjs key-route --approved-runtime <home> --approved-engine <bundle> --sitting <id> --out <dir>
+//       Sitting C's key-route diagnostic, its last step (scripts/hosted-sittings/key-route.mjs, ruling 1198): where each
+//       engine's Escape lands while TextEdit's Open panel is focused; key-route.json and key-route.md in <dir>, which
+//       `run` appends to sitting.md. Exit 0 recorded, 1 a cleanup failure (named in the record), 2 refused.
 import {spawnSync} from 'node:child_process';
 import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -44,6 +48,8 @@ import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs
 import {execStep, jobStartedOf, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
 import {runOnboarding} from './hosted-sittings/onboarding.mjs';
+import {keyRouteIo, runKeyRoute} from './hosted-sittings/key-route.mjs';
+import {stepSections} from './hosted-sittings/key-route-report.mjs';
 import {pinDecision} from './hosted-sittings/pin.mjs';
 import {readScreenAtEnd} from './hosted-sittings/display-mode.mjs';
 import {textEditGuard} from './hosted-sittings/textedit-guard.mjs';
@@ -125,6 +131,8 @@ async function runCommand(sitting, values) {
   // The venue (ruling 1169): every scene frame on this runner that differs from the mini's, why, and the cells resting on it,
   // as setup wrote it into the runner's record (the same block each lane's meta keeps).
   parts.push(renderVenue(venue));
+  // A diagnostic's own section (C's key-route, ruling 1198), as it wrote it; one it did not write is named.
+  parts.push(...stepSections(plan.steps, report, {read: path => (existsSync(path) ? readFileSync(path, 'utf8') : null)}));
   writeJson(join(out, 'sitting.json'), {...report, screenAtEnd, venue});
   writeFileSync(join(out, 'sitting.md'), parts.join('\n'));
   process.stdout.write(parts.join('\n'));
@@ -166,7 +174,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'approved-engine': {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
+    report: {type: 'string'}, 'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {
       const report = await hostedSetup({checkout: REPO, commit: commitOf(), engineArchive: values['engine-archive'] ? resolve(values['engine-archive']) : null, home: homedir(),
@@ -212,6 +220,12 @@ async function main(argv) {
       return timing.answered ? 0 : 1;
     }
     case 'textedit': return textedit(positionals[0], values);
+    case 'key-route': {
+      // Refused off a GitHub-hosted runner inside, before anything is read, built, written or opened.
+      if (!values['approved-runtime'] || !values['approved-engine'] || !values.sitting || !values.out) usage('key-route --approved-runtime <home> --approved-engine <bundle> --sitting <id> --out <dir>');
+      const options = {approvedRuntime: resolve(values['approved-runtime']), approvedEngine: resolve(values['approved-engine']), sitting: values.sitting, out: resolve(values.out)};
+      return runKeyRoute(options, keyRouteIo(options));
+    }
     case 'onboarding': {
       if (!values.out) usage('onboarding --out <file>');
       // Saved after every stage and before cleanup (the driver's `save`), so a cleanup that never ends loses nothing.
@@ -221,7 +235,7 @@ async function main(argv) {
       await new Promise(done => process.stdout.write(json({complete: record.complete, problem: record.problem, cleanup: record.cleanup, stages: record.stages.map(stage => stage.id)}), done));
       return record.complete ? 0 : 1;
     }
-    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding (see this file\'s header)');
+    default: usage('setup | pin-decision | approve | run <sitting> | plan <sitting> | counts <dir>... | focus-timing | textedit up|down | onboarding | key-route (see this file\'s header)');
   }
   return 2;
 }

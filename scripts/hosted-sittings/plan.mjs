@@ -6,7 +6,7 @@
 // already one pass run whole).
 //
 // A step: {id, label, kind, argv, check?, record?, pair?, engine?, report?, observe?, lane?, pilotNoVerdict?, env?, needs?,
-// expect?, keep?, missing?, pending?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default,
+// expect?, keep?, missing?, pending?, section?}. `check` names how the step is read once it ran (./checks.mjs; `exit` by default,
 // `expect` for an expect step), with the files it reads: `record` (a run's, whose attestations must be `engine`'s, the side
 // the run pins: ruling 1149), `pair` (the other side's record of the same run, which must have stood on the same frames:
 // ruling 1169), `report` (removed before the step runs). Kinds, as ./run.mjs
@@ -19,6 +19,8 @@
 //   cleanup   always runs once what it `needs` ran
 //   pilot     the pilot's own reading, run only in the pilot form
 //   pending   a step whose code is not built yet: named, never run
+//   diagnostic  a reading for a ticket, run as `run` is: its check gives INFO, never the sitting's verdict, save a
+//             cleanup failure (C's key-route diagnostic, ruling 1198); `section`: its Markdown, appended to sitting.md
 // `needs`: the steps that must have passed first (else this one is skipped). `keep`: files a step writes elsewhere,
 // copied into the sitting's output after it. `missing`: why a step cannot run here (a failure, not run).
 export const DEVICE = 'hosted-macos';
@@ -112,6 +114,12 @@ function sittingC(ctx) {
     argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--runs', String(runs))});
   steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
   steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
+  // Ruling 1198's diagnostic, last: after the counted lanes and their judges, never among judged cells. It needs none of
+  // them to have passed: each of its lanes refuses at its own preflight what a run before left.
+  const keyRoute = `${ctx.out}/key-route`;
+  steps.push({id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
+    check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
+    argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]});
   return steps;
 }
 

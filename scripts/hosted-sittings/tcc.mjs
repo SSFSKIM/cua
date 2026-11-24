@@ -12,8 +12,10 @@
 // the workflow may name a later one) and writes it to a run-owned file, named with its commit by
 // CUA_HOSTED_DECISION_FILE and CUA_HOSTED_DECISION_SHA. The writer runs no git and fetches nothing; a missing or
 // unreadable file refuses (ruling 1137; proven by test/hosted-sittings/tcc.test.mjs with a spy store). Every write cites
-// the entry and the pinned commit in the log and in its report. It grants rows (the setup's and the approval's), and it
-// removes cua's engine's own rows for named services (the hosted staged onboarding's, T3b), through the same guard.
+// the entry and the pinned commit in the log and in its report. It grants rows (the setup's and the approval's), it
+// removes cua's engine's own rows for named services (the hosted staged onboarding's, T3b), and it grants Input
+// Monitoring to sitting C's key-route diagnostic's tap app alone (ruling 1198, grantDiagnosticListen), all through the
+// same guard; engineRows reads the engines' rows, hosted only, so that step can show it left them as they were.
 //
 // What H0 found (#175; scripts/probe-117-h0/README.md on probe/117-h0 56c08949), and so what this writes: the system
 // database's rows are honoured, at the client's next launch only (so the caller relaunches the engines after it,
@@ -185,4 +187,40 @@ export function revokeRows({client, services} = {}, deps = {}) {
     const present = key => read.some(([s, c]) => s === SERVICES[key] && c === client);
     return {decision, client, removed: services.filter(key => !present(key)), remaining: services.filter(present)};
   }, deps);
+}
+
+// The key-route diagnostic's tap app (ruling 1198; ../native-matrix/key-route-tap.swift, built by
+// ../native-matrix/key-route-device.mjs buildTapApp): the one identity besides the two engines this writer grants, and
+// only Input Monitoring, which its listen-only taps need. Neither engine under test gets a row from it.
+export const DIAGNOSTIC_CLIENT = 'io.github.ssfskim.cua.key-route-tap';
+
+// Grants Input Monitoring to the diagnostic's tap app (`bundle`, whose designated requirement the row carries) in the
+// system database, through the same guard as every write (hosted, under O0), then reads the row back. `deps`:
+// grantRows'. -> {decision, client, service, granted}.
+export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} = {}) {
+  if (typeof bundle !== 'string' || !bundle) throw new Error('the TCC writer grants the key-route diagnostic its tap app\'s bundle only');
+  const service = SERVICES.inputMonitoring;
+  return tccWrite((store, decision) => {
+    if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
+    const hex = store.csreq(bundle);
+    if (!/^[0-9a-f]+$/.test(hex)) throw new Error(`the designated requirement of ${bundle} did not compile`);
+    store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(service)}, ${quote(DIAGNOSTIC_CLIENT)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${Math.floor(now() / 1000)});`);
+    const granted = readRows(store, [DIAGNOSTIC_CLIENT], ['inputMonitoring']).some(([s, c, value]) => s === service && c === DIAGNOSTIC_CLIENT && value === '2');
+    return {decision, client: DIAGNOSTIC_CLIENT, service, granted};
+  }, deps);
+}
+
+// The two engines' rows as the system database holds them, every column a grant writes, one line each, sorted: read
+// before and after a step that must leave them as they were (the key-route diagnostic). A read only, still hosted only
+// (the system database is read through sudo). -> [line].
+export function engineRows({env = process.env, platform = process.platform, store = STORE} = {}) {
+  assertGithubHosted(env, platform, 'the TCC reader');
+  const clients = Object.values(CLIENTS).map(quote).join(', ');
+  return String(store.sql(SYSTEM_DB, `select service, client, auth_value, auth_reason, auth_version, hex(csreq), flags, last_modified from access where client in (${clients}) order by service, client`) ?? '')
+    .split('\n').filter(Boolean).sort();
+}
+// What changed between two readings of engineRows. -> null when nothing did, else {added, removed}.
+export function rowsChanged(before, after) {
+  const added = after.filter(row => !before.includes(row)), removed = before.filter(row => !after.includes(row));
+  return added.length || removed.length ? {added, removed} : null;
 }

@@ -28,7 +28,7 @@ const TAP_STARTED = {launched: true, ready: true, pid: 41, listenAccess: true, t
 // function answers by throwing or computing), `escape` the press cell; `env`, `platform` and `runner` the run's venue.
 async function keyRouteRun({device = {}, escape = {pressed: true, at: [1, 2], threw: null, closed: false}, open = {opened: true}, env = HOSTED_ENV, platform = 'darwin', runner = RUNNER, ops = {}} = {}) {
   const answers = {read: AX, 'tap start': TAP_STARTED,
-    'tap stop': {exited: true, killed: false, why: 'stop', logRead: true, ready: true, events: [{label: 'textedit', tapPid: TEXTEDIT_PID, target: TEXTEDIT_PID, source: 900, at: 2}]},
+    'tap stop': {exited: true, killed: false, why: 'stop', logRead: true, ready: true, rawEvents: [{label: 'textedit', tapPid: TEXTEDIT_PID, target: TEXTEDIT_PID, source: 900, at: 2}]},
     panel: {trusted: true, up: true}, cancel: {found: true, via: 'cancelButton', pressed: 0, closed: true}, ...device};
   const calls = [];
   const answer = name => (typeof answers[name] === 'function' ? answers[name]() : answers[name]);
@@ -82,7 +82,7 @@ test('the lane: ⌘O under the key guard, the AX half, the taps on TextEdit and 
   assert.deepEqual(keyRoute.ax, AX);
   assert.deepEqual(keyRoute.press, {sent: true, at: [1, 2], threw: null, closedByEngineView: false, route: null});
   assert.deepEqual([keyRoute.after.up, keyRoute.cancel.via, keyRoute.closed, keyRoute.cleanup], [true, 'cancelButton', true, []]);
-  assert.equal(keyRoute.tap.stop.events[0].source, 900);
+  assert.equal(keyRoute.tap.stop.rawEvents[0].source, 900);
   // Every device step's window is the harness's, intending no app.
   assert.ok(result.meta.keyRoute && result.complete);
 });
@@ -106,7 +106,7 @@ test('an Escape that closed the panel leaves nothing to cancel', async () => {
 
 test('a panel the AX cancel did not close is a cleanup failure, named, and stops the run; a tap that did not exit is named too', async () => {
   const {code, result, keyRoute} = await keyRouteRun({device: {cancel: {found: true, via: 'button', pressed: -25204, closed: false},
-    'tap stop': {exited: false, killed: true, why: null, events: []}}});
+    'tap stop': {exited: false, killed: true, why: null, rawEvents: []}}});
   assert.equal(code, 1);
   assert.equal(keyRoute.closed, false);
   assert.deepEqual(keyRoute.cleanup, ['the tap app (pid 41) did not exit when stopped', 'TextEdit\'s Open panel stayed up after the AX cancel']);
@@ -162,12 +162,12 @@ test('the taps also watch the selected ancestor\'s pid when no other tap covers 
 });
 
 // The capture: which Escape keyDowns the press's own window owns, and why there are none when there are none.
-const STOPPED = {exited: true, killed: false, why: 'stop', logRead: true, ready: true, events: []};
+const STOPPED = {exited: true, killed: false, why: 'stop', logRead: true, ready: true, rawEvents: []};
 const PRESS = {sent: true, at: [1_000, 1_010]};
 const event = (at, extra = {}) => ({label: 'textedit', tapPid: TEXTEDIT_PID, target: TEXTEDIT_PID, source: 900, at, ...extra});
 
 test('captureOf keeps the events inside the press\'s window apart from the rest, and never prints a pid it could not read as 0', () => {
-  const capture = captureOf({start: TAP_STARTED, stop: {...STOPPED, events: [event(900), event(960), event(1_005, {target: 0, source: -1}), event(1_400), event(1_600)]}}, PRESS);
+  const capture = captureOf({start: TAP_STARTED, stop: {...STOPPED, rawEvents: [event(900), event(960), event(1_005, {target: 0, source: -1}), event(1_400), event(1_600)]}}, PRESS);
   assert.equal(capture.state, 'seen');
   assert.deepEqual(capture.window, [950, 1_510]);
   assert.deepEqual(capture.events.map(e => [e.at, e.target, e.source]), [[960, TEXTEDIT_PID, 900], [1_005, 'unavailable', 'unavailable'], [1_400, TEXTEDIT_PID, 900]]);
@@ -176,7 +176,7 @@ test('captureOf keeps the events inside the press\'s window apart from the rest,
 });
 
 test('captureOf tells a tap that saw nothing from a tap that failed, and names each failure', () => {
-  assert.deepEqual(captureOf({start: TAP_STARTED, stop: {...STOPPED, events: [event(5_000)]}}, PRESS), {state: 'none', window: [950, 1_510], failures: [], events: [], unmatched: [event(5_000)]});
+  assert.deepEqual(captureOf({start: TAP_STARTED, stop: {...STOPPED, rawEvents: [event(5_000)]}}, PRESS), {state: 'none', window: [950, 1_510], failures: [], events: [], unmatched: [event(5_000)]});
   const failed = (tap, press = PRESS) => { const c = captureOf(tap, press); assert.equal(c.state, 'failed', JSON.stringify(c)); return c.failures; };
   assert.deepEqual(failed(null), ['no tap was started']);
   assert.deepEqual(failed({start: {launched: false, refused: 'the key-route tap: refused: x'}}), ['the tap was refused: the key-route tap: refused: x']);
@@ -189,8 +189,13 @@ test('captureOf tells a tap that saw nothing from a tap that failed, and names e
   assert.deepEqual(failed({start: TAP_STARTED}), ['the tap was not stopped']);
   assert.deepEqual(failed({start: TAP_STARTED, stop: {...STOPPED, logRead: false, ready: false}}), ['the tap\'s log could not be read']);
   assert.deepEqual(failed({start: TAP_STARTED, stop: {...STOPPED, ready: false}}), ['the tap\'s log holds no readiness line']);
+  // Its readiness is not enough: the tap must be shown live through the press, by its own stop line ("stop": it was
+  // running when told to stop, after the press) or by having to be killed then; one that ended earlier saw nothing.
+  assert.deepEqual(failed({start: TAP_STARTED, stop: {...STOPPED, why: 'max-seconds'}}), ['the tap ended at its own bound, not when told to stop: it is not shown live through the press']);
+  assert.deepEqual(failed({start: TAP_STARTED, stop: {...STOPPED, why: null}}), ['the tap ended before it was told to stop (its log holds no stop line): it is not shown live through the press']);
+  assert.equal(captureOf({start: TAP_STARTED, stop: {...STOPPED, why: null, exited: false, killed: true}}, PRESS).state, 'none', 'running when stopped, so live through the press');
   // No press, no window: every event is unmatched, and the state says so.
-  assert.deepEqual(captureOf({start: TAP_STARTED, stop: {...STOPPED, events: [event(3)]}}, {sent: false, reason: 'x'}),
+  assert.deepEqual(captureOf({start: TAP_STARTED, stop: {...STOPPED, rawEvents: [event(3)]}}, {sent: false, reason: 'x'}),
     {state: 'no-press', window: null, failures: [], events: [], unmatched: [event(3)]});
 });
 
@@ -245,13 +250,14 @@ test('tap start launches the tap app through LaunchServices with its targets and
   const start = await startTap({run: '/r', targets: ['textedit:5', 'panelService:700']}, io);
   assert.deepEqual(start, {launched: true, ready: true, pid: 41, listenAccess: true, taps: [{label: 'textedit', pid: 5, created: true}]});
   const open = calls.find(c => c[0] === 'open');
-  assert.deepEqual(open.slice(1, 6), ['-n', '-g', '-a', TAP_APP, '--args']);
+  // The hosted marker handed to the tap's own process through LaunchServices, which it checks first.
+  assert.deepEqual(open.slice(1, 8), ['-n', '-g', '--env', 'RUNNER_ENVIRONMENT=github-hosted', '-a', TAP_APP, '--args']);
   assert.deepEqual(open.slice(open.indexOf('--max-seconds'), open.indexOf('--max-seconds') + 6), ['--max-seconds', '120', '--pid', 'textedit:5', '--pid', 'panelService:700']);
   files[join('/r', 'key-route', 'tap.jsonl')] += [{label: 'panelService', tapPid: 700, keycode: 53, target: 700, source: 900, at: 3}, {stopped: true, why: 'stop'}].map(l => JSON.stringify(l)).join('\n');
   const stop = await stopTap({run: '/r'}, io);
-  assert.deepEqual(stop, {exited: true, killed: false, why: 'stop', logRead: true, ready: true, events: [{label: 'panelService', tapPid: 700, target: 700, source: 900, at: 3}]});
+  assert.deepEqual(stop, {exited: true, killed: false, why: 'stop', logRead: true, ready: true, rawEvents: [{label: 'panelService', tapPid: 700, target: 700, source: 900, at: 3}]});
   assert.ok(calls.some(c => c[0] === 'write' && c[1] === join('/r', 'key-route', 'tap.stop')), 'told to stop by its stop file');
-  assert.deepEqual(await stopTap({run: '/r'}, io), {exited: null, killed: false, why: null, logRead: false, ready: false, events: [], reason: 'no tap was started in this run'});
+  assert.deepEqual(await stopTap({run: '/r'}, io), {exited: null, killed: false, why: null, logRead: false, ready: false, rawEvents: [], reason: 'no tap was started in this run'});
   await assert.rejects(startTap({run: '/r', targets: ['bad']}, io), /--pid <label>:<pid>/);
 });
 
@@ -259,7 +265,7 @@ test('tap stop tells a log it could not read from a log that held no Escape', as
   const {io, files} = deviceIo();
   await startTap({run: '/r', targets: ['textedit:5']}, io);
   delete files[join('/r', 'key-route', 'tap.jsonl')];
-  assert.deepEqual(await stopTap({run: '/r'}, io), {exited: true, killed: false, why: null, logRead: false, ready: false, events: []});
+  assert.deepEqual(await stopTap({run: '/r'}, io), {exited: true, killed: false, why: null, logRead: false, ready: false, rawEvents: []});
 });
 
 test('a tap that outlives its stop is killed, only when it is the tap; one never built is not launched', async () => {

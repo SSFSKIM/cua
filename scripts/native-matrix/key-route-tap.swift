@@ -8,17 +8,28 @@
 // under O0), and neither engine under test gets a grant. It never asks for one: CGPreflightListenEventAccess is reported.
 //
 //   key-route-tap --admission <file> --nonce <hex> --out <file> --stop <file> --max-seconds <n> --pid <label>:<pid> ...
-// Admission, checked here, in the LaunchServices process, before it creates its log or any tap: `open` hands it none of
-// its caller's environment, so the guarded launcher (./key-route-device.mjs startTap, which refuses off a GitHub-hosted
-// runner) writes --admission, {"nonce", "at"}, just before it opens the app. The file must hold --nonce and be at most
-// ADMISSION_SECONDS old; it is consumed (removed) when read. Without it the tap exits 3, having made nothing.
-// The bound comes first: a deadline of --max-seconds (plus a grace) is armed before anything else, so it never outlives it.
+// Its venue, checked first, in its own process, before it reads, removes or creates any file or installs a tap (the #560
+// pattern): RUNNER_ENVIRONMENT=github-hosted, which `open` hands it only as the guarded launcher (./key-route-device.mjs
+// startTap, which refuses off a GitHub-hosted runner) passes it, `open --env`. Off it the tap exits 3, having touched
+// nothing. Then its launch gate: the launcher writes --admission, {"nonce", "at"}, just before it opens the app; the
+// file must hold --nonce and be at most ADMISSION_SECONDS old, and is consumed (removed) only once it held. Without it
+// the tap exits 3, having made nothing. The bound is armed right after the arguments, before the admission and the taps,
+// so a set-up that hangs still ends.
 // One JSON line per fact, written to --out: first {"ready", "pid", "listenAccess", "taps": [{"label", "pid", "created"}]},
 // then {"label", "tapPid", "keycode", "target", "source", "at"} per Escape keyDown, then {"stopped", "why"} when --stop
 // appears or --max-seconds pass.
 import AppKit
 import CoreGraphics
 import Foundation
+
+func refuse(_ why: String) -> Never {
+  FileHandle.standardError.write(Data("key-route-tap: refused: \(why)\n".utf8))
+  exit(3)
+}
+// The venue, first, in this process itself, before it reads, removes or creates any file or installs a tap.
+guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else {
+  refuse("it runs only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted), never on a Mac of the owner's")
+}
 
 var out: String?, stop: String?, admission: String?, nonce: String?, maxSeconds = 120.0
 var targets: [(label: String, pid: pid_t)] = []
@@ -41,16 +52,13 @@ while let flag = argv.popFirst() {
 // The hard bound, armed before the admission and the taps' set-up, so a set-up that hangs still ends.
 DispatchQueue.global().asyncAfter(deadline: .now() + maxSeconds + 5) { exit(0) }
 
-func refuse(_ why: String) -> Never {
-  FileHandle.standardError.write(Data("key-route-tap: refused: \(why)\n".utf8))
-  exit(3)
-}
 let ADMISSION_SECONDS = 60.0
 guard let admission, let nonce, !nonce.isEmpty else { refuse("no admission: it is launched only by the hosted launcher (key-route-device.mjs tap start)") }
 let admitted: [String: Any]? = (try? Data(contentsOf: URL(fileURLWithPath: admission))).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-try? FileManager.default.removeItem(atPath: admission)
 guard let admitted, admitted["nonce"] as? String == nonce, let at = (admitted["at"] as? NSNumber)?.doubleValue,
       abs(Date().timeIntervalSince1970 * 1000 - at) <= ADMISSION_SECONDS * 1000 else { refuse("the admission is missing, another launch's, or stale") }
+// Consumed only once it held: a launch gate, one use per launch.
+try? FileManager.default.removeItem(atPath: admission)
 
 guard let out, let stop, !targets.isEmpty, FileManager.default.createFile(atPath: out, contents: nil),
       let opened = FileHandle(forWritingAtPath: out) else { exit(64) }

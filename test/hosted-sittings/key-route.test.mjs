@@ -10,7 +10,11 @@ import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
-import {KEY_ROUTE_BUDGET_MS, KEY_ROUTE_RESERVE_MS, keyRouteSummary, LANE_GRACE_MS, LANE_MIN_MS, LANE_TIMEOUT_MS, pgrepPids, renderKeyRoute, runKeyRoute} from '../../scripts/hosted-sittings/key-route.mjs';
+import {INVENTORY_COMPILE_MS, KEY_ROUTE_BUDGET_MS, KEY_ROUTE_JOB_RESERVE_MS, KEY_ROUTE_RESERVE_MS, keyRouteSummary, LANE_CLOSE_MS, LANE_GRACE_MS, LANE_STEP_MS, LANE_TIMEOUT_MS, pgrepPids, renderKeyRoute,
+  runKeyRoute, SETUP_BOUND_MS} from '../../scripts/hosted-sittings/key-route.mjs';
+import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
+import {captureOf} from '../../scripts/native-matrix/key-route-capture.mjs';
+import {recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
 import {stepSections} from '../../scripts/hosted-sittings/key-route-report.mjs';
 import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
 import {runSitting} from '../../scripts/hosted-sittings/run.mjs';
@@ -55,7 +59,7 @@ test('C: the key-route diagnostic is its own step, the last, after the counted l
 
 // A lane's taps as they worked: started ready with Input Monitoring and every tap created, stopped with their log read.
 const tapOf = (events, {start = {}, stop = {}} = {}) => ({start: {launched: true, ready: true, pid: 41, listenAccess: true, taps: [{label: 'textedit', pid: 500, created: true}, {label: 'panelService', pid: 700, created: true}], ...start},
-  stop: {exited: true, killed: false, why: 'stop', logRead: true, ready: true, events, ...stop}});
+  stop: {exited: true, killed: false, why: 'stop', logRead: true, ready: true, rawEvents: events, ...stop}});
 const PRESSED = {sent: true, at: [1_000, 1_010]};
 
 test('the diagnostic check: INFO with what it recorded; a cleanup failure FAIL by name; a record not written FAIL, its cleanup unconfirmed', () => {
@@ -92,11 +96,14 @@ test('in a sitting the diagnostic\'s INFO never changes the verdict; its cleanup
 // answer), result (its result.json; null: not written), takesMs (the clock it moves)}; rows are the access tuples.
 const laneResult = (engine, over = {}) => ({complete: true, problems: [], verdict: 'no-verdict', putBack: {ok: true, stopped: true},
   ...over, meta: {preparationCleanup: {removed: true}, keyRoute: {engine, closed: true, cleanup: []}, ...over.meta}});
-function hostedIo({rowsBefore = ['a'], rowsAfter = rowsBefore, keptBefore = '(1)', keptAfter = keptBefore, leftovers = [{tap: [], textedit: [], panels: 0}], results = {}, buildTap, grantTap, startMs = 0} = {}) {
+// The job started at 0 (its limit far off) unless `jobStartedMs` says otherwise; the clock starts at `startMs`.
+function hostedIo({rowsBefore = ['a'], rowsAfter = rowsBefore, keptBefore = '(1)', keptAfter = keptBefore, leftovers = [{tap: [], textedit: [], panels: 0}], results = {}, buildTap, grantTap, startMs = 0,
+  jobStartedMs = 0, inventory = () => {}} = {}) {
   const calls = [], written = {}, bounds = {};
   let rowReads = 0, leftoverReads = 0, clock = startMs;
   const io = {
-    env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', log: () => {}, now: () => clock,
+    env: {RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin', log: () => {}, now: () => clock, jobStartedMs,
+    prepareInventory: () => { calls.push(['prepareInventory']); inventory(); },
     engineRows: () => {
       calls.push(['engineRows']);
       const first = rowReads++ === 0, rows = first ? rowsBefore : rowsAfter, kept = first ? keptBefore : keptAfter;
@@ -143,7 +150,7 @@ test('on the runner: the engines\' rows read, the tap built and granted, vendor 
   const {io, calls, written} = hostedIo();
   const code = await runKeyRoute(OPTIONS, io);
   assert.equal(code, 0);
-  assert.deepEqual(calls, [['engineRows'], ['buildTap'], ['grantTap', TAP_APP], ['runEngine', 'vendor', '/w/out/key-route/vendor'], ['runEngine', 'cua', '/w/out/key-route/cua'],
+  assert.deepEqual(calls, [['engineRows'], ['buildTap'], ['grantTap', TAP_APP], ['prepareInventory'], ['runEngine', 'vendor', '/w/out/key-route/vendor'], ['runEngine', 'cua', '/w/out/key-route/cua'],
     ['engineRows'], ['leftovers']]);
   const report = JSON.parse(written['/w/out/key-route/key-route.json']);
   assert.deepEqual(report.cleanup, {ok: true, failures: []});
@@ -196,23 +203,69 @@ test('a lane whose result is missing, whose put-back did not hold, or whose appr
   assert.equal(await runKeyRoute(OPTIONS, refused.io), 0);
 });
 
-test('each lane is bounded, the whole diagnostic too: a lane past its bound is stopped and named; a lane with no time left is skipped, recorded', async () => {
+test('the bounds: the lane grace covers the recovery\'s own bound; the reserve the final inventory, its cold compile when the precompile failed', () => {
+  assert.equal(LANE_GRACE_MS, LANE_STEP_MS + recoverBoundMs() + LANE_CLOSE_MS);
+  assert.ok(LANE_STEP_MS >= 300_000, 'a device command a lane may be in, bounded by its 300 s compile');
+  assert.equal(INVENTORY_COMPILE_MS, 300_000, 'matrix-device.mjs compiled()\'s swiftc timeout');
+  assert.ok(KEY_ROUTE_RESERVE_MS >= 60_000 + 2 * 30_000 + 4 * 10_000 + 2_000, 'the window list run, the rows\' read, the pgreps, the tap\'s stop');
+});
+
+test('each lane is bounded within the step and the job: a lane past its bound with its cleanup confirmed is INFO, recorded; a lane with no time left is skipped before its hold', async () => {
   const {io, bounds, written} = hostedIo({results: {vendor: {lane: {exit: 143, signal: null, timedOut: true}, takesMs: LANE_TIMEOUT_MS + LANE_GRACE_MS}}});
-  assert.equal(await runKeyRoute(OPTIONS, io), 1);
-  assert.equal(bounds.vendor, LANE_TIMEOUT_MS);
-  assert.ok(failuresOf(written).includes(`vendor's lane ran past its bound (${LANE_TIMEOUT_MS / 60_000} min) and was stopped`), JSON.stringify(failuresOf(written)));
+  // The vendor's lane ran past its bound and was stopped, but its put-back held and nothing was left: INFO.
+  assert.equal(await runKeyRoute(OPTIONS, io), 0);
+  const firstBound = Math.min(LANE_TIMEOUT_MS, KEY_ROUTE_BUDGET_MS - KEY_ROUTE_RESERVE_MS - LANE_GRACE_MS);
+  assert.equal(bounds.vendor, firstBound);
   const report = JSON.parse(written['/w/out/key-route/key-route.json']);
-  assert.equal(report.engines.vendor.timedOut, true);
-  // The second lane gets what is left of the budget, its grace and the reserve for cleanup and the report held back.
-  assert.equal(bounds.cua, KEY_ROUTE_BUDGET_MS - KEY_ROUTE_RESERVE_MS - LANE_GRACE_MS - (LANE_TIMEOUT_MS + LANE_GRACE_MS));
-  // Too little left for a lane: cua's is skipped, recorded as such, and the cleanup still runs.
-  const late = hostedIo({results: {vendor: {takesMs: KEY_ROUTE_BUDGET_MS - KEY_ROUTE_RESERVE_MS - LANE_GRACE_MS - LANE_MIN_MS + 1}}});
+  assert.deepEqual([report.engines.vendor.timedOut, report.cleanup.ok], [true, true]);
+  assert.match(written['/w/out/key-route/key-route.md'], /^\| vendor \|.*the lane ran past its bound and was stopped \|$/m);
+  // Too little left for the second lane: skipped before its hold, recorded, and the cleanup still runs.
+  assert.equal(bounds.cua, undefined);
+  assert.match(report.engines.cua.skipped, /the diagnostic's time ran out/);
+  assert.deepEqual(report.leftovers, {tap: [], textedit: [], panels: 0});
+  // A lane past its bound whose result is missing is still a failure, named.
+  const lost = hostedIo({results: {vendor: {lane: {exit: null, signal: 'SIGKILL', timedOut: true}, result: null}}});
+  assert.equal(await runKeyRoute(OPTIONS, lost.io), 1);
+  assert.deepEqual(failuresOf(lost.written), ['vendor\'s lane wrote no result (exit null, past its bound, SIGKILL): its put-back and cleanup are unconfirmed']);
+});
+
+test('the deadline is the job\'s: what C needs to publish is held back from the job\'s limit, and a step that cannot fit is skipped before it builds or holds anything', async () => {
+  const jobEnd = JOB_LIMIT_MINUTES * 60_000 - KEY_ROUTE_JOB_RESERVE_MS;
+  // The job's limit closer than the step's cap: the lane's bound comes from it (10 min here, under the 20 min cap).
+  const near = KEY_ROUTE_RESERVE_MS + LANE_GRACE_MS + 10 * 60_000, close = hostedIo({startMs: jobEnd - near});
+  assert.ok(near < KEY_ROUTE_BUDGET_MS, 'the job binds, not the step\'s cap');
+  assert.equal(await runKeyRoute(OPTIONS, close.io), 0);
+  assert.equal(close.bounds.vendor, 10 * 60_000);
+  // Not even the set-up and the cleanup fit: nothing is read, built, granted or held; the skip is recorded, INFO.
+  const late = hostedIo({startMs: jobEnd - (SETUP_BOUND_MS + KEY_ROUTE_RESERVE_MS + INVENTORY_COMPILE_MS) + 1});
   assert.equal(await runKeyRoute(OPTIONS, late.io), 0);
-  assert.deepEqual(late.calls.filter(c => c[0] === 'runEngine').map(c => c[1]), ['vendor']);
-  const skipped = JSON.parse(late.written['/w/out/key-route/key-route.json']).engines.cua;
-  assert.match(skipped.skipped, /the diagnostic's time ran out/);
-  assert.deepEqual(late.calls.slice(-2), [['engineRows'], ['leftovers']]);
-  assert.match(keyRouteSummary(JSON.parse(late.written['/w/out/key-route/key-route.json'])), /cua: not recorded \(skipped: the diagnostic's time ran out/);
+  assert.deepEqual(late.calls, []);
+  const report = JSON.parse(late.written['/w/out/key-route/key-route.json']);
+  assert.match(report.skipped, /the job's time left/);
+  assert.match(keyRouteSummary(report), /^skipped: the job's time left/);
+  // The job's start unread: the time C needs cannot be kept, so the same skip.
+  const unknown = hostedIo({jobStartedMs: null});
+  assert.equal(await runKeyRoute(OPTIONS, unknown.io), 0);
+  assert.deepEqual(unknown.calls, []);
+  assert.match(JSON.parse(unknown.written['/w/out/key-route/key-route.json']).skipped, /the job's start is unread \(M5_JOB_STARTED\)/);
+  // The inventory not precompiled: its cold compile is held back too, from every lane's bound; recorded.
+  const cold = hostedIo({startMs: jobEnd - near, inventory: () => { throw new Error('swiftc: timed out'); }});
+  await runKeyRoute(OPTIONS, cold.io);
+  assert.equal(JSON.parse(cold.written['/w/out/key-route/key-route.json']).inventory.error, 'swiftc: timed out');
+  assert.equal(cold.bounds.vendor, 10 * 60_000 - INVENTORY_COMPILE_MS);
+});
+
+test('key-route.json carries each lane\'s attributed capture, the one the section renders, beside the taps\' raw events', async () => {
+  const keyRoute = {engine: 'vendor', closed: true, cleanup: [], opened: {ok: true}, press: {sent: true, at: [1_000, 1_010]}, after: {up: false},
+    tap: tapOf([{label: 'panelService', tapPid: 700, target: 700, source: 600, at: 1_005}, {label: 'textedit', tapPid: 500, target: 500, source: 1, at: 9_000}])};
+  const {io, written} = hostedIo({results: {vendor: {result: laneResult('vendor', {meta: {keyRoute}})}}});
+  assert.equal(await runKeyRoute(OPTIONS, io), 0);
+  const lane = JSON.parse(written['/w/out/key-route/key-route.json']).engines.vendor;
+  assert.deepEqual(lane.capture, captureOf(keyRoute.tap, keyRoute.press));
+  assert.deepEqual([lane.capture.state, lane.capture.events.length, lane.capture.unmatched.length], ['seen', 1, 1]);
+  assert.equal(lane.keyRoute.tap.stop.rawEvents.length, 2, 'the raw events kept, labelled raw');
+  // The section renders the stored capture.
+  assert.match(renderKeyRoute({engines: {vendor: {...lane, capture: {...lane.capture, events: [{label: 'stored', target: 1, source: 2}]}}}}), /^\| vendor \| yes \| 1 \| 2 \| stored \|/m);
 });
 
 test('pgrep\'s exit 1 is no process; any other failure is a reading that failed, never an empty list', () => {
@@ -338,4 +391,13 @@ test('the section and the summary tell a tap that failed from one that saw nothi
   assert.match(md, /^\| vendor \| yes \| - \| - \| none \| yes \| 1 Escape keyDown outside the press's window \(not counted\) \|$/m);
   assert.match(md, /^\| cua \| yes \| unavailable \| unavailable \| textedit \| yes \| \|$/m);
   assert.ok(!/\| 0 \|/.test(md.split('\n').filter(l => /^\| (vendor|cua) /.test(l)).join('\n')), 'never a pid printed as 0');
+  // The Escape's outcome unread: a panel gone by a later reading with no cancel made is kept apart from a confirmed AX
+  // cancel; a reading that failed reads as unread.
+  const unreadLane = (cancel, after = {up: null, unread: ['the window list was unread']}) => lane(tapOf([]), {after, cancel});
+  const later = report(unreadLane({found: false, via: null, pressed: null, closed: true, unread: []}), unreadLane({found: true, via: 'cancelButton', pressed: 0, closed: true, unread: []}, {error: 'the panel reading failed: x'}));
+  const mdLater = renderKeyRoute(later);
+  assert.match(mdLater, /^\| vendor \| yes \| - \| - \| none \| unread \(gone at a later reading; no cancel made\) \|/m);
+  assert.match(mdLater, /^\| cua \| yes \| - \| - \| none \| no \(the reading after it unread; still up at the AX cancel, which closed it: cancelButton\) \|/m);
+  assert.match(keyRouteSummary(later), /vendor: Escape sent, seen by no tap in its window, the panel unread after it, gone at a later reading \(no cancel made\); /);
+  assert.match(keyRouteSummary(later), /cua: Escape sent, seen by no tap in its window, the panel not closed by it \(still up at the AX cancel\)$/);
 });

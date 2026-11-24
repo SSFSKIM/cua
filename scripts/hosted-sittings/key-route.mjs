@@ -14,26 +14,32 @@
 //      key-route-run.mjs): TextEdit up, its Open panel opened by ⌘O under the key guard, the AX half read, the taps
 //      started on TextEdit and the panel service, one pressKey("Escape"), the taps stopped, the panel read and, unless
 //      that reading says it is gone, cancelled by Accessibility; the lane's put-back quits TextEdit. Each lane opens its
-//      own TextEdit, so the panel is opened afresh between the engines and the AX half is read on each. Each lane is
-//      bounded (LANE_TIMEOUT_MS, then SIGTERM, its put-back's grace, then SIGKILL), and so is the whole diagnostic
-//      (KEY_ROUTE_BUDGET_MS, a reserve kept for steps 5 and 6): a lane with too little time left is skipped, recorded
+//      own TextEdit, so the panel is opened afresh between the engines and the AX half is read on each. Before them the
+//      final inventory's reader is compiled. Each lane is bounded (see the bounds below: SIGTERM, its recovery's grace,
+//      then SIGKILL) and skipped before its hold, recorded, when too little of the step's or the job's time is left;
+//      the whole step is skipped, before anything, when its set-up and cleanup do not fit
 //   5. the engines' rows read again and compared; then what it opened that is still there: the tap app (stopped, its
 //      own process, then read again), TextEdit, a panel window
-//   6. key-route.json (the artifact) and key-route.md (the sitting's section) written whatever happened
-// Exit 0 recorded, its cleanup confirmed (the sitting's check: INFO, never its verdict); 1 a cleanup failure, each named
+//   6. key-route.json (the artifact: per lane its record, the taps' raw events in it, and `capture`, the attributed
+//      reading the section renders) and key-route.md (the sitting's section) written whatever happened
+// Exit 0 recorded, its cleanup confirmed (the sitting's check: INFO, never its verdict; a lane past its bound whose
+// put-back and the inventory confirm a clean device included, its `timedOut` recorded); 1 a cleanup failure, each named
 // (FAIL): the engines' rows changed in a grant column, gained or lost, or unread (tccd's bookkeeping columns moving
-// alone, tcc.mjs TCC_BOOKKEEPING_COLUMNS, is recorded and no failure); a lane that wrote no result, ran past its bound, did not put back, did not
-// clean its approved home, or left its panel up or its tap running; anything left after.
+// alone, tcc.mjs TCC_BOOKKEEPING_COLUMNS, is recorded and no failure); a lane that wrote no result, did not put back,
+// did not clean its approved home, or left its panel up or its tap running; anything left after.
 import {execFileSync, spawn} from 'node:child_process';
 import * as fs from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {compiled} from '../native-matrix/matrix-device.mjs';
+import {captureOf} from '../native-matrix/key-route-capture.mjs';
 import {buildTapApp, TAP_EXECUTABLE} from '../native-matrix/key-route-device.mjs';
+import {recoverBoundMs} from '../native-matrix/live-checks.mjs';
 import {PANEL_SERVICE} from './alert-guard.mjs';
 import {KEY_ROUTE_ENGINES, renderKeyRoute} from './key-route-report.mjs';
 import {DEVICE} from './plan.mjs';
+import {JOB_LIMIT_MINUTES, jobStartedOf} from './run.mjs';
 import {assertGithubHosted} from './runner.mjs';
 import {engineRows, grantDiagnosticListen, rowsChanged} from './tcc.mjs';
 
@@ -42,17 +48,34 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('../native-matrix/system-windows.swift', import.meta.url));
 const message = error => String(error?.message ?? error).split('\n')[0].slice(0, 300);
 
-// The bounds: the whole diagnostic; the reserve held back for the rows' compare, the leftovers and the report; one lane;
-// the grace a lane's SIGTERM gives its put-back before SIGKILL; the least a lane is started with.
+// The bounds. The step's deadline is the earlier of its own cap (KEY_ROUTE_BUDGET_MS, provisional) and the job's limit
+// (run.mjs JOB_LIMIT_MINUTES from the job's start, M5_JOB_STARTED) less what C does after this, its last step
+// (KEY_ROUTE_JOB_RESERVE_MS: its reports, the screen-at-end reading with a cold compile, the artifact's upload), so the
+// diagnostic never keeps C's verdict and report from being published. Before anything: the set-up's own bound
+// (SETUP_BOUND_MS) and the cleanup's must fit, else the whole step is skipped, recorded. Before each lane's hold: its
+// bound, min(LANE_TIMEOUT_MS, provisional, and what is left less its grace and the cleanup's reserve), at least
+// LANE_MIN_MS, else that lane is skipped, recorded.
 const MINUTE = 60_000;
-export const KEY_ROUTE_BUDGET_MS = 45 * MINUTE, KEY_ROUTE_RESERVE_MS = 5 * MINUTE;
-export const LANE_TIMEOUT_MS = 20 * MINUTE, LANE_GRACE_MS = 3 * MINUTE, LANE_MIN_MS = 5 * MINUTE;
+export const KEY_ROUTE_BUDGET_MS = 45 * MINUTE, KEY_ROUTE_JOB_RESERVE_MS = 15 * MINUTE;
+export const LANE_TIMEOUT_MS = 20 * MINUTE, LANE_MIN_MS = 5 * MINUTE;
+// A lane's grace after its SIGTERM, before SIGKILL: the step it is in (a device command, bounded by its 300 s compile;
+// a js call is 135 s), then the matrix's recovery to its own bound (live-checks.mjs recoverBoundMs), then its close
+// (the approved home's cleanup, the front app read).
+export const LANE_STEP_MS = 5 * MINUTE, LANE_CLOSE_MS = 2 * MINUTE;
+export const LANE_GRACE_MS = LANE_STEP_MS + recoverBoundMs() + LANE_CLOSE_MS;
+// The cleanup after the lanes: the rows' read (two statements, 30 s each), the inventory twice (the window list's run,
+// 60 s, and two pgreps, 10 s each), the tap's stop (2 s), with a margin; and, when the inventory's reader could not be
+// compiled before the lanes, its cold compile (matrix-device.mjs compiled(), swiftc's 300 s).
+export const KEY_ROUTE_RESERVE_MS = 4 * MINUTE, INVENTORY_COMPILE_MS = 300_000;
+// The set-up before the lanes: the rows' read (60 s), the tap app's build (swiftc and codesign, 300 s each), its grant
+// (codesign and csreq, 30 s each, the write and its read-back, 30 s each), the inventory's precompile (300 s).
+export const SETUP_BOUND_MS = 60_000 + 600_000 + 120_000 + INVENTORY_COMPILE_MS;
 
-// What a lane's result leaves unconfirmed. -> [string].
-function laneFailures(engine, {exit, timedOut}, result) {
+// What a lane's result leaves unconfirmed. A lane past its bound whose put-back and cleanup are confirmed leaves
+// nothing (its `timedOut` is recorded); one that left no result leaves all of it. -> [string].
+function laneFailures(engine, {exit, signal, timedOut}, result) {
   const failures = [];
-  if (timedOut) failures.push(`${engine}'s lane ran past its bound (${LANE_TIMEOUT_MS / MINUTE} min) and was stopped`);
-  if (!result) return [...failures, `${engine}'s lane wrote no result (exit ${exit}): its put-back and cleanup are unconfirmed`];
+  if (!result) return [`${engine}'s lane wrote no result (exit ${exit}${timedOut ? ', past its bound' : ''}${signal ? `, ${signal}` : ''}): its put-back and cleanup are unconfirmed`];
   // A lane refused before anything on the device changed has nothing to put back.
   if (result.verdict === 'refused') return failures;
   if (result.putBack?.ok !== true) failures.push(`${engine}'s lane: its put-back did not hold (${result.putBack?.manual ?? result.putBack?.error ?? 'none recorded'})`);
@@ -64,8 +87,21 @@ function laneFailures(engine, {exit, timedOut}, result) {
 // options: {approvedRuntime, approvedEngine, sitting, out}. io: keyRouteIo's. -> exit code (see the header).
 export async function runKeyRoute({approvedRuntime, approvedEngine, sitting, out}, io) {
   assertGithubHosted(io.env, io.platform, 'the key-route diagnostic');
-  const deadline = io.now() + KEY_ROUTE_BUDGET_MS;
-  const report = {ruling: 1198, approvedRuntime, approvedEngine, sitting, started: new Date().toISOString(), tap: null, tcc: {engines: null}, engines: {}, leftovers: null, cleanup: null};
+  const started = io.now(), jobEnd = io.jobStartedMs === null ? null : io.jobStartedMs + JOB_LIMIT_MINUTES * MINUTE - KEY_ROUTE_JOB_RESERVE_MS;
+  const deadline = jobEnd === null ? null : Math.min(started + KEY_ROUTE_BUDGET_MS, jobEnd);
+  const report = {ruling: 1198, approvedRuntime, approvedEngine, sitting, started: new Date().toISOString(), clock: {jobStartedMs: io.jobStartedMs, deadlineMs: deadline},
+    tap: null, inventory: null, tcc: {engines: null}, engines: {}, leftovers: null, cleanup: null};
+  // Too little of the job left for the set-up and the cleanup (or its start unread): nothing is read, built, granted or
+  // held, so nothing needs cleaning; the skip is recorded, INFO.
+  const skip = deadline === null ? 'the job\'s start is unread (M5_JOB_STARTED): the time C needs to publish its verdict cannot be kept'
+    : deadline - started < SETUP_BOUND_MS + KEY_ROUTE_RESERVE_MS + INVENTORY_COMPILE_MS
+      ? `the job's time left (${Math.max(0, Math.floor((deadline - started) / 1000))} s before C must publish) does not fit the set-up and the cleanup (${(SETUP_BOUND_MS + KEY_ROUTE_RESERVE_MS + INVENTORY_COMPILE_MS) / 1000} s)` : null;
+  if (skip) {
+    Object.assign(report, {skipped: skip, cleanup: {ok: true, failures: []}, finished: new Date().toISOString()});
+    io.write(join(out, 'key-route.json'), `${JSON.stringify(report, null, 2)}\n`);
+    io.write(join(out, 'key-route.md'), renderKeyRoute(report));
+    return 0;
+  }
   const failures = [];
   let before = null;
   try {
@@ -74,8 +110,11 @@ export async function runKeyRoute({approvedRuntime, approvedEngine, sitting, out
       report.tap = io.buildTap();
       report.tap.grant = io.grantTap(report.tap.app);
     } catch (error) { report.tap = {...(report.tap ?? {}), error: message(error)}; }
+    // The final inventory's reader compiled before any hold, so the cleanup's reserve need not hold a cold compile.
+    try { io.prepareInventory(); report.inventory = {ready: true}; } catch (error) { report.inventory = {ready: false, error: message(error)}; }
+    const reserve = KEY_ROUTE_RESERVE_MS + (report.inventory.ready ? 0 : INVENTORY_COMPILE_MS);
     for (const engine of KEY_ROUTE_ENGINES) {
-      const timeoutMs = Math.min(LANE_TIMEOUT_MS, deadline - KEY_ROUTE_RESERVE_MS - LANE_GRACE_MS - io.now());
+      const timeoutMs = Math.min(LANE_TIMEOUT_MS, deadline - reserve - LANE_GRACE_MS - io.now());
       if (timeoutMs < LANE_MIN_MS) {
         report.engines[engine] = {skipped: `the diagnostic's time ran out (${Math.max(0, Math.floor(timeoutMs / 1000))} s left for a lane, ${LANE_MIN_MS / 1000} s needed)`};
         continue;
@@ -83,9 +122,11 @@ export async function runKeyRoute({approvedRuntime, approvedEngine, sitting, out
       const dir = join(out, engine);
       let lane = {exit: null, signal: null, timedOut: false}, error = null;
       try { lane = await io.runEngine(engine, dir, {timeoutMs}); } catch (e) { error = message(e); }
-      const result = io.readJson(join(dir, 'run-1', 'result.json'));
+      const result = io.readJson(join(dir, 'run-1', 'result.json')), keyRoute = result?.meta?.keyRoute ?? null;
+      // `capture`: the attributed reading the section renders (captureOf); the taps' raw events stay in keyRoute.tap.stop.rawEvents.
       report.engines[engine] = {exit: lane.exit, ...(lane.signal ? {signal: lane.signal} : {}), ...(lane.timedOut ? {timedOut: true} : {}), ...(error ? {error} : {}),
-        complete: result?.complete ?? null, verdict: result?.verdict ?? null, problems: result?.problems ?? [], putBack: result?.putBack ?? null, keyRoute: result?.meta?.keyRoute ?? null};
+        complete: result?.complete ?? null, verdict: result?.verdict ?? null, problems: result?.problems ?? [], putBack: result?.putBack ?? null,
+        capture: keyRoute ? captureOf(keyRoute.tap, keyRoute.press) : null, keyRoute};
       failures.push(...laneFailures(engine, lane, result));
     }
   } finally {
@@ -146,8 +187,11 @@ function runLane(argv, {timeoutMs}) {
 // The default io: this runner's TCC store, the tap built here, each lane a native-matrix cell against the loopback
 // device, the leftovers read from the process table and the window list.
 export function keyRouteIo({approvedRuntime, approvedEngine, sitting, log = line => process.stderr.write(`${line}\n`)}) {
+  const cache = join(homedir(), 'Library', 'Caches', 'cua-harness', 'key-route');
+  const inventoryReader = () => { fs.mkdirSync(cache, {recursive: true, mode: 0o700}); return compiled(SYSTEM_WINDOWS_SCRIPT, cache); };
   return {
-    env: process.env, platform: process.platform, log, now: Date.now,
+    env: process.env, platform: process.platform, log, now: Date.now, jobStartedMs: jobStartedOf(process.env),
+    prepareInventory: () => { inventoryReader(); },
     engineRows: () => engineRows(),
     buildTap: () => buildTapApp(),
     grantTap: app => grantDiagnosticListen({bundle: app}),
@@ -155,9 +199,7 @@ export function keyRouteIo({approvedRuntime, approvedEngine, sitting, log = line
       '--approved-runtime', approvedRuntime, '--approved-engine', approvedEngine, '--sitting', sitting, '--out', dir, '--runs', '1'], bound),
     readJson: path => { try { return JSON.parse(fs.readFileSync(path, 'utf8')); } catch { return null; } },
     leftovers: () => {
-      const cache = join(homedir(), 'Library', 'Caches', 'cua-harness', 'key-route');
-      fs.mkdirSync(cache, {recursive: true, mode: 0o700});
-      const windows = JSON.parse(execFileSync(compiled(SYSTEM_WINDOWS_SCRIPT, cache), [], {encoding: 'utf8', timeout: 60_000})).windows;
+      const windows = JSON.parse(execFileSync(inventoryReader(), [], {encoding: 'utf8', timeout: 60_000})).windows;
       if (!Array.isArray(windows)) throw new Error('the window list was unread');
       return {tap: pgrepPids(['-f', TAP_EXECUTABLE]), textedit: pgrepPids(['-x', 'TextEdit']), panels: windows.filter(w => w.ownerBundleId === PANEL_SERVICE).length};
     },

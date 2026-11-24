@@ -24,6 +24,10 @@ function tapFailures(tap) {
   else if (stop.refused) failures.push(`the tap's stop was refused: ${stop.refused}`);
   else if (stop.logRead !== true) failures.push('the tap\'s log could not be read');
   else if (stop.ready !== true) failures.push('the tap\'s log holds no readiness line');
+  // Live through the press: its own stop line says it was running when told to stop (after the press), or it was still
+  // running then and had to be killed. Readiness alone shows it was live before the press, never at it.
+  else if (stop.why === 'max-seconds') failures.push('the tap ended at its own bound, not when told to stop: it is not shown live through the press');
+  else if (stop.why !== 'stop' && stop.killed !== true) failures.push('the tap ended before it was told to stop (its log holds no stop line): it is not shown live through the press');
   return failures;
 }
 
@@ -35,7 +39,7 @@ export function captureOf(tap, press) {
   const failures = tapFailures(tap);
   const window = press?.sent === true && Array.isArray(press.at) && press.at.length === 2 && press.at.every(Number.isFinite)
     ? [press.at[0] - CAPTURE_MS.before, press.at[1] + CAPTURE_MS.after] : null;
-  const all = (tap?.stop?.events ?? []).map(e => ({...e, target: pidOf(e.target), source: pidOf(e.source)}));
+  const all = (tap?.stop?.rawEvents ?? []).map(e => ({...e, target: pidOf(e.target), source: pidOf(e.source)}));
   const inside = e => window !== null && Number.isFinite(e.at) && e.at >= window[0] && e.at <= window[1];
   const events = all.filter(inside), unmatched = all.filter(e => !inside(e));
   return {state: failures.length ? 'failed' : !window ? 'no-press' : events.length ? 'seen' : 'none', window, failures, events, unmatched};

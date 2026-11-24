@@ -17,12 +17,13 @@
 //       {answer: {found, via, pressed, closed, unread}, at}; `closed` only when the reading after it says the panel is gone
 //   tap start --run <dir> --pid <label>:<pid> ...
 //       the tap app (./key-route-tap.swift, built at TAP_APP by the sitting step's buildTapApp) launched through
-//       LaunchServices, so it is its own responsible process and its own Input Monitoring row is the one asked, admitted
-//       by a fresh nonce in <run>/key-route/tap.admission written just before the launch, and awaited until it reports
-//       its taps -> {answer: {launched, ready, pid, listenAccess, taps} | {launched: false, reason}, at}
+//       LaunchServices, so it is its own responsible process and its own Input Monitoring row is the one asked, handed
+//       RUNNER_ENVIRONMENT=github-hosted (`open --env`, which it checks itself first) and admitted by a fresh nonce in
+//       <run>/key-route/tap.admission written just before the launch, and awaited until it reports its taps ->
+//       {answer: {launched, ready, pid, listenAccess, taps} | {launched: false, reason}, at}
 //   tap stop --run <dir>
 //       the tap told to stop (its stop file), awaited, and killed only when it outlives that (its own process, checked by
-//       its executable) -> {answer: {exited, killed, why, logRead, ready, events: [{label, tapPid, target, source, at}]}, at}
+//       its executable) -> {answer: {exited, killed, why, logRead, ready, rawEvents: [{label, tapPid, target, source, at}]}, at}
 //
 // What leaves the device: pids, roles, bundle ids, activation policies, booleans and the Escape's event fields 40 and 41.
 import {execFileSync} from 'node:child_process';
@@ -88,10 +89,11 @@ export async function startTap({run, targets}, io) {
   io.mkdir(dir);
   io.remove(log);
   io.remove(stop);
-  // This launch's admission (the tap checks it, as `open` hands it none of this guarded caller's environment).
+  // `open` hands the tap none of this guarded caller's environment: the hosted marker is passed to it explicitly, which
+  // it checks first in its own process, and this launch's admission, its launch gate, is written just before.
   const nonce = io.nonce();
   io.writeText(admission, JSON.stringify({nonce, at: io.now()}));
-  io.open(['-n', '-g', '-a', TAP_APP, '--args', '--admission', admission, '--nonce', nonce, '--out', log, '--stop', stop,
+  io.open(['-n', '-g', '--env', 'RUNNER_ENVIRONMENT=github-hosted', '-a', TAP_APP, '--args', '--admission', admission, '--nonce', nonce, '--out', log, '--stop', stop,
     '--max-seconds', String(TAP_MAX_SECONDS), ...targets.flatMap(t => ['--pid', t])]);
   let ready = null;
   for (let n = 0; n < TAP_READS && !ready; n++) {
@@ -108,7 +110,7 @@ export async function startTap({run, targets}, io) {
 // was read (readText answers null when it was not), `ready`: it holds the tap's readiness line, so a log that could
 // not be read is never taken for a tap that saw no Escape.
 export async function stopTap({run}, io) {
-  const none = {exited: null, killed: false, why: null, logRead: false, ready: false, events: []};
+  const none = {exited: null, killed: false, why: null, logRead: false, ready: false, rawEvents: []};
   if (!isGithubHosted(io.env, io.platform)) return {...none, refused: `the key-route tap: refused: ${REFUSED}`};
   let state;
   try { state = JSON.parse(io.readText(stateFile(run))); } catch { state = null; }
@@ -125,7 +127,7 @@ export async function stopTap({run}, io) {
   io.remove(stateFile(run));
   return {exited: alive === null ? null : !alive, killed, why: lines.find(line => line.stopped)?.why ?? null,
     logRead: typeof text === 'string', ready: lines.some(line => line.ready === true),
-    events: lines.filter(line => line.keycode === 0x35).map(({label, tapPid, target, source, at}) => ({label, tapPid, target, source, at}))};
+    rawEvents: lines.filter(line => line.keycode === 0x35).map(({label, tapPid, target, source, at}) => ({label, tapPid, target, source, at}))};
 }
 
 // The panel cancelled by Accessibility (`frame`: [] or the panel's known frame). io: {env, platform, helper(args)}.

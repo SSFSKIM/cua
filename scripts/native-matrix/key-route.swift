@@ -86,11 +86,17 @@ func actualPid(_ e: AXUIElement) -> Any {
   let status = actualPidFunction(e, &pid)
   return status == .success ? Int(pid) : ["error": Int(status.rawValue)]
 }
-func frame(_ e: AXUIElement) -> CGRect? {
+func frame(_ e: AXUIElement) -> CGRect? { frameRead(e).rect }
+/// An element's frame and whether it was read: `read` false when its position or size failed (not answered), so no
+/// frame there is unread, never a frame that does not match.
+func frameRead(_ e: AXUIElement) -> (rect: CGRect?, read: Bool) {
   var origin = CGPoint.zero, size = CGSize.zero
-  guard let p = copy(e, kAXPositionAttribute).value, CFGetTypeID(p) == AXValueGetTypeID(), AXValueGetValue(p as! AXValue, .cgPoint, &origin),
-        let s = copy(e, kAXSizeAttribute).value, CFGetTypeID(s) == AXValueGetTypeID(), AXValueGetValue(s as! AXValue, .cgSize, &size) else { return nil }
-  return CGRect(origin: origin, size: size)
+  let p = copy(e, kAXPositionAttribute), s = copy(e, kAXSizeAttribute)
+  guard let pv = p.value, CFGetTypeID(pv) == AXValueGetTypeID(), AXValueGetValue(pv as! AXValue, .cgPoint, &origin),
+        let sv = s.value, CFGetTypeID(sv) == AXValueGetTypeID(), AXValueGetValue(sv as! AXValue, .cgSize, &size) else {
+    return (nil, answered(p.status) && answered(s.status))
+  }
+  return (CGRect(origin: origin, size: size), true)
 }
 func rectWire(_ r: CGRect?) -> Any {
   guard let r else { return NSNull() }
@@ -120,14 +126,29 @@ func windowList() -> [(pid: Int, layer: Int, bounds: CGRect)]? {
 }
 
 /// The open-panel window of the app: its AXFocusedWindow when that is the panel, else one of its AXWindows; failing the
-/// identifier, given the panel's known frame, the app's AX window at it. `read` is false when the app's windows could not
-/// be read (AXWindows failed and the focused window was not the panel): then no window is not a closed panel.
+/// identifier, given the panel's known frame, the app's AX window at it. Absence is certified (`read` true, no window)
+/// only when the app's windows were read and every candidate's identifier (and, given the frame, its frame) was read
+/// and did not match; any reading that failed leaves it unread (`read` false, `error` naming each), never a non-match.
 func panelLookup(_ frameHint: CGRect?) -> (window: AXUIElement?, read: Bool, error: String?) {
   let focusedRead = copy(app, kAXFocusedWindowAttribute), windowsRead = copy(app, kAXWindowsAttribute)
   let candidates = [element(focusedRead.value)].compactMap { $0 } + ((windowsRead.value as? [AXUIElement]) ?? [])
-  if let byId = candidates.first(where: { string($0, kAXIdentifierAttribute) == "open-panel" }) { return (byId, true, nil) }
-  if let frameHint, let byFrame = candidates.first(where: { frame($0).map { near($0, frameHint) } ?? false }) { return (byFrame, true, nil) }
-  return answered(windowsRead.status) ? (nil, true, nil) : (nil, false, "AXWindows failed (\(windowsRead.status.rawValue))")
+  var unread: [String] = answered(windowsRead.status) ? [] : ["AXWindows failed (\(windowsRead.status.rawValue))"]
+  var idsUnread = 0, framesUnread = 0
+  for candidate in candidates {
+    let id = copy(candidate, kAXIdentifierAttribute)
+    if id.value as? String == "open-panel" { return (candidate, true, nil) }
+    if !answered(id.status) { idsUnread += 1 }
+  }
+  if let frameHint {
+    for candidate in candidates {
+      let read = frameRead(candidate)
+      if let rect = read.rect, near(rect, frameHint) { return (candidate, true, nil) }
+      if !read.read { framesUnread += 1 }
+    }
+  }
+  if idsUnread > 0 { unread.append("the AXIdentifier of \(idsUnread) window(s) unread") }
+  if framesUnread > 0 { unread.append("the frame of \(framesUnread) window(s) unread") }
+  return (nil, unread.isEmpty, unread.isEmpty ? nil : unread.joined(separator: "; "))
 }
 /// The panel's state: up by Accessibility, or by an on-screen window at its known frame; false only when every reading
 /// made says so, null when one that could say it is up went unread.

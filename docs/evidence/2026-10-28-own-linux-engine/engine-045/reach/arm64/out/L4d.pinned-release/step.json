@@ -1,0 +1,51 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "L4d",
+  "pilot": false,
+  "what": "the stale-position drops at twice the load (rulings 957 and 962): Chrome's long control and the floor's cells, and Electron's long path out of the zone, any false ok and any drop at a stale position a fail",
+  "display": "private",
+  "load": "load2",
+  "minutes": 30,
+  "run_name": "pinned-L4d",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t163-h10/",
+    "commit": "2c66966bdab7b29836779401019f43abc6cb9890",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine",
+    "sha256": "f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/home-arm64-045",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-gate /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t163-h10/scripts/linux-engine-gate/gate.mjs run L4d --pinned /Users/new/.local/share/cua-171/m5/home-arm64-045 --out /Users/new/.local/share/cua-171/m5/out-arm64-h10",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "chrome,electron",
+    "--plan",
+    "t14-stale",
+    "--load-factor",
+    "2",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/home-arm64-045/engine/linux/cua-engine",
+    "--run",
+    "pinned-L4d",
+    "--pinned",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/out-arm64-h10/L4d.pinned-release/run"
+  ],
+  "started": "2026-11-24T07:36:02.136Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-24T07:59:57.598Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

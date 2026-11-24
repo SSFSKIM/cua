@@ -1,0 +1,1 @@
+/Users/new/.local/share/cua-171/locked.sh h10-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t163-h10/scripts/linux-engine-gate/gate.mjs run H1 --pinned /Users/new/.local/share/cua-171/m5/home-arm64-045 --out /Users/new/.local/share/cua-171/m5/out-arm64-h10

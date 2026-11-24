@@ -60,7 +60,7 @@ const ownObservation=(commit,path=MANAGED)=>({host:'cua',serverInfo:{name:'cua-r
 const envFor=row=>({CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override})});
 // A Linux computer row's engine is cua's, installed at the minimum this cua drives (#171 M6a: without one the open is
 // refused), as its `installed` says.
-const LINUX_ENGINE={config:()=>({}),installed:()=>({path:'/scratch/engine/linux/cua-engine'}),installedVersion:()=>'0.4.4'};
+const LINUX_ENGINE={config:()=>({}),installed:()=>({path:'/scratch/engine/linux/cua-engine'}),installedVersion:()=>'0.4.5'};
 const doctorFor=(t,row,{node=MANAGED,...env}={})=>doctorReplHost(t,{platform:row.platform,env:{...envFor(row),...env},node,...(row.platform==='linux'&&row.installed?{engine:LINUX_ENGINE}:{})});
 const lanes=detail=>{const [ordinary,listing]=detail.split('. The profile listing (browser only): ');return {ordinary,listing:listing.replace(/\. CUA_REPL_HOST=cua or vendor chooses$/,'')};};
 const rejoin=({ordinary,listing})=>`${ordinary}. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;

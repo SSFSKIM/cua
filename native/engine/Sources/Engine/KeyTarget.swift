@@ -63,7 +63,9 @@ let keyTargetWalkBudgetMs: Double = 250
 /// too). The first element that classifies ends the walk: its pid when the process is prohibited-policy and not the
 /// app's, else nil (the keys stay with the app). A parent is read only when it will be inspected, and only while
 /// `leftMs` (the walk's time left) is positive; `parent` is given that time to bound its read. No answer by then is nil,
-/// and `cutOff` is told: the walk stopped at its time, not at an answer or the chain's end.
+/// and `cutOff` is told: the walk stopped at its time, not at an answer or the chain's end. A parent read that answers
+/// nothing once the time is spent (its messaging timeout, set to the time left, fired) is told as cut off too (ruling
+/// 1210); the answer is nil either way, so the flag never changes where the keys go.
 func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (Element, Double) -> Element?, actualPid: (Element) -> pid_t?,
                                  kind: (pid_t) -> OwningProcessKind, leftMs: () -> Double = { .infinity }, maxDepth: Int = 300,
                                  cutOff: () -> Void = {}) -> pid_t? {
@@ -83,7 +85,10 @@ func remoteViewKeyOwner<Element>(of focused: Element, appPid: pid_t, parent: (El
       cutOff()
       return nil
     }
-    guard let next = parent(current, left) else { return nil }
+    guard let next = parent(current, left) else {
+      if leftMs() <= 0 { cutOff() }
+      return nil
+    }
     current = next
     depth += 1
   }
@@ -148,18 +153,64 @@ struct KeyTarget: Equatable {
   var walkCutOff = false
 }
 
-/// The notice a model reads when the walk was cut off at its time budget and the keys went to the app (ruling 1207).
-func keyTargetCutOffNotice(app: String) -> String {
-  "The check for a remote-view panel (such as an Open or Save panel) that serves the focused field was cut off at its time budget, so the keys went to \(app) and may not have reached such a panel. Observe the app with get_app_state before relying on them."
+/// The notice a model reads when keys were posted after the walk was cut off at its time (rulings 1207 and 1210): they
+/// went by ordinary routing to `destination` (`keyDestinationName`). Short, so that before a method's own note (the
+/// password field's, 354 characters) both fit the service's 500-character note for an app name up to about 19 characters,
+/// and only the method's note is ever cut.
+func keyTargetCutOffNotice(destination: String) -> String {
+  "The check for an Open or Save panel timed out, so the keys went to \(destination) by ordinary routing and may not have reached such a panel."
 }
 
-/// A key input's result (press_key, type_text, paste): the input meta and the note a model reads, the method's own and
-/// then the cut-off walk's notice when the keys' final read was cut off (`InputMeta.keyTargetCutOff`), joined by a space.
-func keyInputResult(_ meta: InputMeta, note: String?, app: String) -> [String: Any] {
+/// The process keys posted to `pid` went to, as the notice names it: the app by its name when `pid` is the app's, else
+/// the process's localized name, else its bundle id, else its pid.
+func keyDestinationName(_ pid: pid_t, appPid: pid_t, appName: String,
+                        running: (pid_t) -> (name: String?, bundleIdentifier: String?) = { pid in
+                          let process = NSRunningApplication(processIdentifier: pid)
+                          return (process?.localizedName, process?.bundleIdentifier)
+                        }) -> String {
+  if pid == appPid { return appName }
+  let process = running(pid)
+  return process.name ?? process.bundleIdentifier ?? "process \(pid)"
+}
+
+/// The cut-off notice for a key input, when its keys were posted after a cut-off final read (`InputMeta.keyTargetCutOff`
+/// set and something posted); nil otherwise, so a refusal before the post never claims keys were sent.
+func keyTargetCutOffNotice(_ meta: InputMeta, appPid: pid_t, appName: String,
+                           running: ((pid_t) -> (name: String?, bundleIdentifier: String?))? = nil) -> String? {
+  guard let pid = meta.keyTargetCutOff, meta.startedAt != nil else { return nil }
+  let destination = running.map { keyDestinationName(pid, appPid: appPid, appName: appName, running: $0) }
+    ?? keyDestinationName(pid, appPid: appPid, appName: appName)
+  return keyTargetCutOffNotice(destination: destination)
+}
+
+/// A key input's result (press_key, type_text, paste): the input meta and the note a model reads (the result's `note`,
+/// which the service puts in the tool result's text, cut at 500 characters): the cut-off notice first, then the
+/// method's own note, joined by a space.
+func keyInputResult(_ meta: InputMeta, note: String?, appPid: pid_t, appName: String,
+                    running: ((pid_t) -> (name: String?, bundleIdentifier: String?))? = nil) -> [String: Any] {
   var result: [String: Any] = ["meta": meta.wire]
-  let notes = [note, meta.keyTargetCutOff ? keyTargetCutOffNotice(app: app) : nil].compactMap { $0 }
+  let notes = [keyTargetCutOffNotice(meta, appPid: appPid, appName: appName, running: running), note].compactMap { $0 }
   if !notes.isEmpty { result["note"] = notes.joined(separator: " ") }
   return result
+}
+
+/// A key input's error, with its meta (`withMeta`) and, when its keys were posted after a cut-off final read, the notice
+/// after its own sentence (ruling 1210: a typeUnconfirmed after typed text, a ⌘V that timed out).
+func keyInputError(_ error: EngineError, _ meta: InputMeta, appPid: pid_t, appName: String,
+                   running: ((pid_t) -> (name: String?, bundleIdentifier: String?))? = nil) -> EngineError {
+  let carried = withMeta(error, meta)
+  guard let notice = keyTargetCutOffNotice(meta, appPid: appPid, appName: appName, running: running) else { return carried }
+  return EngineError(code: carried.code, errorName: carried.errorName, message: carried.message + " " + notice, extra: carried.extra)
+}
+
+extension EngineError {
+  /// An error made again with all its parts (`keyInputError`'s message with the notice).
+  init(code: Int, errorName: String, message: String, extra: [String: Any]) {
+    self.code = code
+    self.errorName = errorName
+    self.message = message
+    self.extra = extra
+  }
 }
 
 /// The request's deadline passed before its keys were sent (ruling 1206): refused, never posted late.

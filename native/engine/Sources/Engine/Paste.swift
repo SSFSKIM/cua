@@ -764,6 +764,7 @@ extension Engine {
   /// never take the pasteboard, which clipboard managers poll and keep.
   func paste(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     var meta = InputMeta(context)
+    var named: (pid: pid_t, name: String)?
     if (args["concealed"] as? NSNumber)?.boolValue == true {
       throw withMeta(EngineError(name: "concealedInputUnavailable",
                                  "Nothing was entered: a concealed value is never pasted. Use set_value on a settable element instead."), meta)
@@ -773,6 +774,7 @@ extension Engine {
       let format = try PasteFormat(wire: args["format"])
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
+      named = (pid, app.displayName)  // an error after the keys were posted names where they went
       try requireAccessibility()
       let guarding = interventionGuard(app: app, pid: pid, requestApp: args["app"] as? String, connection: context.connection)
       meta.apply(guarding)
@@ -790,9 +792,9 @@ extension Engine {
                                        PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding,
                                                    reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, entered: &entered, meta: &meta)
-      return keyInputResult(meta, note: pasteUnconfirmedNote(outcome), app: app.displayName)
+      return keyInputResult(meta, note: pasteUnconfirmedNote(outcome), appPid: pid, appName: app.displayName)
     } catch let error as EngineError {
-      throw withMeta(error, meta)
+      throw named.map { keyInputError(error, meta, appPid: $0.pid, appName: $0.name) } ?? withMeta(error, meta)
     }
   }
 
@@ -923,7 +925,7 @@ extension Engine {
       // #582 (ruling 1206): the keys' process read again now that the activation has run, the last step before the
       // pasteboard and the first event; past the request's deadline nothing is sent.
       let keys = try target.reread?() ?? KeyTarget(pid: target.keyboard)
-      meta.keyTargetCutOff = keys.walkCutOff
+      meta.keyTargetCutOff = keys.walkCutOff ? keys.pid : nil
       let keyboard = keys.pid
       try refuseLateKeys(deadline: context.deadline)
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted

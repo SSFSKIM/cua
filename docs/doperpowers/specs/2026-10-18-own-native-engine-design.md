@@ -9180,6 +9180,30 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     carries the notice. The service test carries press_key's notice into the tool result's text. 1797 swift tests
     (2 skipped), 0 failures.
   Date/Author: 2026-11-23, cursor235's builder for #582.
+- Decision (#582, ruling 1210, 2026-11-24, the re-review of fe8912c9..69bdbfaf; amends the cut-off notice of the entry
+  above): **the notice says where the keys went, leads the note, and reaches errors after a post; no routing changes.**
+  C-4 runs on 69bdbfaf, so this round touches only the notice, the note and the error paths: the pid the walk answers,
+  the final read and the post's pid are as they were.
+  - A parent read that answers nothing once the walk's time is spent (its messaging timeout, set to the time left,
+    fired) is now told as a cut-off, not as the chain's end; a quick nil stays the chain's end. The walk answers nil
+    either way, so only `KeyTarget.walkCutOff` moves.
+  - The notice names the keys' destination, the focused element's public owner: the app by its name when that is the
+    owner, else the owner's localized name, its bundle id, or "process <pid>". It is short and comes first in the note:
+    "The check for an Open or Save panel timed out, so the keys went to <destination> by ordinary routing and may not
+    have reached such a panel." (134 characters for TextEdit; with the password field's 354-character note, 489 of the
+    service's 500, whole; a longer destination's cut falls in the method's note, never in the notice.)
+  - It is given only once keys were posted (`meta.startedAt`): on success in the note, and on an error after the post
+    (a typeUnconfirmed after typed text, a ⌘V that timed out) after the error's own sentence (`keyInputError`). A
+    refusal before any key carries neither the notice nor the meta. The input meta carries `keyTargetCutOff: {pid}`
+    once keys were posted, which the service passes as cua/keyTargetCutOff.
+  - Logged, not fixed (`tech-debt-tracker.md`): the paste's first-key deadline check runs before `deliver`, whose guard
+    for a background paste sharing a standing activation can read the front window (1 s timeout) before ⌘V.
+  - The proof: `KeyTargetTests` (a timed-out parent read is a cut-off with the same pid as the chain's end; the notice's
+    destination, app or owner by name, bundle id or pid; the notice only after a post, first in the note, in the meta;
+    the real password-field note within 500 whole, and a long destination's cut in the method's note; an error after
+    the post carries the notice, a refusal before it does not). The service test carries cua/keyTargetCutOff. 1801
+    swift tests (2 skipped), 0 failures.
+  Date/Author: 2026-11-24, cursor235's builder for #582.
 
 ## Outcomes & Retrospective
 

@@ -1,0 +1,1 @@
+quiet wait 0 s: load 0.65 0.22 0.08 stress-ng 0

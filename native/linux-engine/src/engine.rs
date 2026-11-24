@@ -596,7 +596,10 @@ impl Engine {
         let sent = self.inputs.take_sent();
         if self.cfg.stats {
             for record in sent.iter().map(Sent::record) {
-                eprintln!("{}", json!({ "stats": { "id": null, "focus_out": [record] } }));
+                eprintln!(
+                    "{}",
+                    crate::wire::jsonl(&json!({ "stats": { "id": null, "focus_out": [record] } }))
+                );
             }
         }
     }
@@ -636,7 +639,7 @@ impl Engine {
         for (key, value) in std::mem::take(&mut self.extra) {
             line[key] = value;
         }
-        json!({ "stats": line }).to_string()
+        crate::wire::jsonl(&json!({ "stats": line }))
     }
 
     /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
@@ -1055,7 +1058,11 @@ impl Engine {
             let waited = until.map(|_| (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
             eprintln!(
                 "{}",
-                exit_stats_line(waited, std::mem::take(&mut self.extra), &self.drop_settles)
+                crate::wire::jsonl(&exit_stats_line(
+                    waited,
+                    std::mem::take(&mut self.extra),
+                    &self.drop_settles
+                ))
             );
         }
         self.clipboard = None;
@@ -1195,6 +1202,20 @@ mod settle_mark_tests {
             "handle",
             json!({ FIELD: false, "drop_cursor": { "settle": { "settled": false, FIELD: false } } }),
         )
+    }
+
+    /// #572: a request's `--stats` line is one JSONL line whatever its records hold: U+2028 and U+2029 in a record's
+    /// string are written as their escapes, the value unchanged.
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_stats_line_escapes_ls_and_ps() {
+        let mut engine = after_the_drag(drag_record());
+        let title = format!("a{}b{}c", '\u{2028}', '\u{2029}');
+        engine.extra.insert("window".into(), json!({ "title": title }));
+        let line = engine.stats_line(json!(1), "list_windows".into(), std::time::Duration::ZERO, true);
+        assert!(!line.contains('\u{2028}') && !line.contains('\u{2029}'), "{line:?}");
+        let read: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(read["stats"]["window"]["title"], json!(title));
     }
 
     #[test]

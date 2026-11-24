@@ -27,9 +27,11 @@
 //! `t14-floor` `left` at arm64 twice the load: 241 steps spread over 350 ms, 1.45 ms apart, 0 keepalives, a false ok).
 //! So with the tail, the floor's steps and keepalives end [`TAIL_SPAN`] early ([`steps_floor`]) and the tail fills the
 //! rest of the floor ([`Schedule::InFloor`], ruling 1001): its visits 16 and 8 ms before the floor's end, the release at
-//! the end as the floor alone releases it. A visit that no longer fits is dropped; the release never moves. The 326 ms
-//! boundary only schedules: the gate judges the path against the 350 ms floor, so a path whose last step comes between
-//! the two keeps the gate shut and its tail inside the floor.
+//! the end as the floor alone releases it. A visit that no longer fits is dropped; the release never moves. Two
+//! boundaries, kept apart: the gate judges the path against the 350 ms floor, and the 326 ms one (floor_until, the
+//! floor's steps' end) decides the schedule. A path whose last step comes between the two keeps the gate shut; since
+//! 0.4.5 (#512, ruling 1142 (1)) its tail runs after the path ([`overran`]), and only a path that ended by floor_until
+//! gets its tail inside the floor.
 //!
 //! The motion is one synthetic motion on the background route (SendEvent, never XTEST). On XTEST's routes a motion to
 //! the pointer's own place produces no event (M4's T9), so each visit steps 1 px forward along the path's last segment
@@ -164,19 +166,23 @@ pub fn floor_spaces(paced: Duration, floor_due: Instant, now: Instant) -> (Durat
 /// When the tail's visits and the release come (ruling 1001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Schedule {
-    /// After a path that outlasted the floor (the gate open), or a drop with no floor: [`TAIL_REST`] before each visit
-    /// and before the release, from the tail's start, as the measured form has it.
+    /// After a path that outlasted the 350 ms floor (the gate open), after one whose last step went out past
+    /// floor_until, the 326 ms end of the floor's steps, the gate shut or not ([`overran`], #512), or for a drop with no
+    /// floor: [`TAIL_REST`] before each visit and before the release, from the tail's start, as the measured form has
+    /// it.
     AfterPath,
-    /// Inside the floor (the gate shut): the release at the floor's end, this instant, as the floor alone releases it,
-    /// the visits [`TAIL_REST`] apart before it. A visit whose time has passed when the tail reaches it is dropped, and
-    /// the release never moves.
+    /// Inside the floor (the gate shut and the path's last step by floor_until): the release at the floor's end, this
+    /// instant, as the floor alone releases it, the visits [`TAIL_REST`] apart before it. A visit whose time has passed
+    /// when the tail reaches it is dropped, the release never moves, and the drop is answered unconfirmed ([`unconfirms`],
+    /// #512).
     InFloor(Instant),
 }
 
 impl Schedule {
-    /// The schedule of a drop whose gate is `open`, its floor ending at `floor_end` (None: no floor ran).
-    pub fn of(open: bool, floor_end: Option<Instant>) -> Schedule {
-        match (open, floor_end) {
+    /// The schedule of a drop whose gate is `open`, its floor ending at `floor_end` (None: no floor ran): after the path
+    /// when the gate opened or the path [`overran`] the floor's steps (#512, ruling 1142 (1)), else inside the floor.
+    pub fn of(open: bool, overran: bool, floor_end: Option<Instant>) -> Schedule {
+        match (open || overran, floor_end) {
             (false, Some(end)) => Schedule::InFloor(end),
             _ => Schedule::AfterPath,
         }
@@ -187,6 +193,41 @@ impl Schedule {
             Schedule::AfterPath => "after_path",
             Schedule::InFloor(_) => "in_floor",
         }
+    }
+}
+
+/// Whether a drop's path sent its last step after the floor's steps end (`floor_until`: the take plus [`steps_floor`]),
+/// by any margin (#512, ruling 1142 (1)): `last_sent` is when that step's motion went out.
+pub fn overran(taken: Instant, steps_floor: Duration, last_sent: Instant) -> bool {
+    last_sent > taken + steps_floor
+}
+
+/// Why a Chrome drop whose only confirmation is its activation request is answered unconfirmed, with option (c)'s
+/// notice (`handle::Confirming::Outlasted`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unconfirm {
+    /// Its tail dropped a visit (#512, ruling 1142 (2), fail-closed).
+    VisitDropped,
+    /// The gate opened and option (c) is on (ruling 995).
+    Outlasted,
+}
+
+impl Unconfirm {
+    pub fn name(self) -> &'static str {
+        match self {
+            Unconfirm::VisitDropped => "visit_dropped",
+            Unconfirm::Outlasted => "outlasted",
+        }
+    }
+}
+
+/// Whether, and why, a drop at the gate (`open`) is answered unconfirmed when Chrome's activation request is its only
+/// confirmation: its tail (`synced`) dropped a visit, or the gate opened with option (c) on (`unconfirm_outlasted`).
+pub fn unconfirms(open: bool, unconfirm_outlasted: bool, synced: Option<&Synced>) -> Option<Unconfirm> {
+    if synced.is_some_and(|s| s.visits_dropped > 0) {
+        Some(Unconfirm::VisitDropped)
+    } else {
+        (open && unconfirm_outlasted).then_some(Unconfirm::Outlasted)
     }
 }
 
@@ -547,7 +588,7 @@ mod tests {
                 form,
                 None,
                 (10, 10),
-                Schedule::of(false, Some(floor_end)),
+                Schedule::of(false, false, Some(floor_end)),
                 Some(floor_end),
                 |p| {
                     motions.push((p, Instant::now()));
@@ -696,10 +737,10 @@ mod tests {
 
     /// Ruling 1001 (2): the tail's 326 ms scheduling boundary is not the gate's: the gate judges the path against the
     /// 350 ms floor. A path whose last sample goes out 338 ms after the take, past 326 and short of 350, is spaced by
-    /// the 350 ms floor, so the gate stays shut (no outlasted answer under option (c)), and its tail runs inside the
-    /// floor: the first visit's time (334 ms) has passed and is dropped, the second comes at 342, and the release at 350.
+    /// the 350 ms floor, so the gate stays shut (no outlasted answer under option (c)). Since 0.4.5 (#512, ruling 1142
+    /// (1)) its tail runs after the path, not inside the floor, where its first visit's time (334 ms) had passed.
     #[test]
-    fn a_last_sample_between_the_tail_s_boundary_and_the_floor_keeps_the_gate_shut_and_the_release_at_the_floor() {
+    fn a_last_sample_between_the_tail_s_boundary_and_the_floor_keeps_the_gate_shut_and_runs_the_tail_after_the_path() {
         let ms = Duration::from_millis;
         let paced = Duration::from_micros(500);
         let after_take = crate::dnd::RELEASE_AFTER_TAKE;
@@ -715,26 +756,172 @@ mod tests {
         let (_, last_spaced) = floor_spaces(paced, floor_end, now);
         assert!(last_spaced);
         assert!(!gate(When::Outlasted, 0, last_spaced));
-        let schedule = Schedule::of(false, Some(floor_end));
-        assert_eq!(schedule, Schedule::InFloor(floor_end));
-        let (synced, log, ended) = run_on(Form::Tail, None, schedule, Some(floor_end));
-        let synced = synced.unwrap();
-        assert_eq!((synced.motions, synced.visits_dropped), (1, 1));
-        assert!(
-            log[0].1 >= taken + ms(342) && log[0].1 - (taken + ms(342)) < ms(1),
-            "{log:?}"
+        let schedule = Schedule::of(false, overran(taken, schedule_end - taken, now), Some(floor_end));
+        assert_eq!(schedule, Schedule::AfterPath);
+    }
+
+    /// #512's rows, constructed: a path whose last step went out after floor_until (the take plus [`steps_floor`], 326
+    /// ms) by any margin takes the after-path tail, though the gate stays shut on them (ruling 1142 (1), 993's rule
+    /// applied to floor_until): H9 L4d #28 (+12.7 ms) and task 147's r2 #3 and r2 #13 (+8.8 and +7.2 ms). The tail as
+    /// it then runs: 8 ms, a visit, 8 ms, a visit, 8 ms, the release, nothing dropped.
+    #[test]
+    fn a_path_whose_last_step_overran_floor_until_takes_the_after_path_tail() {
+        let ms = Duration::from_millis;
+        let us = Duration::from_micros;
+        let after_take = crate::dnd::RELEASE_AFTER_TAKE;
+        let floor = steps_floor(Form::Tail, after_take);
+        assert_eq!(floor, ms(326));
+        let taken = Instant::now();
+        let floor_end = taken + after_take;
+        for past in [us(12_700), us(8_800), us(7_200), us(1)] {
+            let last = taken + floor + past;
+            assert!(overran(taken, floor, last), "{past:?} past floor_until");
+            assert_eq!(
+                Schedule::of(false, overran(taken, floor, last), Some(floor_end)),
+                Schedule::AfterPath,
+                "{past:?}: the gate shut, the tail after the path"
+            );
+        }
+        assert!(!overran(taken, floor, taken + floor), "at floor_until: not past it");
+        // the after-path tail on a clock that wakes on time: 8 ms, the step and back, 8 ms, the step and back, 8 ms
+        let start = taken + floor + us(12_700);
+        let clock = LateClock {
+            now: std::cell::Cell::new(start),
+            late: std::cell::RefCell::new(Default::default()),
+        };
+        let mut sent = Vec::new();
+        let synced = before_release_on(
+            &clock,
+            Form::Tail,
+            Some((11, 10)),
+            (10, 10),
+            Schedule::AfterPath,
+            Some(floor_end),
+            |p| {
+                sent.push((p, clock.now() - start));
+                Ok(())
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            sent,
+            vec![
+                ((11, 10), ms(8)),
+                ((10, 10), ms(8)),
+                ((11, 10), ms(16)),
+                ((10, 10), ms(16))
+            ]
         );
-        assert!(ended >= floor_end && ended - floor_end < ms(1));
+        assert_eq!(
+            (synced.schedule, synced.motions, synced.visits_dropped),
+            (Schedule::AfterPath, 4, 0)
+        );
+        assert_eq!(clock.now() - start, ms(24), "the release 8 ms after the second visit");
+        assert_eq!(unconfirms(false, false, Some(&synced)), None);
+    }
+
+    /// #512's fail-closed rule, constructed (ruling 1142 (2)): an in-floor tail whose second visit's wakeup came too late
+    /// drops it, and the drop is answered unconfirmed with option (c)'s notice whatever the gate and option (c) say;
+    /// a tail that dropped nothing is answered as before, and option (c) alone still answers an open gate.
+    #[test]
+    fn an_in_floor_tail_that_dropped_a_visit_answers_unconfirmed_with_option_c_s_notice() {
+        let ms = Duration::from_millis;
+        let start = Instant::now();
+        let release_at = start + ms(24);
+        let clock = LateClock {
+            now: std::cell::Cell::new(start),
+            late: std::cell::RefCell::new(vec![ms(0), ms(6)].into()),
+        };
+        let synced = before_release_on(
+            &clock,
+            Form::Tail,
+            Some((11, 10)),
+            (10, 10),
+            Schedule::InFloor(release_at),
+            Some(release_at),
+            |_| Ok(()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(synced.visits_dropped, 1);
+        for (open, c) in [(false, false), (true, false), (false, true), (true, true)] {
+            assert_eq!(
+                unconfirms(open, c, Some(&synced)),
+                Some(Unconfirm::VisitDropped),
+                "gate open {open}, option (c) {c}"
+            );
+        }
+        assert_eq!(Unconfirm::VisitDropped.name(), "visit_dropped");
+        // option (c)'s notice, which the engine's `Confirming::Outlasted` ends with (`dnd::WatchEnd::Outlasted`)
+        let notice = crate::dnd::pending_notice("Google Chrome", &crate::dnd::WatchEnd::Outlasted);
+        assert!(notice.contains("an unconfirmed drop"), "{notice}");
+        assert!(notice.contains("went on past the engine's settle time"), "{notice}");
+        // nothing dropped: as before
+        let whole = Synced {
+            visits_dropped: 0,
+            ..synced.clone()
+        };
+        assert_eq!(unconfirms(false, false, Some(&whole)), None);
+        assert_eq!(unconfirms(true, false, Some(&whole)), None);
+        assert_eq!(unconfirms(true, true, Some(&whole)), Some(Unconfirm::Outlasted));
+        assert_eq!(unconfirms(false, false, None), None);
+    }
+
+    /// #512 leaves the in-floor tail of a path that ended by floor_until as 0.4.4 runs it: the last step 320 ms after
+    /// the take, the gate shut, the visits 16 and 8 ms before the floor's end and the release at its end, nothing
+    /// unconfirmed.
+    #[test]
+    fn an_in_floor_tail_with_no_overrun_is_unchanged() {
+        let ms = Duration::from_millis;
+        let after_take = crate::dnd::RELEASE_AFTER_TAKE;
+        let taken = Instant::now();
+        let floor_end = taken + after_take;
+        let last = taken + ms(320);
+        assert!(!overran(taken, steps_floor(Form::Tail, after_take), last));
+        let schedule = Schedule::of(false, false, Some(floor_end));
+        assert_eq!(schedule, Schedule::InFloor(floor_end));
+        let clock = LateClock {
+            now: std::cell::Cell::new(last),
+            late: std::cell::RefCell::new(Default::default()),
+        };
+        let mut sent = Vec::new();
+        let synced = before_release_on(
+            &clock,
+            Form::Tail,
+            Some((11, 10)),
+            (10, 10),
+            schedule,
+            Some(floor_end),
+            |p| {
+                sent.push((p, clock.now() - taken));
+                Ok(())
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            sent,
+            vec![
+                ((11, 10), ms(334)),
+                ((10, 10), ms(334)),
+                ((11, 10), ms(342)),
+                ((10, 10), ms(342))
+            ]
+        );
+        assert_eq!((synced.motions, synced.visits_dropped), (4, 0));
+        assert_eq!(clock.now(), floor_end, "the release at the floor's end");
+        assert_eq!(unconfirms(false, false, Some(&synced)), None);
     }
 
     /// The gate open (or no floor) schedules the tail after the path; shut with a floor, inside it.
     #[test]
     fn the_schedule_follows_the_gate() {
         let end = Instant::now();
-        assert_eq!(Schedule::of(true, Some(end)), Schedule::AfterPath);
-        assert_eq!(Schedule::of(true, None), Schedule::AfterPath);
-        assert_eq!(Schedule::of(false, None), Schedule::AfterPath);
-        assert_eq!(Schedule::of(false, Some(end)), Schedule::InFloor(end));
+        assert_eq!(Schedule::of(true, false, Some(end)), Schedule::AfterPath);
+        assert_eq!(Schedule::of(true, false, None), Schedule::AfterPath);
+        assert_eq!(Schedule::of(false, false, None), Schedule::AfterPath);
+        assert_eq!(Schedule::of(false, false, Some(end)), Schedule::InFloor(end));
     }
 
     #[test]

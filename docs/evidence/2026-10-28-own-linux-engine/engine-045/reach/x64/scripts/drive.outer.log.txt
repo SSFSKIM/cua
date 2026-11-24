@@ -1,0 +1,10 @@
+2026-11-24T06:36:12Z driver start: H1 H2 L4a L4d
+2026-11-24T06:36:12Z wait H1 load=2.27 1.10 1.07 df avail 24G
+2026-11-24T06:56:20Z end H1 exit 0 load=0.41 0.36 0.61 
+2026-11-24T06:56:20Z wait H2 load=0.41 0.36 0.61 df avail 23G
+2026-11-24T07:15:00Z end H2 exit 0 load=0.46 0.42 0.49 
+2026-11-24T07:15:00Z wait L4a load=0.46 0.42 0.49 df avail 23G
+2026-11-24T07:34:53Z end L4a exit 0 load=17.48 17.01 12.67 
+2026-11-24T07:34:53Z wait L4d load=17.48 17.01 12.67 df avail 23G
+2026-11-24T07:58:03Z end L4d exit 0 load=18.41 17.75 15.76 
+2026-11-24T07:58:03Z driver done: H1 H2 L4a L4d

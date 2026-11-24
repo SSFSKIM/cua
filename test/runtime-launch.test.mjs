@@ -336,7 +336,7 @@ const withoutNode = () => { throw Object.assign(new CuaError('repl_host_node', '
 // The engine inputs are fixed (no engine.json; on macOS no engine installed, on Linux cua's at the minimum this cua
 // drives, without which a Linux computer session is refused since #171 M6a), so a machine's own settings never leak in.
 const LINUX_ENGINE_BIN = '/fixture/engine/linux/cua-engine';
-const ENGINE_INPUTS = {darwin: {config: () => ({}), installed: () => null}, linux: {config: () => ({}), installed: () => ({path: LINUX_ENGINE_BIN}), installedVersion: () => '0.4.4'}};
+const ENGINE_INPUTS = {darwin: {config: () => ({}), installed: () => null}, linux: {config: () => ({}), installed: () => ({path: LINUX_ENGINE_BIN}), installedVersion: () => '0.4.5'}};
 const hostFor = (platform, surfaces, host, resolveOwnNode = withNode, extra = {}) => outcome(() => replHostFor({platform, surfaces,
   ambient: host === undefined ? extra : {...extra, CUA_REPL_HOST: host}, resolveOwnNode, engine: ENGINE_INPUTS[platform]}));
 // The vendor engine by default, as a macOS computer selection carries it.

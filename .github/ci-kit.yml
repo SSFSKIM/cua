@@ -111,12 +111,43 @@ gates:
   # Clippy runs over the live build's every target and over the shipped binary, whose `live` stubs only it compiles.
   # Last, tests/two-screens.sh: the two-screen tests on a private Xorg (the dummy driver) whose screens sit side by
   # side, which Xvfb cannot lay out; it exits nonzero unless both ran and passed.
-  # No Node, so no shared setup; the toolchain is rust-toolchain.toml's.
+  # No shared setup; the toolchain is rust-toolchain.toml's. Node 24, which #572's live test reads the engine's answers
+  # with (its readline ends a line at U+2028), comes from the runner's tool cache, else the managed Node's pinned
+  # tarball checked against its SHA-256, and the test is required (CUA171_NODE_TESTS=required).
   - name: engine-linux
     lane: hosted
     timeout: 25
     setup: false
     run: |
+      cache=${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}
+      echo "the runner's cached Node: $(ls "$cache/node" 2>/dev/null | tr '\n' ' ' || true)"
+      shopt -s nullglob
+      cached=("$cache"/node/24.*/x64/bin)
+      shopt -u nullglob
+      n=
+      if [ "${#cached[@]}" -gt 0 ]; then
+        n=$(printf '%s\n' "${cached[@]}" | sort -V | tail -1)
+      fi
+      if [ -n "$n" ]; then
+        echo "Node from the tool cache: $n"
+        export PATH="$n:$PATH"
+      else
+        pin=runtime/releases/node/24.22.0-linux-x64.json
+        url=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["archive"]["url"])' "$pin")
+        sum=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["archive"]["sha256"])' "$pin")
+        echo "no Node 24 in the tool cache: $url, pinned in $pin"
+        curl -fsSL --proto '=https' -o "$RUNNER_TEMP/node.tar.gz" "$url" || exit 1
+        echo "$sum  $RUNNER_TEMP/node.tar.gz" | sha256sum -c - || exit 1
+        mkdir -p "$RUNNER_TEMP/node"
+        tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP/node" --strip-components 1 || exit 1
+        export PATH="$RUNNER_TEMP/node/bin:$PATH"
+      fi
+      major=$(node -p 'process.versions.node.split(".")[0]')
+      if [ "$major" -lt 24 ]; then
+        echo "engine-linux needs Node 24 or later for #572's readline test (CUA171_NODE_TESTS=required); found $(node --version)"
+        exit 1
+      fi
+      node --version
       sudo apt-get update -y
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad xserver-xorg-core xserver-xorg-video-dummy python3-gi gir1.2-gtk-3.0
       cd native/linux-engine
@@ -127,10 +158,11 @@ gates:
       cargo clippy --release --locked --target x86_64-unknown-linux-musl --all-targets --features live -- -D warnings
       cargo clippy --release --locked --target x86_64-unknown-linux-musl -- -D warnings
       cargo build --release --locked --target x86_64-unknown-linux-musl
-      CUA171_GTK_TESTS=required xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+      CUA171_GTK_TESTS=required CUA171_NODE_TESTS=required xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
       tests/two-screens.sh
     paths:
       - "native/linux-engine/**"
+      - "runtime/releases/node/24.22.0-linux-x64.json"
       - ".github/ci-kit.yml"
   # #171 task 48: the Linux engine harness's stand-in for org.a11y.Bus (scripts/linux-engine-diff/a11y-stub.mjs) answers
   # on a session bus beside the person's, so its tests run in CI, each on a dbus-daemon it starts itself. The `test`

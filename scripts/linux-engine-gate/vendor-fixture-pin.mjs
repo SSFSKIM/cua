@@ -8,7 +8,8 @@
 // from an installed home, which could have changed after its install. So the tool
 //   1. matches the deb to its record by length and SHA-256, through scripts/modules-pin.mjs's own matcher, over the Linux
 //      pins (a private snapshot of the deb is hashed, matched and read, so a deb replaced meanwhile changes nothing);
-//   2. unpacks the deb's payload under usr/lib/chatgpt/resources/cua_node/ and the fixture's tar to scratch, and compares
+//   2. unpacks the deb's payload under usr/lib/chatgpt/resources/cua_node/ and the fixture's tar (a private snapshot, hashed
+//      once: the hash written is that of the bytes compared) to scratch, and compares
 //      the deb's cua_node/ with the fixture's: the same names, the same types, the same link targets and the same bytes
 //      for every regular file. cua's own receipt, install.json beside cua_node/, is the one entry set aside; nothing
 //      else may be extra or missing on either side;
@@ -128,9 +129,17 @@ export async function pinVendorFixture({ deb, fixture, pins = loadPins().filter(
 
     const tarName = `${release}.tar`;
     const tarPath = join(fixture, tarName);
-    const tarSha256 = sha256File(tarPath);
-    const tarLength = lstatSync(tarPath).size;
-    log(`fixture tar ${tarPath}: ${tarLength} bytes, SHA-256 ${tarSha256}`);
+    // the tar is snapshotted as the deb is: the one private copy is hashed, then extracted and compared, so a tar replaced
+    // at its path meanwhile cannot pair this hash with other bytes (fix wave 1, finding 3)
+    const tarSnapshot = join(scratch, 'fixture.tar');
+    try {
+      copyFileSync(tarPath, tarSnapshot, fsConstants.COPYFILE_FICLONE);
+    } catch (error) {
+      throw new Error(`${tarPath} is not readable: ${error.code ?? error.message}`);
+    }
+    const tarSha256 = sha256File(tarSnapshot);
+    const tarLength = lstatSync(tarSnapshot).size;
+    log(`fixture tar ${tarPath}: ${tarLength} bytes, SHA-256 ${tarSha256} (its private snapshot, which is what is compared)`);
     const sums = existsSync(join(fixture, 'SHA256SUMS')) ? readFileSync(join(fixture, 'SHA256SUMS'), 'utf8') : '';
     log(`fixture SHA256SUMS ${sums.includes(`${tarSha256}  ${tarName}`) ? 'names that hash' : 'does not name that hash'}`);
 
@@ -138,7 +147,8 @@ export async function pinVendorFixture({ deb, fixture, pins = loadPins().filter(
     rmSync(snapshot, { force: true });
     const fromTar = join(scratch, 'tar');
     mkdirSync(fromTar);
-    await run(tar, ['-xf', tarPath, '-C', fromTar]);
+    await run(tar, ['-xf', tarSnapshot, '-C', fromTar]);
+    rmSync(tarSnapshot, { force: true });
     const top = readdirSync(fromTar);
     if (top.length !== 1 || top[0] !== release) throw new Error(`the fixture's tar holds ${JSON.stringify(top)}, not the one release ${release}`);
     const fixtureRoot = join(fromTar, release);

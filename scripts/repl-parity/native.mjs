@@ -41,17 +41,20 @@ export function nativeWindowApp(result){
  if(typeof app!=='string'||!app)throw Error('Native setup failed: '+cellText(result));
  return app;
 }
-// One native case on its own connection. `recordEngine` receives what answered it: {case, requested, expected, error,
-// observed}, from the serve's notifications (./engine-answered.mjs), judged by the run (laneEngineProblem).
+// One native case on its own connection. `recordEngine` receives what answered it: {case, connection, requested,
+// expected, error, observed}, from the serve's notifications (./engine-answered.mjs), judged by the run
+// (laneEngineProblem); `connection` is the pool's name for the case's connection, whose recorded provenance attests the
+// home that answered it (hostAttestations[].executionFacts.answeringHost), so R1's verdict binds the engine to that home
+// (scripts/linux-engine-gate/parity-verdict.mjs; #171 M6b, fix wave 1).
 export async function runNativeScenario(scenario,{pool,prepared,host,engine,engineBin,emit,recordEngine=()=>{}}){
  const seen=[];let record=null;
  const command={...nativeCommand({...prepared,host,engine,engineBin,fixtureMode:scenario.fixtureMode}),onNotification:message=>{
   if(message.method!==ENGINE_NOTIFICATION)return;
   const {observed=[],sampleError,...facts}=message.params??{};record??=facts;seen.push(observed);if(sampleError)record.sampleError??=sampleError;
  }};
- const client=await pool.open(command);
+ const client=await pool.open(command),connection=pool.connectionOf?.(client)??null;
  try{return await exerciseNative(scenario,{client,command,prepared,emit});}
- finally{recordEngine({case:scenario.id,...(record??{requested:engine,expected:null,error:'the serve reported no engine observation'}),observed:mergeObservations(...seen)});}
+ finally{recordEngine({case:scenario.id,connection,...(record??{requested:engine,expected:null,error:'the serve reported no engine observation'}),observed:mergeObservations(...seen)});}
 }
 async function exerciseNative(scenario,{client,command,prepared,emit}){
  const pinned=new Set();

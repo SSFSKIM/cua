@@ -7,10 +7,16 @@ import { join } from 'node:path';
 
 export const STORED_CUA_LANE = new URL('../../docs/evidence/2026-10-28-own-linux-engine/m6a/x64/regression/parity/cua/', import.meta.url);
 
-/** The stored lane's {meta, rows}, fresh each call. */
+/**
+ * The stored lane's {meta, rows}, fresh each call. Lanes stored before T3's fix wave 1 record no connection on their
+ * engine observations; each is given the connection whose recorded provenance attests the home its engine was
+ * installed in, as a run records it since (scripts/repl-parity/native.mjs runNativeScenario).
+ */
 export function storedCuaLane() {
   const meta = JSON.parse(readFileSync(new URL('meta.json', STORED_CUA_LANE), 'utf8'));
   const rows = readFileSync(new URL('results.jsonl', STORED_CUA_LANE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const byEngine = new Map(meta.hostAttestations.filter((a) => a.executionFacts?.answeringHost?.home).map((a) => [`${a.executionFacts.answeringHost.home}/engine/linux/cua-engine`, a.connection]));
+  meta.engineAnswered = meta.engineAnswered.map((e) => ({ case: e.case, connection: byEngine.get(e.expected) ?? null, ...e }));
   return { meta, rows };
 }
 
@@ -38,6 +44,18 @@ export const LANE_CHANGES = {
       entry.expected = '/tmp/built/cua-engine';
       entry.observed = entry.observed.map((o) => ({ ...o, exe: '/tmp/built/cua-engine' }));
     }
+    return { meta, rows };
+  },
+  // the first native case's observation names the second case's engine, its own connection kept
+  swapped: ({ meta, rows }) => {
+    const [first, second] = meta.engineAnswered;
+    first.expected = second.expected;
+    first.observed = second.observed.map((o) => ({ ...o }));
+    return { meta, rows };
+  },
+  // the observations name no connection
+  unbound: ({ meta, rows }) => {
+    for (const entry of meta.engineAnswered) delete entry.connection;
     return { meta, rows };
   },
   // the run did not finish

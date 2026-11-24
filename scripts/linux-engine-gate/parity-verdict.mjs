@@ -8,8 +8,11 @@
 //   - both text cases (native-linux.mjs TEXT_CASES) are positive: asserted ok, with no vendor defect recorded;
 //   - the engine that answered every native case is the lane's (engine-answered.mjs laneEngineProblem: cua's engine at
 //     the executable the lane names, the trusted worker's child, behind cua's service, nothing else), and that
-//     executable is a cua home's installed engine (`<home>/engine/linux/cua-engine`, as the lane's scratch home holds
-//     it), or on a candidate the one ENGINE_BIN names.
+//     executable is the installed engine of the case's own home: each case's observation names the connection it ran
+//     on, and its engine must be `<home>/engine/linux/cua-engine` for the home that connection's recorded provenance
+//     attests answered it (hostAttestations[].executionFacts.answeringHost.home), one connection a case (fix wave 1:
+//     a path suffix alone let one case's observation name another case's engine). On a candidate, the one ENGINE_BIN
+//     names, by its real path, for every case.
 // The suites runner (suites.sh) runs the cleanup whatever this says, and a cleanup that fails fails the part too.
 //
 //   node scripts/linux-engine-gate/parity-verdict.mjs <run dir> --exit <the run's exit status> [--engine-bin <path>]
@@ -28,7 +31,7 @@ export const NATIVE_LINUX_CASES = 34;
 /** The native suite's case ids on Linux, as repl-parity's own selection picks them. */
 export const nativeLinuxCaseIds = () => selectScenarios(scenarios, inventory, { suite: 'native', platform: 'linux' }).scenarios.map((s) => s.id);
 /** Where a cua home holds its installed engine (src/runtime/linux-engine.mjs linuxEnginePath). */
-const INSTALLED = /\/engine\/linux\/cua-engine$/;
+const INSTALLED = 'engine/linux/cua-engine';
 
 /**
  * The verdict on a cua lane: `meta` and `rows` its meta.json and results.jsonl, `exit` the run's exit status, `engineBin`
@@ -70,11 +73,25 @@ export function parityVerdict({ meta, rows, exit, engineBin = null, engineReal =
   if (lane) problems.push(lane);
   const native = caseIds.filter((id) => id.startsWith('native/'));
   if (!native.length) problems.push('the run selected no native case, so no engine answered it');
-  const engines = [...new Set((meta?.engineAnswered ?? []).map((e) => e.expected))];
-  for (const at of engines) {
-    if (engineBin !== null) {
-      if (at !== engineReal) problems.push(`${at} answered, not the candidate ${engineReal}`);
-    } else if (typeof at !== 'string' || !INSTALLED.test(at)) problems.push(`${at} is not a cua home's installed engine (<home>/engine/linux/cua-engine)`);
+  const entries = meta?.engineAnswered ?? [];
+  const engines = [...new Set(entries.map((e) => e.expected))];
+  if (engineBin !== null) {
+    for (const at of engines) if (at !== engineReal) problems.push(`${at} answered, not the candidate ${engineReal}`);
+  } else {
+    // each case's engine is its own connection's home's installed engine, by that connection's attested answering home
+    const attested = new Map((Array.isArray(meta?.hostAttestations) ? meta.hostAttestations : []).map((a) => [a?.connection, a?.executionFacts?.answeringHost?.home]));
+    const seen = new Map();
+    for (const e of entries) {
+      if (typeof e.connection !== 'string' || !e.connection) {
+        problems.push(`${e.case}: its engine observation names no connection, so which home answered it is unproven`);
+        continue;
+      }
+      if (seen.has(e.connection)) problems.push(`${e.case}: its connection ${e.connection} also answered ${seen.get(e.connection)}`);
+      seen.set(e.connection, e.case);
+      const home = attested.get(e.connection);
+      if (typeof home !== 'string' || !home.startsWith('/')) problems.push(`${e.case}: its connection ${e.connection} attests no answering home`);
+      else if (e.expected !== `${home.replace(/\/+$/, '')}/${INSTALLED}`) problems.push(`${e.case}: ${e.expected} answered, not the installed engine of its own connection's home (${home}/${INSTALLED})`);
+    }
   }
   if (engineBin !== null && meta?.engineBin !== engineBin) problems.push(`the run names engine ${meta?.engineBin ?? 'none'}, not the candidate ${engineBin}`);
   if (engineBin === null && meta?.engineBin) problems.push(`the run named the engine ${meta.engineBin}, where the installed engine runs`);

@@ -70,7 +70,7 @@ test('R1 negative control: a failed cua lane with a successful cleanup is red, a
 });
 
 test("R1 is red for 33 cases, a text case that is not positive, another engine under the worker or one no home installed; the cleanup runs each time", () => {
-  for (const [change, pattern] of [['short', /33 cases/], ['text', /native\/app\/typetext: not positive/], ['vendor', /sky_linux_x64 \(vendor\) answered/], ['elsewhere', /not a cua home's installed engine/], ['incomplete', /not complete/]]) {
+  for (const [change, pattern] of [['short', /33 cases/], ['text', /native\/app\/typetext: not positive/], ['vendor', /sky_linux_x64 \(vendor\) answered/], ['elsewhere', /not the installed engine of its own connection's home/], ['swapped', /answered, not the installed engine of its own connection's home/], ['incomplete', /not complete/]]) {
     const r = part('inner-parity', { env: { FAKE_LANE: change } });
     assert.equal(r.status, 1, change);
     assert.equal(cleanups(r), 2, `${change}: the final cleanup ran`);

@@ -210,6 +210,8 @@ export function resolvedAsRun71(dir) {
 
 /** The :0 sitting's outer launcher, relative to the checkout. */
 const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
+/** The comparator fixture's check a :0 step's launch path runs first, under the host lock (fixture-check.mjs). */
+const FIXTURE_CHECK = 'scripts/linux-engine-gate/fixture-check.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
 const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
@@ -339,8 +341,12 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot, engineStats: a.engineStats });
     const dir = a.out ? stepDir(step, a) : '<out>/<step>';
     // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
-    // and the all-clear however the sitting ends (review finding 3, ruling 730)
-    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
+    // and the all-clear however the sitting ends (review finding 3, ruling 730). Before it, under the lock, the comparator
+    // fixture the step names is checked in the launch path itself (fixture-check.mjs; M6b T3 fix wave 1, finding 1):
+    // neither the sitting launcher nor run71.sh reads it, and a check made only when the command was printed would leave
+    // the bytes between then and the launch unchecked
+    const fixture = usesVendorBuilds(step) ? [process.execPath, join(root, FIXTURE_CHECK), '--vendor-fixture', a.vendorFixture, '--arch', a.arch ?? process.arch, '--'] : [];
+    return line([...lock, ...fixture, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
   // a fixture or newest build named by flag is spelled out, so the command reruns the same step; the defaults are not

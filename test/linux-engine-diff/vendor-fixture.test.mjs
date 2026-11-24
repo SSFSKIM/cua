@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, afterEach, beforeEach, test } from 'node:test';
@@ -23,6 +23,7 @@ const fresh = (name) => {
   mkdirSync(dir, { recursive: true });
   return dir;
 };
+const mkdirP = (path) => (mkdirSync(path, { recursive: true }), path);
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const ARCH = 'x64';
 const RELEASE = releaseName(ARCH);
@@ -145,6 +146,28 @@ test('one changed byte in the list refuses, and so does a list that disagrees wi
   assert.throws(() => verifyVendorFixture({ dir, arch: ARCH, manifest: build }), refused(/not the manifest's pinned build/));
 });
 
+// fix wave 1, finding 2: a cache root that is a link is refused at either level, even when what it leads to holds the
+// listed bytes (a cua home's runtimes/ does: the vendor's release as an install placed it)
+test("a linked cache root is refused, at the extracted level and at the release level, even onto a home's identical tree", () => {
+  for (const level of ['extracted', 'release']) {
+    const { dir, manifest } = makeFixture();
+    verifyVendorFixture({ dir, arch: ARCH, manifest });
+    // a mock cua home holding the same release under runtimes/
+    const home = fresh('home');
+    renameSync(join(dir, EXTRACTED, RELEASE), join(mkdirP(join(home, 'runtimes')), RELEASE));
+    if (level === 'extracted') {
+      rmSync(join(dir, EXTRACTED), { recursive: true });
+      symlinkSync(join(home, 'runtimes'), join(dir, EXTRACTED));
+    } else symlinkSync(join(home, 'runtimes', RELEASE), join(dir, EXTRACTED, RELEASE));
+    assert.throws(() => verifyVendorFixture({ dir, arch: ARCH, manifest }), refused(/is a link, not a directory of the fixture's own/), level);
+  }
+  // a dangling link where the extracted root would be is refused too, never extracted through
+  const { dir, manifest } = makeFixture();
+  symlinkSync(join(scratch, 'nowhere'), join(dir, EXTRACTED));
+  assert.throws(() => verifyVendorFixture({ dir, arch: ARCH, manifest }), refused(/is a link/));
+  assert.equal(existsSync(join(scratch, 'nowhere')), false, 'nothing extracted through it');
+});
+
 test('no fixture, no manifest entry, or a malformed entry refuses: never a skip, never a fetch', () => {
   const { manifest } = makeFixture();
   assert.throws(() => verifyVendorFixture({ dir: join(scratch, 'absent'), arch: ARCH, manifest }), refused(/no comparator fixture at .*--vendor-fixture/));
@@ -246,4 +269,57 @@ test('the pin tool refuses a deb that is no pin\'s before reading it, and a list
   const second = pinRun({ deb, fixture: lying });
   await assert.rejects(second.run(), /the tree list is not the tar's; nothing was written: 1 changed: cua_node\/bin\/node/);
   assert.equal(existsSync(second.manifestFile), false);
+});
+
+// fix wave 1, finding 3: the tar hashed is the tar compared. A tar swapped at its path after its hash was taken (here,
+// the moment the tool logs that hash) changes nothing the tool reads: it hashes and extracts one private snapshot
+test('the pin tool compares the very tar it hashed: one swapped at its path after the hash gets no manifest', async () => {
+  const deb = makeDeb({ files: cuaNode(TREE) });
+  // the fixture as hashed differs from the deb; the swap puts an equal tar in its place
+  const fixture = makeFixture({ files: { ...TREE, 'cua_node/bin/node': 'a node binarY' }, list: listOf(TREE) });
+  const good = makeFixture();
+  const manifestFile = join(fresh('manifest'), 'vendor-fixture.json');
+  const swap = (line) => {
+    if (line.startsWith('fixture tar ')) writeFileSync(fixture.tar, readFileSync(good.tar));
+  };
+  await assert.rejects(pinVendorFixture({ deb: deb.path, fixture: fixture.dir, pins: [deb.pin], manifestFile, log: swap }), /bytes differ: cua_node\/bin\/node/);
+  assert.equal(existsSync(manifestFile), false, 'no manifest for a tar it never compared');
+});
+
+// fix wave 1, finding 1: the check in a :0 step's launch path (fixture-check.mjs), run here without a display: the
+// command after `--` starts only once the fixture checks, and only with the checked fixture's build and client
+test("the launch path's check starts the command only for a fixture that checks, and only with that fixture's paths", async () => {
+  const { checkThenRun, parseFixtureCheck } = await import('../../scripts/linux-engine-gate/fixture-check.mjs');
+  const { dir, manifest } = makeFixture();
+  const verify = (opts) => verifyVendorFixture({ ...opts, manifest });
+  const paths = fixturePaths(dir, ARCH);
+  const marker = join(fresh('marker'), 'started');
+  const command = (extra = []) => [process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, process.argv.slice(1).join(' '))`, '--', ...extra];
+  const lines = [];
+  const say = (line) => lines.push(line);
+  // a fixture that checks: the command runs with the harness's flags, and its exit status is the check's
+  assert.equal(await checkThenRun({ dir, arch: ARCH, command: command(['--vendor', paths.vendor, '--vendor-js', paths.vendorJs]) }, { verify, say }), 0);
+  assert.equal(readFileSync(marker, 'utf8'), `--vendor ${paths.vendor} --vendor-js ${paths.vendorJs}`);
+  assert.match(lines.at(-1), /checks \(tar [0-9a-f]{64}; the pinned build /);
+  rmSync(marker);
+  // a fixture with one changed byte: nothing starts
+  writeFileSync(join(paths.root, binaryPath(ARCH)), 'the pinned vendor builT');
+  assert.equal(await checkThenRun({ dir, arch: ARCH, command: command() }, { verify, say }), 2);
+  assert.equal(existsSync(marker), false, 'nothing started on a fixture that does not check');
+  assert.match(lines.at(-1), /does not check, so the step does not start: .*1 changed/);
+  // a command naming another build than the checked fixture's: nothing starts
+  const good = makeFixture();
+  const goodVerify = (opts) => verifyVendorFixture({ ...opts, manifest: good.manifest });
+  assert.equal(await checkThenRun({ dir: good.dir, arch: ARCH, command: command(['--vendor', '/home/u/.local/share/cua/runtimes/26.928.40906-linux-x64/sky_linux_x64']) }, { verify: goodVerify, say }), 2);
+  assert.equal(existsSync(marker), false);
+  assert.match(lines.at(-1), /--vendor is \/home\/u\/.local\/share\/cua\/runtimes\/.*, not the checked fixture's/);
+  // the script itself, on a fixture that is not there: exit 2, nothing started
+  const { spawnSync } = await import('node:child_process');
+  const script = new URL('../../scripts/linux-engine-gate/fixture-check.mjs', import.meta.url).pathname;
+  const run = spawnSync(process.execPath, [script, '--vendor-fixture', join(scratch, 'no-fixture'), '--arch', 'x64', '--', ...command()], { encoding: 'utf8' });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /no comparator fixture at/);
+  assert.equal(existsSync(marker), false);
+  assert.throws(() => parseFixtureCheck(['--vendor-fixture', '/f', '--', 'x']), /usage/);
+  assert.deepEqual(parseFixtureCheck(['--vendor-fixture', '/f', '--arch', 'x64', '--', 'a', 'b']), { dir: '/f', arch: 'x64', command: ['a', 'b'] });
 });

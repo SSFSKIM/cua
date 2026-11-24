@@ -149,6 +149,24 @@ export function treeDifferences({ files, other }, listed, limit = 10) {
   return out;
 }
 
+/**
+ * Whether `path` is a real directory of the fixture's own, by `lstat`: false when nothing is there, true for a directory;
+ * a link (even one that leads to a directory that holds the listed bytes, a cua home's runtimes/ say) or anything else
+ * refuses. Nothing is followed.
+ */
+function ownDirectory(path) {
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    refuse(`${path} cannot be read: ${error.code ?? error.message}`);
+  }
+  if (stat.isSymbolicLink()) refuse(`${path} is a link, not a directory of the fixture's own: a cache root is never followed`);
+  if (!stat.isDirectory()) refuse(`${path} is not a directory`);
+  return true;
+}
+
 /** Extract `tar` into `into` with the system tar, which never touches a display. */
 const tarExtract = (tar, into) => execFileSync('tar', ['-xf', tar, '-C', into], { stdio: ['ignore', 'ignore', 'pipe'] });
 
@@ -174,7 +192,7 @@ export function verifyVendorFixture({ dir, arch, manifest = loadFixtureManifest(
   if (listed.get(entry.binary.path) !== entry.binary.sha256) refuse(`the fixture's tree list gives ${entry.binary.path} as ${listed.get(entry.binary.path) ?? 'absent'}, not the manifest's pinned build ${entry.binary.sha256}`);
 
   const extracted = join(dir, EXTRACTED);
-  if (!existsSync(extracted)) {
+  if (!ownDirectory(extracted)) {
     const tar = join(dir, entry.tar.name);
     let size;
     try {
@@ -198,6 +216,7 @@ export function verifyVendorFixture({ dir, arch, manifest = loadFixtureManifest(
   const top = readdirSync(extracted);
   if (top.length !== 1 || top[0] !== releaseName(arch)) refuse(`${extracted} holds ${JSON.stringify(top)}, not the one release ${releaseName(arch)}`);
   const paths = fixturePaths(dir, arch);
+  if (!ownDirectory(paths.root)) refuse(`${paths.root} is not there`);
   const differences = treeDifferences(walkTree(paths.root), listed);
   if (differences.length) refuse(`the extracted fixture ${paths.root} is not its list: ${differences.join('; ')}`);
   return { ...paths, entry, binarySha256: listed.get(entry.binary.path), serviceSha256: listed.get(SERVICE_PATH) ?? null };

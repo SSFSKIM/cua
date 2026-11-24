@@ -159,7 +159,7 @@ test('a gate runs only from a clean checkout whose commit reads, writing outside
 test('a :0 step is printed as task 50\'s guarded sitting under the host lock, M5\'s guard (ruling 773) around M4\'s run71.sh, and the runner refuses to run it', async () => {
   const a = parseGateArgs(['print', 'V1', '--candidate', PATHS.candidate, '--out', '/gate']);
   const command = launchCommand(stepNamed('V1'), a, ROOT);
-  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V1\.release-gate --hold \S+ --terminal end -- env WRAP=\/checkout\/docs\/evidence\/2026-10-28-own-linux-engine\/m5\/guards\/wrap71\.py \/checkout\/docs\/evidence\/2026-10-28-own-linux-engine\/m4\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
+  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/fixture-check\.mjs --vendor-fixture \S+ --arch \S+ -- \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V1\.release-gate --hold \S+ --terminal end -- env WRAP=\/checkout\/docs\/evidence\/2026-10-28-own-linux-engine\/m5\/guards\/wrap71\.py \/checkout\/docs\/evidence\/2026-10-28-own-linux-engine\/m4\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
   assert.doesNotMatch(command, / --out /, 'run71.sh gives the harness its --out');
   const run = parseGateArgs(['run', 'Z0', '--candidate', PATHS.candidate, '--out', '/gate']);
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);
@@ -296,6 +296,22 @@ test("the vendor builds come from the architecture's comparator fixture, never f
   assert.doesNotMatch(launchCommand(stepNamed('E1'), parseGateArgs(['run', 'E1', '--candidate', '/c', '--out', '/o', '--dev'], { arch: 'x64', env: {} }), ROOT), /--vendor-fixture|--newest/, 'the defaults are not spelled out');
 });
 
+// fix wave 1, finding 1: a :0 step's command reaches the harness through the sitting launcher and run71.sh, neither of
+// which reads the fixture, so the command itself checks it first: under the host lock, before the sitting launcher starts
+// any guard or display, the fixture the step names, for the architecture it runs on
+test("a :0 step's own launch path checks the fixture under the host lock before the sitting launcher starts", () => {
+  for (const name of STEPS.filter((s) => s.display === ':0').map((s) => s.name)) {
+    const a = parseGateArgs(['print', name, '--candidate', PATHS.candidate, '--out', '/gate', '--vendor-fixture', '/f/x64'], { arch: 'x64', env: {} });
+    const command = launchCommand(stepNamed(name), a, ROOT);
+    const at = (part) => command.indexOf(part);
+    assert.match(command, /^\S+\/locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/fixture-check\.mjs --vendor-fixture \/f\/x64 --arch x64 -- \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs /, name);
+    assert.ok(at('fixture-check.mjs') < at('sitting.mjs') && at('sitting.mjs') < at('run71.sh'), `${name}: the check comes first`);
+    assert.ok(command.includes(` --vendor ${fixturePaths('/f/x64', 'x64').vendor} `), `${name}: the harness takes the checked fixture's build`);
+  }
+  // `--list` prints the same launch path
+  assert.match(listText(parseGateArgs(['--list'], { arch: 'x64', env: {} }), ROOT), /\n {5}\S+\/locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/fixture-check\.mjs --vendor-fixture \S+ --arch x64 -- \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir '<out>\/<step>' /);
+});
+
 test('the steps that run a vendor build or the client take the fixture; the facade suites, the settle and the engine stop do not', () => {
   const uses = STEPS.filter(usesVendorBuilds).map((s) => s.name);
   for (const name of ['V1', 'V5', 'Z0', 'D1', 'FB', 'E1', 'P1', 'L1', 'L5', 'K1']) assert.ok(uses.includes(name), name);
@@ -362,7 +378,10 @@ test("R1's verdict: green only for a lane that exited 0 with all 34 cases, both 
     '33 cases': [{ ...LANE_CHANGES.short(storedCuaLane()), exit: 0 }, /33 cases, not the native suite's 34/],
     'a text case not positive': [{ ...LANE_CHANGES.text(storedCuaLane()), exit: 0 }, /native\/app\/typetext: not positive/],
     'another engine under the worker': [{ ...LANE_CHANGES.vendor(storedCuaLane()), exit: 0 }, /sky_linux_x64 \(vendor\) answered/],
-    'an engine no home installed': [{ ...LANE_CHANGES.elsewhere(storedCuaLane()), exit: 0 }, /\/tmp\/built\/cua-engine is not a cua home's installed engine/],
+    'an engine no home installed': [{ ...LANE_CHANGES.elsewhere(storedCuaLane()), exit: 0 }, /\/tmp\/built\/cua-engine answered, not the installed engine of its own connection's home/],
+    // fix wave 1, finding 4: another case's installed engine, though it ends in /engine/linux/cua-engine
+    "another case's engine": [{ ...LANE_CHANGES.swapped(storedCuaLane()), exit: 0 }, /^native\/\S+: \S+\/engine\/linux\/cua-engine answered, not the installed engine of its own connection's home/],
+    'observations that name no connection': [{ ...LANE_CHANGES.unbound(storedCuaLane()), exit: 0 }, /names no connection, so which home answered it is unproven/],
     'an incomplete run': [{ ...LANE_CHANGES.incomplete(storedCuaLane()), exit: 0 }, /the run is not complete \(Task cleanup failed\)/],
     'a vendor lane': [(({ meta, rows }) => ({ meta: { ...meta, engine: 'vendor' }, rows, exit: 0 }))(storedCuaLane()), /the lane ran the vendor engine, not cua's/],
   };

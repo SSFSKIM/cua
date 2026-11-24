@@ -298,9 +298,10 @@ if [[ "$CUA_REF" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
     || { echo "origin $repo does not give commit $CUA_REF: push it there, or set CUA_REF to a commit it has" >&2; exit 1; }
   commit="$CUA_REF"
 else
-  # A name, as a template is first rendered with: the log says which commit it was.
+  # A name, as a template is first rendered with: the log says which commit it was. FETCH_HEAD is peeled, since for an
+  # annotated tag it names the tag object, not its commit.
   as_user git -C /opt/cua fetch -q origin "$CUA_REF"
-  commit="$(as_user git -C /opt/cua rev-parse FETCH_HEAD)"
+  commit="$(as_user git -C /opt/cua rev-parse 'FETCH_HEAD^{commit}')"
   log "ref $CUA_REF is commit $commit"
 fi
 if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$commit" ]]; then

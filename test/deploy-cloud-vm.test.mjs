@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
@@ -16,7 +16,8 @@ import {CUA_EXTENSION_ID} from '../src/chrome/extension.mjs';
 import {DEFAULT_BASE_URL} from '../scripts/extension-pack.mjs';
 import {A11Y_ENABLE_COMMAND} from '../src/runtime/linux-desktop.mjs';
 import {VENDOR_ENGINE_RETIRED_IN} from '../src/runtime/launch.mjs';
-import {INSTALL_JSON, bundleOf, git, makeVm, newProvisioner, repos} from './fixtures/cloud-vm/vm.mjs';
+import {INSTALL_JSON, bundleOf, git, makeVm, newProvisioner, repos, truncateBundle} from './fixtures/cloud-vm/vm.mjs';
+import {contained, remap} from './fixtures/cloud-vm/remap.mjs';
 
 const dir = fileURLToPath(new URL('../deploy/cloud-vm/', import.meta.url));
 const fixtures = fileURLToPath(new URL('./fixtures/cloud-vm/', import.meta.url));
@@ -203,6 +204,48 @@ test('create-hetzner.sh copies an upload whose local path has a space to the nam
 
 // ---- The whole provisioner on a fake VM (test/fixtures/cloud-vm/vm.mjs) ----
 
+// The fake VM runs scripts as the test's user, on a host that may itself be a VM this template made (its /opt/cua the
+// user's own). So its remap is fail-closed: a VM path is moved under the scratch root, a few host paths that are only
+// executed or named are left, a path inside the run's own scratch stays, and anything else refuses the text before any
+// of it runs. These run on strings alone and touch nothing.
+test('the fake VM\'s remap places every VM path, leaves only what is safe, and refuses any other absolute path', () => {
+  const root = '/scratch/vm/root', scratch = '/scratch/vm';
+  const placed = text => remap(text, root, scratch);
+  assert.equal(placed('cd /opt/cua; ls'), `cd ${root}/opt/cua; ls`);
+  assert.equal(placed('gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg'), `gpg --dearmor -o ${root}/usr/share/keyrings/google-chrome.gpg`);
+  assert.equal(placed('x=/etc\ny=/etc/'), `x=${root}/etc\ny=${root}/etc/`);
+  assert.equal(placed('PATH=/usr/local/bin:/usr/bin:/bin env'), `PATH=${root}/usr/local/bin:/usr/bin:/bin env`);
+  assert.equal(placed('[[ -S /run/user/$uid/bus ]] && ls /dev/dri/card*'), `[[ -S ${root}/run/user/$uid/bus ]] && ls ${root}/dev/dri/card*`);
+  for (const text of ['curl -fsSL https://dl.google.com/linux/linux_signing_key.pub', 'jq \'.desktop //= "dedicated"\'', '$((CUA_DEB_WAIT / 5))',
+    '#!/usr/bin/env bash', 'cmd >/dev/null 2>&1', `git -C ${scratch}/origin.git log`, 'cp "$home/.config/x" ~/y'])
+    assert.equal(placed(text), text);
+  for (const text of ['rm -rf /srv/data', 'cat /home/someone/.ssh/id_ed25519', 'echo x >/tmp/y', 'cp a /usr/lib/x', 'ls /scratch/vmx/root',
+    'touch /scratch/vm/../escape', 'cat /proc/1/environ;'])
+    assert.throws(() => placed(text), /the fake VM would not place/, text);
+  assert.equal(contained(`${root}/var/cache/cua/cua.bundle.update`, root), `${root}/var/cache/cua/cua.bundle.update`);
+  for (const path of [`${root}/../escape`, `${root}/var/cache/../../../escape`, root, '/etc/passwd'])
+    assert.throws(() => contained(path, root), /outside the fake VM/, path);
+});
+
+// The ssh and scp stubs check before they act: a command naming a path the fake VM will not place runs none of itself,
+// and a copy lands inside the root or nowhere. Each refusal here would be harmless anyway (a read, a copy into /tmp or
+// the scratch), so the test touches nothing of the host's.
+test('the fake VM\'s ssh runs nothing of a command it cannot place, and its scp copies nothing outside the root', {skip: noJq}, async t => {
+  const vm = await makeVm(t);
+  const ran = join(vm.scratch, 'ran');
+  const ssh = spawnSync(join(vm.bin, 'ssh'), ['root@vm', `touch ${ran}; cat /srv/secret`], {env: vm.env, encoding: 'utf8'});
+  assert.equal(ssh.status, 97, ssh.stderr);
+  assert.match(ssh.stderr, /fake VM: refused: the fake VM would not place \/srv\/secret/);
+  assert.ok(!existsSync(ran), 'nothing of the command ran');
+  const payload = join(vm.scratch, 'payload');
+  writeFileSync(payload, 'x');
+  for (const dest of ['/tmp/payload', '/var/cache/cua/../../../payload-escaped', `${vm.scratch}/payload-copy`]) {
+    const scp = spawnSync(join(vm.bin, 'scp'), [payload, `root@vm:${dest}`], {env: vm.env, encoding: 'utf8'});
+    assert.equal(scp.status, 97, `${dest}: ${scp.stderr}`);
+  }
+  assert.ok(!existsSync(join(vm.scratch, 'payload-copy')) && !existsSync(join(vm.root, 'var/payload-escaped')));
+});
+
 // What a run did, by step, from the stubs' calls: 1 the packages, 7's npm ci, 8 cua install, 9 the registration, 10 the
 // relay's enrolment and the agent.
 const stepsOf = calls => ({
@@ -215,6 +258,16 @@ const stepsOf = calls => ({
   fetches: calls.filter(call => call.startsWith('curl ') && !call.includes('169.254.169.254')),
   sleeps: calls.filter(call => call.startsWith('sleep')),
 });
+// The real `cua install` (bin/cua.mjs) ran on the VM's user's home: it placed cua's runtime there from the install
+// fixture's assets, asked for those and nothing else, and none of OpenAI's.
+function installedForReal(vm) {
+  const served = new Set(Object.keys(JSON.parse(readFileSync(join(vm.scratch, 'fetch-map.json'), 'utf8'))));
+  const fetched = vm.fetched();
+  assert.ok(fetched.length > 0 && fetched.every(url => served.has(url)), `asked for: ${fetched.join(', ')}`);
+  assert.ok(!fetched.some(url => /chatgpt|openai/i.test(url)));
+  assert.ok(existsSync(join(vm.home, '.local/share/cua/current.json')), 'the install\'s pointer, in the user\'s cua home');
+  assert.match(vm.log(), /^\{"ok":true,"release":"cua-linux-x64-[^"]+","changed":/m, 'the install\'s own summary');
+}
 const CHECKOUT_SENTENCE = `cua ${VENDOR_ENGINE_RETIRED_IN} has no vendor release for Linux; a cloud VM's provisioner that asks for one is replaced with \`deploy/cloud-vm/update.sh\``;
 const debNoLongerUsed = (value, root) => `CUA_DEB=${value} in ${root}/etc/cua-provision.conf is no longer used: cua ${VENDOR_ENGINE_RETIRED_IN} installs no ChatGPT package, so nothing is fetched or waited for`;
 
@@ -236,6 +289,19 @@ test('the new provisioner on cua 0.30.0\'s checkout: no deb tools, cua install, 
   assert.match(vm.log(), new RegExp(`\\] ref main is commit ${c}\\n`), 'the log names the commit a name resolved to');
   assert.doesNotMatch(vm.log(), /CUA_DEB/);
   assert.match(vm.log(), /\] done\n/);
+  installedForReal(vm);
+});
+
+// A first boot whose template names an annotated tag: FETCH_HEAD is the tag object, and the checkout is its commit.
+test('the new provisioner checks out the commit of an annotated tag on first boot, and installs', {skip: noJq}, async t => {
+  const vm = await makeVm(t, {script: newProvisioner()});
+  const {origin, c} = repos(vm);
+  vm.setConf({CUA_REF: 'v-test', CUA_REPO: origin});
+  const run = vm.provision();
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.equal(vm.head(), c);
+  assert.match(vm.log(), new RegExp(`\\] ref v-test is commit ${c}\\n`));
+  assert.deepEqual(stepsOf(vm.calls()).install, ['cua install --json']);
 });
 
 // F9: a conf an earlier template wrote may still set CUA_DEB; the new script says once that it is no longer used.
@@ -262,8 +328,11 @@ test('the new provisioner with each old conf (pin, a mirror, upload, none) logs 
 // N6: the template provisions cua 0.30.0 or later, and only as the checkout's own provisioner. Both are checked after
 // the checkout and before npm ci and cua install; the checkout's provisioner is compared, never run.
 test('the new provisioner on a checkout older than 0.30.0, or one whose own provisioner differs, exits 1 before npm ci and cua install', {skip: noJq}, async t => {
+  const older = /this template provisions cua 0\.30\.0 or later; CUA_REF main is older: use that ref's own deploy\/cloud-vm\n/;
+  // before M6a (a deb pin, no record); M6a's (a deb pin beside the record); and no record without a deb pin: each arm
+  // of the check alone, and both
   for (const [at, why] of [
-    ['older', /this template provisions cua 0\.30\.0 or later; CUA_REF main is older: use that ref's own deploy\/cloud-vm\n/],
+    ['older', older], ['m6a', older], ['norecord', older],
     ['c0', /\/usr\/local\/sbin\/cua-provision\.sh is not this checkout's deploy\/cloud-vm\/cua-provision\.sh \(CUA_REF main, commit [0-9a-f]{40}\): it provisions only the commit whose own provisioner it is, so this VM is upgraded from the operator's checkout with deploy\/cloud-vm\/update\.sh root@<this VM> --ref main\n/],
   ]) {
     const vm = await makeVm(t, {script: newProvisioner()});
@@ -329,6 +398,7 @@ function repairs(vm, {operator, c}, {deb}) {
   assert.equal(vm.head(), c);
   assert.match(vm.read('etc/cua-provision.conf'), new RegExp(`^CUA_REF='${c}'$`, 'm'));
   assert.equal(vm.log().split(debNoLongerUsed(deb, vm.root)).length, 2, 'the conf\'s CUA_DEB, once');
+  installedForReal(vm);
 }
 
 test('a provisioner from before M6a exits 1 at its deb pin lookup, before any install, with the checkout\'s sentence in its log; update.sh then completes the VM', {skip: noJq}, async t => {
@@ -361,6 +431,7 @@ test('M6a\'s provisioner with CUA_DEB=none runs clean on cua 0.30.0\'s checkout'
   assert.equal(vm.head(), ids.c);
   assert.match(vm.log(), /\] done\n/);
   assert.match(vm.read('var/lib/cua-provision/checklist.txt'), /^(?!.*stopped early)/s);
+  installedForReal(vm);
 });
 
 // M6a's script with a deb asked for: cua 0.30.0's install reports no vendor tree, so it looks the pin up; the lookup's
@@ -384,6 +455,7 @@ test('M6a\'s provisioner with CUA_DEB pin, a mirror or upload installs and regis
     assert.equal(vm.read('var/lib/cua-provision/checklist.txt').split('\n')[1], `  !! provisioning stopped early: ${stop.replaceAll('@', vm.root)}`, deb);
     assert.ok(vm.log().includes(CHECKOUT_SENTENCE), `${deb}: the lookup's error is the checkout's sentence`);
     assert.equal(steps.sleeps.length, sleeps, deb);
+    installedForReal(vm);
     repairs(vm, ids, {deb});
   }
 });
@@ -400,6 +472,8 @@ async function deployed(t, {push = 'c', repo} = {}) {
   return {vm, ids, before: snapshot(), snapshot};
 }
 const remoteCalls = vm => vm.calls().filter(call => /^(ssh|scp) /.test(call));
+const bundleStops = c => `update.sh: the VM's /var/cache/cua/cua.bundle does not give ${c}: its heads do not name it, or a fetch from it fails; run update.sh again with --bundle, which replaces it with one whose tip is ${c}; the VM's script and conf are unchanged\n`;
+const candidateRefused = c => new RegExp(`the bundle copied to root@203\\.0\\.113\\.7:/var/cache/cua/cua\\.bundle\\.update\\.[0-9a-f]{16} does not give ${c}: its heads do not name it, or a fetch from it fails; it was removed, and /var/cache/cua/cua\\.bundle, the VM's script and its conf are unchanged\\n$`);
 
 test('update.sh resolves the ref once, checks the VM\'s source, installs the script by its hash, sets CUA_REF to the commit, runs it and checks HEAD, in that order', {skip: noJq}, async t => {
   const {vm, ids} = await deployed(t);
@@ -409,20 +483,26 @@ test('update.sh resolves the ref once, checks the VM\'s source, installs the scr
   const order = [
     /^ssh \. \/etc\/cua-provision\.conf && /,
     /^ssh runuser -u 'cua' -- sh -c '.*' sh '[^']*origin\.git' [0-9a-f]{40}$/,
-    /^scp \S+\/deploy\/cloud-vm\/cua-provision\.sh \/usr\/local\/sbin\/cua-provision\.sh\.update$/,
-    /^ssh sha256sum \/usr\/local\/sbin\/cua-provision\.sh\.update$/,
-    /^ssh chmod 0755 \/usr\/local\/sbin\/cua-provision\.sh\.update && mv -f \/usr\/local\/sbin\/cua-provision\.sh\.update \/usr\/local\/sbin\/cua-provision\.sh$/,
-    /^ssh sed /,
+    /^scp \S+\/cua-provision\.sh \/usr\/local\/sbin\/cua-provision\.sh\.update\.([0-9a-f]{16})$/,
+    /^ssh sha256sum \/usr\/local\/sbin\/cua-provision\.sh\.update\.([0-9a-f]{16})$/,
+    /^ssh chmod 0755 \/usr\/local\/sbin\/cua-provision\.sh\.update\.([0-9a-f]{16}) && mv -f \/usr\/local\/sbin\/cua-provision\.sh\.update\.\1 \/usr\/local\/sbin\/cua-provision\.sh$/,
+    /^ssh sed .* \/etc\/cua-provision\.conf >\/etc\/cua-provision\.conf\.update\.([0-9a-f]{16}) && /,
     /^ssh \/usr\/local\/sbin\/cua-provision\.sh$/,
     /^ssh runuser -u 'cua' -- git -C \/opt\/cua rev-parse HEAD$/,
   ];
   const calls = remoteCalls(vm);
   assert.equal(calls.length, order.length, calls.join('\n'));
   order.forEach((pattern, i) => assert.match(calls[i], pattern));
+  // one staging name per run, not a fixed one another run could overwrite
+  const ids2 = new Set(calls.map(call => call.match(/\.update\.([0-9a-f]{16})/)?.[1]).filter(Boolean));
+  assert.equal(ids2.size, 1, calls.join('\n'));
+  assert.equal(vm.update(ids.operator, ['--ref', 'main']).status, 0);
+  const again = remoteCalls(vm).slice(order.length).map(call => call.match(/\.update\.([0-9a-f]{16})/)?.[1]).filter(Boolean);
+  assert.ok(again.length > 0 && !again.includes([...ids2][0]), 'a second run stages under its own name');
   assert.deepEqual(readFileSync(vm.path('usr/local/sbin/cua-provision.sh')), readFileSync(join(ids.operator, 'deploy/cloud-vm/cua-provision.sh')));
   assert.equal(vm.read('etc/cua-provision.conf'), `CUA_USER='cua'\nCUA_RELAY='wss://relay.example/ws'\nCUA_REF='${ids.c}'\nCUA_REPO='${ids.origin}'\nCUA_DEB='none'\n`);
   assert.equal(vm.head(), ids.c);
-  assert.ok(!existsSync(vm.path('usr/local/sbin/cua-provision.sh.update')));
+  assert.deepEqual(readdirSync(vm.path('usr/local/sbin')), ['cua-provision.sh'], 'no staged copy left');
   assert.match(run.stdout, new RegExp(`update\\.sh: main is ${ids.c}\\n`));
   assert.match(run.stdout, new RegExp(`update\\.sh: the VM's checkout is at ${ids.c}\\n`));
 });
@@ -445,11 +525,24 @@ test('update.sh: a copy whose SHA-256 is not the script\'s is removed, and the V
   const {vm, ids, before, snapshot} = await deployed(t);
   const run = vm.update(ids.operator, [], {VM_SCP_HOOK: 'printf x >>"$1"'});
   assert.equal(run.status, 1, run.stdout + run.stderr);
-  assert.match(run.stderr, /the copy at root@203\.0\.113\.7:\/usr\/local\/sbin\/cua-provision\.sh\.update has SHA-256 [0-9a-f]{64}, not [0-9a-f]{64}: it was removed, and the VM's script and conf are unchanged\n$/);
+  assert.match(run.stderr, /the copy at root@203\.0\.113\.7:\/usr\/local\/sbin\/cua-provision\.sh\.update\.[0-9a-f]{16} has SHA-256 [0-9a-f]{64}, not [0-9a-f]{64}: it was removed, and the VM's script and conf are unchanged\n$/);
   assert.deepEqual(snapshot(), before);
-  assert.ok(!existsSync(vm.path('usr/local/sbin/cua-provision.sh.update')));
+  assert.deepEqual(readdirSync(vm.path('usr/local/sbin')), ['cua-provision.sh'], 'no staged copy left');
   assert.ok(!remoteCalls(vm).includes('ssh /usr/local/sbin/cua-provision.sh'));
   assert.equal(vm.head(), ids.c0);
+});
+
+// The operator's working copy changes after update.sh has checked it against C (an edit, a branch switch): what the VM
+// gets is still C's provisioner, staged once, and the run completes.
+test('update.sh ships the provisioner it verified against the commit, whatever the working copy becomes meanwhile', {skip: noJq}, async t => {
+  const {vm, ids} = await deployed(t);
+  const working = join(ids.operator, 'deploy/cloud-vm/cua-provision.sh');
+  const atC = git(ids.operator, 'cat-file', 'blob', `${ids.c}:deploy/cloud-vm/cua-provision.sh`) + '\n';
+  const run = vm.update(ids.operator, ['--ref', 'main'], {VM_SSH_HOOK: `printf 'echo a later edit\\n' >>'${working}'`});
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.notEqual(readFileSync(working, 'utf8'), atC, 'the working copy changed during the run');
+  assert.equal(vm.read('usr/local/sbin/cua-provision.sh'), atC);
+  assert.equal(vm.head(), ids.c);
 });
 
 test('update.sh with a moving ref: the commit it resolved is what the conf holds and the checkout ends at', {skip: noJq}, async t => {
@@ -482,18 +575,18 @@ test('update.sh with a stale uploaded bundle stops naming --bundle; with --bundl
 
   const stopped = vm.update(ids.operator, ['--ref', 'main']);
   assert.equal(stopped.status, 1, stopped.stdout + stopped.stderr);
-  assert.equal(stopped.stderr, `update.sh: the VM's /var/cache/cua/cua.bundle does not hold ${ids.c} as a head: run update.sh again with --bundle, which replaces it with one whose tip is ${ids.c}; the VM's script and conf are unchanged\n`);
+  assert.equal(stopped.stderr, bundleStops(ids.c));
   assert.deepEqual(snapshot(), before);
   assert.deepEqual(readFileSync(bundle), stale);
 
   // a new bundle that arrives naming another commit is never renamed over the old one
   const wrong = join(vm.scratch, 'wrong.bundle');
   bundleOf(ids.operator, ids.next, wrong);
-  const swapped = vm.update(ids.operator, ['--ref', 'main', '--bundle'], {VM_SCP_HOOK: `case "$1" in *.bundle.update) cp '${wrong}' "$1" ;; esac`});
+  const swapped = vm.update(ids.operator, ['--ref', 'main', '--bundle'], {VM_SCP_HOOK: `case "$1" in *.bundle.update.*) cp '${wrong}' "$1" ;; esac`});
   assert.equal(swapped.status, 1, swapped.stdout + swapped.stderr);
-  assert.match(swapped.stderr, new RegExp(`the bundle copied to root@203\\.0\\.113\\.7:/var/cache/cua/cua\\.bundle\\.update does not name ${ids.c} as a head: it was removed; /var/cache/cua/cua\\.bundle, the VM's script and its conf are unchanged\\n$`));
+  assert.match(swapped.stderr, candidateRefused(ids.c));
   assert.deepEqual(readFileSync(bundle), stale);
-  assert.ok(!existsSync(`${bundle}.update`));
+  assert.deepEqual(readdirSync(vm.path('var/cache/cua')), ['cua.bundle'], 'the candidate is gone');
   assert.deepEqual(snapshot(), before);
 
   const recovered = vm.update(ids.operator, ['--ref', 'main', '--bundle']);
@@ -502,6 +595,31 @@ test('update.sh with a stale uploaded bundle stops naming --bundle; with --bundl
   assert.equal(vm.head(), ids.c);
   assert.match(vm.read('etc/cua-provision.conf'), new RegExp(`^CUA_REF='${ids.c}'$`, 'm'));
   assert.ok(stepsOf(vm.calls()).relay);
+});
+
+// A bundle whose header names C but whose pack is cut short: its heads alone would pass. update.sh fetches from it, as
+// the desktop user, before anything is promoted, as the live bundle and as a candidate.
+test('update.sh refuses a bundle that names the commit but cannot give it, live or as the candidate, and changes nothing', {skip: noJq}, async t => {
+  const {vm, ids, before, snapshot} = await deployed(t, {repo: 'upload'});
+  const bundle = vm.path('var/cache/cua/cua.bundle');
+  bundleOf(ids.operator, ids.c, bundle);
+  truncateBundle(bundle);
+  assert.match(git(vm.scratch, 'bundle', 'list-heads', bundle), new RegExp(`^${ids.c} `, 'm'), 'its heads still name C');
+  git(vm.path('opt/cua'), 'remote', 'set-url', 'origin', bundle);
+  const cut = readFileSync(bundle);
+
+  const live = vm.update(ids.operator, ['--ref', 'main']);
+  assert.equal(live.status, 1, live.stdout + live.stderr);
+  assert.equal(live.stderr, bundleStops(ids.c));
+  assert.deepEqual(snapshot(), before);
+  assert.deepEqual(readFileSync(bundle), cut);
+
+  const candidate = vm.update(ids.operator, ['--ref', 'main', '--bundle'], {VM_SCP_HOOK: `case "$1" in *.bundle.update.*) cp '${bundle}' "$1" ;; esac`});
+  assert.equal(candidate.status, 1, candidate.stdout + candidate.stderr);
+  assert.match(candidate.stderr, candidateRefused(ids.c));
+  assert.deepEqual(readdirSync(vm.path('var/cache/cua')), ['cua.bundle']);
+  assert.deepEqual(snapshot(), before);
+  assert.equal(vm.head(), ids.c0);
 });
 
 test('update.sh --bundle is refused for a VM whose source is a repository URL, before anything is copied', {skip: noJq}, async t => {

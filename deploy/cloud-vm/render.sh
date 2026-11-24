@@ -5,8 +5,9 @@
 #   deploy/cloud-vm/render.sh [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--relay wss://<relay>/ws]
 #       [--extension hosted|store] [--extension-url https://<host>/ext/update.xml]
 #
-# Render from a checkout of the ref the VM provisions (or of one with the same cua-provision.sh): the VM's provisioner
-# stops before installing anything unless it is byte for byte the provisioner of the commit it checks out. The
+# Render from a checkout of the ref the VM provisions (or of one with the same cua-provision.sh): after its packages,
+# desktop and checkout, the VM's provisioner stops before npm ci and cua install unless it is byte for byte the
+# provisioner of the commit it checks out. The
 # template provisions cua 0.30.0 or later, which installs no ChatGPT package, so --deb is refused (#171 M6b).
 # --repo: the repository the VM clones (default https://github.com/SSFSKIM/cua); a local file is a git bundle holding
 # --ref (`git bundle create cua.bundle <ref>`, for a ref that is not pushed) that the operator copies to the VM's

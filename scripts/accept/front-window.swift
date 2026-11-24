@@ -4,7 +4,9 @@
 // the key guard (./key-guard.mjs, frontmostFromProbe) and the macOS scenes (scripts/repl-parity/scenes-mac.mjs).
 //
 //   front [--skip-pid <pid>]...
-//                   (default) {"at": <unix ms>, "frontmost": {"bundleId", "pid"} | null, "topWindow": <window> | null}
+//                   (default) {"at": <unix ms>, "frontmost": {"bundleId", "pid"} | null, "topWindow": <window> | null,
+//                   "topBundleId", "skipped": [{"number", "ownerPid", "bundleId", "layer"}]}: `skipped` the skipped pids'
+//                   windows passed over above the top window, front first (ruling 1219: every skip recorded)
 //                   frontmost from `lsappinfo front` then `lsappinfo info -only pid,bundleid`; topWindow is the frontmost
 //                   on-screen window at the normal level (layer 0) with a visible size and alpha, from
 //                   CGWindowListCopyWindowInfo, front to back, passing over the windows of each skipped pid (the
@@ -113,8 +115,17 @@ func skippedPids(_ command: String) -> Set<Int> {
 switch arguments.first ?? "front" {
 case "front":
   let skipped = skippedPids("front")
-  let top = (windows([.optionOnScreenOnly, .excludeDesktopElements]) ?? []).first { !skipped.contains($0["ownerPid"] as? Int ?? -1) }
-  emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull()])
+  let listed = windows([.optionOnScreenOnly, .excludeDesktopElements]) ?? []
+  let index = listed.firstIndex { !skipped.contains($0["ownerPid"] as? Int ?? -1) }
+  let top = index.map { listed[$0] }
+  let bundle = { (window: [String: Any]) -> Any in
+    NSRunningApplication(processIdentifier: pid_t(window["ownerPid"] as? Int ?? -1))?.bundleIdentifier as Any? ?? NSNull()
+  }
+  let passed = listed[..<(index ?? listed.endIndex)].map { w -> [String: Any] in
+    ["number": w["number"] as Any, "ownerPid": w["ownerPid"] as Any, "bundleId": bundle(w), "layer": 0]
+  }
+  emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull(),
+        "topBundleId": top.map(bundle) ?? NSNull(), "skipped": passed])
 case "order":
   let skipped = skippedPids("order")
   emit(["at": now, "windows": (windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true) ?? [])

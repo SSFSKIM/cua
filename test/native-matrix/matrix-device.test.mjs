@@ -538,3 +538,28 @@ test('the matrix device forwards the sheet\'s bounds to ax-state window: the arg
   axState(600, '262,127,603,505');
   assert.deepEqual(ran, [['/run/ax-state.swift.bin', 'window', '600', '262,127,603,505', '323,149,480,300'], ['/run/ax-state.swift.bin', 'window', '600', '262,127,603,505']]);
 });
+
+// Ruling 1219 (h3): the front-window read passes over the engine under test's own windows on either lane alike: cua's
+// engine bundle and the vendor's runtime home (its overlay and helper, com.openai.sky.CUAService /
+// SkyComputerUseService), as the alert watch does. Every window passed over is recorded (bundle, number, layer), and the
+// top window the read names (its bundle and number, its owner's pid for the run's own or on a hosted runner).
+test('read: the vendor\'s overlay is passed over as cua\'s cursor is; each skip and the top window named are recorded', () => {
+  const overlay = {ownerPid: 41, number: 77, bundleId: 'com.openai.sky.CUAService', layer: 0};
+  const user = {ownerPid: 7, number: 3, bounds, onScreen: true};
+  const asked = [];
+  const io = (env = {RUNNER_ENVIRONMENT: 'github-hosted'}) => ({state: () => state, launched: () => [], watcherRuns: () => true, env, platform: 'darwin',
+    enginePids: roots => { asked.push(roots); return [41]; },
+    executablePaths: list => new Map(list.map(p => [p, '/R/runtime/SkyComputerUseService'])),
+    frontWindow: ({skipPids = []} = {}) => (skipPids.includes(41)
+      ? {at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: user, topBundleId: 'com.apple.finder', skipped: [overlay]}
+      : {at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: {ownerPid: 41, number: 77, bounds, onScreen: true}, topBundleId: 'com.openai.sky.CUAService', skipped: []})});
+  const r = read({approvedRuntime: '/R', approvedEngine: '/A/cua Engine.app'}, io());
+  assert.deepEqual(asked, [['/R', '/A/cua Engine.app']], 'both roots of the engine under test, as the alert watch reads them');
+  assert.deepEqual(r.reading.topWindow, {ownerPid: 7, number: 3, bounds, owned: true});
+  assert.deepEqual(r.frontWindow, {top: {owned: true, bundleId: 'com.apple.finder', number: 3, ownerPid: 7, layer: 0},
+    skipped: [{bundleId: 'com.openai.sky.CUAService', number: 77, layer: 0}]});
+  // Another app's top window: named by its bundle; its number and pid only on a hosted runner, never on an owner's Mac.
+  const unowned = {...io(), enginePids: () => []};
+  assert.deepEqual(read({approvedRuntime: '/R'}, unowned).frontWindow, {top: {owned: false, bundleId: 'com.openai.sky.CUAService', number: 77, ownerPid: 41, layer: 0}, skipped: []});
+  assert.deepEqual(read({approvedRuntime: '/R'}, {...unowned, env: {}}).frontWindow, {top: {owned: false, bundleId: 'com.openai.sky.CUAService', number: null, ownerPid: null, layer: 0}, skipped: []});
+});

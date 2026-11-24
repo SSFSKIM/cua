@@ -125,7 +125,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {AX_STATE_SCRIPT, axStateReader, ownKeyWindow, sceneWindowOf} from '../hosted-sittings/key-window.mjs';
-import {moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
+import {isGithubHosted, moveRefusal, readRunnerRecord, venueInputMissingOf} from '../hosted-sittings/runner.mjs';
 import {inputWriteRefusal} from './hitoolbox.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
@@ -196,7 +196,12 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // so the lookup never shifts the reading's timings. The approved engine's own windows (the agent cursor's display-wide
 // panel, #235, which never takes a key or the front) are passed over, as the keystroke probe's gate and the composition
 // guard pass over them: the processes running from `approvedEngine` (bundlePids, read before the reading opens) are
-// skipped by the front-window probe, so a transient ordering never makes the panel the oracle's front window.
+// skipped by the front-window probe, so a transient ordering never makes the panel the oracle's front window. The
+// vendor's are passed over alike (ruling 1219): its overlay and helper (com.openai.sky.CUAService,
+// SkyComputerUseService) run from `approvedRuntime`, so both roots of the engine under test are skipped, as the alert
+// watch leaves out both. `frontWindow`: every window so passed over above the top one ({bundleId, number, layer}) and
+// the top window the read names ({owned, bundleId, number, ownerPid, layer}; another app's number and pid only on a
+// GitHub-hosted runner, null on an owner's Mac), recorded and never judged.
 // With `frontKey`, the front application (the front-window probe's lsappinfo reading) and the key one (the system-wide
 // focused application, the focus probe's), each a bundle id or null when unread (./front-key.mjs). With `windowOrder`,
 // the on-screen windows front to back (windowOrderOf). With `alertBounds`, the alert guard's reading (alertBoundsOf of
@@ -205,11 +210,12 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // io: {enginePids(bundles), frontWindow({skipPids}), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids),
 // electronRecord(), windows(), screen() ({windows, displays}), axState(pid, 'x,y,w,h')}.
 export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false, frontKey = false, windowOrder = false, alertBounds = false, keyWindow = null, keyWindowNumber = null}, io) {
-  const skipPids = approvedEngine ? io.enginePids([approvedEngine]) : [];
+  const roots = [approvedRuntime, approvedEngine].filter(Boolean);
+  const skipPids = roots.length ? io.enginePids(roots) : [];
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
   const raw = io.frontWindow({skipPids});
-  const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
+  const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher), frontWindow: frontWindowNamed(raw, owned, io)};
   const unownedTop = out.reading.topWindow?.owned === false ? {pid: raw.topWindow.ownerPid} : null;
   let report = null;
   if (focus !== null) {
@@ -229,6 +235,14 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
     out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
   }
   return {...out, at};
+}
+
+// The front-window probe's top window and the windows it passed over (see read). -> {top, skipped}.
+function frontWindowNamed(raw, owned, io) {
+  const top = raw?.topWindow ?? null, mine = top !== null && owned.includes(top.ownerPid), shown = mine || isGithubHosted(io.env ?? process.env, io.platform ?? process.platform);
+  const number = n => (Number.isSafeInteger(n) ? n : null);
+  return {top: top && {owned: mine, bundleId: bundleOf(raw.topBundleId), number: shown ? number(top.number) : null, ownerPid: shown ? number(top.ownerPid) : null, layer: 0},
+    skipped: (Array.isArray(raw?.skipped) ? raw.skipped : []).map(w => ({bundleId: bundleOf(w?.bundleId), number: number(w?.number), layer: number(w?.layer) ?? 0}))};
 }
 
 // The alert guard's reading: one read of the screen, an unreadable one unread (null), never a screen free of alerts.

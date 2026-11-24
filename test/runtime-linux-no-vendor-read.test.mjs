@@ -315,7 +315,10 @@ test('the project lookup on Linux skips a PATH entry in the vendor\'s tree, as s
   fs.mkdirSync(outside);
   fs.symlinkSync(bin, join(outside, 'bin'));   // the same directory, spelled outside the tree
   const hostGit = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {cwd: REPO, encoding: 'utf8'});
-  for (const PATH of [`${bin}:/usr/bin:/bin`, `${join(outside, 'bin')}:/usr/bin:/bin`]) {
+  // The git that answered there, ahead of /usr/bin: on macOS /usr/bin/git is an xcrun shim whose lookup alone can take
+  // seconds on a loaded runner, past the project lookup's 5 s bound (a hosted test-2 flake, task 167's fix wave 1).
+  const gitDir = dirname(spawnSync('sh', ['-c', 'command -v git'], {encoding: 'utf8'}).stdout.trim() || '/usr/bin/git');
+  for (const PATH of [`${bin}:${gitDir}:/usr/bin:/bin`, `${join(outside, 'bin')}:${gitDir}:/usr/bin:/bin`]) {
     let root;
     const seen = recorded(() => { root = projectRoot(REPO, {env: {PATH}, platform: 'linux', home: h.home}); });
     assert.deepEqual(inVendorTree(seen, h.home), [], PATH);

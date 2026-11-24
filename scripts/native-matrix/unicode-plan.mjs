@@ -87,12 +87,16 @@ export function unicodeCase({field, method, string}) {
 export const SETTLE_STABLE_MS = 500;
 export const SETTLE_CAP_MS = 2_000;
 const SETTLE_POLL_MS = 100;
-// The clock is monotonic and starts when the first read completes; no read starts once the cap has passed.
+// The clock is monotonic and starts when the first read completes; no read starts once the cap has passed, and one that
+// returns after it is not taken (`late`): the last value read inside the cap is judged.
 const settledFieldCheck = (scene, expected) => `const __want = ${j(sha256Hex(expected))};
-let __value = null, __from = null, __since = null, __last = null, __reads = 0;
+let __value = null, __from = null, __since = null, __last = null, __reads = 0, __late = false;
 for (;;) {
   const ax = await observe();
-  __last = performance.now(); __from ??= __last; __reads++;
+  const __at = performance.now();
+  // A read that returned after the cap is not taken: the last value read inside it is judged.
+  if (__from !== null && __at - __from > ${SETTLE_CAP_MS}) { __late = true; break; }
+  __last = __at; __from ??= __last; __reads++;
   const __index = ${TEXT_FIELDS[scene]};
   if (__index === null) return {invalid: "the field is not in the text"};
   const __now = plain(valueOfIndex(ax, __index) ?? "");
@@ -103,7 +107,7 @@ for (;;) {
 }
 const __hash = sha256Hex(__value);
 const exact = __hash === __want;
-return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: Math.round(__last - __from)}};`;
+return {ok: exact, outcome: {exact, nfcEqual: __value.normalize("NFC") === ${j(expected.normalize('NFC'))}, length: __value.length, expectedLength: ${expected.length}, hash: __hash, reads: __reads, settleMs: Math.round(__last - __from), ...(__late ? {late: true} : {})}};`;
 
 // Every row of `plan` ({fields, conditions}) in run order. -> [{condition, field, user, regime, method, string, id}].
 export function unicodeRowsOf(plan) {

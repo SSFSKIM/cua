@@ -79,6 +79,18 @@ test('the clock starts when the first read completes: a slow first observation i
   assert.ok(capped.outcome.settleMs >= SETTLE_CAP_MS - 700 && capped.outcome.settleMs < SETTLE_CAP_MS + 750, `ended at ${capped.outcome.settleMs} ms`);
 });
 
+test('a read that returns after the cap is never taken: the last value read inside it is judged, even when only the late one matches', async () => {
+  // Each read after the first takes 450 ms and reads a new value; the fifth starts inside the cap and returns after it
+  // with the expected text.
+  const f = fixture(n => (n < 5 ? 'ㄱ'.repeat(n) : '가'), n => (n === 1 ? 0 : 450));
+  const r = await check(null, null, f);
+  assert.equal(f.reads(), 5, 'the late read was taken');
+  assert.ok(f.ended[4] - f.ended[0] > SETTLE_CAP_MS, 'and it returned after the cap');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.deepEqual([r.outcome.hash, r.outcome.reads, r.outcome.late], [sha256Hex('ㄱㄱㄱㄱ'), 4, true]);
+  assert.ok(r.outcome.settleMs < SETTLE_CAP_MS, `the last read inside the cap at ${r.outcome.settleMs} ms`);
+});
+
 test('only the pressKey row polls: the typeText and paste rows keep their one read', () => {
   for (const method of ['typeText', 'paste']) {
     const c = unicodeCase({field: 'electron', method, string: {id: 'hangul', text: '한글 테스트'}});

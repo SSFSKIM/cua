@@ -1,0 +1,3836 @@
+{
+ "driver": "m6b-acceptance-13",
+ "leg": "x64",
+ "arch": "x64",
+ "node": "v24.22.3",
+ "head": "f01e891f62e11607a7d22bbe90efe42afdd580b1",
+ "release": "cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d",
+ "installer": "node /home/runner/work/cua/cua/bin/cua.mjs install",
+ "vendorRelease": "26.928.40906-linux-x64",
+ "older": {
+  "path": "/home/runner/work/cua/cua/older-cua",
+  "commit": "854103aa58b56521ba85afb4b392e1f3c5a8287d",
+  "clean": true
+ },
+ "phases": [
+  "E",
+  "U"
+ ],
+ "out": "/home/runner/work/_temp/linux-runtime/artifact",
+ "scratch": "/home/runner/work/_temp/linux-runtime/scratch",
+ "startedAt": "2026-11-24T16:18:58.211Z",
+ "cells": [
+  {
+   "cell": "E0",
+   "home": "empty",
+   "state": "-",
+   "step": "cua install at the head, under the fetch log and the trace",
+   "passing": "exit 0; the parts placed and the pointer the derived name; the URLs asked exactly the arch's pinned assets, none OpenAI's; no ar and no xz executed; no runtimes/, retired empty, no line naming a vendor release; doctor ok with none of the vendor rows, its engine row the pin behind service cua; the engine statically linked",
+   "checks": [
+    {
+     "name": "cua install exits 0, the pointer is the derived name; doctor is ok, the runtime's rows pass, none of the vendor rows, the engine row the pin behind service cua",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "rows": {
+       "platform": "pass",
+       "runtime.installed": "pass",
+       "runtime.modules": "pass",
+       "runtime.node": "pass",
+       "sandbox": "pass",
+       "sandbox.launcher": "pass",
+       "run.stale": "pass",
+       "runtime.leftovers": "pass",
+       "display": "pass",
+       "accessibility.bus": "pass",
+       "accessibility.enabled": "pass",
+       "sandbox.userns": "pass",
+       "secrets.store": "pass",
+       "secrets.project": "skip",
+       "repl.host": "pass",
+       "engine": "pass",
+       "chrome.route": "blocked",
+       "chrome.host.registered": "blocked",
+       "chrome.hosts.live": "blocked",
+       "maws.hosts": "skip",
+       "agent.installed": "skip",
+       "agent.running": "skip",
+       "agent.enrolled": "skip",
+       "agent.console": "skip",
+       "agent.relay": "skip"
+      }
+     }
+    },
+    {
+     "name": "the URLs the fetch log shows asked for are exactly this arch's pinned assets, each answered whole, none OpenAI's; the older cua's log, the control, holds the deb",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "no ar and no xz was executed or looked up, by the install's whole trace",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the home has no runtimes/, no line names a vendor release, doctor's retired is empty with no runtime.retired row",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "file says the engine is statically linked (item 9)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "file": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=c12d743c314489b5b96bd9294736f1fa16a213a9, stripped"
+     }
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua install, logged and traced",
+     "label": "03-install",
+     "exit": 0,
+     "signal": null,
+     "seconds": 3,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/03-install.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/03-install.err",
+     "fetchLog": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/03-install.fetch.jsonl",
+      "asked": 26,
+      "bytes": 84128025,
+      "fetches": [
+       {
+        "url": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+        "answered": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+        "status": 200,
+        "bytes": 17410,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.3.tgz",
+        "answered": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.3.tgz",
+        "status": 200,
+        "bytes": 8176720,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.4.tgz",
+        "answered": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.4.tgz",
+        "status": 200,
+        "bytes": 185604,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/abstract-level/-/abstract-level-3.1.1.tgz",
+        "answered": "https://registry.npmjs.org/abstract-level/-/abstract-level-3.1.1.tgz",
+        "status": 200,
+        "bytes": 118217,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+        "answered": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+        "status": 200,
+        "bytes": 4109,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+        "answered": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+        "status": 200,
+        "bytes": 23108,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/classic-level/-/classic-level-3.0.0.tgz",
+        "answered": "https://registry.npmjs.org/classic-level/-/classic-level-3.0.0.tgz",
+        "status": 200,
+        "bytes": 2387814,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+        "answered": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+        "status": 200,
+        "bytes": 7776,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+        "answered": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+        "status": 200,
+        "bytes": 2886,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/is-buffer/-/is-buffer-2.0.5.tgz",
+        "answered": "https://registry.npmjs.org/is-buffer/-/is-buffer-2.0.5.tgz",
+        "status": 200,
+        "bytes": 2092,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/jpeg-js/-/jpeg-js-0.4.4.tgz",
+        "answered": "https://registry.npmjs.org/jpeg-js/-/jpeg-js-0.4.4.tgz",
+        "status": 200,
+        "bytes": 21818,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/level-supports/-/level-supports-6.2.0.tgz",
+        "answered": "https://registry.npmjs.org/level-supports/-/level-supports-6.2.0.tgz",
+        "status": 200,
+        "bytes": 7451,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/level-transcoder/-/level-transcoder-1.0.1.tgz",
+        "answered": "https://registry.npmjs.org/level-transcoder/-/level-transcoder-1.0.1.tgz",
+        "status": 200,
+        "bytes": 9922,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/maybe-combine-errors/-/maybe-combine-errors-1.0.0.tgz",
+        "answered": "https://registry.npmjs.org/maybe-combine-errors/-/maybe-combine-errors-1.0.0.tgz",
+        "status": 200,
+        "bytes": 2686,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/module-error/-/module-error-1.0.2.tgz",
+        "answered": "https://registry.npmjs.org/module-error/-/module-error-1.0.2.tgz",
+        "status": 200,
+        "bytes": 3394,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/napi-macros/-/napi-macros-2.2.2.tgz",
+        "answered": "https://registry.npmjs.org/napi-macros/-/napi-macros-2.2.2.tgz",
+        "status": 200,
+        "bytes": 4649,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/node-gyp-build/-/node-gyp-build-4.8.4.tgz",
+        "answered": "https://registry.npmjs.org/node-gyp-build/-/node-gyp-build-4.8.4.tgz",
+        "status": 200,
+        "bytes": 5449,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/pixelmatch/-/pixelmatch-7.1.0.tgz",
+        "answered": "https://registry.npmjs.org/pixelmatch/-/pixelmatch-7.1.0.tgz",
+        "status": 200,
+        "bytes": 6347,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/playwright/-/playwright-1.57.0.tgz",
+        "answered": "https://registry.npmjs.org/playwright/-/playwright-1.57.0.tgz",
+        "status": 200,
+        "bytes": 871339,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.57.0.tgz",
+        "answered": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.57.0.tgz",
+        "status": 200,
+        "bytes": 1987032,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz",
+        "answered": "https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz",
+        "status": 200,
+        "bytes": 160939,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+        "answered": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+        "status": 200,
+        "bytes": 29399,
+        "complete": true
+       },
+       {
+        "url": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
+        "answered": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
+        "status": 200,
+        "bytes": 214415,
+        "complete": true
+       },
+       {
+        "url": "https://github.com/SSFSKIM/cua/releases/download/linux-sandbox-rust-v0.163.0/codex-linux-sandbox-x86_64-unknown-linux-musl",
+        "answered": "https://release-assets.githubusercontent.com/github-production-release-asset/1394109917/923b6096-2aa7-4da1-bf9d-171968fb45df",
+        "status": 200,
+        "bytes": 9387872,
+        "complete": true
+       },
+       {
+        "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz",
+        "answered": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz",
+        "status": 200,
+        "bytes": 58256361,
+        "complete": true
+       },
+       {
+        "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-x64",
+        "answered": "https://release-assets.githubusercontent.com/github-production-release-asset/1394109917/0c0be09d-a60a-4290-a9dd-532c236b3dde",
+        "status": 200,
+        "bytes": 2233216,
+        "complete": true
+       }
+      ]
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/03-install.strace",
+      "processes": 15,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/staging/node-24.22.0-1H3wRX/node/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/gzip",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/tar",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": []
+     }
+    },
+    {
+     "what": "cua doctor --json",
+     "label": "04-doctor-E0",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/04-doctor-E0.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/04-doctor-E0.err"
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E1",
+   "home": "empty",
+   "state": "-",
+   "step": "the item 1 smoke and the item 6 witness, plain and traced",
+   "passing": "every step passes; no sky_linux at any sample; the engine child the home's cua-engine under the trusted worker; no traced call under runtimes/",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness traced: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness traced: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness traced: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness traced: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "05-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 171.1,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/05-smoke.out",
+     "watch": {
+      "samples": 3387,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 4228,
+        "starttime": "93141",
+        "exe": null,
+        "skipped": "exiting"
+       },
+       {
+        "pid": 4282,
+        "starttime": "93184",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 4298,
+        "starttime": "93192",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "06-smoke-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.6,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/06-smoke-traced.out",
+     "watch": {
+      "samples": 3353,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 4476,
+        "starttime": "110343",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 4492,
+        "starttime": "110359",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/06-smoke-traced.strace",
+      "processes": 152,
+      "serve": 4425,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/bin/sh",
+        "count": 1
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "count": 6
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+        "count": 4
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 5
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 8
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/gedit",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/gio",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 3
+       },
+       {
+        "path": "/usr/bin/mkfifo",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/pgrep",
+        "count": 6
+       },
+       {
+        "path": "/usr/bin/ps",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/zenity",
+        "count": 1
+       },
+       {
+        "path": "/usr/lib/x86_64-linux-gnu/glib-2.0/gio-launch-desktop",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": [
+       "bwrap /usr/bin/bwrap",
+       "supervisor /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "kernel /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "trusted-worker /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine"
+      ],
+      "workers": [
+       {
+        "pid": 4483,
+        "underServe": true,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ],
+      "helpers": [
+       4457,
+       4462,
+       4477,
+       4482
+      ],
+      "kernels": [
+       {
+        "pid": 4463,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 255,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "label": "07-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 19.4,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/07-witness.out",
+     "watch": {
+      "samples": 387,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 4636,
+        "starttime": "127241",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 4652,
+        "starttime": "127249",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "08-witness-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 22,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/08-witness-traced.out",
+     "watch": {
+      "samples": 440,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 5681,
+        "starttime": "129209",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 5697,
+        "starttime": "129224",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/08-witness-traced.strace",
+      "processes": 1038,
+      "serve": 5630,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/bin/sh",
+        "count": 1
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "count": 4
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+        "count": 4
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/usr/bin/busctl",
+        "count": 941
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/gedit",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/mkfifo",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/pgrep",
+        "count": 5
+       },
+       {
+        "path": "/usr/bin/ps",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 3
+       }
+      ],
+      "files": [],
+      "launched": [
+       "bwrap /usr/bin/bwrap",
+       "supervisor /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "kernel /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "trusted-worker /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine"
+      ],
+      "workers": [
+       {
+        "pid": 5688,
+        "underServe": true,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ],
+      "helpers": [
+       5662,
+       5667,
+       5682,
+       5687
+      ],
+      "kernels": [
+       {
+        "pid": 5668,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 252,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E2",
+   "home": "empty",
+   "state": "-",
+   "step": "the browser-only session, plain and traced; the profile map's loader",
+   "passing": "as M6a's E2",
+   "checks": [
+    {
+     "name": "the vendor tree is absent at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session traced: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session traced: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session traced: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session traced: the trace is whole, and one kernel of the serve's, on the managed Node, opened each selected entry and playwright's loaded ones after its exec; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/home/runner/work/_temp/linux-runtime/scratch/11-loader.out"
+     }
+    },
+    {
+     "name": "the vendor tree is absent at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "09-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.3,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/09-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 323,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    },
+    {
+     "label": "10-browser-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 17,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/10-browser-traced.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      },
+      "opened": [
+       {
+        "pid": 6788,
+        "paths": [
+         "node_modules/playwright/index.mjs",
+         "node_modules/sharp/dist/index.mjs",
+         "node_modules/pixelmatch/index.js",
+         "node_modules/pngjs/lib/png.js",
+         "node_modules/jpeg-js/index.js",
+         "node_modules/classic-level/index.js",
+         "node_modules/playwright/index.js",
+         "node_modules/playwright-core/index.js"
+        ]
+       }
+      ]
+     },
+     "watch": {
+      "samples": 336,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/10-browser-traced.strace",
+      "processes": 82,
+      "serve": 6756,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+        "count": 4
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/mkfifo",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/pgrep",
+        "count": 5
+       },
+       {
+        "path": "/usr/bin/ps",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 3
+       }
+      ],
+      "files": [],
+      "launched": [
+       "bwrap /usr/bin/bwrap",
+       "supervisor /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "kernel /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "trusted-worker /home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+      ],
+      "workers": [
+       {
+        "pid": 6805,
+        "underServe": true,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ],
+      "helpers": [
+       6782,
+       6787,
+       6799,
+       6804
+      ],
+      "kernels": [
+       {
+        "pid": 6788,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 9202,
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/node/24.22.0/bin/node"
+        ],
+        "opened": 8
+       }
+      ]
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "E3",
+   "home": "empty",
+   "state": "-",
+   "step": "a computer session under each source (the variable, engine.json, both, an override naming a 0.4.4 engine), doctor under each, a browser-only session with the variable, cua install under the variable, then a session with it unset",
+   "passing": "each open refused with its source's sentence and the hint; under the vendor sources no exec of an engine, a worker, a helper or a host, under the override exactly one, its --version, per open and per doctor run; doctor's engine and repl.host rows fail with the sentence; the browser-only session passes; the install exits nonzero with §2.2's sentence, every part placed; unset, the session opens with no further install",
+   "checks": [
+    {
+     "name": "the override is cua's engine 0.4.4 as linux-engine-v0.4.4 published it",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, the open is refused engine_retired with the literal sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, the open executed nothing of an engine, a worker, a helper or a host; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, doctor's engine and repl.host rows fail with the sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, doctor executed no engine, helper, worker or host",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under \"engine\": \"vendor\" in engine.json, the open is refused engine_retired with the literal sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under \"engine\": \"vendor\" in engine.json, the open executed nothing of an engine, a worker, a helper or a host; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under \"engine\": \"vendor\" in engine.json, doctor's engine and repl.host rows fail with the sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under \"engine\": \"vendor\" in engine.json, doctor executed no engine, helper, worker or host",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under both, the open is refused engine_retired with the literal sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under both, the open executed nothing of an engine, a worker, a helper or a host; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under both, doctor's engine and repl.host rows fail with the sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under both, doctor executed no engine, helper, worker or host",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_LINUX_ENGINE_BIN naming 0.4.4, the open is refused engine_outdated with the literal sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_LINUX_ENGINE_BIN naming 0.4.4, the open executed nothing of an engine, a worker, a helper or a host but the override's --version, once; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_LINUX_ENGINE_BIN naming 0.4.4, doctor's engine and repl.host rows fail with the sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_LINUX_ENGINE_BIN naming 0.4.4, doctor executed no engine, helper, worker or host but the override's --version, once",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session with CUA_NATIVE_ENGINE=vendor: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session with CUA_NATIVE_ENGINE=vendor: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session with CUA_NATIVE_ENGINE=vendor: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session with CUA_NATIVE_ENGINE=vendor: it ran with CUA_NATIVE_ENGINE=vendor",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "cua install under the variable exits nonzero with §2.2's sentence, no hint, every part placed",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "open under CUA_NATIVE_ENGINE=vendor",
+     "label": "12-open-CUA_NATIVE_ENGINE=vendor",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/12-open-CUA_NATIVE_ENGINE=vendor.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/12-open-CUA_NATIVE_ENGINE=vendor.strace",
+      "processes": 9,
+      "serve": 6921,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       }
+      ],
+      "files": [],
+      "launched": []
+     }
+    },
+    {
+     "what": "doctor under CUA_NATIVE_ENGINE=vendor",
+     "label": "13-doctor-CUA_NATIVE_ENGINE=vendor",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.6,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/13-doctor-CUA_NATIVE_ENGINE=vendor.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/13-doctor-CUA_NATIVE_ENGINE=vendor.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/13-doctor-CUA_NATIVE_ENGINE=vendor.strace",
+      "processes": 14,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": []
+     }
+    },
+    {
+     "what": "open under \"engine\": \"vendor\" in engine.json",
+     "label": "14-open-\"engine\": \"vendor\" in engine.json",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/14-open-\"engine\": \"vendor\" in engine.json.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/14-open-\"engine\": \"vendor\" in engine.json.strace",
+      "processes": 9,
+      "serve": 6954,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       }
+      ],
+      "files": [],
+      "launched": []
+     }
+    },
+    {
+     "what": "doctor under \"engine\": \"vendor\" in engine.json",
+     "label": "15-doctor-\"engine\": \"vendor\" in engine.json",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.6,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/15-doctor-\"engine\": \"vendor\" in engine.json.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/15-doctor-\"engine\": \"vendor\" in engine.json.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/15-doctor-\"engine\": \"vendor\" in engine.json.strace",
+      "processes": 14,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": []
+     }
+    },
+    {
+     "what": "open under both",
+     "label": "16-open-both",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/16-open-both.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/16-open-both.strace",
+      "processes": 9,
+      "serve": 6987,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       }
+      ],
+      "files": [],
+      "launched": []
+     }
+    },
+    {
+     "what": "doctor under both",
+     "label": "17-doctor-both",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.6,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/17-doctor-both.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/17-doctor-both.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/17-doctor-both.strace",
+      "processes": 14,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": []
+     }
+    },
+    {
+     "what": "open under CUA_LINUX_ENGINE_BIN naming 0.4.4",
+     "label": "18-open-CUA_LINUX_ENGINE_BIN naming 0.4.4",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/18-open-CUA_LINUX_ENGINE_BIN naming 0.4.4.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/18-open-CUA_LINUX_ENGINE_BIN naming 0.4.4.strace",
+      "processes": 10,
+      "serve": 7020,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/outdated/cua-engine",
+        "count": 1
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       }
+      ],
+      "files": [],
+      "launched": [
+       "engine /home/runner/work/_temp/linux-runtime/outdated/cua-engine"
+      ]
+     }
+    },
+    {
+     "what": "doctor under CUA_LINUX_ENGINE_BIN naming 0.4.4",
+     "label": "19-doctor-CUA_LINUX_ENGINE_BIN naming 0.4.4",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.6,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/19-doctor-CUA_LINUX_ENGINE_BIN naming 0.4.4.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/19-doctor-CUA_LINUX_ENGINE_BIN naming 0.4.4.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/19-doctor-CUA_LINUX_ENGINE_BIN naming 0.4.4.strace",
+      "processes": 15,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/outdated/cua-engine",
+        "count": 1
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 1
+       }
+      ],
+      "launched": []
+     }
+    },
+    {
+     "label": "20-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.3,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/20-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 323,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    },
+    {
+     "what": "cua install --json under CUA_NATIVE_ENGINE=vendor",
+     "label": "21-install-vendor",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/21-install-vendor.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/21-install-vendor.err"
+    },
+    {
+     "label": "22-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 168.6,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/22-smoke.out",
+     "watch": {
+      "samples": 3339,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 7222,
+        "starttime": "136953",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 7238,
+        "starttime": "136961",
+        "exe": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U0",
+   "home": "upgraded",
+   "state": "installed by the cua before M6b",
+   "step": "at the head, before any install: the item 1 smoke, traced; then the vendor selection",
+   "passing": "the default session passes with the tree present and whole, no traced call under runtimes/; the vendor selection refused as in E3",
+   "checks": [
+    {
+     "name": "the vendor tree is present at the cell's start",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke traced: the trace is whole, holds the kernel and the worker on the managed Node, and the serve's tree named nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the tree is whole after the default session: runtimes/ as before",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, its tree there, the open is refused engine_retired with the literal sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, its tree there, the open executed nothing of an engine, a worker, a helper or a host; nothing under runtimes/",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, its tree there, doctor's engine and repl.host rows fail with the sentence and the hint",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under CUA_NATIVE_ENGINE=vendor, its tree there, doctor executed no engine, helper, worker or host",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "runtimes/ as before after the refusals",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "label": "23-smoke-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 169.7,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/23-smoke-traced.out",
+     "watch": {
+      "samples": 3356,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 8973,
+        "starttime": "155064",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 8988,
+        "starttime": "155078",
+        "exe": null,
+        "skipped": "gone"
+       },
+       {
+        "pid": 8989,
+        "starttime": "155079",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/23-smoke-traced.strace",
+      "processes": 151,
+      "serve": 8922,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/bin/sh",
+        "count": 1
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "count": 6
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+        "count": 3
+       },
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+        "count": 4
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 5
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 8
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/gedit",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/gio",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 3
+       },
+       {
+        "path": "/usr/bin/mkfifo",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/pgrep",
+        "count": 5
+       },
+       {
+        "path": "/usr/bin/ps",
+        "count": 7
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 4
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/zenity",
+        "count": 1
+       },
+       {
+        "path": "/usr/lib/x86_64-linux-gnu/glib-2.0/gio-launch-desktop",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 2675
+       },
+       {
+        "kind": "open",
+        "count": 1
+       },
+       {
+        "kind": "fstat",
+        "count": 1
+       },
+       {
+        "kind": "opendir",
+        "count": 327
+       }
+      ],
+      "launched": [
+       "bwrap /usr/bin/bwrap",
+       "supervisor /home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+       "helper /home/runner/work/_temp/linux-runtime/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "kernel /home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+       "helper /home/runner/work/_temp/linux-runtime/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "bwrap /usr/bin/bwrap",
+       "helper /home/runner/work/_temp/linux-runtime/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+       "trusted-worker /home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+       "engine /home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+       "engine /home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine"
+      ],
+      "workers": [
+       {
+        "pid": 8980,
+        "underServe": true,
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ],
+      "helpers": [
+       8954,
+       8959,
+       8974,
+       8979
+      ],
+      "kernels": [
+       {
+        "pid": 8960,
+        "underHelper": true,
+        "underServe": true,
+        "callsAfterExec": 255,
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+        "nodeExes": [
+         "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node"
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "what": "open under CUA_NATIVE_ENGINE=vendor, its tree there",
+     "label": "24-open-CUA_NATIVE_ENGINE=vendor, its tree there",
+     "exit": 1,
+     "signal": null,
+     "replied": false,
+     "spontaneous": true,
+     "drained": true,
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/24-open-CUA_NATIVE_ENGINE=vendor, its tree there.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/24-open-CUA_NATIVE_ENGINE=vendor, its tree there.strace",
+      "processes": 9,
+      "serve": 9061,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       }
+      ],
+      "files": [],
+      "launched": []
+     }
+    },
+    {
+     "what": "doctor under CUA_NATIVE_ENGINE=vendor, its tree there",
+     "label": "25-doctor-CUA_NATIVE_ENGINE=vendor, its tree there",
+     "exit": 1,
+     "signal": null,
+     "seconds": 0.7,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/25-doctor-CUA_NATIVE_ENGINE=vendor, its tree there.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/25-doctor-CUA_NATIVE_ENGINE=vendor, its tree there.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/25-doctor-CUA_NATIVE_ENGINE=vendor, its tree there.strace",
+      "processes": 14,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 2675
+       },
+       {
+        "kind": "open",
+        "count": 1
+       },
+       {
+        "kind": "fstat",
+        "count": 1
+       },
+       {
+        "kind": "opendir",
+        "count": 327
+       }
+      ],
+      "launched": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U1",
+   "home": "upgraded",
+   "state": "-",
+   "step": "cua doctor --json, plain and traced",
+   "passing": "exit 0; E0's rows and runtime.retired, a skip naming the release with the driver's count and the record's date; under runtimes/ only lstat, directory reads and one open of install.json, inside the two release names; nothing executed or written there",
+   "checks": [
+    {
+     "name": "doctor exits 0 with E0's rows and runtime.retired, a skip carrying the sentence, its retired the release with the driver's count and the record's date",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "traced, doctor exits 0 with the same rows",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "under runtimes/ the trace shows lstat, directory reads and one open of install.json, inside the two release names; nothing executed or written there",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua doctor --json",
+     "label": "26-doctor-U1",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/26-doctor-U1.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/26-doctor-U1.err"
+    },
+    {
+     "what": "cua doctor --json, traced",
+     "label": "27-doctor-U1-traced",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.7,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/27-doctor-U1-traced.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/27-doctor-U1-traced.err",
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/27-doctor-U1-traced.strace",
+      "processes": 19,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "count": 2
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/bwrap",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/dbus-send",
+        "count": 2
+       },
+       {
+        "path": "/usr/bin/git",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/true",
+        "count": 1
+       },
+       {
+        "path": "/usr/bin/xdpyinfo",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 2675
+       },
+       {
+        "kind": "open",
+        "count": 1
+       },
+       {
+        "kind": "fstat",
+        "count": 1
+       },
+       {
+        "kind": "opendir",
+        "count": 327
+       }
+      ],
+      "launched": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U2",
+   "home": "upgraded",
+   "state": "a directory and a file of the run's added to runtimes/",
+   "step": "cua install at the head, under the fetch log and the trace",
+   "passing": "exit 0; the line §3.3's once; the added entries named nowhere; runtimes/ unchanged (listing, hashes, mtimes); no unlink, rename or write there; nothing fetched, every part as it was",
+   "checks": [
+    {
+     "name": "cua install exits 0",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "its line is §3.3's sentence, once, with U1's bytes; the two added entries are named nowhere",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "nothing under runtimes/ changed: the listing, every file's hash and every mtime as before",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the trace shows no unlink, rename, write or exec under runtimes/: lstat, directory reads and one open of install.json",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "nothing was fetched, and every part is as it was",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua install, logged and traced",
+     "label": "28-install-U2",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.7,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/28-install-U2.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/28-install-U2.err",
+     "fetchLog": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/28-install-U2.fetch.jsonl",
+      "asked": 0,
+      "bytes": 0,
+      "fetches": []
+     },
+     "trace": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/28-install-U2.strace",
+      "processes": 9,
+      "serve": null,
+      "whole": {
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "runtimes": {
+       "calls": 0,
+       "unresolved": 0,
+       "pending": 0,
+       "unended": 0,
+       "complete": true
+      },
+      "programs": [
+       {
+        "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/node/24.22.0/bin/node",
+        "count": 1
+       },
+       {
+        "path": "/opt/hostedtoolcache/node/24.22.3/x64/bin/node",
+        "count": 1
+       }
+      ],
+      "files": [
+       {
+        "kind": "lstat",
+        "count": 2675
+       },
+       {
+        "kind": "open",
+        "count": 1
+       },
+       {
+        "kind": "fstat",
+        "count": 1
+       },
+       {
+        "kind": "opendir",
+        "count": 327
+       }
+      ],
+      "launched": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U3",
+   "home": "upgraded",
+   "state": "-",
+   "step": "doctor; E1 and E2, plain; cua install again",
+   "passing": "doctor as U1's; the sessions pass; the second install reports the same and changes nothing",
+   "checks": [
+    {
+     "name": "doctor as U1's",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 1 smoke: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: every step passes",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: no sky_linux at any sample, the engine child the home's cua-engine",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the item 6 witness: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: every step passes (the six entries selected from the module tree, the imports as ruled, its natives mapped, confined)",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "imports": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     }
+    },
+    {
+     "name": "the browser-only session: no engine process at any sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the browser-only session: the worker and the kernel ran on the home's managed Node at every sample",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the profile map's loader opens a store with the module tree's classic-level, writes a key and reads it back",
+     "pass": true,
+     "problems": [],
+     "detail": {
+      "report": "/home/runner/work/_temp/linux-runtime/scratch/33-loader.out"
+     }
+    },
+    {
+     "name": "the second install reports the same and changes nothing: every part changed: false, retired the one release with U1's bytes, nothing fetched",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "runtimes/ as before the second install",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the vendor tree is present at the cell's end",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua doctor --json",
+     "label": "29-doctor-U3",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/29-doctor-U3.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/29-doctor-U3.err"
+    },
+    {
+     "label": "30-smoke",
+     "exit": 0,
+     "signal": null,
+     "seconds": 168.7,
+     "fixture": "linux-native",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions",
+       "status": "PASS"
+      },
+      {
+       "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+       "status": "PASS"
+      },
+      {
+       "name": "the default selects cua's engine (cua doctor --json)",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the fixture window by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "type the marker and read it back from the accessibility tree",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel reads no private state and no store",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "screenshot of the window",
+       "status": "PASS"
+      },
+      {
+       "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      },
+      {
+       "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/30-smoke.out",
+     "watch": {
+      "samples": 3333,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 10828,
+        "starttime": "173633",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 10844,
+        "starttime": "173641",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "31-witness",
+     "exit": 0,
+     "signal": null,
+     "seconds": 19.5,
+     "fixture": "linux-text",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display, gedit",
+       "status": "PASS"
+      },
+      {
+       "name": "bind the harness gedit by X11 id",
+       "status": "PASS"
+      },
+      {
+       "name": "the field is found and read through the fixture's own accessibility reads",
+       "status": "PASS"
+      },
+      {
+       "name": "typeText answers success, and the field holds acceptance 6's string exactly, once",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "approvals: the harness gedit's app asked once and accepted, nothing else asked",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/31-witness.out",
+     "watch": {
+      "samples": 389,
+      "maxSkyLinux": 0,
+      "engines": 2,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": [
+       {
+        "pid": 10975,
+        "starttime": "190459",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       },
+       {
+        "pid": 10991,
+        "starttime": "190466",
+        "exe": "/home/runner/work/_temp/linux-runtime/upgraded/cua/engine/linux/cua-engine",
+        "skipped": null
+       }
+      ]
+     }
+    },
+    {
+     "label": "32-browser",
+     "exit": 0,
+     "signal": null,
+     "seconds": 16.3,
+     "fixture": "linux-browser-only",
+     "status": "PASS",
+     "steps": [
+      {
+       "name": "preconditions: Linux, a private display",
+       "status": "PASS"
+      },
+      {
+       "name": "the handshake and the tool list",
+       "status": "PASS"
+      },
+      {
+       "name": "the browser service answers: cua.listBrowsers gives a list",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel's resolver selects each of the six entries in the module tree",
+       "status": "PASS"
+      },
+      {
+       "name": "pixelmatch, pngjs, jpeg-js and classic-level import by name, playwright and sharp as under the cua before M6a; sharp (through require) resizes a pngjs image and classic-level writes and reads a key in the sandbox",
+       "status": "PASS"
+      },
+      {
+       "name": "playwright loads through require from the module tree: its resolved entry and every file of the graph that require loaded",
+       "status": "PASS"
+      },
+      {
+       "name": "the native files mapped are the module tree's: classic-level's, sharp's and libvips",
+       "status": "PASS"
+      },
+      {
+       "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+       "status": "PASS"
+      },
+      {
+       "name": "end_task",
+       "status": "PASS"
+      },
+      {
+       "name": "cua serve exited cleanly",
+       "status": "PASS"
+      },
+      {
+       "name": "no run entry left for the connection",
+       "status": "PASS"
+      }
+     ],
+     "report": "/home/runner/work/_temp/linux-runtime/scratch/32-browser.out",
+     "imports": {
+      "comparison": {
+       "playwright": {
+        "here": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "older": {
+         "code": null,
+         "message": "The requested module './index.js' does not provide an export named 'default'"
+        },
+        "same": true
+       },
+       "sharp": {
+        "here": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "older": {
+         "code": null,
+         "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+        },
+        "same": true
+       }
+      }
+     },
+     "witness": {
+      "root": "/home/runner/work/_temp/linux-runtime/upgraded/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+      "selected": {
+       "playwright": "node_modules/playwright/index.mjs",
+       "sharp": "node_modules/sharp/dist/index.mjs",
+       "pixelmatch": "node_modules/pixelmatch/index.js",
+       "pngjs": "node_modules/pngjs/lib/png.js",
+       "jpeg-js": "node_modules/jpeg-js/index.js",
+       "classic-level": "node_modules/classic-level/index.js"
+      },
+      "natives": [
+       "node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.6",
+       "node_modules/classic-level/prebuilds/linux-x64/classic-level.node",
+       "node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.4.node"
+      ],
+      "playwright": {
+       "entry": "node_modules/playwright/index.js",
+       "files": 265,
+       "outside": []
+      }
+     },
+     "watch": {
+      "samples": 326,
+      "maxSkyLinux": 0,
+      "engines": 0,
+      "skyLinux": 0,
+      "replHost": [
+       "supervisor",
+       "kernel",
+       "trusted-worker"
+      ],
+      "engineProcesses": []
+     }
+    },
+    {
+     "what": "cua install --json again, logged",
+     "label": "34-install-U3",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/34-install-U3.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/34-install-U3.err",
+     "fetchLog": {
+      "file": "/home/runner/work/_temp/linux-runtime/scratch/34-install-U3.fetch.jsonl",
+      "asked": 0,
+      "bytes": 0,
+      "fetches": []
+     }
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U4",
+   "home": "a copy",
+   "state": "a new home holding a copy of U's release whose record has one digit of its hash changed",
+   "step": "cua install; cua doctor",
+   "passing": "neither names it: retired empty, no runtime.retired row; the copy as before",
+   "checks": [
+    {
+     "name": "the copy's record differs from the original's by one hex digit of its hash",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "neither names it: install exits 0 with retired empty, doctor has no runtime.retired row and retired empty",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the copy's listing and every file's hash as before",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua install --json",
+     "label": "35-install-U4",
+     "exit": 0,
+     "signal": null,
+     "seconds": 2.8,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/35-install-U4.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/35-install-U4.err"
+    },
+    {
+     "what": "cua doctor --json",
+     "label": "36-doctor-U4",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/36-doctor-U4.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/36-doctor-U4.err"
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  },
+  {
+   "cell": "U5",
+   "home": "a copy",
+   "state": "a new home holding a copy with no install.json",
+   "step": "cua install; cua doctor",
+   "passing": "neither names it: retired empty, no runtime.retired row; the copy as before",
+   "checks": [
+    {
+     "name": "the copy has no install.json",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "neither names it: install exits 0 with retired empty, doctor has no runtime.retired row and retired empty",
+     "pass": true,
+     "problems": []
+    },
+    {
+     "name": "the copy's listing and every file's hash as before",
+     "pass": true,
+     "problems": []
+    }
+   ],
+   "runs": [
+    {
+     "what": "cua install --json",
+     "label": "37-install-U5",
+     "exit": 0,
+     "signal": null,
+     "seconds": 2.6,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/37-install-U5.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/37-install-U5.err"
+    },
+    {
+     "what": "cua doctor --json",
+     "label": "38-doctor-U5",
+     "exit": 0,
+     "signal": null,
+     "seconds": 0.4,
+     "out": "/home/runner/work/_temp/linux-runtime/scratch/38-doctor-U5.out",
+     "err": "/home/runner/work/_temp/linux-runtime/scratch/38-doctor-U5.err"
+    }
+   ],
+   "verdict": {
+    "pass": true,
+    "problems": []
+   }
+  }
+ ],
+ "measured": {
+  "olderInstall": {
+   "seconds": 24.5,
+   "bytesFetched": 559026979
+  },
+  "importsOlder": {
+   "base": "/home/runner/work/_temp/linux-runtime/upgraded/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+   "imported": {
+    "playwright": {
+     "code": null,
+     "message": "The requested module './index.js' does not provide an export named 'default'"
+    },
+    "sharp": {
+     "code": null,
+     "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+    },
+    "pixelmatch": "ok",
+    "pngjs": "ok",
+    "jpeg-js": "ok",
+    "classic-level": "ok"
+   },
+   "used": {
+    "playwright": "ok",
+    "sharp": "ok",
+    "classic-level": "ok"
+   },
+   "via": {
+    "playwright": "require",
+    "sharp": "require",
+    "classic-level": "import"
+   },
+   "natives": 3
+  },
+  "E0": {
+   "installSeconds": 3,
+   "bytesFetched": 84128025,
+   "urls": 26,
+   "doctorSeconds": 0.4
+  },
+  "importsHere": {
+   "base": "/home/runner/work/_temp/linux-runtime/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+   "imported": {
+    "playwright": {
+     "code": null,
+     "message": "The requested module './index.js' does not provide an export named 'default'"
+    },
+    "sharp": {
+     "code": null,
+     "message": "Unsupported import specifier \"../package.json\" in node_repl. Only .js and .mjs files are supported."
+    },
+    "pixelmatch": "ok",
+    "pngjs": "ok",
+    "jpeg-js": "ok",
+    "classic-level": "ok"
+   },
+   "used": {
+    "playwright": "ok",
+    "sharp": "ok",
+    "classic-level": "ok"
+   },
+   "via": {
+    "playwright": "require",
+    "sharp": "require",
+    "classic-level": "import"
+   },
+   "natives": 3
+  },
+  "firstAnswerHere": {
+   "samples": [
+    502,
+    485,
+    490,
+    506,
+    484,
+    498,
+    489,
+    500,
+    489,
+    483,
+    496,
+    493,
+    503,
+    505,
+    493,
+    490,
+    494,
+    496,
+    508,
+    489
+   ],
+   "median": 494,
+   "min": 483,
+   "max": 508
+  },
+  "U1": {
+   "doctorSeconds": 0.4,
+   "E0DoctorSeconds": 0.4
+  },
+  "firstAnswerOlder": {
+   "samples": [
+    490,
+    488,
+    512,
+    505,
+    497,
+    508,
+    495,
+    484,
+    507,
+    486,
+    503,
+    496,
+    497,
+    487,
+    510,
+    501,
+    493,
+    490,
+    501,
+    493
+   ],
+   "median": 496,
+   "min": 484,
+   "max": 512
+  }
+ },
+ "preconditions": {
+  "display": ":99",
+  "sandbox": "(unset: scoped)",
+  "engine": null,
+  "problems": []
+ },
+ "environment": {
+  "pass": true,
+  "problems": [],
+  "rows": {
+   "display": "pass",
+   "accessibility.bus": "pass",
+   "accessibility.enabled": "pass",
+   "sandbox.userns": "pass"
+  }
+ },
+ "upgradedHome": {
+  "home": "/home/runner/work/_temp/linux-runtime/upgraded/cua",
+  "install": {
+   "label": "01-older-install",
+   "exit": 0,
+   "signal": null,
+   "seconds": 24.5,
+   "out": "/home/runner/work/_temp/linux-runtime/scratch/01-older-install.out",
+   "err": "/home/runner/work/_temp/linux-runtime/scratch/01-older-install.err",
+   "fetchLog": {
+    "file": "/home/runner/work/_temp/linux-runtime/scratch/01-older-install.fetch.jsonl",
+    "asked": 27,
+    "bytes": 559026979,
+    "fetches": [
+     {
+      "url": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+      "answered": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+      "status": 200,
+      "bytes": 17410,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.3.tgz",
+      "answered": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.3.tgz",
+      "status": 200,
+      "bytes": 8176720,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.4.tgz",
+      "answered": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.4.tgz",
+      "status": 200,
+      "bytes": 185604,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/abstract-level/-/abstract-level-3.1.1.tgz",
+      "answered": "https://registry.npmjs.org/abstract-level/-/abstract-level-3.1.1.tgz",
+      "status": 200,
+      "bytes": 118217,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+      "answered": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+      "status": 200,
+      "bytes": 4109,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+      "answered": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+      "status": 200,
+      "bytes": 23108,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/classic-level/-/classic-level-3.0.0.tgz",
+      "answered": "https://registry.npmjs.org/classic-level/-/classic-level-3.0.0.tgz",
+      "status": 200,
+      "bytes": 2387814,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+      "answered": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+      "status": 200,
+      "bytes": 7776,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+      "answered": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+      "status": 200,
+      "bytes": 2886,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/is-buffer/-/is-buffer-2.0.5.tgz",
+      "answered": "https://registry.npmjs.org/is-buffer/-/is-buffer-2.0.5.tgz",
+      "status": 200,
+      "bytes": 2092,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/jpeg-js/-/jpeg-js-0.4.4.tgz",
+      "answered": "https://registry.npmjs.org/jpeg-js/-/jpeg-js-0.4.4.tgz",
+      "status": 200,
+      "bytes": 21818,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/level-supports/-/level-supports-6.2.0.tgz",
+      "answered": "https://registry.npmjs.org/level-supports/-/level-supports-6.2.0.tgz",
+      "status": 200,
+      "bytes": 7451,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/level-transcoder/-/level-transcoder-1.0.1.tgz",
+      "answered": "https://registry.npmjs.org/level-transcoder/-/level-transcoder-1.0.1.tgz",
+      "status": 200,
+      "bytes": 9922,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/maybe-combine-errors/-/maybe-combine-errors-1.0.0.tgz",
+      "answered": "https://registry.npmjs.org/maybe-combine-errors/-/maybe-combine-errors-1.0.0.tgz",
+      "status": 200,
+      "bytes": 2686,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/module-error/-/module-error-1.0.2.tgz",
+      "answered": "https://registry.npmjs.org/module-error/-/module-error-1.0.2.tgz",
+      "status": 200,
+      "bytes": 3394,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/napi-macros/-/napi-macros-2.2.2.tgz",
+      "answered": "https://registry.npmjs.org/napi-macros/-/napi-macros-2.2.2.tgz",
+      "status": 200,
+      "bytes": 4649,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/node-gyp-build/-/node-gyp-build-4.8.4.tgz",
+      "answered": "https://registry.npmjs.org/node-gyp-build/-/node-gyp-build-4.8.4.tgz",
+      "status": 200,
+      "bytes": 5449,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/pixelmatch/-/pixelmatch-7.1.0.tgz",
+      "answered": "https://registry.npmjs.org/pixelmatch/-/pixelmatch-7.1.0.tgz",
+      "status": 200,
+      "bytes": 6347,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/playwright/-/playwright-1.57.0.tgz",
+      "answered": "https://registry.npmjs.org/playwright/-/playwright-1.57.0.tgz",
+      "status": 200,
+      "bytes": 871339,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.57.0.tgz",
+      "answered": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.57.0.tgz",
+      "status": 200,
+      "bytes": 1987032,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz",
+      "answered": "https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz",
+      "status": 200,
+      "bytes": 160939,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "answered": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "status": 200,
+      "bytes": 29399,
+      "complete": true
+     },
+     {
+      "url": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
+      "answered": "https://registry.npmjs.org/sharp/-/sharp-0.35.4.tgz",
+      "status": 200,
+      "bytes": 214415,
+      "complete": true
+     },
+     {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-sandbox-rust-v0.163.0/codex-linux-sandbox-x86_64-unknown-linux-musl",
+      "answered": "https://release-assets.githubusercontent.com/github-production-release-asset/1394109917/923b6096-2aa7-4da1-bf9d-171968fb45df",
+      "status": 200,
+      "bytes": 9387872,
+      "complete": true
+     },
+     {
+      "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz",
+      "answered": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz",
+      "status": 200,
+      "bytes": 58256361,
+      "complete": true
+     },
+     {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-x64",
+      "answered": "https://release-assets.githubusercontent.com/github-production-release-asset/1394109917/0c0be09d-a60a-4290-a9dd-532c236b3dde",
+      "status": 200,
+      "bytes": 2233216,
+      "complete": true
+     },
+     {
+      "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb",
+      "answered": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb",
+      "status": 200,
+      "bytes": 474898954,
+      "complete": true
+     }
+    ]
+   }
+  },
+  "deb": {
+   "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb",
+   "length": 474898954
+  },
+  "control": [],
+  "vendorRow": {
+   "status": "pass",
+   "detail": "the vendor's release 26.928.40906-linux-x64 at /home/runner/work/_temp/linux-runtime/upgraded/cua/runtimes/26.928.40906-linux-x64, kept for CUA_NATIVE_ENGINE=vendor: installed from its pinned archive (its length and SHA-256, the trust root on Linux), every layout path present, runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, linux-x64"
+  },
+  "problems": [],
+  "tree": {
+   "release": "26.928.40906-linux-x64",
+   "path": "/home/runner/work/_temp/linux-runtime/upgraded/cua/runtimes/26.928.40906-linux-x64",
+   "bytes": 211063821,
+   "installedAt": "2026-11-24T16:19:23.565Z",
+   "source": "download"
+  }
+ },
+ "finishedAt": "2026-11-24T16:36:25.769Z",
+ "verdict": {
+  "pass": true,
+  "scope": "full",
+  "acceptance": true,
+  "cells": {
+   "E0": "PASS",
+   "E1": "PASS",
+   "E2": "PASS",
+   "E3": "PASS",
+   "U0": "PASS",
+   "U1": "PASS",
+   "U2": "PASS",
+   "U3": "PASS",
+   "U4": "PASS",
+   "U5": "PASS"
+  },
+  "missing": []
+ }
+}

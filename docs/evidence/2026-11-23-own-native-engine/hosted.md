@@ -2063,10 +2063,20 @@ Off a hosted runner the harness only reads:
   conditions switch a source during the row, so they never run there.
 - Every row the owner's values do not allow is NO VERDICT `ownerInput` (`scripts/native-matrix/owner-input.mjs`,
   `front-key.mjs` `sampleCause`). Its cause names the preference or source and the value the row needed.
+- The owner may switch during a run, so the matrix reads `source state` again at each probe sample and each Unicode
+  field (`owner-input.mjs` `ownerInputNow`), never trusting the first reading. A change is kept in
+  `meta.inputSource.drift` (`{at, from, to}`), and the rows it rules out are `ownerInput`. A Latin or Korean source that
+  does not hold with the field in front is the owner's there too, so `ownerInput`, not a generic invalid row.
 - `summary.mjs` counts `ownerInput` per side in the NO VERDICT line and per cell, so the report shows what the owner's
-  machine could not judge.
+  machine could not judge. The per-context rows stay out of the verdict (ruling 1119), but the not-judged section
+  counts their `ownerInput` and `venue` samples.
 - The live harness's `input-source` check is NO VERDICT. Its paste check's Korean window measures type_text only when
-  the owner is already on Korean 2-Set with the preference off; otherwise type_text is NO VERDICT with its cause.
+  the owner is already on Korean 2-Set with the preference off; otherwise type_text is NO VERDICT with its cause. A
+  measured failure in the same check (a paste that did not land, the clipboard's types changed) is the headline,
+  NOT PASSED, with type_text's NO VERDICT named beside it.
+- The cursor sitting's selection becomes a read (`input-source.mjs` `switchSource`): the step holds only when the
+  source it needs is already current, and its result says nothing was written (`written: false`, `holds`). #187's end
+  verifies that the owner's recorded source still holds, without selecting it, and a held one is no failed put-back.
 - A record found there (one left before this ruling) is only read: it is removed once the owner's values read back as
   saved, and named otherwise.
 

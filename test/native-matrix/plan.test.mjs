@@ -685,3 +685,51 @@ test('a fixed-string Unicode row whose act threw: the field read empty as prepar
   refused.app.typeText = async () => { throw Object.assign(new Error('Computer Use server error -10005: refused before any key'), {errorName: 'concealedInputUnavailable'}); };
   assert.deepEqual(await runOn(refused.app).then(v => [v.ok, v.outcome.exact, v.outcome.effect, v.outcome.unchanged]), [false, false, false, true]);
 });
+
+// C-6 (ruling 1223, R4): chrome/background/pressKey.tab@textedit read moved=false on both engines while cua's own
+// observation put the focus on the name field (index 22 to 23, as the frontmost row, which passed). The frontmost rows
+// before it leave a name in the field; Chrome selects a text input's whole value when Tab focuses it, and the trailer
+// then shows that selection in place of the focused element, so the check could not see the focus. The prepare empties
+// the name field first, so the Tab's landing reads as the frontmost row's does.
+function chromeFields({name = ''} = {}) {
+  const doc = golden('chrome', 'vendor.txt');
+  const tree = doc.split('\n\nThe focused UI element')[0].split('\n');
+  const state = {focused: 22, notes: '', name, selected: null};
+  const render = () => {
+    const lines = tree.map(line => (/^\t+22 /.test(line) && state.notes ? `${line}, Value: ${state.notes}` : /^\t+23 /.test(line) && state.name ? `${line}, Value: ${state.name}` : line));
+    const focused = tree.find(l => new RegExp(`^\\t*${state.focused} `).test(l))?.trim() ?? '';
+    return withTrailer(lines.join('\n'), state.selected ? {selectedText: state.selected} : {focused});
+  };
+  const app = fakeApp('', {
+    click: (_, index) => { state.focused = index; state.selected = null; },
+    setValue: (_, index, v) => { if (index === 22) state.notes = v; if (index === 23) state.name = v; state.selected = null; },
+    // Tab from the notes to the name field, which selects its whole value as Chrome does.
+    pressKey: (_, key) => { if (key === 'Tab' && state.focused === 22) { state.focused = 23; state.selected = state.name || null; } },
+  });
+  Object.defineProperty(app, 'ax', {get: render, set: () => {}});
+  return {app, state};
+}
+test('Chrome\'s Tab row: a name an earlier row left in the target field is emptied first, so the focus the Tab moved is read, not masked by its selection', async () => {
+  // C-6's background row, a name left by the frontmost rows.
+  const left = chromeFields({name: 'cua apply 1a2b'});
+  const out = await runCase('chrome', 'chrome', left.app, 'pressKey', 'tab');
+  assert.equal(out.prepare.value.ready, true, JSON.stringify(out.prepare.value));
+  assert.deepEqual(out.check.value, {ok: true, outcome: {moved: true, focus: 'focused'}});
+  assert.deepEqual(left.app.calls.filter(c => c[0] === 'setValue')[0], ['setValue', 23, ''], 'the name field emptied before the Tab');
+  assert.ok(out.prepare.value.prepared.includes('the Tab\'s target field emptied first'), JSON.stringify(out.prepare.value));
+  // The frontmost row's state, the field already empty: nothing emptied, nothing stated.
+  const empty = chromeFields();
+  const plain = await runCase('chrome', 'chrome', empty.app, 'pressKey', 'tab');
+  assert.deepEqual(plain.check.value, {ok: true, outcome: {moved: true, focus: 'focused'}});
+  assert.ok(!empty.app.calls.some(c => c[0] === 'setValue' && c[1] === 23));
+  // A Tab that did not move the focus fails, its reading said.
+  const stuck = chromeFields();
+  stuck.app.pressKey = async () => {};
+  assert.deepEqual((await runCase('chrome', 'chrome', stuck.app, 'pressKey', 'tab')).check.value, {ok: false, outcome: {moved: false, focus: 'unfocused'}});
+  // A target field that would not empty leaves the row unprepared, nothing sent.
+  const kept = chromeFields({name: 'cua apply 1a2b'});
+  const setValue = kept.app.setValue;
+  kept.app.setValue = async (index, v) => (index === 23 ? undefined : setValue(index, v));
+  const refused = await runCase('chrome', 'chrome', kept.app, 'pressKey', 'tab');
+  assert.deepEqual([refused.prepare.value.ready, refused.prepare.value.reason], [false, 'the Tab\'s target field could not be emptied first']);
+});

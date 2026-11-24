@@ -563,17 +563,28 @@ const toggled = after === (__m.before === "1" ? "0" : "1");
 return {ok: toggled, outcome: {toggled}};`},
   {method: 'typeText', case: 'replace', expect: 'outcome', keys: ['typeText'],
     prepare: `${selectedIn({find: named('Scene notes'), value: FIELD_VALUE, word: j('delta')})}\nreturn {ready: true};`, act: `await __app.typeText(${j(TYPED)});`, check: replaced(named('Scene notes'), TYPED)},
+  // The Tab's target, the name field, emptied first (ruling 1223, R4): Chrome selects a text input's whole value when Tab
+  // focuses it, and the trailer then shows that selection in place of the focused element. C-6's background row, after
+  // the frontmost rows left a name in the field, read moved=false on both engines with cua's own observation putting the
+  // focus on the name field, as the frontmost row's did. The check says how the trailer read it (`focus`).
   {method: 'pressKey', case: 'tab', expect: 'outcome', keys: ['Tab'],
     prepare: `${observed}
 let now = ax;
-let index = ${named('Scene notes')};
+const target = ${named('Scene name')};
+if (target === null) return {ready: false, reason: "the Tab's target field is not in the text"};
+if (plain(valueOfIndex(ax, target) ?? "") !== "") {
+  await __app.setValue(target, ""); now = await observe();
+  if (plain(valueOfIndex(now, indexOfTarget(now, "Scene name")) ?? "") !== "") return {ready: false, reason: "the Tab's target field could not be emptied first"};
+  __m.prepared.push("the Tab's target field emptied first");
+}
+let index = (ax => (${named('Scene notes')}))(now);
 if (index === null) return {ready: false, reason: "the field is not in the text"};
 ${focusOn({clear: true, find: named('Scene notes')})}
 return {ready: true};`,
     act: 'await __app.pressKey("Tab");',
     check: `const ax = await observe();
-const moved = focusedIndexOf(ax) === ${named('Scene name')};
-return {ok: moved, outcome: {moved}};`},
+const target = ${named('Scene name')}, moved = focusedIndexOf(ax) === target;
+return {ok: moved, outcome: {moved, focus: target === null ? null : focusReading(ax, target)}};`},
   {method: 'setValue', case: 'name', expect: 'outcome', prepare: freshValue(named('Scene name'), 'cua matrix set'), act: 'await __app.setValue(__m.index, __m.value);', check: setExactly(named('Scene name'))},
   selectMatrix('name', 'Scene name'),
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],

@@ -27,7 +27,7 @@ on:
         options: [full, pilot, split]
         default: full
       split_runs:
-        description: "split: the run numbers to run, one job each (e.g. 1,2,3, or 2 for a rerun after a recorded stop)"
+        description: "split: the run numbers to run, one job each, comma-separated (e.g. 1,2,3, or 2 for a rerun after a recorded stop; spaces are stripped, nothing else is taken)"
         type: string
         default: '1,2,3'
       filter:
@@ -290,7 +290,11 @@ jobs:
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
           git log -1 --format='judge %H %s'
-          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) runs=$SPLIT_RUNS base=$BASE_RUN_ID"
+          # The run numbers once, spaces stripped, for every step after this one (the judge's --runs takes them so).
+          runs=${SPLIT_RUNS//[[:space:]]/}
+          [[ "$runs" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "split_runs is run numbers, comma-separated (e.g. 1,2,3), not '$SPLIT_RUNS'"; exit 2; }
+          echo "M5_RUNS=$runs" >> "$GITHUB_ENV"
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) runs=$runs base=$BASE_RUN_ID"
           npm ci --no-audit --no-fund
           mkdir -p "$RUNNER_TEMP/m5-out"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -307,7 +311,7 @@ jobs:
           { echo '## Run job attempts (every one found; the latest of each run judged)'; echo; for d in "$RUNNER_TEMP"/m5-jobs/*; do echo "- ${d##*/}"; done; } \
             | tee "$RUNNER_TEMP/m5-out/sitting/attempts.md" >> "$GITHUB_STEP_SUMMARY"
           jobs=()
-          for run in ${SPLIT_RUNS//,/ }; do
+          for run in ${M5_RUNS//,/ }; do
             dir=$(latest "$RUNNER_TEMP/m5-jobs/m5-sitting-c-run-$run") || true
             [ -n "$dir" ] || { echo "no artifact of run job $run"; exit 1; }
             jobs+=("$dir/sitting")
@@ -316,7 +320,9 @@ jobs:
           if [ -n "$BASE_RUN_ID" ]; then
             # The committed base whose README names the run; jobs-check verifies its digests and README again.
             # Exactly one committed base may name the run: two would leave the base the judge reads a guess.
-            mapfile -t readmes < <(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md || true)
+            # A read loop: a macOS runner's bash is 3.2, without bash 4's array builtins.
+            readmes=()
+            while IFS= read -r f; do readmes+=("$f"); done < <(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md || true)
             [ "${#readmes[@]}" -eq 1 ] || { echo "${#readmes[@]} committed bases name run $BASE_RUN_ID (${readmes[*]:-none}): exactly one must"; exit 1; }
             readme=${readmes[0]}
             [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "$(dirname "$readme") has no digests.sha256"; exit 1; }
@@ -342,7 +348,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          flags=(--split-judge --jobs "$M5_JOBS" --runs "$SPLIT_RUNS")
+          flags=(--split-judge --jobs "$M5_JOBS" --runs "$M5_RUNS")
           [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE" --base-run-id "$BASE_RUN_ID")
           [ -n "$FILTER" ] && flags+=(--only "$FILTER")
           code=0

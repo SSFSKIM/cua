@@ -133,14 +133,61 @@ test('the workflow\'s split form: a run job per run number, each attempt its own
   assert.match(judge, /needs: \[engine, split_run\]/);
   assert.doesNotMatch(judge, /needs\.split_run\.result/, 'I3: a run job fails only on a stop; the judge runs on whatever artifacts there are, one missing failing it closed');
   assert.match(judge, /\[ -n "\$dir" \] \|\| \{ echo "no artifact of run job \$run"; exit 1; \}/);
+  // The run numbers once, spaces stripped ("1, 2, 3" is 1,2,3), for the attempts loop and the judge's --runs alike.
+  assert.match(judge, /runs=\$\{SPLIT_RUNS\/\/\[\[:space:\]\]\/\}\n.*\n\s+echo "M5_RUNS=\$runs" >> "\$GITHUB_ENV"/);
+  assert.match(judge, /for run in \$\{M5_RUNS\/\/,\/ \}; do/);
+  assert.doesNotMatch(judge.slice(judge.indexOf('M5_RUNS=')), /\$SPLIT_RUNS|\$\{SPLIT_RUNS/, 'no step after it reads the raw input');
   assert.match(judge, /pattern: m5-sitting-c-run-\*/);
   assert.doesNotMatch(judge, /run-id:|actions: read/, 'H1: the base is the committed directory, not an artifact of another run');
   assert.match(judge, /grep -l "actions\/runs\/\$BASE_RUN_ID\)" docs\/evidence\/\*\/README\.md/);
   assert.match(judge, /\[ "\$\{#readmes\[@\]\}" -eq 1 \] \|\| \{ echo .*exactly one must"; exit 1; \}/, 'two committed bases naming the run refuse');
-  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$SPLIT_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$M5_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
   assert.match(judge, /tee "\$RUNNER_TEMP\/m5-out\/sitting\/attempts\.md"/, 'every attempt listed in sitting.md too');
   assert.match(job('split_refused'), /inputs\.form == 'split' && inputs\.sitting != 'c'[\s\S]*exit 2/);
   assert.match(judge, /name: m5-sitting-c-judge-\$\{\{ github\.run_attempt \}\}/);
+});
+
+// A macOS runner's `shell: bash` is /bin/bash 3.2: a bash-4 builtin or expansion dies there, mid-job.
+const WORKFLOW = () => fs.readFileSync(new URL('../../.github/workflows/m5-sittings.yml', import.meta.url), 'utf8');
+const jobsOf = workflow => {
+  const body = workflow.slice(workflow.indexOf('\njobs:\n') + 7);
+  return body.split(/\n(?=  [a-z_]+:\n)/).map(text => ({id: /^ {2}([a-z_]+):/.exec(text)?.[1], text})).filter(j => j.id);
+};
+test('the workflow\'s macOS jobs use nothing bash 3.2 lacks: no mapfile, readarray, declare -A or case-changing expansions', () => {
+  const macos = jobsOf(WORKFLOW()).filter(j => !/runs-on: ubuntu-/.test(j.text));
+  assert.ok(macos.length >= 4, macos.map(j => j.id).join(', '));
+  for (const {id, text} of macos) for (const [what, pattern] of [['mapfile', /\bmapfile\b/], ['readarray', /\breadarray\b/], ['declare -A', /\bdeclare\s+-[a-zA-Z]*A/], ['${var,,} or ${var^^}', /\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?(,,?|\^\^?)\}/]]) {
+    assert.doesNotMatch(text, pattern, `${id}: ${what} is bash 4`);
+  }
+});
+
+// The judge's base lookup, run as its step runs it (`set -euo pipefail`, /bin/bash: 3.2 on macOS): exactly one committed
+// README naming the run sets M5_BASE; none, or two, refuses, naming them.
+test('the judge\'s base lookup under the runner\'s bash: one README names the base, none or two refuse', () => {
+  const step = /\n {10}if \[ -n "\$BASE_RUN_ID" \]; then\n[\s\S]*?\n {10}fi\n/.exec(WORKFLOW())?.[0];
+  assert.ok(step, 'the base lookup');
+  const lookup = readmes => {
+    const root = fs.mkdtempSync(join(tmpdir(), 'base-lookup-'));
+    try {
+      readmes.forEach((runId, i) => {
+        const dir = join(root, 'docs', 'evidence', `base-${i}`);
+        fs.mkdirSync(dir, {recursive: true});
+        fs.writeFileSync(join(dir, 'README.md'), `The full run: [run](https://github.com/o/r/actions/runs/${runId})\n`);
+        fs.writeFileSync(join(dir, 'digests.sha256'), '');
+      });
+      const env = join(root, 'env');
+      const r = spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${step}`], {cwd: root, encoding: 'utf8', env: {PATH: process.env.PATH, BASE_RUN_ID: '45468052791', GITHUB_ENV: env}});
+      return {status: r.status, out: r.stdout + r.stderr, env: fs.existsSync(env) ? fs.readFileSync(env, 'utf8') : ''};
+    } finally { fs.rmSync(root, {recursive: true, force: true}); }
+  };
+  const one = lookup(['45468052791', '1']);
+  assert.deepEqual([one.status, one.env], [0, 'M5_BASE=docs/evidence/base-0\n'], one.out);
+  const none = lookup(['1']);
+  assert.equal(none.status, 1, none.out);
+  assert.match(none.out, /^0 committed bases name run 45468052791 \(none\): exactly one must$/m);
+  const two = lookup(['45468052791', '45468052791']);
+  assert.equal(two.status, 1, two.out);
+  assert.match(two.out, /^2 committed bases name run 45468052791 \(docs\/evidence\/base-0\/README\.md docs\/evidence\/base-1\/README\.md\): exactly one must$/m);
 });
 
 test('the CLI: a split option outside a split sitting C refuses, and jobs-check reads each job\'s hardware beside it', () => {

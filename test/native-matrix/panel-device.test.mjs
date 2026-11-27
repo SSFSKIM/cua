@@ -165,6 +165,16 @@ test('panel element: the focused element\'s or the search field\'s frame read by
 
 // Review finding 2 (ruling 1203): the move writes the panel's position and nothing else; no AXSize write exists for any
 // read of its size to enable.
+// The review of 5da67ce0a: `empty` writes only when exactly one of the app's top-level windows lies at the bounds, the
+// count on its answer; the other commands keep their first-match lookup.
+test('the AX helper\'s empty writes only with exactly one window at the bounds, and says how many it found', () => {
+  const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
+  const verb = source.slice(source.indexOf('if args[1] == "empty" {'), source.indexOf('if args[1] == "element" {'));
+  assert.match(source, /let windowMatches = windows\.filter \{ frame\(\$0\)\.map \{ near\(\$0, bounds\) \} \?\? false \}\.count/);
+  assert.match(verb, /answer\["windowMatches"\] = windowMatches/);
+  assert.match(verb, /if windowMatches == 1, let topLevel \{/, 'the walk, and so the write, only under exactly one window');
+});
+
 test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere in it', () => {
   const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
   const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)[^,]*,\s*([^)]+)\)/g)].map(m => [m[1], m[2].trim()]);
@@ -217,7 +227,7 @@ const withScenes = async body => {
 const emptier = (answer = {}) => {
   const asked = [];
   const io = {...HOSTED, windows: () => [DOCUMENT, FIXTURE],
-    panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', count: 1, walked: 12, settable: true, write: 0, readBack: 0, reads: 1, ...answer}; }};
+    panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, settable: true, write: 0, readBack: 0, reads: 1, ...answer}; }};
   return {io, asked};
 };
 
@@ -244,6 +254,9 @@ test('field-empty: a write the field refuses, a read-back not empty, or a field 
     assert.equal((await answerOf({count: 0, settable: null, write: null, readBack: null, reads: 0})).reason, 'Accessibility lists no matching field in the window');
     assert.deepEqual(await answerOf({found: false, kind: null, count: 0, write: null, readBack: null}), {emptied: false, reason: 'Accessibility lists no window at the scene window\'s bounds'});
     assert.deepEqual(await answerOf({trusted: false}), {emptied: false, reason: 'the helper is not trusted for Accessibility'});
+    // The review of 5da67ce0a: two of the app's windows within the bounds' tolerance, so which is the scene's cannot be told.
+    assert.deepEqual(await answerOf({windowMatches: 2, count: null, settable: null, write: null, readBack: null, reads: 0}),
+      {emptied: false, windowMatches: 2, reason: 'Accessibility lists 2 of the app\'s windows at the scene window\'s bounds: which one is the scene\'s cannot be told'});
     // A scene that is not up, or a window not on screen: nothing asked of the helper.
     const none = {...HOSTED, windows: () => [DOCUMENT], panelAx: () => assert.fail('the helper is not asked')};
     assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'electron'], {io: none})).answer, {emptied: false, reason: 'window 20 is not on screen'});

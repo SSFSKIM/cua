@@ -97,6 +97,9 @@ func near(_ a: CGRect, _ b: CGRect) -> Bool {
 guard let bounds = rect(args[3]) else { emit(["trusted": true, "found": false, "failed": "bounds"]); exit(64) }
 let windows = (read(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
 let topLevel = windows.first { frame($0).map { near($0, bounds) } ?? false }
+// How many of the app's top-level windows lie at the bounds: `empty`, the one write into a window's contents, needs
+// exactly one, so a same-app window within the tolerance is never the one written; the other commands take the first.
+let windowMatches = windows.filter { frame($0).map { near($0, bounds) } ?? false }.count
 // A Save sheet has a window of its own in the window list but is an AXSheet child of its document in AX
 // (scripts/cursor-sitting/ax-state.swift reads it so): with no top-level window at the bounds, the sheet at them, by
 // role and frame, under one of the app's windows.
@@ -163,10 +166,11 @@ if args[1] == "empty" {
   let named = { (e: AXUIElement) -> Bool in [kAXIdentifierAttribute, kAXDescriptionAttribute, kAXTitleAttribute].contains { (read(e, $0) as? String) == wanted } }
   var matches: [AXUIElement] = []
   // Every match counted (the walk's own bound), so a name two fields share is refused rather than the first written.
-  if let topLevel { _ = walk(topLevel, { e in if role(e) == args[4] && named(e) { matches.append(e) }; return false }) }
-  answer["count"] = matches.count; answer["walked"] = walked
+  answer["windowMatches"] = windowMatches
+  if windowMatches == 1, let topLevel { _ = walk(topLevel, { e in if role(e) == args[4] && named(e) { matches.append(e) }; return false }) }
+  answer["count"] = windowMatches == 1 ? matches.count as Any : NSNull(); answer["walked"] = walked
   answer["settable"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0
-  if topLevel != nil, matches.count == 1, let field = matches.first {
+  if windowMatches == 1, matches.count == 1, let field = matches.first {
     var settable: DarwinBoolean = false
     if AXUIElementIsAttributeSettable(field, kAXValueAttribute as CFString, &settable) == .success { answer["settable"] = settable.boolValue }
     answer["write"] = Int(AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "" as CFString).rawValue)

@@ -303,6 +303,8 @@ export function emptyUserField({scene}, io) {
   if (a?.trusted !== true) return {emptied: false, reason: 'the helper is not trusted for Accessibility'};
   if (a.found !== true || a.kind !== 'window') return {emptied: false, reason: 'Accessibility lists no window at the scene window\'s bounds'};
   const num = v => (Number.isSafeInteger(v) ? v : null);
+  // The helper writes only under exactly one of the app's windows at the bounds (./panel-ax.swift windowMatches).
+  if (a.windowMatches !== 1) return {emptied: false, windowMatches: num(a.windowMatches), reason: `Accessibility lists ${num(a.windowMatches) ?? 'an unread number of'} of the app's windows at the scene window's bounds: which one is the scene's cannot be told`};
   const read = {count: num(a.count) ?? 0, settable: typeof a.settable === 'boolean' ? a.settable : null, write: num(a.write), readBack: num(a.readBack), reads: num(a.reads) ?? 0};
   if (read.count !== 1) return {emptied: false, ...read, reason: read.count === 0 ? 'Accessibility lists no matching field in the window' : `Accessibility lists ${read.count} matching fields in the window: which one is the field cannot be told`};
   if (read.readBack === 0) return {emptied: true, ...read};

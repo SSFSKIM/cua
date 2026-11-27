@@ -142,7 +142,7 @@ cua's own replacement for `@oai/sky`'s Linux target, written from `R/A` §1 and 
 
 ### Selection, distribution and install
 
-**Selection.** `nativeEngineFor` in `src/runtime/launch.mjs` resolves `CUA_NATIVE_ENGINE=vendor|cua` on Linux too (env, else `engine.json`'s `engine`, else the default `vendor`, flipped to `cua` by M5 when the owner says so), mirrored in `scripts/repl-parity/selection.mjs`. From M6b (cua 0.30.0), `vendor` stays a known value on Linux only so that it is refused by name, as `engine_retired`, and nothing in `src/` sets `OAI_SKY_LINUX_BIN` (Retirement (M6b)). On Linux, `cua` sets `OAI_SKY_LINUX_BIN` to the installed `cua-engine` and keeps the vendor service until M3; from M3 it sets `CUA_SKY_SERVICE` to `src/services/engine/linux/service.mjs`. `CUA_NATIVE_ENGINE=cua` with no engine installed is refused, `engine_not_installed`, naming `cua install --engine`. For the harnesses only, `CUA_LINUX_ENGINE_BIN=<path>` overrides the installed engine's path when the selection is `cua` (today `launch.mjs` overwrites `OAI_SKY_LINUX_BIN` unconditionally, which blocked tracing in tier 2).
+**Selection.** `nativeEngineFor` in `src/runtime/launch.mjs` resolves the Linux engine in its own branch (`linuxEngineFor`), mirrored in `scripts/repl-parity/selection.mjs`. The setting in effect is a valid nonempty `CUA_NATIVE_ENGINE`, else `engine.json`'s `engine`, else Linux's default, `cua` (M5 flipped it from `vendor`). `vendor` stays a known value only so that it is refused by name, as `engine_retired` (from M6b, cua 0.30.0; Retirement (M6b)). A `cua` selection yields the engine's path: the installed `cua-engine`, or, for the harnesses only, `CUA_LINUX_ENGINE_BIN=<path>`. Neither one usable is refused (`engine_not_installed`, `engine_unrecorded`, `engine_outdated` or `invalid_setting`), naming this checkout's `install --engine`. A Linux computer launch (`buildLaunch`) sets `CUA_SKY_SERVICE` to `src/services/engine/linux/service.mjs` and `CUA_ENGINE_BIN` to that path. Before M3, a `cua` selection set `OAI_SKY_LINUX_BIN` to the installed `cua-engine` and kept the vendor service. When this spec was written, `launch.mjs` overwrote `OAI_SKY_LINUX_BIN` unconditionally, which blocked tracing in tier 2. Nothing in `src/` sets `OAI_SKY_LINUX_BIN` at H.
 
 **Distribution.** `.github/workflows/linux-engine.yml`, modelled on `linux-sandbox-helper.yml` (a push of the file registers it, so it can be dispatched from a branch before it reaches main): dispatched with a cua commit, it builds both musl targets from that commit with Rust 1.94.1 and a hermetic Cargo home, runs the engine's tests, attests build provenance, and publishes `cua-engine-<version>-linux-{x64,arm64}` with their SHA-256 sums as the release `linux-engine-v<version>`, the version read from `native/linux-engine/Cargo.toml` at that commit; it refuses a version whose release exists. `runtime/engine/linux-engine.json` pins version, URLs and hashes.
 
@@ -165,9 +165,13 @@ Every milestone that changes engine behaviour or the wire (M1b's first release, 
 
 - **Removed.** `cua install` on Linux fetches, unpacks and places nothing of the vendor's: the deb's code left `src/runtime/install.mjs` (`DEB_TOOLS`, `extractDeb`, the deb halves of `withStage` and `snapshotArchive`), and the vendor lane left `src/runtime/linux-install.mjs`. `runtime/releases/` holds no Linux pin. `parsePin` refuses one as `invalid_pin`, naming `runtime/linux-runtime.json` as Linux's record, and `selectPin` for a Linux host is `unsupported_platform`. `LINUX_LAYOUT_KEYS` (with `skyLinuxBin` and `skyVendorService`), `vendorLinuxRuntime`, `vendorPinsOf`, `RESTORE_PINS` and `installHint`'s Linux half left `manifest.mjs`. Launch's vendor branch went too: nothing sets `OAI_SKY_LINUX_BIN` or loads the vendor service on Linux, and a Linux computer launch needs cua's engine. Doctor's `runtime.vendor` row went, with the pins it read, and the `js` tool's vendor rules for Linux left `src/mcp/surface.mjs`. In the harnesses, repl-parity's and native-baseline's `--engine vendor` on Linux are refused, naming where the last vendor lanes are stored (`scripts/repl-parity/engine-answered.mjs`). R2 left the gate, and R1 is the cua lane judged by its own verdict (`scripts/linux-engine-gate/parity-verdict.mjs`). Acceptance 12's vendor cells left its driver, which became acceptance 13's. `scripts/sandbox-probe/linux-probes.mjs` was deleted with its test (#570).
 - **Moved.** The two deb records are `runtime/provenance/26.928.40906-linux-{x64,arm64}.json`. Moved with `git mv`, they were trimmed to the release, the archive's URL, length and SHA-256, `notes` and the lockfile's member, `lockfile`. They sit outside `package.json`'s `files`. Their one reader is `scripts/modules-pin.mjs`'s strict parser, which returns no URL (1193 (a), F5), and `test/runtime-linux-provenance-unreachable.test.mjs` holds that nothing install, doctor or launch reaches reads them. native-baseline's helper listing (`scripts/native-baseline/linux.mjs`) and `scripts/probe/lib.mjs` name `cua-engine`. A `sky_linux` is still detected, as foreign, by the listing and by the watches that prove none ran (C1). The gate takes the pinned vendor build and the vendor's client by path from a hash-checked comparator fixture outside any cua home (`scripts/linux-engine-diff/vendor-fixture.mjs` against `scripts/linux-engine-gate/vendor-fixture.json`; F7). Each architecture's fixture was compared once with its authenticated deb before its entry was written (`docs/evidence/2026-10-28-own-linux-engine/m6b/fixture-identity.txt`), and the fixtures stay out of the repository (1217, N7).
-- **Reported.** A home's vendor tree is never deleted (1216; an opt-in removal is #586). `src/runtime/retired-tree.mjs` changes nothing. It names a release under `<home>/runtimes/` only when the release's `install.json` is the record cua's install wrote for one of the two releases, by their constants: it looks up the two names, never lists `runtimes/`, and follows no link. It measures the release by an `lstat` walk that stops at 200,000 entries. `cua install` prints its sentence after the engine's line and lists the release in `retired`. Doctor carries the sentence in an informational `runtime.retired` row, `skip`, and in `report.retired`. The sentence, narrowed from 1216's (C12): "cua 0.30.0 no longer uses the vendor's release at `<path>` for sessions: 211.1 MB as it is now, where a cua install recorded placing it on 2026-10-28. cua leaves it in place and has not checked what it holds. Before deleting it by hand, check that no older cua (another checkout on this home) still runs from it, and for files added to it". Install's and doctor's own reads and writes keep out of the tree as launch's do (`src/runtime/vendor-tree.mjs`): the Node's record, the helper's installed file, every acquiring lane's `staging/`, and doctor's sandbox row. Since #589, so do launch's deny list and a connection's `run/`. On Linux, `runtime.leftovers` and `--prune-leftovers` look in `state/codex` only (N4).
-- **Refused.** On Linux, `CUA_NATIVE_ENGINE=vendor` or `"engine": "vendor"` in `engine.json` is refused as `engine_retired` before anything else is looked at. The sentence names the source that selects it, or both in precedence order. It names the release that removed the vendor's engine and `CUA_NATIVE_ENGINE=cua` as the default. Then come each source's prerequisite and one command, `node <this checkout>/bin/cua.mjs install --engine`, and the hint holds no command. Every engine refusal of the selection takes that form (1212, 1215, 1216), and none offers `cua engine build` or the vendor's engine. The service's own outdated sentence stays as it was (N5). `cua install` under a vendor selection runs every step, then fails `engine_retired`, saying what to undo and that the install otherwise completed, when it did. Doctor's `engine` and `repl.host` rows fail with the sentence whenever host selection reaches the engine. `--archive` and `--release` are usage errors on Linux. A browser-only session asks for no engine and opens with any of these set.
-- **The cloud provisioner.** `deploy/cloud-vm/cua-provision.sh` fetches no deb. `--deb` is refused by `render.sh` and `create-hetzner.sh`, and a conf that still sets `CUA_DEB` gets one log line. The script provisions refs from 0.30.0 on, checks out a commit ID exactly, and runs only as its checkout's own provisioner. The upgrade command is `deploy/cloud-vm/update.sh <ssh target> [--ref <ref>] [--bundle]`, run from the operator's checkout, which binds the VM's script, its conf and its checkout to one commit. The two failures an older script meets on a 0.30.0 checkout name `update.sh`.
+- **Reported.** A home's vendor tree is never deleted (1216; an opt-in removal is #586). `src/runtime/retired-tree.mjs` changes nothing. It names a release under `<home>/runtimes/` only when the release's `install.json` is the record cua's install wrote for one of the two releases, by their constants: it looks up the two names, never lists `runtimes/`, and follows no link. It measures the release by an `lstat` walk that stops at 200,000 entries. `cua install` prints its sentence after the engine's line and lists the release in `retired`. Doctor carries the sentence in an informational `runtime.retired` row, `skip`, and in `report.retired`. The sentence, narrowed from 1216's (C12): "cua 0.30.0 no longer uses the vendor's release at `<path>` for sessions: 211.1 MB as it is now, where a cua install recorded placing it on 2026-10-28. cua leaves it in place and has not checked what it holds. Before deleting it by hand, check that no older cua (another checkout on this home) still runs from it, and for files added to it". Install's and doctor's reads and writes of these paths keep out of the tree as launch's do (`src/runtime/vendor-tree.mjs`): the Node's pointer and record, the helper's installed file, every acquiring lane's `staging/`, and the home paths doctor's sandbox row resolves. Since #589, so do launch's deny-list roots and a connection's `run/`. Two reads outside those paths are unguarded, and both are tracked in `tech-debt-tracker.md`: `engine.json`'s first read (`readEngineSettings`, which a session's selection makes too) and doctor's read of `remote/device.json`. On Linux, `runtime.leftovers` and `--prune-leftovers` look in `state/codex` only (N4).
+- **Refused.** On Linux, a vendor setting in effect is refused as `engine_retired` when a session reaches the engine selector, before the selector looks at anything else. The setting in effect is a valid nonempty `CUA_NATIVE_ENGINE`, else `engine.json`'s `engine`. An open can be refused earlier, by the runtime's resolution or by the host's selection (`CUA_REPL_HOST=vendor` is `repl_host_refused`). A browser-only session never asks for an engine, so the setting does not refuse it.
+  - **The open's sentence** names the source in effect. When the variable decided, it also names `engine.json` if a bounded second look finds `"engine": "vendor"` there. It names the release that removed the vendor's engine and `CUA_NATIVE_ENGINE=cua` as the default, then each named source's prerequisite and one command, `node <this checkout>/bin/cua.mjs install --engine`. Its hint holds no command. Every refusal of cua's engine by the selector takes the same form (1212, 1215, 1216), and none offers `cua engine build` or the vendor's engine. The service's own outdated sentence stays as it was (N5).
+  - **Install's sentence.** `cua install` reads the setting in effect itself and runs every step under it. A failed required step is the install's error, reported first. Otherwise a vendor setting fails the install as `engine_retired`, with a sentence that names what to undo and ends "; the install otherwise completed". It carries no command and no hint.
+  - **Doctor.** `repl.host` reports the refusal a session meets. The `engine` row fails with the same sentence when that refusal is `engine_retired`, and is `skip` when host selection refuses first or the computer surface is off.
+  - `--archive` and `--release` are usage errors on Linux.
+- **The cloud provisioner.** `deploy/cloud-vm/cua-provision.sh` fetches no deb. `--deb` is refused by `render.sh` and `create-hetzner.sh`, and a conf that still sets a nonempty `CUA_DEB` gets one log line. The script provisions refs from 0.30.0 on, checks out a commit ID exactly, and runs only as its checkout's own provisioner. The upgrade command is `deploy/cloud-vm/update.sh <ssh target> [--ref <ref>] [--bundle]`, run from the operator's checkout, which binds the VM's script, its conf and its checkout to one commit. The two failures an older script meets on a 0.30.0 checkout name `update.sh`.
 
 ### Verification system
 
@@ -187,7 +191,7 @@ Beyond the reference scenes the harness runs the over-budget scene (a harness HT
 
 It writes `results.jsonl` and a `summary.md` table to `docs/evidence/2026-10-28-own-linux-engine/<milestone>/`. The verdict for an operation passes when cua's median is at or below the bar's (warm against warm, cold against cold), its output equals the vendor's (or differs only as a declared deviation listed in `scripts/linux-engine-diff/deviations.mjs`, each naming this spec's section), its witness and audit are clean wherever the vendor's witness is, and its effect is verified on every sample of an operation that has an effect read, whatever the vendor builds did on that sample (the vendor's misses are recorded as findings, not taken as the bar).
 
-**The facade suites.** From M1b the facade-level suites run on either engine. `scripts/repl-parity.mjs --suite native` runs the native cases (19 today) on a declared Linux device with `--host cua` (cua's own host, the only one on Linux) and `--engine vendor|cua`, forwarding the selection to the device as `CUA_NATIVE_ENGINE` and, with `--engine-bin`, `CUA_LINUX_ENGINE_BIN`; its `diff` pairs the two engine lanes. `scripts/native-baseline.mjs` measures the facade end to end on Linux with `--engine vendor|cua`, and `compare --engines` judges the two lanes. Both verify which engine answered from the trusted worker's child process: its executable (`/proc/<pid>/exe`) must be the pinned runtime's `sky_linux_<arch>` on the vendor lane and the installed or named `cua-engine` on the cua lane, and a run where anything else answered is incomplete. Since M6b a Linux `--engine vendor` is refused in both suites, naming where the last vendor lanes are stored (M5's and M6a's). `diff` and `compare --engines` still judge those stored pairs, each a vendor lane and a cua lane of one sitting. `diff` also pairs two cua lanes, which must come from the same own runtime, commit, controller commit, device and case set, with each lane's engine evidence. `scripts/repl-parity/devices.mjs` declares the two VMs (M1b, with their preparation; Concrete Steps). In M1a, before `cua serve` can select another engine, the facade-level proof is `scripts/linux-engine-diff.mjs --via vendor-js` alone. The native suite's two text cases, which today require the GTK failure and the window's exit (A §3.2), become positive cases (text inserted, window alive) with a recorded oracle departure, in M2; until then the `cua` lane meets M1b's temporary candidate expectations for them (M1b). `scripts/accept/linux-native.mjs` types with `typeText` once M2 lands instead of one keysym per character.
+**The facade suites.** From M1b the facade-level suites run on either engine. `scripts/repl-parity.mjs --suite native` runs the native cases (19 at M1b; 34 at H, which `test/linux-engine-diff/gate-runner.test.mjs` holds) on a declared Linux device with `--host cua` (cua's own host, the only one on Linux) and `--engine vendor|cua`, forwarding the selection to the device as `CUA_NATIVE_ENGINE` and, with `--engine-bin`, `CUA_LINUX_ENGINE_BIN`; its `diff` pairs the two engine lanes. `scripts/native-baseline.mjs` measures the facade end to end on Linux with `--engine vendor|cua`, and `compare --engines` judges the two lanes. Both verify which engine answered from the trusted worker's child process: its executable (`/proc/<pid>/exe`) must be the pinned runtime's `sky_linux_<arch>` on the vendor lane and the installed or named `cua-engine` on the cua lane, and a run where anything else answered is incomplete. Since M6b a Linux `--engine vendor` is refused in both suites, naming where the last vendor lanes are stored (M5's and M6a's). `diff` and `compare --engines` still judge those stored pairs, each a vendor lane and a cua lane of one sitting. `diff` also pairs two cua lanes, which must come from the same own runtime, commit, controller commit, device and case set, with each lane's engine evidence. `scripts/repl-parity/devices.mjs` declares the two VMs (M1b, with their preparation; Concrete Steps). In M1a, before `cua serve` can select another engine, the facade-level proof is `scripts/linux-engine-diff.mjs --via vendor-js` alone. The native suite's two text cases, which today require the GTK failure and the window's exit (A §3.2), become positive cases (text inserted, window alive) with a recorded oracle departure, in M2; until then the `cua` lane meets M1b's temporary candidate expectations for them (M1b). `scripts/accept/linux-native.mjs` types with `typeText` once M2 lands instead of one keysym per character.
 
 **CI.** A new ci-kit gate `engine-linux` on the `hosted` lane (GitHub's Ubuntu runner), from M1b: `cargo fmt --check`, the release build, `cargo test` (wire, D-Bus marshalling, keysym table and chord semantics, JPEG settings, families table), and a live test under `xvfb-run` with `dbus-run-session`, `at-spi2-core` and a GTK3 test window (`yad --text-info --editable`; Ubuntu 24.04's zenity is GTK 4, which ignores background keys) that reads the tree, sends a background `press_key` whose effect it reads back through the tree, and captures a window screenshot. M2 adds the paste assertions: a Unicode `type_text` and a `clipboard_write` read back exactly. Live comparisons against the vendor run on the #171 VM, never in CI (the vendor package is not fetched there).
 
@@ -351,14 +355,14 @@ Interfaces: consumes #117's `ModuleTree` (or produces it, if it has not landed).
 
 ### M6b — Retirement of the vendor's Linux package
 
-What exists at its end, as built: cua 0.30.0 on Linux as "Retirement (M6b)" describes. Nothing of the vendor's Linux package is fetched, placed, pinned or selectable. The two deb records are pin-time provenance in `runtime/provenance/`. A home's vendor tree is reported by install and doctor and never deleted (1216). Every vendor selection is refused as `engine_retired`, with one install command. A cloud VM upgrades with `deploy/cloud-vm/update.sh`. It started once the owner's soak condition was met (1193; the Decision Log's M6b start), and was built to its ruled pre-flight (`docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-preflight.md`, ruling 1218) in seven loop tasks, 166 to 172, each reviewed clean. The head was frozen at H = 3722f2826 for acceptance 13's counted run (task 173).
+What exists at its end, as built: cua 0.30.0 on Linux as "Retirement (M6b)" describes. Nothing of the vendor's Linux package is fetched, placed, pinned or selectable. The two deb records are pin-time provenance in `runtime/provenance/`. A home's vendor tree is reported by install and doctor and never deleted (1216). A vendor setting in effect is refused as `engine_retired` where a session reaches the engine selector, with one install command. `cua install` under such a setting ends by naming what to undo. A cloud VM upgrades with `deploy/cloud-vm/update.sh`. It started once the owner's soak condition was met (1193; the Decision Log's M6b start), and was built to its ruled pre-flight (`docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-preflight.md`, ruling 1218) in seven loop tasks, 166 to 172, each reviewed clean. The head was frozen at H = 3722f2826 for acceptance 13's counted run (task 173).
 
 Touches: as the pre-flight's §6 lists them by task, which supersede the list this entry first gave (the pre-flight's C4):
 - the selection, its refusals and the `js` rules: `src/runtime/{launch,installer}.mjs`, `src/mcp/surface.mjs`;
 - install and doctor: `src/runtime/{linux-install,install,retired-tree,node-install,managed-node,module-tree,linux-engine,vendor-tree,run-dir,doctor,doctor-linux-runtime,doctor-engine,codex-leftovers}.mjs`, `src/cli.mjs`;
 - #589's guard, folded into T4: `src/mcp/connection.mjs`, `src/profiles/inventory.mjs`;
 - the pins and their parser: `src/runtime/{manifest,checks}.mjs`, `runtime/provenance/`, `scripts/modules-pin.mjs`;
-- the harnesses: `scripts/repl-parity/*`, `scripts/native-baseline/*`, `scripts/browser-parity/capability-home.mjs`, `scripts/linux-engine-gate/*`, `scripts/linux-engine-diff/vendor-fixture.mjs`, `scripts/probe/lib.mjs`, `scripts/accept/*`, and `scripts/sandbox-probe/linux-probes.mjs`, deleted;
+- the harnesses: `scripts/repl-parity.mjs`, `scripts/repl-parity/*`, `scripts/native-baseline.mjs`, `scripts/native-baseline/*`, `scripts/browser-parity/capability-home.mjs`, `scripts/linux-engine-gate/*`, `scripts/linux-engine-diff/{vendor-fixture.mjs,README.md}`, `scripts/probe/lib.mjs`, `scripts/accept/*`, and `scripts/sandbox-probe/linux-probes.mjs`, deleted;
 - the provisioner, `deploy/cloud-vm/`, and `.github/workflows/linux-runtime.yml`;
 - the docs, tests, and `.claude-plugin/{plugin,marketplace}.json`.
 
@@ -380,11 +384,8 @@ ARCH="$(node -p process.arch)"
 OUT="docs/evidence/2026-10-28-own-linux-engine/$MILESTONE"
 if [ "$MILESTONE" = m5 ]; then OUT="$OUT/$ARCH"; fi
 MSG_FILE="$HOME/.local/share/cua-171/commit-msg.txt"
-# M6b on, the pinned build and the vendor's client come from the comparator fixture, never a cua home's runtimes/
-# (before M6b, $HOME/.local/share/cua/runtimes/26.928.40906-linux-$ARCH); CHECKED verifies the fixture before the command
-FIXTURE="$HOME/.local/share/cua-171/vendor-$ARCH-pinned"
-CHECKED=(node scripts/linux-engine-gate/fixture-check.mjs --vendor-fixture "$FIXTURE" --arch "$ARCH" --)
-SKY="$FIXTURE/extracted/26.928.40906-linux-$ARCH/cua_node/lib/node_modules/@oai/sky"
+# M0 to M6a: the pinned build where cua's install placed it, which cua 0.30.0 no longer does (From M6b, below)
+SKY="$HOME/.local/share/cua/runtimes/26.928.40906-linux-$ARCH/cua_node/lib/node_modules/@oai/sky"
 VENDOR="$SKY/bin/linux/sky_linux_$ARCH"
 NEWEST="$HOME/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_$ARCH"
 BUILT="$WT/native/linux-engine/target/release/cua-engine"
@@ -445,12 +446,12 @@ xvfb-run -a dbus-run-session -- cargo test --manifest-path native/linux-engine/C
 # as the engine-linux gate runs it: the release profile aborts on panic, which one live test needs (Decision Log, task 63)
 ```
 
-**The wire fixtures** through OpenAI's JavaScript client (M0), then **the differential harness** (M0's first cut, M1a's full set, M2's text scenes, by `SCENES`; M0's matrix families join by name once M0 lists them).
+**The wire fixtures** through OpenAI's JavaScript client (M0), then **the differential harness** (M0's first cut, M1a's full set, M2's text scenes, by `SCENES`; M0's matrix families join by name once M0 lists them). They ran as written until M6b; from M6b the pinned build comes from the comparator fixture (From M6b, below).
 
 ```bash
-"${CHECKED[@]}" node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
+node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
 # expected: one PASS line per output kind (object, array, string, null), for the vendor's recorded answers and the spike's
-"${CHECKED[@]}" node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" --scene "$SCENES" --ops all --out "$OUT/diff"
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" --scene "$SCENES" --ops all --out "$OUT/diff"
 # expected: the stub engine failed by the witness and the audit, then summary.md with one row per operation and scene:
 #           pinned / newest / cua cold and warm medians, calls, witness, audit, effect, verdict PASS
 ```
@@ -471,15 +472,13 @@ node bin/cua.mjs doctor
 # expected: the engine row passes with VERSION and the pinned hash
 ```
 
-**The facade suites** (M1b on; M1b adds `--engine` and `--engine-bin` on Linux, the engine-answered check, diff by engine, the expected file with its temporary candidate expectations, and the Linux lanes of `compare --engines`). The native baseline refuses while any gedit runs, so the block first ends the research fixture on `scratch.txt`.
+**The facade suites** (M1b on; M1b adds `--engine` and `--engine-bin` on Linux, the engine-answered check, diff by engine, the expected file with its temporary candidate expectations, and the Linux lanes of `compare --engines`). The native baseline refuses while any gedit runs, so the block first ends the research fixture on `scratch.txt`. It ran as written from M1b to M6a. At H its two `--engine vendor` runs are refused on Linux, so it no longer runs whole (From M6b, below).
 
 ```bash
 SHA="$(git rev-parse HEAD)"
 EXPERIMENT="171-$MILESTONE-$DATE"
 mkdir -p "$OUT/parity"
 node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$SHA"
-# M6b on: on Linux the two --engine vendor runs below are refused, naming the stored vendor lanes; diff and
-# compare --engines judge those stored pairs (M5's and M6a's), or a pair of cua lanes
 node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine vendor --out "$OUT/parity/vendor"
 node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua "${ENGINE_BIN[@]}" --out "$OUT/parity/cua"
 node scripts/repl-parity.mjs diff "$OUT/parity/vendor" "$OUT/parity/cua" --expected scripts/repl-parity/expected/native-linux.json
@@ -500,7 +499,7 @@ CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs
 # expected: a JSON report with every step PASS (the VM's default home, its engine from node bin/cua.mjs install --engine)
 ```
 
-**M5**, on each VM, on the pinned release only: `ENGINE_BIN` stays empty, and there is no `CUA_LINUX_ENGINE_BIN` and no local build. On the arm64 VM the newest arm64 build is extracted to the `NEWEST` path first, its package checked as R/F §0 records for x64. After this block, the facade-suites block runs as written (item 10).
+**M5**, on each VM, on the pinned release only: `ENGINE_BIN` stays empty, and there is no `CUA_LINUX_ENGINE_BIN` and no local build. On the arm64 VM the newest arm64 build is extracted to the `NEWEST` path first, its package checked as R/F §0 records for x64. After this block, the facade-suites block ran as written (item 10).
 
 ```bash
 FRESH="$(mktemp -d)"
@@ -509,8 +508,34 @@ CUA_HOME="$FRESH" node bin/cua.mjs doctor
 file "$FRESH/engine/linux/cua-engine"
 # expected (item 9): the engine row passes with the pinned version; file says statically linked
 node bin/cua.mjs install --engine
-"${CHECKED[@]}" node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$INSTALLED" --scene "$SCENES" --ops all --out "$OUT/diff"
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$INSTALLED" --scene "$SCENES" --ops all --out "$OUT/diff"
 # expected (items 2-8): as for M1a, every verdict PASS
+```
+
+**From M6b** (cua 0.30.0), what runs at H on a Linux device:
+- the pinned build and the vendor's client come from the comparator fixture, checked before each command, never from a cua home;
+- the facade suites run the cua lane alone;
+- a stored vendor and cua pair of one sitting is judged offline, with no device: M5's R1 and R2 on both arches, M6a's R1 on x64;
+- a new pair of cua lanes is judged by `repl-parity.mjs diff` alone.
+
+```bash
+FIXTURE="$HOME/.local/share/cua-171/vendor-$ARCH-pinned"
+CHECKED=(node scripts/linux-engine-gate/fixture-check.mjs --vendor-fixture "$FIXTURE" --arch "$ARCH" --)
+SKY="$FIXTURE/extracted/26.928.40906-linux-$ARCH/cua_node/lib/node_modules/@oai/sky"
+VENDOR="$SKY/bin/linux/sky_linux_$ARCH"
+"${CHECKED[@]}" node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$INSTALLED" --scene "$SCENES" --ops all --out "$OUT/diff"
+# expected: fixture-check's line that the fixture checks, then the harness's verdicts as for M1a
+SHA="$(git rev-parse HEAD)"
+node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$SHA"
+node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua --out "$OUT/parity/cua"
+node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua --out "$OUT/parity/cua-2"
+node scripts/repl-parity.mjs diff "$OUT/parity/cua" "$OUT/parity/cua-2"
+node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE"
+# expected: each run prints assertions PASS; the cua and cua diff takes no --expected file, so any difference it reports is undeclared
+EV=docs/evidence/2026-10-28-own-linux-engine
+node scripts/repl-parity.mjs diff "$EV/m6a/x64/regression/parity/vendor" "$EV/m6a/x64/regression/parity/cua" --expected scripts/repl-parity/expected/native-linux.json
+node scripts/native-baseline.mjs compare --engines "$EV/m5/x64/out/R2.pinned-release/run/baseline/cv" "$EV/m5/x64/out/R2.pinned-release/run/baseline/cc" --out "$(mktemp -d)/engines.md"
+# expected: the stored pair's diff is ok with its 3 declared vendor defects; compare prints VERDICT: PASS
 ```
 
 ## Interfaces and Dependencies
@@ -523,7 +548,7 @@ The service (`src/services/engine/linux/service.mjs`): `export async function ha
 
 The facade (`src/cua-api/bind-linux-app.mjs`, M3): a rendered state whose WindowState carries `truncated` ends with the line `Accessibility tree truncated: at least <n> elements not shown (<reason>)`.
 
-Selection (`src/runtime/launch.mjs`): `nativeEngineFor` resolves on Linux with the same precedence, reasons and refusals it applies on macOS (its existing parameters, plus the platform), and its Linux result carries the engine binary's path; `CUA_LINUX_ENGINE_BIN` is read only when the engine is `cua`. From M6b its Linux branch refuses `vendor` as `engine_retired` before anything else, and `retiredEngine` (exported) writes that sentence for the selection and for `cua install`. The device mode resolves beside it: `CUA_DESKTOP_MODE`, else `engine.json`'s `desktop`, else `shared`; any other value is refused as `invalid_setting`.
+Selection (`src/runtime/launch.mjs`): `nativeEngineFor` takes its existing parameters, plus the platform. On Linux it applies Linux's own default (`cua`) and refusals (Selection): `vendor` is `engine_retired` before anything else, and every refusal of cua's engine names this checkout's `install --engine`. Its Linux result carries the engine binary's path, and `CUA_LINUX_ENGINE_BIN` is read only when the engine is `cua`. `retiredEngine` (exported) writes the `engine_retired` sentence for a session's open, and the install's ending for `cua install`. The device mode resolves beside it: `CUA_DESKTOP_MODE`, else `engine.json`'s `desktop`, else `shared`; any other value is refused as `invalid_setting`.
 
 Pins (`runtime/engine/linux-engine.json`): `{version, release, assets: {x64: {url, sha256}, arm64: {url, sha256}}}`, written by `scripts/linux-engine-pin.mjs <release tag>` after `gh attestation verify` of both assets. The release workflow (`.github/workflows/linux-engine.yml`): `workflow_dispatch` with `commit` (40 hex digits).
 
@@ -765,8 +790,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Removal** happens only when the device, inode, change time and contents still match what was written. The change time is there because a file made again at the same path can reuse the inode number.
   - A sentinel test plants an `engine.json` outside the run and shows it untouched.
   Evidence: task 170's review (Critical), fix waves 1 and 2 (7dad594a9, 9d6156ef9); the progress ledger's check of this host (local).
-- Observation (M6b): both comparator fixtures equal their authenticated debs' payloads byte for byte: 2,344 files, 326 directories and 0 links on each side, with `install.json` set aside. The installs had left the vendor's `cua_node` as the deb holds it. A release tree in a home installed today is 211,063,821 bytes, one more than the pre-flight's figure for this VM's home, because each install writes its own `install.json`.
-  Evidence: `docs/evidence/2026-10-28-own-linux-engine/m6b/fixture-identity.txt` (task 168); task 170's pilots.
+- Observation (M6b): both comparator fixtures equal their authenticated debs' payloads byte for byte: 2,344 files, 326 directories and 0 links on each side, with `install.json` set aside. The installs had left the vendor's `cua_node` as the deb holds it. In T6's pilot, the release tree the older cua's install placed measured 211,063,821 bytes on both x64 legs. That is one more than the pre-flight's figure for this VM's 2026-10-28 home, because each install writes its own `install.json`. On arm64 it measured 205,071,356 bytes. H itself places neither tree.
+  Evidence: `docs/evidence/2026-10-28-own-linux-engine/m6b/fixture-identity.txt` (task 168); `m6b/pilot/README.md`'s measured table (task 170).
 - Observation (M6b): every installer's `fetch` is the global one at call time, so a preload that wraps `globalThis.fetch` sees the whole install. Under the preload, the older cua's log holds the deb, read whole, on all three legs. The pre-flight had left this unverified.
   Evidence: task 170's pilots, the fetch log's control (`m6b/pilot/`).
 - Observation (M6b): `scripts/accept/linux-runtime-env.sh` failed open when the checkout was reached through a symbolic link. `pwd` gave the logical path, so `linux-runtime-env.mjs`'s main block compared its `argv[1]` with the real path and did not run. It printed nothing and exited 0, so the wrapper exported no homes. The driver's own precondition (`CUA_HOME` unset) stopped the run. The script now uses `pwd -P`.
@@ -3072,58 +3097,55 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Date/Author: 2026-11-24, linux171 (plan-executor), recording the re-review's finding as ruled by 1218; entered at close-out (task 174).
 
 - Decision (2026-11-24 to 11-27, M6b's build; tasks 166–172; rulings 1212, 1215–1218 and the controller's adjudications): what the reviews changed, and the calls made on the way.
-  - **The selection and its sentences (task 166).**
-    - Every refusal of an override takes §2.1's form. That includes the relative path's, which T1 first left bare (the review's first Important).
+  - **The refusal contract (tasks 166, 169).**
+    - Every refusal of an override takes §2.1's form, the relative path's included.
     - On Linux, an unknown value in `engine.json` gets the same cua-only sentence as one in the variable.
-    - 1212's one-remedy rule reaches doctor. Under a vendor selection, the `engine` row says what the home holds as facts alone. So does a capability read that fails as a session's start would. Each then gives one remedy, after the source's prerequisite. It took two fix waves.
-    - Only `engine_retired` fails that row. A session refused before its engine is asked for leaves it `skip`.
-    - Under a vendor selection, install counts cua's engine as asked for, so a failed engine lane is the install's error. Install's `engine_retired` carries no hint, because its sentence names no command.
-    - When a common lane fails under a vendor selection, the last line names the retirement from the known setting, never in the host guard's words.
-    - `runtime.vendor` went in T1, not T2, because its sentences offered the vendor's engine.
-  - **The report and the boundary (task 167).**
-    - **The size.** It prints in MB to one decimal, at 10^6 bytes to the MB, and below 100,000 bytes in bytes. An unmeasured tree says "its size could not be measured (`<code>`)". The walk reads one entry at a time, so its bound stops the enumeration itself.
-    - **The record.** `installedAt` must be the old writer's exact form, an ISO timestamp that survives a `toISOString` round trip. An unreadable `runtimes/` (EACCES) names nothing.
+    - 1212's one-remedy rule reaches doctor. Under a vendor selection, its `engine` row says what the home holds as facts alone, and so does a capability read that fails as a session's start would. Each then gives one remedy, after the source's prerequisite.
+    - Doctor's `engine` row under a vendor selection fails only when the selector's refusal is `engine_retired`. A session refused before its engine is asked for leaves the row `skip`.
+    - Install reads the effective engine setting itself (`nativeEngineSetting`), not a session's selection. Under a vendor setting it counts cua's engine as asked for, so a failed engine lane is the install's error. Its `engine_retired` sentence names no command and carries no hint. When a common lane fails, the last line names the retirement from that setting, never in the host guard's words.
+  - **The report (task 167).**
+    - **The size** prints in MB to one decimal, at 10^6 bytes to the MB, and below 100,000 bytes in bytes. An unmeasured tree says "its size could not be measured (`<code>`)". The walk reads one entry at a time, so its bound stops the enumeration itself.
+    - **The record.** `installedAt` must be the old writer's exact form, an ISO timestamp that survives a `toISOString` round trip. An unreadable `runtimes/` names nothing.
     - **The output.** Two recorded releases give two install lines and one doctor row, the sentences joined by "; ". `report.retired` is always present on Linux, `[]` when there is none, and absent on macOS.
+  - **The boundary (tasks 167, 169).**
     - **Node.** One guard, `managedNodeIntoVendorTree`, serves launch, install and doctor. On Linux, a Node already in place never touches `staging/`.
-    - **Doctor's sandbox row** resolved the home's roots through links into the tree; the replay found it. The deny list's paths are now guarded in every mode, and the scoped check's paths in scoped mode only. So a default-mode doctor claims no refusal that a default-mode launch would not make.
+    - **Doctor's sandbox row** guards the deny list's paths in every mode, and the scoped check's paths in scoped mode only. So a default-mode doctor claims no refusal that a default-mode launch would not make.
     - **The run sweep.** Doctor and serve share it, on both platforms. It reads a session record only as a regular file read whole, `/^[1-9][0-9]*\n$/`. Anything else leaves the session unowned and is never acted on.
-  - **The harnesses and the fixture (task 168).**
-    - **The four vendor exports** went in T4, once no reader was left.
-    - **The gate.** `--vendor` and `--vendor-js` left `gate.mjs`, so the fixture is its only source; `--newest` stays. The `baseline` part left `suites.sh` with R2.
-    - **Checking the fixture.** The check runs in the `:0` launch path itself: `scripts/linux-engine-gate/fixture-check.mjs`, under the host lock, before the sitting launcher. Checking only when the command was printed would leave the time until launch unchecked.
-      - A repeated or `=`-form comparator flag is refused, since the harness takes the last.
-      - A linked `extracted/` cache root is refused.
-    - **R1's engine binding is per case.** Each case's engine must be `<home>/engine/linux/cua-engine` of the home that its own connection's attested provenance names. The expected case set is repl-parity's own native selection, which a test holds at 34.
-    - **A cua and cua pair** needs each run's runtime to be cua's own by its derived name, borne out by every connection's attested release.
-    - **The fallback judges** match the refusal sentence whole for the default source, not by a substring scan.
-  - **The provenance move and #589 (task 169).**
-    - **The reader** returns `{release, length, sha256, lockfile}`. Its refusal is `invalid_provenance`, kept apart from `invalid_pin`. It is stricter than §4.1:
-      - the release must be `<version>-linux-<arch>` for the record's own arch;
-      - `notes` is required;
-      - no lockfile component may start with `-`.
-    - **The static layer's deb pattern** is `chatgpt_<digit>`, because `src/` holds unrelated `chatgpt_` codes and fields.
-    - **#589** was folded in by the coordinator's leave, since T2's guard was reusable.
-      - A linked `run/` is `layout_invalid` in every mode. `connection.mjs` and `inventory.mjs` refuse it before a session is claimed. The guard stays out of `claimRunSession`, which macOS shares.
+    - **#589**, folded in by the coordinator's leave.
+      - A `run/` that leads into the vendor's tree, or that the guard can't resolve as the kernel would, is `layout_invalid` in every mode. `connection.mjs` and `inventory.mjs` refuse it before a session is claimed. The guard stays out of `claimRunSession`, which macOS shares.
       - The deny list's paths inside the cua home are resolved by the guard's own walk. A missing component followed by `..` is refused, not resolved lexically.
       - The roots are resolved before `denyListFor` discovers anything, the secret store and the project tier among them where they lie in the home. A store outside the home, and `~/.config/cua`, keep `realish`.
+  - **The provenance reader (task 169).** It returns `{release, length, sha256, lockfile}`. Its refusal is `invalid_provenance`, kept apart from `invalid_pin`. It is stricter than the pre-flight's §4.1:
+    - the release must be `<version>-linux-<arch>` for the record's own arch;
+    - `notes` is required;
+    - no lockfile component may start with `-`.
+
+    The static layer's deb pattern is `chatgpt_<digit>`, because `src/` holds unrelated `chatgpt_` codes and fields.
+  - **The comparator fixture and the harness judges (task 168).**
+    - **The gate's only source.** `gate.mjs` takes the pinned build and the client from the fixture alone, so `--vendor` and `--vendor-js` are gone from it; `--newest` stays.
+    - **The launch path checks the fixture.** A `:0` step runs through `scripts/linux-engine-gate/fixture-check.mjs`, under the host lock and before the sitting launcher, so no time between printing a command and launching it goes unchecked.
+      - A repeated or `=`-form comparator flag is refused, since the harness takes the last.
+      - A linked `extracted/` cache root is refused.
+    - **R1's engine binding.** On a run of the installed engine, each case's engine must be `<home>/engine/linux/cua-engine` of the home that its own connection's attested provenance names. On a candidate run, every engine that answered must be the named candidate, by its real path. The expected case set is repl-parity's own native selection, which a test holds at 34.
+    - **A cua and cua pair** needs each run's runtime to be cua's own by its derived name, borne out by every connection's attested release.
+    - **The fallback judges** match the refusal sentence whole for the default source, not by a substring scan.
   - **The provisioner (task 171).**
-    - **The fake VM.** The gates run on hosted macOS, with no namespaces and no root, and this dev VM is itself a cua device the template made. So the fake VM remaps VM paths under a scratch root and fails closed on any path it can't place. It runs the VM checkout's real `bin/cua.mjs install` against fixture pins.
-    - **The controller's scope ruling.** The fake VM guards its own scripts and their known shell syntax, not arbitrary shell. A later finding outside that scope ends the review loop.
+    - **The fake VM's scope (the controller's ruling).** The gates run on hosted macOS, with no namespaces and no root, and this dev VM is itself a cua device the template made. So the fake VM remaps VM paths under a scratch root and fails closed on any path it can't place. It guards its own scripts and their known shell syntax, not arbitrary shell. It runs the VM checkout's real `bin/cua.mjs install` against fixture pins. A review finding outside that scope ends the loop.
     - **The checkout.** Both N6 guards run right after it, before `npm ci`. A commit ID is exactly 40 or 64 lowercase hex digits; anything else is a name. An annotated tag is peeled (`FETCH_HEAD^{commit}`).
     - **`update.sh`.**
       - It stages C's provisioner once, from the commit, and ships that file under a run-unique name.
       - It accepts a bundle only when a scratch fetch from it, as the desktop user, ends holding C. So a bundle must be self-contained.
       - `--bundle` is refused unless `CUA_REPO` is `upload`.
       - It leaves `CUA_DEB` in the conf, which the script tolerates.
-    - **The conf.** `CUA_DEB` gets its one log line whatever its value. `CUA_DEB_WAIT` keeps its name as the bundle's wait.
-    - **The version literal.** The provisioner's sentences write `0.30.0` as a literal in `manifest.mjs`: importing `VENDOR_ENGINE_RETIRED_IN` from `launch.mjs` would make an import cycle. The tests build their expectation from the constant.
-  - **Acceptance 13's driver (task 170).**
-    - **Its inputs.** Every traced run uses `--seccomp-bpf` (Surprises & Discoveries). The 0.4.4 override is the real release asset, checked against its pin's hash at 0d19fdfa. The vendor release's name comes from `retired-tree.mjs`'s `RETIRED_RELEASES`, never from a pin. The pilots ran at a tip that merges T4, `m6b-t6-pilot-tip`.
+    - **The conf.** A nonempty `CUA_DEB` gets one log line, whatever its value. `CUA_DEB_WAIT` keeps its name as the bundle's wait.
+    - **The version literal.** The provisioner's sentences write `0.30.0` as a literal in `manifest.mjs`: importing `VENDOR_ENGINE_RETIRED_IN` from `launch.mjs` would make an import cycle. The tests build their expectation from the constant, so a bump turns them red.
+  - **Acceptance 13's evidence rules (task 170).**
+    - **Its inputs.** Every traced run uses `--seccomp-bpf` (Surprises & Discoveries). The 0.4.4 override is the real release asset, checked against its pin's hash at 0d19fdfa. The vendor release's name comes from `retired-tree.mjs`'s `RETIRED_RELEASES`, never from a pin.
     - **U2 and U3.** U2 runs install plain, then with `--json`, and both are judged against the snapshots taken before U2. U3's second install runs with `--json`.
     - **The execs.** "No exec of an engine, a worker, a helper or a host" is judged by role. Each executable is resolved through `execveat`'s descriptor and the working directory. Doctor may run one bubblewrap, exactly once: its `sandbox.userns` probe, by its argument vector.
-    - **Failing closed.** A trace with an unread line, an orphaned resumption or a call cut short is incomplete. A fetch log counts only when it opens with its `ready` record.
+    - **Failing closed.** A trace with an unread line, an orphaned resumption or a call cut short is incomplete. A fetch log counts only when it opens with its `ready` record. A missing or unreadable snapshot never compares equal.
     - **`engine.json`.** The driver touches it only inside its own run (the near-miss in Surprises & Discoveries).
-    - **The review's end.** The third round ranked its findings by their reach into a counted verdict, and approved with none left that could change one.
+    - **The review's end.** It was approved when no finding remained that could change a counted verdict.
   - **The docs (task 172).**
     - Historical evidence about the vendor's engine stays, in the past tense.
     - `cua engine build` appears in the README's engine section, never as a remedy.

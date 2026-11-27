@@ -8,7 +8,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {Writable} from 'node:stream';
 import {join} from 'node:path';
-import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, PROJECTION_WARN_MINUTES, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
+import {execStep, JOB_LIMIT_MINUTES, jobStartedOf, PROJECTION_PRIOR_MINUTES, PROJECTION_WARN_MINUTES, renderSitting, runSitting} from '../../scripts/hosted-sittings/run.mjs';
 
 const plan = (steps, form = 'full') => ({sitting: 'x', title: 'a test sitting', proves: 'nothing', form, setup: true, counts: [], pilotReads: false, steps});
 const step = (id, kind = 'run', extra = {}) => ({id, label: id, kind, argv: ['node', `${id}.mjs`], ...extra});
@@ -118,8 +118,9 @@ test('the wall time so far: each step carries the sitting\'s and the job\'s, log
 
 // Pilot C-2 ran its two lanes' matrices back to back in one job; a slower runner would let the job's limit end it with
 // nothing said beforehand. Before each run step the finish is projected from the run steps measured so far (a step's own
-// family, its id without the run number, else the mean of all of them): past PROJECTION_WARN_MINUTES of the job's limit,
-// the step's note and the report say so. Nothing is split or skipped.
+// family, its id without the run number), else its kind's prior (ruling 1228: the mean of every measured step put an
+// unmeasured key-route at a matrix lane's length and projected 703 min): past PROJECTION_WARN_MINUTES of the job's
+// limit, the step's note and the report say so. Nothing is split or skipped.
 test('the projected finish: before each run step, from the measured runs; past the warning line the step\'s note and the report say so, and every step still runs', async () => {
   const minutes = {prepare: 10, 'matrix-vendor-1': 40, 'matrix-vendor-2': 40, 'matrix-cua-1': 150, 'matrix-cua-2': 150};
   let t = 0, current = null;
@@ -129,11 +130,13 @@ test('the projected finish: before each run step, from the measured runs; past t
       exists: () => false, remove: () => {}, now: () => t, log: line => lines.push(line), jobStartedMs: 0});
   const by = id => report.steps.find(s => s.id === id);
   assert.equal(current, 'summary', 'every step ran');
-  assert.equal(by('prepare').projected, undefined, 'nothing measured yet');
-  // Before matrix-vendor-2: 50 min in; itself at its family's 40, the two cua runs at the mean of the two measured (25).
-  assert.deepEqual(by('matrix-vendor-2').projected, {finishMs: 140 * 60000, of: 'job', steps: 3, atMean: 2});
+  assert.equal(by('prepare').projected, undefined, 'a step that is not projected');
+  // Before matrix-vendor-1: 10 min in, nothing measured: every step at its prior (60, 60, 50, 50).
+  assert.deepEqual(by('matrix-vendor-1').projected, {finishMs: 230 * 60000, of: 'job', steps: 4, atPrior: 4, atMean: 0});
+  // Before matrix-vendor-2: 50 min in; itself at its family's 40, the two cua runs at their prior (50).
+  assert.deepEqual(by('matrix-vendor-2').projected, {finishMs: 190 * 60000, of: 'job', steps: 3, atPrior: 2, atMean: 0});
   // Before matrix-cua-2: 240 min in, itself at its family's 150: 390, past the line.
-  assert.deepEqual(by('matrix-cua-2').projected, {finishMs: 390 * 60000, of: 'job', steps: 1, atMean: 0});
+  assert.deepEqual(by('matrix-cua-2').projected, {finishMs: 390 * 60000, of: 'job', steps: 1, atPrior: 0, atMean: 0});
   assert.ok(['prepare', 'matrix-vendor-1', 'matrix-vendor-2', 'matrix-cua-1'].every(id => !/projected/.test(by(id).reason ?? '')));
   assert.match(by('matrix-cua-2').reason, /^projected before it ran to finish the job's run steps at 390 min of its 360 \(past the 300-min warning line\)$/);
   assert.ok(lines.some(l => /x matrix-cua-2: projected before it ran to finish the job's run steps at 390 min of its 360/.test(l)), lines.join('\n'));
@@ -256,4 +259,28 @@ test('C\'s chain: an older record at a gated path refuses the sitting before any
   // Ungated records (the first run's own, a report) are not the gate's: their steps handle them as before.
   const first = await run(gated(), {}, {files: {'/w/out/c1.json': older}, writes: {v1: {'/w/out/v1.json': older}}});
   assert.deepEqual(first.ran, ['v1', 'c1']);
+});
+
+// Ruling 1228: the priors per kind of step, replaced by the family's measured mean as it comes in; a step of no known
+// kind and no measured family still takes the mean of what was measured. Sitting C's full form, from its first run step,
+// projects its three runs' lanes and save-sheet cells and the key-route diagnostic, not 703 min.
+test('the projection\'s priors: a matrix lane 60 or 50 min, a save-sheet step 6, key-route 27, setup 5, each replaced once measured', async () => {
+  assert.deepEqual(PROJECTION_PRIOR_MINUTES, {'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'key-route': 27, setup: 5});
+  const ids = [1, 2, 3].flatMap(n => [`matrix-vendor-${n}`, `matrix-cua-${n}`]).concat([1, 2, 3].flatMap(n => [`save-sheet-vendor-${n}`, `save-sheet-cua-${n}`]));
+  const minutes = {'matrix-vendor-1': 70};
+  let t = 0;
+  const report = await runSitting(plan([...ids.map(id => step(id)), step('summary', 'verdict'), step('key-route', 'diagnostic')]),
+    {out: '/w/out', exec: async s => { t += (minutes[s.id] ?? 1) * 60000; return {exit: 0}; }, keep: () => {}, readText: () => '', readJson: () => null,
+      exists: () => false, remove: () => {}, now: () => t, log: () => {}, jobStartedMs: -15 * 60000});
+  const by = id => report.steps.find(s => s.id === id);
+  // 15 min in (the setup's, already in the job's time): 3 x 60 + 3 x 50 + 6 x 6 + 27 = 393, 408 in all.
+  assert.deepEqual(by('matrix-vendor-1').projected, {finishMs: 408 * 60000, of: 'job', steps: 13, atPrior: 13, atMean: 0});
+  // After the vendor's first lane took 70 min: its family at 70, the rest at their priors.
+  assert.deepEqual(by('matrix-cua-1').projected, {finishMs: (85 + 50 + 70 * 2 + 50 * 2 + 36 + 27) * 60000, of: 'job', steps: 12, atPrior: 10, atMean: 0});
+  assert.equal(by('key-route').projected, undefined, 'projected as a step ahead, never before itself');
+  // A run step of no known kind with no measured family: the mean of what was measured.
+  let u = 0;
+  const other = await runSitting(plan([step('matrix-vendor-1'), step('odd-1')]), {out: '/w/out', exec: async () => { u += 40 * 60000; return {exit: 0}; }, keep: () => {},
+    readText: () => '', readJson: () => null, exists: () => false, remove: () => {}, now: () => u, log: () => {}, jobStartedMs: 0});
+  assert.deepEqual(other.steps[1].projected, {finishMs: 80 * 60000, of: 'job', steps: 1, atPrior: 0, atMean: 1});
 });

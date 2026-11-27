@@ -152,26 +152,34 @@ const minutes = ms => `${Math.round(ms / 60000)} min`;
 const wallText = w => `the sitting ${minutes(w.sittingMs)} so far${w.jobMs === null ? '' : `, the job ${minutes(w.jobMs)} of its ${JOB_LIMIT_MINUTES}`}`;
 
 // The finish a sitting is heading for, projected before each run step (pilot C-2 ran both lanes' matrices back to back
-// in one job): the time so far (the job's, else the sitting's), then this and every later run step at the mean of its
-// family's measured runs (its id without the run number), or, with none measured, at the mean of every run step measured
-// so far. Verdicts and cleanups are left out, and so is whether a step will be skipped: a warning, never a plan. Past
-// PROJECTION_WARN_MINUTES the step's note, the log and the report say so; nothing is split or skipped.
+// in one job): the time so far (the job's, else the sitting's), then this and every later run step, and the key-route
+// diagnostic, at the mean of its family's measured runs (its id without the run number), else at its kind's prior
+// (PROJECTION_PRIOR_MINUTES, ruling 1228: the mean of every measured step, which C's first full form used, put an
+// unmeasured step at a matrix lane's length and projected 703 min), else, a step of no known kind, at the mean of every
+// step measured so far. The setup's prior is for a projection made before it; one made in a sitting finds it in the
+// job's time already. Verdicts and cleanups are left out, and so is whether a step will be skipped: a warning, never a
+// plan. Past PROJECTION_WARN_MINUTES the step's note, the log and the report say so; nothing is split or skipped.
 export const PROJECTION_WARN_MINUTES = 300;
+export const PROJECTION_PRIOR_MINUTES = Object.freeze({'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'key-route': 27, setup: 5});
 const familyOf = id => id.replace(/-\d+$/, '');
+const priorOf = id => {
+  const family = familyOf(id), kind = Object.keys(PROJECTION_PRIOR_MINUTES).find(k => family === k || family.startsWith(`${k}-`));
+  return kind ? PROJECTION_PRIOR_MINUTES[kind] * 60000 : null;
+};
+const projects = s => (s.kind === 'run' || familyOf(s.id) === 'key-route') && !s.missing;
 const mean = values => values.reduce((a, b) => a + b, 0) / values.length;
-// -> {finishMs, of: 'job' | 'sitting', steps, atMean} | null (no run step measured yet).
+// -> {finishMs, of: 'job' | 'sitting', steps, atPrior, atMean} | null (a step of no known kind with nothing measured).
 function projectedFinish(ahead, entries, wallNow, jobKnown) {
-  const measured = entries.filter(e => e.kind === 'run' && e.ms !== null);
-  if (!measured.length) return null;
-  const overall = mean(measured.map(e => e.ms));
-  const runs = ahead.filter(s => s.kind === 'run' && !s.missing);
-  let finishMs = jobKnown ? wallNow.jobMs : wallNow.sittingMs, atMean = 0;
-  for (const s of runs) {
-    const family = measured.filter(e => familyOf(e.id) === familyOf(s.id));
-    if (!family.length) atMean++;
-    finishMs += family.length ? mean(family.map(e => e.ms)) : overall;
+  const measured = entries.filter(e => projects(e) && e.ms !== null);
+  const overall = measured.length ? mean(measured.map(e => e.ms)) : null;
+  const steps = ahead.filter(projects);
+  let finishMs = jobKnown ? wallNow.jobMs : wallNow.sittingMs, atPrior = 0, atMean = 0;
+  for (const s of steps) {
+    const family = measured.filter(e => familyOf(e.id) === familyOf(s.id)), prior = priorOf(s.id);
+    if (family.length) finishMs += mean(family.map(e => e.ms));
+    else if (prior !== null) { finishMs += prior; atPrior++; } else if (overall !== null) { finishMs += overall; atMean++; } else return null;
   }
-  return {finishMs: Math.round(finishMs), of: jobKnown ? 'job' : 'sitting', steps: runs.length, atMean};
+  return {finishMs: Math.round(finishMs), of: jobKnown ? 'job' : 'sitting', steps: steps.length, atPrior, atMean};
 }
 const projectionText = p => `projected before it ran to finish the ${p.of}'s run steps at ${minutes(p.finishMs)}${p.of === 'job' ? ` of its ${JOB_LIMIT_MINUTES}` : `, the job's start unread (its limit ${JOB_LIMIT_MINUTES} min)`} (past the ${PROJECTION_WARN_MINUTES}-min warning line)`;
 

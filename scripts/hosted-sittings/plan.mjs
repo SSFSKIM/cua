@@ -114,7 +114,7 @@ const sittingCSchedule = ctx => sittingCOrder(ctx).runs;
 // `baseRunId`), checked by jobs-check before anything reads it, then re-judged (R1, ruling 1230) before the judging.
 // `only`: the filter the run jobs ran; the save-sheet verdict is asked only when they ran that cell.
 function splitJudge(ctx) {
-  const {jobs, base = null, baseRunId = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
+  const {jobs, runs, base = null, baseRunId = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args], keyRoute = `${ctx.out}/key-route`;
   const gate = base ? ['jobs-check', 'rejudge-base'] : ['jobs-check'];
   return [
@@ -131,7 +131,7 @@ function splitJudge(ctx) {
     {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: gate, argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
     // I3: the run jobs' save-sheet verdicts, carried into this job's verdict.
     ...(!only || only.includes(SAVE_SHEET_CELL) ? [{id: 'save-sheet', label: '#212\'s save-sheet cell as each run job recorded it (I3 of the split review)', kind: 'verdict', check: 'verdict', needs: ['jobs-check'],
-      argv: ['node', 'scripts/hosted-sittings.mjs', 'save-sheet-verdicts', '--jobs-file', `${ctx.out}/jobs.json`]}] : []),
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'save-sheet-verdicts', '--jobs-file', `${ctx.out}/jobs.json`, '--runs', runs.join(',')]}] : []),
     {id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
       check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
       argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]},

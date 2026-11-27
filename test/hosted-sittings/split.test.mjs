@@ -55,7 +55,7 @@ test('F: a run job re-times the three missed speed ops only behind --speed-extra
 });
 
 test('the judge job checks the jobs, combines their records (a full run beneath), judges them and runs key-route last', () => {
-  const judge = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], base: '/b', baseRunId: '45468052791', only: ['electron/frontmost/click.point']});
+  const judge = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: '/b', baseRunId: '45468052791', only: ['electron/frontmost/click.point']});
   assert.deepEqual(judge.steps.map(s => s.id), ['jobs-check', 'rejudge-base', 'combine', 'summary', 'compare', 'key-route'], 'a filter without the save-sheet cell asks no save-sheet verdict');
   const [check, rejudge, combine, summary, compare] = judge.steps;
   assert.deepEqual(check.argv.slice(2), ['jobs-check', '--jobs', '/j/1,/j/2,/j/3', '--base', '/b', '--base-run-id', '45468052791', '--out', '/w/out/jobs.json']);
@@ -63,19 +63,19 @@ test('the judge job checks the jobs, combines their records (a full run beneath)
   assert.deepEqual(combine.argv.slice(2), ['combine', '/b/sitting', '/j/1', '/j/2', '/j/3', '--out', '/w/out/combined']);
   assert.deepEqual([combine.check, combine.needs, summary.needs, compare.needs], ['verdict', ['jobs-check', 'rejudge-base'], ['jobs-check', 'rejudge-base'], ['jobs-check', 'rejudge-base']],
     'a combine problem is the judges\' missing proof, never a skip; a base read differently stops them');
-  const full = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], base: null});
+  const full = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null});
   assert.deepEqual(full.steps.map(s => s.id), ['jobs-check', 'combine', 'summary', 'compare', 'save-sheet', 'key-route']);
   const sheet = full.steps.find(s => s.id === 'save-sheet');
-  assert.deepEqual([sheet.argv.slice(2), sheet.check, sheet.needs], [['save-sheet-verdicts', '--jobs-file', '/w/out/jobs.json'], 'verdict', ['jobs-check']]);
-  assert.deepEqual(full.split, {judge: true, jobs: ['/j/1', '/j/2', '/j/3'], base: null}, 'the plan carries its split, so the run command knows a run job from the judge');
+  assert.deepEqual([sheet.argv.slice(2), sheet.check, sheet.needs], [['save-sheet-verdicts', '--jobs-file', '/w/out/jobs.json', '--runs', '1,2,3'], 'verdict', ['jobs-check']], 'every run asked, both lanes');
+  assert.deepEqual(full.split, {judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null}, 'the plan carries its split, so the run command knows a run job from the judge');
   assert.deepEqual([summary.argv.slice(3, 4), compare.argv.slice(3, 4)], [['/w/out/combined'], ['/w/out/combined']], 'the judges read the lanes and any speed-extra records combine wrote');
   assert.deepEqual(judge.counts, ['/w/out/combined/vendor', '/w/out/combined/cua', '/j/1/save-sheet', '/j/2/save-sheet', '/j/3/save-sheet']);
-  assert.deepEqual(plan({judge: true, jobs: ['/j/1'], base: null}).steps[0].argv.slice(2), ['jobs-check', '--jobs', '/j/1', '--out', '/w/out/jobs.json']);
+  assert.deepEqual(plan({judge: true, jobs: ['/j/1'], runs: [1], base: null}).steps[0].argv.slice(2), ['jobs-check', '--jobs', '/j/1', '--out', '/w/out/jobs.json']);
 });
 
 // A job's record as the judge reads it: its results (each with the runner, commit and lanes) and its hardware.
 const job = (dir, {run = 1, commit = 'h1', vendor = '26.924.1001281', cua = '0.3.0', build = 'b1', id = '50', attempt = '1', planId = 'full', hardware = {model: 'VirtualMac2,1', cpus: 3},
-  cells = ['matrix'], sheetCommit = commit, report = null} = {}) => ({dir, hardware, report,
+  cells = ['matrix'], sheetCommit = commit, report = {steps: []}} = {}) => ({dir, hardware, report,
   results: cells.flatMap(cell => ['vendor', 'cua'].map(engine => ({result: {cell, lanes: [{engine, version: engine === 'vendor' ? vendor : cua, ...(engine === 'cua' ? {build} : {})}],
     meta: {run, commit: cell === 'matrix' ? commit : sheetCommit, ...(cell === 'matrix' ? {planId, plan: {scenes: run === 1 ? ['textedit', 'electron'] : ['textedit']}} : {}),
       runner: {image: {name: 'macos27', version: '20261104'}, run: {id, attempt}, vm: {id: `vm-${dir}`}, engine: {engineVersion: cua}}}}})))});
@@ -136,7 +136,8 @@ test('the workflow\'s split form: a run job per run number, each attempt its own
   assert.match(judge, /pattern: m5-sitting-c-run-\*/);
   assert.doesNotMatch(judge, /run-id:|actions: read/, 'H1: the base is the committed directory, not an artifact of another run');
   assert.match(judge, /grep -l "actions\/runs\/\$BASE_RUN_ID\)" docs\/evidence\/\*\/README\.md/);
-  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+  assert.match(judge, /\[ "\$\{#readmes\[@\]\}" -eq 1 \] \|\| \{ echo .*exactly one must"; exit 1; \}/, 'two committed bases naming the run refuse');
+  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$SPLIT_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
   assert.match(judge, /tee "\$RUNNER_TEMP\/m5-out\/sitting\/attempts\.md"/, 'every attempt listed in sitting.md too');
   assert.match(job('split_refused'), /inputs\.form == 'split' && inputs\.sitting != 'c'[\s\S]*exit 2/);
   assert.match(judge, /name: m5-sitting-c-judge-\$\{\{ github\.run_attempt \}\}/);
@@ -153,6 +154,7 @@ test('the CLI: a split option outside a split sitting C refuses, and jobs-check 
   refused(['c', '--out', '/w/out', '--split-judge', '--jobs', '/j/1', '--speed-extra'], /--split-judge --jobs/);
   const root = fs.mkdtempSync(join(tmpdir(), 'split-cli-')), sitting = join(root, 'job-1', 'sitting');
   fs.mkdirSync(join(sitting, 'cua'), {recursive: true});
+  fs.writeFileSync(join(sitting, 'sitting.json'), JSON.stringify({steps: []}));
   fs.writeFileSync(join(root, 'job-1', 'hardware.json'), JSON.stringify({model: 'VirtualMac2,1'}));
   const out = join(root, 'jobs.json'), check = cli('jobs-check', '--jobs', sitting, '--out', out);
   assert.equal(check.status, 0, check.stderr);
@@ -166,6 +168,7 @@ test('jobs-check reads the committed base only when its digests hold: the real d
   const root = fs.mkdtempSync(join(tmpdir(), 'split-base-')), base = join(root, 'base'), job = join(root, 'job', 'sitting');
   fs.cpSync('docs/evidence/2026-11-24-m5-sitting-c-full', base, {recursive: true});
   fs.mkdirSync(job, {recursive: true});
+  fs.writeFileSync(join(job, 'sitting.json'), JSON.stringify({steps: []}));
   try {
     const ok = cli('jobs-check', '--jobs', job, '--base', base, '--base-run-id', '45468052791', '--out', join(root, 'jobs.json'));
     assert.equal(ok.status, 0, ok.stdout + ok.stderr);
@@ -190,14 +193,37 @@ test('a run job stops only on a runtime error, a driver failure, a missing recor
   assert.deepEqual(runJobStops(null).map(s => s.id), ['sitting.json'], 'no report at all is a stop');
 });
 
-test('the judge\'s save-sheet verdict is the worst the run jobs recorded, each named; asked and not run, no proof', () => {
+test('the judge\'s save-sheet verdict is the worst the run jobs recorded, each named; every run and lane asked must be there', () => {
   const jobs = [{dir: '/j/1', saveSheet: [{id: 'save-sheet-vendor-1', status: 'PASS'}, {id: 'save-sheet-cua-1', status: 'NO VERDICT', reason: 'no witness'}]},
-    {dir: '/j/2', saveSheet: [{id: 'save-sheet-cua-2', status: 'FAIL', reason: 'cua acted'}]}];
-  const v = saveSheetVerdict({jobs});
+    {dir: '/j/2', saveSheet: [{id: 'save-sheet-vendor-2', status: 'PASS'}, {id: 'save-sheet-cua-2', status: 'FAIL', reason: 'cua acted'}]}];
+  const v = saveSheetVerdict({jobs}, {runs: [1, 2]});
   assert.equal(v.verdict, 'FAIL');
-  assert.deepEqual(v.lines, ['/j/1 save-sheet-vendor-1: PASS', '/j/1 save-sheet-cua-1: NO VERDICT (no witness)', '/j/2 save-sheet-cua-2: FAIL (cua acted)']);
-  assert.equal(saveSheetVerdict({jobs: [{dir: '/j/1', saveSheet: [{id: 'save-sheet-cua-1', status: 'PASS'}]}]}).verdict, 'PASS');
-  assert.equal(saveSheetVerdict({jobs: [{dir: '/j/1', saveSheet: []}]}).verdict, 'NO VERDICT');
+  assert.deepEqual(v.lines, ['/j/1 save-sheet-vendor-1: PASS', '/j/1 save-sheet-cua-1: NO VERDICT (no witness)', '/j/2 save-sheet-vendor-2: PASS', '/j/2 save-sheet-cua-2: FAIL (cua acted)']);
+  const both = {dir: '/j/1', saveSheet: [{id: 'save-sheet-vendor-1', status: 'PASS'}, {id: 'save-sheet-cua-1', status: 'PASS'}]};
+  assert.equal(saveSheetVerdict({jobs: [both]}, {runs: [1]}).verdict, 'PASS');
+  // One cua step and no vendor step is no proof (the split verification's case).
+  const lone = saveSheetVerdict({jobs: [{dir: '/j/1', saveSheet: [{id: 'save-sheet-cua-1', status: 'PASS'}]}]}, {runs: [1]});
+  assert.equal(lone.verdict, 'NO VERDICT');
+  assert.ok(lone.lines.includes('save-sheet-vendor-1: not recorded by any run job'), lone.lines.join('\n'));
+  assert.equal(saveSheetVerdict({jobs: [{dir: '/j/1', saveSheet: []}]}, {runs: [1]}).verdict, 'NO VERDICT');
+  // A step that ended in a harness stop is a stop, never the cell's FAIL.
+  const stopped = saveSheetVerdict({jobs: [{dir: '/j/1', saveSheet: [{id: 'save-sheet-vendor-1', status: 'PASS'}, {id: 'save-sheet-cua-1', status: 'FAIL', reason: 'runtime error: no record at /o/save-sheet/cua/run-1/result.json (exit 1)'}]}]}, {runs: [1]});
+  assert.equal(stopped.verdict, 'NO VERDICT');
+  assert.ok(stopped.lines.includes('/j/1 save-sheet-cua-1: stopped, not judged (runtime error: no record at /o/save-sheet/cua/run-1/result.json (exit 1))'), stopped.lines.join('\n'));
+});
+
+// The split verification: the judge runs after a run job stopped (gated on !cancelled()), so a stopped job is refused by
+// name, and a save-sheet-only rerun whose run job 2 stopped is no proof, never a PASS.
+test('a stopped run job is refused by name, and a save-sheet-only rerun whose run job 2 stopped gives NO VERDICT', () => {
+  const stops = {steps: [{id: 'save-sheet-cua-2', status: 'FAIL', reason: 'runtime error: ended by SIGTERM'}, {id: 'save-sheet-vendor-2', status: 'SKIP', reason: 'needs save-sheet-cua-2'}]};
+  const sheetOnly = (dir, run, report) => job(dir, {run, cells: ['intervention-save-sheet'], planId: 'filtered', report});
+  const check = jobsCheck([sheetOnly('/j/1', 1), sheetOnly('/j/2', 2, stops)], {base: job('/b', {commit: 'h0'})});
+  assert.ok(check.refused.some(r => /^\/j\/2 stopped \(save-sheet-cua-2 FAIL: runtime error: ended by SIGTERM; save-sheet-vendor-2 SKIP: needs save-sheet-cua-2\): re-run it before judging$/.test(r)), check.refused.join('\n'));
+  assert.match(jobsCheck([job('/j/1', {report: null})]).refused[0], /^\/j\/1 stopped \(sitting\.json FAIL: the run job wrote no sitting report\)/);
+  const passed = {steps: [{id: 'save-sheet-vendor-1', status: 'PASS'}, {id: 'save-sheet-cua-1', status: 'PASS'}]};
+  const jobs = jobsCheck([sheetOnly('/j/1', 1, passed), sheetOnly('/j/2', 2, stops)]).jobs;
+  const v = saveSheetVerdict({jobs}, {runs: [1, 2]});
+  assert.equal(v.verdict, 'NO VERDICT', v.lines.join('\n'));
 });
 
 // H1: the base read from its committed directory, every result.json checked against digests.sha256 first.

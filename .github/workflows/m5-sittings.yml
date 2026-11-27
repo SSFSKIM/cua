@@ -315,8 +315,11 @@ jobs:
           echo "M5_JOBS=$(IFS=,; echo "${jobs[*]}")" >> "$GITHUB_ENV"
           if [ -n "$BASE_RUN_ID" ]; then
             # The committed base whose README names the run; jobs-check verifies its digests and README again.
-            readme=$(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md | head -1) || true
-            [ -n "$readme" ] && [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "no committed base names run $BASE_RUN_ID"; exit 1; }
+            # Exactly one committed base may name the run: two would leave the base the judge reads a guess.
+            mapfile -t readmes < <(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md || true)
+            [ "${#readmes[@]}" -eq 1 ] || { echo "${#readmes[@]} committed bases name run $BASE_RUN_ID (${readmes[*]:-none}): exactly one must"; exit 1; }
+            readme=${readmes[0]}
+            [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "$(dirname "$readme") has no digests.sha256"; exit 1; }
             echo "M5_BASE=$(dirname "$readme")" >> "$GITHUB_ENV"
           fi
       - name: Pin the O0 source for the TCC writer
@@ -339,7 +342,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          flags=(--split-judge --jobs "$M5_JOBS")
+          flags=(--split-judge --jobs "$M5_JOBS" --runs "$SPLIT_RUNS")
           [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE" --base-run-id "$BASE_RUN_ID")
           [ -n "$FILTER" ] && flags+=(--only "$FILTER")
           code=0

@@ -46,6 +46,12 @@ export function jobsCheck(jobs, {base = null, scenesOf} = {}) {
   const byRun = new Map();
   for (const j of read) for (const run of j.runs) byRun.set(run, [...(byRun.get(run) ?? []), j.dir]);
   for (const [run, dirs] of byRun) if (dirs.length > 1) refused.push(`run ${run} was run by more than one job (${dirs.join(', ')}): hand the judge one attempt of each`);
+  // The judge runs once the run jobs ended, whatever they did (!cancelled()): a job that stopped on its harness, or wrote
+  // no report, is refused by name until it is re-run (the split verification).
+  for (const [j, given] of read.map((j, i) => [j, jobs[i]])) {
+    const stops = runJobStops(given.report);
+    if (stops.length) refused.push(`${j.dir} stopped (${stops.map(s => `${s.id} ${s.status}${s.reason ? `: ${s.reason}` : ''}`).join('; ')}): re-run it before judging`);
+  }
   if (under) {
     for (const j of read.filter(x => x.planIds.includes('full'))) refused.push(`${j.dir} is a full run job over a full run beneath it: only filtered reruns combine with one`);
     for (const [label, key] of [['vendor version', 'vendor'], ['cua engine version and build', 'cua']]) {
@@ -80,12 +86,18 @@ export function runJobStops(report) {
   return report.steps.filter(s => s.status === 'SKIP' || (s.status === 'FAIL' && STOP.test(s.reason ?? ''))).map(s => ({id: s.id, status: s.status, reason: s.reason ?? null}));
 }
 
-// The judge's save-sheet verdict (I3): the worst the run jobs' save-sheet steps recorded, each named; asked for and not
-// run, no proof. `check`: jobsCheck's. -> {verdict, lines}.
-export function saveSheetVerdict(check) {
+// The judge's save-sheet verdict (I3): every run asked (`runs`, the dispatch's split_runs) on both lanes must have its
+// save-sheet step in some run job's report, else NO VERDICT naming it; a step that ended in a harness stop (a runtime
+// error, a skip) is a stop, not judged (NO VERDICT), never the cell's FAIL; else the worst the steps recorded, each
+// named. `check`: jobsCheck's. -> {verdict, lines}.
+export function saveSheetVerdict(check, {runs}) {
   const steps = (check?.jobs ?? []).flatMap(j => (j.saveSheet ?? []).map(s => ({...s, dir: j.dir})));
-  const verdict = !steps.length ? 'NO VERDICT' : ['FAIL', 'NO VERDICT', 'OWNER', 'PASS'].find(v => steps.some(s => s.status === v)) ?? 'FAIL';
-  return {verdict, lines: steps.length ? steps.map(s => `${s.dir} ${s.id}: ${s.status}${s.reason ? ` (${s.reason})` : ''}`) : ['no run job recorded the save-sheet cell']};
+  const stopped = s => s.status === 'SKIP' || (s.status === 'FAIL' && STOP.test(s.reason ?? ''));
+  const missing = runs.flatMap(run => ['vendor', 'cua'].map(engine => `save-sheet-${engine}-${run}`)).filter(id => !steps.some(s => s.id === id));
+  const statuses = [...steps.map(s => (stopped(s) ? 'NO VERDICT' : s.status)), ...missing.map(() => 'NO VERDICT')];
+  const verdict = ['FAIL', 'NO VERDICT', 'OWNER', 'PASS'].find(v => statuses.includes(v)) ?? 'NO VERDICT';
+  return {verdict, lines: [...steps.map(s => `${s.dir} ${s.id}: ${stopped(s) ? 'stopped, not judged' : s.status}${s.reason ? ` (${s.reason})` : ''}`),
+    ...missing.map(id => `${id}: not recorded by any run job`)]};
 }
 
 // H1: the base read from its committed directory (docs/evidence/…), judged only when every result.json under it is in

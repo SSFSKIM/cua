@@ -43,6 +43,8 @@ f00509ccc9dacaca6ec15957abf8b5c6147fcc1e30ab721c47bac62706dc0919  sitting/save-s
 
 The same list is in `digests.sha256`, which the split judge checks before it reads the base.
 
+The judge's `rejudge-base` step also needs the base's harness commit `bfa8cf486` reachable from its checkout: it judges these records with that commit's own judge, extracted with `git archive`. The commit is on `feat/117-m5`'s history; a squash merge that drops it makes `rejudge-base` fail closed, and nothing is judged.
+
 ## What the run showed
 
 See `sitting/summary.md` and `sitting/sitting.md`. The analysis and the rulings that follow from it are in

@@ -110,8 +110,10 @@ function splitOf(sitting, values) {
   }
   if (sitting !== 'c') usage('only sitting C is split into jobs');
   if (values['split-judge']) {
-    if (values['split-run'] !== undefined || values['speed-extra'] || !values.jobs || Boolean(values.base) !== Boolean(values['base-run-id'])) usage('--split-judge --jobs <dir>,… [--only <cell>,…] [--base <evidence dir> --base-run-id <id>]');
-    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), base: values.base ? resolve(values.base) : null,
+    if (values['split-run'] !== undefined || values['speed-extra'] || !values.jobs || !/^\d+(,\d+)*$/.test(values.runs ?? '') || Boolean(values.base) !== Boolean(values['base-run-id'])) {
+      usage('--split-judge --jobs <dir>,… --runs <n>,… [--only <cell>,…] [--base <evidence dir> --base-run-id <id>]');
+    }
+    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), runs: values.runs.split(',').map(Number), base: values.base ? resolve(values.base) : null,
       ...(values['base-run-id'] ? {baseRunId: values['base-run-id']} : {}), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
   }
   if (!/^\d+$/.test(values['split-run'])) usage('--split-run <run number>');
@@ -273,7 +275,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, 'base-run-id': {type: 'string'}, 'jobs-file': {type: 'string'}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
+    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, 'base-run-id': {type: 'string'}, 'jobs-file': {type: 'string'}, runs: {type: 'string'}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
     'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {
@@ -332,9 +334,9 @@ async function main(argv) {
       return check.refused.length ? 2 : 0;
     }
     case 'save-sheet-verdicts': {
-      // I3: the run jobs' save-sheet verdicts, as jobs-check read them from each job's sitting report.
-      if (!values['jobs-file']) usage('save-sheet-verdicts --jobs-file <jobs.json>');
-      const {verdict, lines} = saveSheetVerdict(JSON.parse(readFileSync(resolve(values['jobs-file']), 'utf8')));
+      // I3: the run jobs' save-sheet verdicts, as jobs-check read them from each job's sitting report, for every run asked.
+      if (!values['jobs-file'] || !/^\d+(,\d+)*$/.test(values.runs ?? '')) usage('save-sheet-verdicts --jobs-file <jobs.json> --runs <n>,…');
+      const {verdict, lines} = saveSheetVerdict(JSON.parse(readFileSync(resolve(values['jobs-file']), 'utf8')), {runs: values.runs.split(',').map(Number)});
       process.stdout.write(`${lines.join('\n')}\nVERDICT: ${verdict}\n`);
       return {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4}[verdict];
     }

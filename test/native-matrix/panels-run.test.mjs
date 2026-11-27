@@ -493,7 +493,7 @@ test('the panel cells executed against a stand-in TextEdit press, type, write an
 // (prepared: field emptied) left the name field non-empty. The prepare writes nothing: it focuses the field and selects
 // its whole value (an AX selection, no key, as both engines do), so the typing replaces it; the check, the token read
 // back whole, is unchanged.
-test('a Save sheet name field no value write empties: its name selected whole by the prepare, the token typed over it and read back', async () => {
+test('a Save sheet name field no value write empties: its name, selected whole at the opening, typed over and read back', async () => {
   const stand = standInTextEdit({saveName: 'Untitled', writes: false});
   const name = (await standInCases(stand)).find(r => r.case === 'typeText.name');
   assert.equal(name.prepare.ready, true, JSON.stringify(name.prepare));
@@ -501,9 +501,10 @@ test('a Save sheet name field no value write empties: its name selected whole by
   assert.equal(name.check.ok, true);
   // The typing case wrote nothing (the setValue case's own write is its own).
   assert.deepEqual(stand.sent.values, [[2, SAVE_PANEL_VALUE]]);
-  // The field focused and its name selected by the prepare (the click deselects what AppKit selected at the opening).
-  assert.deepEqual(stand.sent.selections, [[2, 'Untitled']]);
-  assert.deepEqual(name.prepare.prepared, ['field selected']);
+  // The name selected whole at the opening is the field's focus and the selection the typing replaces: nothing clicked,
+  // nothing selected (C2, m5 of the cell review).
+  assert.deepEqual(stand.sent.selections, []);
+  assert.ok(!(name.prepare.prepared ?? []).includes('field selected'), JSON.stringify(name.prepare.prepared));
 });
 // Review finding 5: the name's own text selected in another control, the click on the name field not taking. The trailer
 // shows that selection, so it proves nothing about the name field: the prepare's focus reading is the masked trailer (and
@@ -885,6 +886,9 @@ test('the Save sheet\'s name selected whole at the opening is its focus: no clic
   assert.deepEqual(name.check.outcome, {readBack: true, length: SAVE_PANEL_NAME.length, up: true});
   assert.ok(!stand.sent.clicks.includes(2), `the name field never clicked: ${JSON.stringify(stand.sent.clicks)}`);
   assert.deepEqual(name.prepare.focus, {index: 2, trailer: 'selection'});
+  // m5 of the cell review: the whole value already the selection, the prepare selects nothing more (a select_text on the
+  // Save sheet hosted never exercised).
+  assert.deepEqual(stand.sent.selections.filter(([i]) => i === 2), [], `no select_text on the name field: ${JSON.stringify(stand.sent.selections)}`);
   assert.deepEqual(focusVerdict(name.prepare.focus, null), {by: 'trailer', problem: null}, 'the vendor: the selection is the field\'s');
   assert.deepEqual(focusVerdict(name.prepare.focus, {focusedIndex: 2}), {by: 'observation', problem: null}, 'cua: its own focused index, as before');
   // Before the change the same sheet lost its field under the click: what the full run recorded.

@@ -382,7 +382,9 @@ if (index === null || focusReading(ax, index) === "unfocused") return {ready: fa
   seen: {...__seen, after: {field: index, focused: focusedIndexOf(ax), reading: index === null ? null : reading()}}};
 const trailer = reading();
 const value = plain(valueOfIndex(ax, index) ?? "");
-if (value !== "") { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
+// The whole value already the selection (the Save sheet's name at its opening), nothing more is selected (m5 of the cell
+// review: a select_text there is an action hosted never ran).
+if (value !== "" && !(trailer === "selection" && selectedTextOf(ax) === value)) { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
 const selected = selectedTextOf(ax);
 if (value !== "" && (index === null || selected !== value || plain(valueOfIndex(ax, index) ?? "") !== value)) return {ready: false, reason: "the field's value could not be selected whole: " + value.length + " characters, " + (selected === null ? "none" : selected.length) + " selected"};
 if (index === null) return {ready: false, reason: "the field is not in the text"};

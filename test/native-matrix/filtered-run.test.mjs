@@ -1,7 +1,8 @@
 // Ruling 1228 (E): a filtered rerun of the full matrix. A run job may take a list of cells (ids, or whole sections) and
 // run only the units that hold them (a frontmost target's sequence, a background pairing, a Unicode field, a probe):
-// every listed cell runs after what ran before it in the full run's unit, so none depends on a row that no longer runs
-// before it; the unit's other rows run and are not recorded. The result is a 'filtered' run, which never counts on its
+// every listed cell runs after the cases that ran before it in the full run's unit, so none depends on a case that no
+// longer runs before it; the unit's other cases run and are not recorded. The unit's speed and finding cells are skipped
+// (measures, never filtered). The result is a 'filtered' run, which never counts on its
 // own: the judge combines it with the full run's records of the same run number (./combine.mjs).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';

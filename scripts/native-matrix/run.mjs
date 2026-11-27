@@ -147,9 +147,12 @@ function narrowed(kind, {scene, user}) {
   }
 }
 // A filtered rerun of the full matrix (ruling 1228): the cells `ids` names (each a cell's id, or a section's name for all
-// of its cells; speed and finding are measures, never filtered) run in the units that hold them, each unit whole as the
-// full run runs it (a frontmost target's sequence, a background pairing, a Unicode field, a probe), so no listed cell
-// depends on a row that no longer runs before it; the unit's other rows run unrecorded (./steps.mjs push). Its id is
+// of its cells; speed and finding are measures, never filtered) run in the units that hold them, each unit's cases in the
+// full run's order (a frontmost target's sequence, a background pairing, a Unicode field, a probe), so no listed cell
+// depends on a case that no longer runs before it; the unit's other cases run unrecorded (./steps.mjs push). The unit is
+// not the full run's whole: its speed and finding cells (the scene's getAXState, getScreenshot and listApps samples, the
+// finding-elements reads that run before its cases there) are skipped, so a filtered case follows its scene's
+// activation without them. Its id is
 // 'filtered': it never counts on its own, only combined with the full run's records of its run number (./combine.mjs).
 const FILTER_SECTIONS = Object.freeze(['method', 'launch', 'concurrent', 'intervention', 'unicode']);
 export function filteredPlan(ids) {

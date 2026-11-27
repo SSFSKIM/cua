@@ -1,0 +1,10 @@
+{
+  "about": "The judge's own fixes (ruling 1239; scripts/hosted-sittings/split.mjs readJudgeFixes): a commit that changed how the judge reads the same records, the ruling that approved it, and the exact ids ('<section> <id>') whose verdict it may move when rejudge-base compares a base's rebuild with the judgment recorded at the base's judging commit. A difference whose id is listed is expected; any other difference refuses, as before. The list is computed on the committed records and approved by the design session before it is written here.",
+  "fixes": [
+    {
+      "commit": "ad285cedf",
+      "ruling": "1239",
+      "ids": []
+    }
+  ]
+}

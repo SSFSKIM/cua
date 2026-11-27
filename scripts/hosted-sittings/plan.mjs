@@ -112,9 +112,11 @@ const sittingCSchedule = ctx => sittingCOrder(ctx).runs;
 // reruns) per lane, judged, and key-route last. Each job dir is a run job's sitting output (vendor, cua, save-sheet).
 // `base` (H1): the base run's committed evidence directory (its records under sitting/, digests.sha256, README.md naming
 // `baseRunId`), checked by jobs-check before anything reads it, then re-judged (R1, ruling 1230) before the judging.
+// Ruling 1239: a layered base (`base` and `baseRunId` comma lists, the full run first) is combined from its layers' raw
+// records (`baseRecords`, ./split.mjs baseLayersOf), beneath the run jobs.
 // `only`: the filter the run jobs ran; the save-sheet verdict is asked only when they ran that cell.
 function splitJudge(ctx) {
-  const {jobs, runs, base = null, baseRunId = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
+  const {jobs, runs, base = null, baseRunId = null, baseRecords = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args], keyRoute = `${ctx.out}/key-route`;
   const gate = base ? ['jobs-check', 'rejudge-base'] : ['jobs-check'];
   return [
@@ -125,7 +127,7 @@ function splitJudge(ctx) {
     // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F). Its
     // verdict is NO VERDICT when a rerun could not be combined; the judges still run, each such problem their missing proof.
     {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'verdict', needs: gate,
-      argv: matrix('combine', ...(base ? [`${base}/sitting`] : []), ...jobs, '--out', combined)},
+      argv: matrix('combine', ...(base ? baseRecords ?? [`${base}/sitting`] : []), ...jobs, '--out', combined)},
     {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: gate,
       argv: matrix('summary', combined, '--out', `${ctx.out}/summary.md`)},
     {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: gate, argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},

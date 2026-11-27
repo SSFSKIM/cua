@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {createHash} from 'node:crypto';
-import {baseCheck, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, readJudgeFixes, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 import {parseCommand} from '../../scripts/native-matrix.mjs';
 
@@ -79,6 +79,48 @@ test('the judge job checks the jobs, combines their records (a full run beneath)
   assert.deepEqual([summary.argv.slice(3, 4), compare.argv.slice(3, 4)], [['/w/out/combined'], ['/w/out/combined']], 'the judges read the lanes and any speed-extra records combine wrote');
   assert.deepEqual(judge.counts, ['/w/out/combined/vendor', '/w/out/combined/cua', '/j/1/save-sheet', '/j/2/save-sheet', '/j/3/save-sheet']);
   assert.deepEqual(plan({judge: true, jobs: ['/j/1'], runs: [1], base: null}).steps[0].argv.slice(2), ['jobs-check', '--jobs', '/j/1', '--out', '/w/out/jobs.json']);
+});
+
+// Ruling 1239: the base of a later filtered run is rebuilt from the raw committed records with the current combine, in
+// layers: the full run's records, then each judged rerun's run-job records, then the new run jobs; never an already
+// combined result.
+test('a layered base: combine takes the full run\'s records, each rerun layer\'s run jobs, then the new jobs; jobs-check and rejudge-base take every layer', () => {
+  const layers = ['/b/sitting', '/s/jobs/m5-sitting-c-run-1-1/sitting', '/s/jobs/m5-sitting-c-run-2-1/sitting'];
+  const judge = plan({judge: true, jobs: ['/j/1', '/j/2'], runs: [1, 2], base: '/b,/s', baseRunId: '45468052791,46069842660', baseRecords: layers, only: ['electron/frontmost/click.point']});
+  const [check, rejudge, combine] = judge.steps;
+  assert.deepEqual(check.argv.slice(2), ['jobs-check', '--jobs', '/j/1,/j/2', '--base', '/b,/s', '--base-run-id', '45468052791,46069842660', '--out', '/w/out/jobs.json']);
+  assert.deepEqual(rejudge.argv.slice(2), ['rejudge-base', '--base', '/b,/s', '--out', '/w/out/base-rejudge.json']);
+  assert.deepEqual(combine.argv.slice(2), ['combine', ...layers, '/j/1', '/j/2', '--out', '/w/out/combined']);
+});
+
+test('baseLayersOf: the first directory\'s records under sitting/, each later one\'s run jobs\' records, in name order; a later one with no run jobs refuses', () => {
+  const listed = {'/s/jobs': ['m5-sitting-c-run-2-1', 'm5-sitting-c-run-1-1'], '/t/jobs': []};
+  const list = dir => listed[dir] ?? null;
+  assert.deepEqual(baseLayersOf(['/b'], {list}), [{dir: '/b', records: ['/b/sitting']}]);
+  assert.deepEqual(baseLayersOf(['/b', '/s'], {list}), [{dir: '/b', records: ['/b/sitting']}, {dir: '/s', records: ['/s/jobs/m5-sitting-c-run-1-1/sitting', '/s/jobs/m5-sitting-c-run-2-1/sitting']}]);
+  for (const later of ['/t', '/u']) assert.throws(() => baseLayersOf(['/b', later], {list}), /holds no run jobs/);
+});
+
+// Ruling 1239: one fix-declaration (expected/judge-fixes.json): the commit that changed how the judge reads the same
+// records, its ruling, and the exact ids it may move. Its one rule: the differences it explains are those it lists.
+test('a judge\'s fix explains exactly the cells it lists, citing its ruling; anything outside the list refuses', () => {
+  const CONTROL = 'method textedit/frontmost/click.control';
+  const fix = {commit: 'ad285cedf', ruling: '1239', ids: [CONTROL]};
+  const moved = baseCells({[CONTROL]: {verdict: 'better'}});
+  const r = baseRejudge(baseCells({}), moved, {fixes: [fix]});
+  assert.deepEqual(r.refused, []);
+  assert.deepEqual(r.differences.map(d => [d.cell, d.was, d.now, d.by.kind, d.by.declaration, d.by.ruling]), [[CONTROL, 'equal', 'better', 'fix', 'ad285cedf', '1239']]);
+  assert.match(renderBaseRejudge({...r, at: 'c0b2ce8f1'}).join('\n'), /^- method textedit\/frontmost\/click\.control: equal, now better \(expected: the judge's fix ad285cedf, ruling 1239\)$/m);
+  // Outside the list, or the list empty: refused. A fix that cites no ruling or names no commit explains nothing.
+  assert.equal(baseRejudge(baseCells({}), baseCells({[CONTROL]: {verdict: 'better'}, [DRAG]: {verdict: 'equal'}}), {fixes: [fix]}).refused.length, 1);
+  assert.equal(baseRejudge(baseCells({}), moved, {fixes: [{...fix, ids: []}]}).refused.length, 1);
+  assert.equal(baseRejudge(baseCells({}), moved, {fixes: [{...fix, ruling: undefined}]}).refused.length, 1);
+  assert.equal(baseRejudge(baseCells({}), moved, {fixes: [{...fix, commit: ''}]}).refused.length, 1);
+});
+
+test('the committed fix-declaration names ad285cedf under ruling 1239, its list as design approves it', () => {
+  const [fix, ...rest] = readJudgeFixes();
+  assert.deepEqual([fix.commit, fix.ruling, Array.isArray(fix.ids), rest], ['ad285cedf', '1239', true, []]);
 });
 
 // A job's record as the judge reads it: its results (each with the runner, commit and lanes) and its hardware.
@@ -150,9 +192,11 @@ test('the workflow\'s split form: a run job per run number, each attempt its own
   assert.equal((judge.match(/run-id:/g) ?? []).length, 1);
   assert.match(judge, /- if: inputs\.jobs_run_id != ''\n\s+uses: actions\/download-artifact@[0-9a-f]{40} # v8\.0\.1\n\s+with:\n\s+pattern: m5-sitting-c-run-\*\n\s+path: \$\{\{ runner\.temp \}\}\/m5-jobs\n\s+run-id: \$\{\{ inputs\.jobs_run_id \}\}\n\s+github-token: \$\{\{ github\.token \}\}/);
   assert.match(judge, /- if: inputs\.jobs_run_id == ''\n\s+uses: actions\/download-artifact@[0-9a-f]{40} # v8\.0\.1\n\s+with:\n\s+pattern: m5-sitting-c-run-\*\n\s+path: \$\{\{ runner\.temp \}\}\/m5-jobs\n/);
-  assert.match(judge, /grep -l "actions\/runs\/\$BASE_RUN_ID\)" docs\/evidence\/\*\/README\.md/);
-  assert.match(judge, /\[ "\$\{#readmes\[@\]\}" -eq 1 \] \|\| \{ echo .*exactly one must"; exit 1; \}/, 'two committed bases naming the run refuse');
-  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$M5_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+  // Ruling 1239: base_run_id names the layers in order, the full run first; each is the one committed directory naming it.
+  assert.match(judge, /for id in \$\{ids\/\/,\/ \}; do\n\s+readmes=\(\)\n\s+while IFS= read -r f; do readmes\+=\("\$f"\); done < <\(grep -l "actions\/runs\/\$id\)" docs\/evidence\/\*\/README\.md \|\| true\)/);
+  assert.match(judge, /\[ "\$\{#readmes\[@\]\}" -eq 1 \] \|\| \{ echo .*exactly one must"; exit 1; \}/, 'two committed bases naming a run refuse');
+  assert.match(judge, /echo "M5_BASE=\$\(IFS=,; echo "\$\{bases\[\*\]\}"\)" >> "\$GITHUB_ENV"\n\s+echo "M5_BASE_RUN_ID=\$ids" >> "\$GITHUB_ENV"/);
+  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$M5_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$M5_BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
   assert.match(judge, /tee "\$RUNNER_TEMP\/m5-out\/sitting\/attempts\.md"/, 'every attempt listed in sitting.md too');
   assert.match(job('split_refused'), /inputs\.form == 'split' && inputs\.sitting != 'c'[\s\S]*exit 2/);
   assert.match(judge, /name: m5-sitting-c-judge-\$\{\{ github\.run_attempt \}\}/);
@@ -198,7 +242,7 @@ test('the workflow\'s macOS jobs use nothing bash 3.2 lacks: no mapfile, readarr
 test('the judge\'s base lookup under the runner\'s bash: one README names the base, none or two refuse', () => {
   const step = /\n {10}if \[ -n "\$BASE_RUN_ID" \]; then\n[\s\S]*?\n {10}fi\n/.exec(WORKFLOW())?.[0];
   assert.ok(step, 'the base lookup');
-  const lookup = readmes => {
+  const lookup = (readmes, baseRunId = '45468052791') => {
     const root = fs.mkdtempSync(join(tmpdir(), 'base-lookup-'));
     try {
       readmes.forEach((runId, i) => {
@@ -208,12 +252,17 @@ test('the judge\'s base lookup under the runner\'s bash: one README names the ba
         fs.writeFileSync(join(dir, 'digests.sha256'), '');
       });
       const env = join(root, 'env');
-      const r = spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${step}`], {cwd: root, encoding: 'utf8', env: {PATH: process.env.PATH, BASE_RUN_ID: '45468052791', GITHUB_ENV: env}});
+      const r = spawnSync('/bin/bash', ['-c', `set -euo pipefail\n${step}`], {cwd: root, encoding: 'utf8', env: {PATH: process.env.PATH, BASE_RUN_ID: baseRunId, GITHUB_ENV: env}});
       return {status: r.status, out: r.stdout + r.stderr, env: fs.existsSync(env) ? fs.readFileSync(env, 'utf8') : ''};
     } finally { fs.rmSync(root, {recursive: true, force: true}); }
   };
   const one = lookup(['45468052791', '1']);
-  assert.deepEqual([one.status, one.env], [0, 'M5_BASE=docs/evidence/base-0\n'], one.out);
+  assert.deepEqual([one.status, one.env], [0, 'M5_BASE=docs/evidence/base-0\nM5_BASE_RUN_ID=45468052791\n'], one.out);
+  // Ruling 1239: the layers in the order given, each the one README naming its run; spaces stripped.
+  const layered = lookup(['46069842660', '45468052791'], '45468052791, 46069842660');
+  assert.deepEqual([layered.status, layered.env], [0, 'M5_BASE=docs/evidence/base-1,docs/evidence/base-0\nM5_BASE_RUN_ID=45468052791,46069842660\n'], layered.out);
+  assert.match(lookup(['45468052791'], '45468052791,46069842660').out, /^0 committed bases name run 46069842660 \(none\): exactly one must$/m);
+  assert.equal(lookup(['45468052791'], '45468052791;1').status, 2);
   const none = lookup(['1']);
   assert.equal(none.status, 1, none.out);
   assert.match(none.out, /^0 committed bases name run 45468052791 \(none\): exactly one must$/m);
@@ -317,6 +366,71 @@ test('jobs-check reads the committed base only when its digests hold: the real d
     const tampered = cli('jobs-check', '--jobs', job, '--base', base, '--base-run-id', '45468052791', '--out', join(root, 'jobs.json'));
     assert.equal(tampered.status, 2);
     assert.match(JSON.parse(fs.readFileSync(join(root, 'jobs.json'), 'utf8')).refused[0], /^the base's sitting\/cua\/run-2\/result\.json does not match digests\.sha256/);
+  } finally { fs.rmSync(root, {recursive: true, force: true}); }
+});
+
+// Ruling 1239 against the committed records: the two layers (45468052791's full run, 46052931439's run jobs, judged by
+// 46069842660) checked by their digests and READMEs, each layer's jobs against the full run's engines.
+const FULL_BASE = 'docs/evidence/2026-11-24-m5-sitting-c-full', SPLIT_BASE = 'docs/evidence/2026-11-27-m5-sitting-c-split';
+test('jobs-check over a layered base: each layer by its own digests and README, the rerun layer\'s jobs against the full run\'s engines', () => {
+  const cli = (...args) => spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', ...args], {encoding: 'utf8'});
+  const root = fs.mkdtempSync(join(tmpdir(), 'split-layers-')), job = join(root, 'job', 'sitting');
+  fs.mkdirSync(job, {recursive: true});
+  fs.writeFileSync(join(job, 'sitting.json'), JSON.stringify({steps: []}));
+  try {
+    const out = join(root, 'jobs.json');
+    const ok = cli('jobs-check', '--jobs', job, '--base', `${FULL_BASE},${SPLIT_BASE}`, '--base-run-id', '45468052791,46069842660', '--out', out);
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    const check = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.deepEqual(check.layers.map(l => [l.runId, l.jobs.map(j => j.runs.join(','))]), [['46069842660', ['1', '2', '3']]]);
+    assert.deepEqual(check.refused, []);
+    // The ids name the layers in order: swapped, each README names another run.
+    assert.equal(cli('jobs-check', '--jobs', job, '--base', `${FULL_BASE},${SPLIT_BASE}`, '--base-run-id', '46069842660,45468052791', '--out', out).status, 2);
+    // One id for two layers is a usage error.
+    assert.equal(cli('jobs-check', '--jobs', job, '--base', `${FULL_BASE},${SPLIT_BASE}`, '--base-run-id', '45468052791', '--out', out).status, 2);
+  } finally { fs.rmSync(root, {recursive: true, force: true}); }
+});
+
+// The CLI's judge plan over the committed layers: the rerun layer's run jobs found under it, in name order.
+test('plan c --split-judge over a layered base: combine reads the full run\'s records, then the rerun layer\'s run jobs, then the new jobs', async () => {
+  const {RUNNER_RECORD_IN_HOME} = await import('../../scripts/hosted-sittings/runner.mjs');
+  const home = fs.mkdtempSync(join(tmpdir(), 'split-plan-home-'));
+  fs.mkdirSync(join(home, RUNNER_RECORD_IN_HOME, '..'), {recursive: true});
+  fs.writeFileSync(join(home, RUNNER_RECORD_IN_HOME), JSON.stringify({install: {home: '/H'}, engine: {bundle: '/E.app'}}));
+  const cli = (...args) => spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', 'plan', 'c', '--out', join(home, 'out'), '--split-judge', '--jobs', '/j/1', '--runs', '1', '--only', 'x', ...args], {encoding: 'utf8', env: {...process.env, HOME: home}});
+  try {
+    const r = cli('--base', `${FULL_BASE},${SPLIT_BASE}`, '--base-run-id', '45468052791,46069842660');
+    assert.equal(r.status, 0, r.stderr);
+    const steps = JSON.parse(r.stdout).steps, combine = steps.find(st => st.id === 'combine').argv;
+    const relative = d => (d.includes('docs/evidence/') ? d.slice(d.indexOf('docs/evidence/')) : d);
+    assert.deepEqual(combine.slice(3, -2).map(relative), [`${FULL_BASE}/sitting`, ...[1, 2, 3].map(n => `${SPLIT_BASE}/jobs/m5-sitting-c-run-${n}-1/sitting`), '/j/1']);
+    assert.match(flag(steps.find(st => st.id === 'jobs-check').argv, '--base-run-id'), /^45468052791,46069842660$/);
+    // One id for two layers, or a rerun layer with no run jobs, is refused before anything runs.
+    assert.equal(cli('--base', `${FULL_BASE},${SPLIT_BASE}`, '--base-run-id', '45468052791').status, 2);
+    const r2 = cli('--base', `${FULL_BASE},${FULL_BASE}`, '--base-run-id', '45468052791,45468052791');
+    assert.equal(r2.status, 2);
+    assert.match(r2.stderr, /holds no run jobs/);
+  } finally { fs.rmSync(home, {recursive: true, force: true}); }
+});
+
+// The two-layer rebuild against the judgment recorded at c0b2ce8f1 (that commit's own combine and judge over the same raw
+// records), cell by cell; with the fix list empty, the cells ad285cedf moved refuse (ruling 1239: design approves the
+// list). Needs c0b2ce8f1 in the checkout's history.
+const HAS_JUDGING_COMMIT = spawnSync('git', ['cat-file', '-e', 'c0b2ce8f1b01a2fda19f3d384f40557feb96fa7b^{commit}']).status === 0;
+test('rejudge-base over the committed layers: the rebuild\'s differences from the judgment recorded at c0b2ce8f1', {skip: HAS_JUDGING_COMMIT ? false : 'c0b2ce8f1 is not in this checkout'}, () => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'split-rejudge-')), out = join(root, 'base-rejudge.json');
+  try {
+    const r = spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', 'rejudge-base', '--base', `${FULL_BASE},${SPLIT_BASE}`, '--out', out], {encoding: 'utf8'});
+    const report = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(report.at, 'c0b2ce8f1b01a2fda19f3d384f40557feb96fa7b');
+    const fixed = new Set(readJudgeFixes()[0].ids);
+    assert.deepEqual(report.differences.map(d => [d.cell, d.was, d.now, d.by?.kind ?? (fixed.has(d.cell) ? 'fix' : null)]).sort((a, b) => a[0].localeCompare(b[0])), [
+      ['method openPanel/background/click.cancel@finder', 'no-verdict', 'equal', fixed.has('method openPanel/background/click.cancel@finder') ? 'fix' : null],
+      ['method openPanel/background/getAXState.panel@finder', 'no-verdict', 'equal', fixed.has('method openPanel/background/getAXState.panel@finder') ? 'fix' : null],
+      ['speed textedit/method.panel.typeText.search', 'no-verdict', 'not judged', 'not judged'],
+      ['speed textedit/method.typeText.replace', 'missed-remeasured', 'accepted-miss', 'accepted miss'],
+    ]);
+    assert.equal(r.status, report.refused.length ? 2 : 0, r.stdout + r.stderr);
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 

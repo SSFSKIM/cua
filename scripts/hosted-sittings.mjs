@@ -34,9 +34,14 @@
 //       A judge-only dispatch's source run (ruling 1234): the API's run, jobs and artifacts (run.json, jobs.json and
 //       artifacts.json in <dir>, gh api's pages) and the run jobs' records against the pinned run, attempt and drawing
 //       commit and this dispatch's inputs; exit 2 when anything differs, 0 otherwise; `run` lists it in sitting.md.
-//   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>] --out <file>
+//   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>,… --base-run-id <id>,…] --out <file>
 //       The run jobs' records, each with the hardware.json beside its dir: exit 2 when they are not one harness commit
 //       and one pair of engine versions (or two jobs ran one run), 0 otherwise; `run` lists the jobs in sitting.md.
+//       A layered base (ruling 1239): the full run's evidence directory, then each judged rerun's, each with its run id;
+//       every layer is checked by its digests and README, each rerun layer's jobs against the full run's engines.
+//   node scripts/hosted-sittings.mjs rejudge-base --base <dir>,… --out <file>
+//       The base re-judged (rulings 1230, 1234, 1239): its records judged by this commit's judge against the judge of the
+//       base's judging commit; a layered base is combined from its layers' raw records by each commit's own combine.
 //   node scripts/hosted-sittings.mjs plan <a..f> --out <dir> [--pilot] [--flipped]     the steps, as JSON; runs nothing
 //   node scripts/hosted-sittings.mjs counts <dir>...                                   per-cell counts of result dirs
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
@@ -64,7 +69,7 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {baseCheck, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
 import {filteredPlan, scenesOf} from './native-matrix/run.mjs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -119,11 +124,23 @@ function splitOf(sitting, values) {
     if (values['split-run'] !== undefined || values['speed-extra'] || !values.jobs || !/^\d+(,\d+)*$/.test(values.runs ?? '') || Boolean(values.base) !== Boolean(values['base-run-id'])) {
       usage('--split-judge --jobs <dir>,… --runs <n>,… [--only <cell>,…] [--base <evidence dir> --base-run-id <id>]');
     }
-    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), runs: values.runs.split(',').map(Number), base: values.base ? resolve(values.base) : null,
-      ...(values['base-run-id'] ? {baseRunId: values['base-run-id']} : {}), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
+    const bases = basesOf(values);
+    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), runs: values.runs.split(',').map(Number), base: bases ? bases.dirs.join(',') : null,
+      ...(bases ? {baseRunId: bases.ids.join(','), ...(bases.dirs.length > 1 ? {baseRecords: bases.layers.flatMap(l => l.records)} : {})} : {}),
+      ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
   }
   if (!/^\d+$/.test(values['split-run'])) usage('--split-run <run number>');
   return {split: {run: Number(values['split-run']), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {}), ...(values['speed-extra'] ? {speedExtra: true} : {})}};
+}
+// The base's layers (ruling 1239, ./hosted-sittings/split.mjs baseLayersOf): --base <dir>,… and --base-run-id <id>,…, one id
+// a directory, the full run first. -> {dirs, ids, layers} | null without --base.
+function basesOf(values) {
+  if (!values.base) return null;
+  const dirs = values.base.split(',').filter(Boolean).map(d => resolve(d)), ids = String(values['base-run-id'] ?? '').split(',').filter(Boolean);
+  if (dirs.length !== ids.length || !ids.every(id => /^\d+$/.test(id))) usage('--base <dir>,… takes one --base-run-id <id>,… a directory, in the same order');
+  let layers;
+  try { layers = baseLayersOf(dirs, {list: dir => (existsSync(dir) ? readdirSync(dir) : null)}); } catch (error) { usage(error.message); }
+  return {dirs, ids, layers};
 }
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
 // Every record under it (its matrix lanes, save-sheet and speed-extra cells) and its sitting report (sitting.json: the
@@ -149,11 +166,35 @@ function baseDirCheck(root, runId) {
 // tree of that commit, extracted from this checkout's history), cell by cell. -> exit 0, or 2 when a cell reads
 // differently that no declaration of this commit explains (ruling 1234, ./hosted-sittings/split.mjs baseRejudge), or the
 // base names no one commit.
-async function rejudgeBase(root, outFile) {
-  const sitting = join(root, 'sitting'), {results, problems} = readResults([sitting]);
-  const commits = [...new Set(results.filter(r => r.result.cell === 'matrix').map(r => r.result.meta?.commit).filter(Boolean))];
+// Ruling 1239: a layered base (the full run's directory, then each judged rerun's) is rebuilt from its layers' raw
+// records, on each side by that side's own combine (`native-matrix.mjs combine` of the base's judging commit, and of this
+// one), never read from the combined result a judge left; its judging commit is its last layer's (that judge-only
+// dispatch's source-run.json `judging`, else the one commit its run jobs' records name).
+const matrixCommits = results => [...new Set(results.filter(r => r.result.cell === 'matrix').map(r => r.result.meta?.commit).filter(Boolean))];
+function judgingCommitOf(layer) {
+  const file = join(layer.dir, 'sitting', 'source-run.json');
+  if (existsSync(file)) { const judging = JSON.parse(readFileSync(file, 'utf8')).judging; if (typeof judging === 'string' && judging) return [judging]; }
+  return matrixCommits(readResults(layer.records).results);
+}
+// The cells of `root`'s judge over the base: its records as they are, or for a layered base the combine of `root` over
+// the layers' records first, its problems the judge's missing proof as the matrix CLI's judges take them. -> [cell].
+async function judgedBase(root, records, layered) {
+  const {judge: judgeOf, readResults: readOf} = await import(pathToFileURL(join(root, 'scripts', 'native-matrix', 'summary.mjs')).href);
+  if (!layered) { const read = readOf(records); return judgeOf(read.results, read.problems).cells; }
+  const out = mkdtempSync(join(tmpdir(), 'cua-base-combined-'));
+  try {
+    const combined = spawnSync(process.execPath, ['scripts/native-matrix.mjs', 'combine', ...records, '--out', out], {cwd: root, encoding: 'utf8'});
+    if (![0, 4].includes(combined.status)) throw new Error(`combine at ${root} failed (exit ${combined.status}): ${(combined.stderr || combined.stdout).trim().slice(-300)}`);
+    const read = readOf([out]), account = JSON.parse(readFileSync(join(out, 'combined.json'), 'utf8'));
+    return judgeOf(read.results, [...read.problems, ...(account.problems ?? []).map(p => `combine: ${p}`)]).cells;
+  } finally { rmSync(out, {recursive: true, force: true}); }
+}
+async function rejudgeBase(roots, outFile) {
+  const layers = baseLayersOf(roots, {list: dir => (existsSync(dir) ? readdirSync(dir) : null)}), layered = layers.length > 1, records = layers.flatMap(l => l.records);
+  const commits = layered ? judgingCommitOf(layers.at(-1)) : matrixCommits(readResults(records).results);
+  const names = layers.map(l => l.dir);
   let report;
-  if (commits.length !== 1) report = {at: null, differences: [], refused: [`the base's matrix records name ${commits.length ? `more than one commit (${commits.join(', ')})` : 'no commit'}: it has no one judge of its own`]};
+  if (commits.length !== 1) report = {at: null, layers: names, differences: [], refused: [`the base's ${layered ? 'last layer names' : 'matrix records name'} ${commits.length ? `more than one commit (${commits.join(', ')})` : 'no commit'}: it has no one judge of its own`]};
   else {
     const tree = mkdtempSync(join(tmpdir(), 'cua-base-judge-')), tar = join(tree, 'tree.tar');
     try {
@@ -161,10 +202,9 @@ async function rejudgeBase(root, outFile) {
       if (archived.status !== 0) throw new Error(`git archive ${commits[0]} failed: ${archived.stderr.trim()}`);
       const extracted = spawnSync('tar', ['-xf', tar, '-C', tree], {encoding: 'utf8'});
       if (extracted.status !== 0) throw new Error(`tar failed: ${extracted.stderr.trim()}`);
+      rmSync(tar);
       if (existsSync(join(REPO, 'node_modules'))) symlinkSync(join(REPO, 'node_modules'), join(tree, 'node_modules'));
-      const old = await import(pathToFileURL(join(tree, 'scripts', 'native-matrix', 'summary.mjs')).href);
-      const read = old.readResults([sitting]);
-      report = {at: commits[0], ...baseRejudge(old.judge(read.results, read.problems).cells, judge(results, problems).cells)};
+      report = {at: commits[0], ...(layered ? {layers: names} : {}), ...baseRejudge(await judgedBase(tree, records, layered), await judgedBase(REPO, records, layered))};
     } finally { rmSync(tree, {recursive: true, force: true}); }
   }
   writeJson(outFile, report);
@@ -352,11 +392,18 @@ async function main(argv) {
     case 'jobs-check': {
       // Ruling 1228: the run jobs' records, refused when they are not one harness and one pair of engines (exit 2). The
       // base (H1) is its committed evidence directory, read only once its digests and README check.
-      if (!values.jobs || !values.out || Boolean(values.base) !== Boolean(values['base-run-id'])) usage('jobs-check --jobs <dir>,… [--base <evidence dir> --base-run-id <id>] --out <file>');
-      const base = values.base ? resolve(values.base) : null, unfit = base ? baseDirCheck(base, values['base-run-id']) : [];
+      if (!values.jobs || !values.out || Boolean(values.base) !== Boolean(values['base-run-id'])) usage('jobs-check --jobs <dir>,… [--base <evidence dir>,… --base-run-id <id>,…] --out <file>');
+      const bases = basesOf(values), unfit = bases ? bases.dirs.flatMap((dir, i) => baseDirCheck(dir, bases.ids[i])) : [];
       const jobs = values.jobs.split(',').filter(Boolean).map(d => jobDir(resolve(d)));
-      const check = unfit.length ? {refused: unfit, jobs: [], base: null} : jobsCheck(jobs, {base: base ? jobDir(join(base, 'sitting')) : null, scenesOf});
-      writeJson(resolve(values.out), {...check, ...(base ? {baseDir: base, baseRunId: values['base-run-id']} : {})});
+      const full = bases ? jobDir(bases.layers[0].records[0]) : null;
+      let check = unfit.length ? {refused: unfit, jobs: [], base: null} : jobsCheck(jobs, {base: full, scenesOf});
+      // Ruling 1239: each rerun layer's run jobs, checked against the full run beneath them as their own judge checked them.
+      if (!unfit.length && bases?.layers.length > 1) {
+        const layers = bases.layers.slice(1).map((layer, i) => ({dir: layer.dir, runId: bases.ids[i + 1], ...jobsCheck(layer.records.map(jobDir), {base: full, scenesOf})}));
+        check = {...check, refused: [...check.refused, ...layers.flatMap(l => l.refused.map(why => `the base layer ${l.dir} (run ${l.runId}): ${why}`))],
+          layers: layers.map(({dir, runId, jobs: layerJobs}) => ({dir, runId, jobs: layerJobs}))};
+      }
+      writeJson(resolve(values.out), {...check, ...(bases ? {baseDir: bases.dirs.join(','), baseRunId: bases.ids.join(',')} : {})});
       process.stdout.write(json(check));
       return check.refused.length ? 2 : 0;
     }
@@ -368,8 +415,8 @@ async function main(argv) {
       return {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4}[verdict];
     }
     case 'rejudge-base': {
-      if (!values.base || !values.out) usage('rejudge-base --base <evidence dir> --out <file>');
-      return rejudgeBase(resolve(values.base), resolve(values.out));
+      if (!values.base || !values.out) usage('rejudge-base --base <evidence dir>,… --out <file>');
+      return rejudgeBase(values.base.split(',').filter(Boolean).map(d => resolve(d)), resolve(values.out));
     }
     case 'key-route': {
       // Refused off a GitHub-hosted runner inside, before anything is read, built, written or opened.

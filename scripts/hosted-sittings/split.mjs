@@ -6,6 +6,7 @@
 // variance shows. A job is re-run only after a recorded infrastructure or harness stop, never for its verdict: every
 // attempt the judge is handed is listed.
 
+import * as fs from 'node:fs';
 import {readAcceptedMisses, readDepartures} from '../native-matrix/departures.mjs';
 import {NOT_JUDGED_RULES, notJudgedRuleOf} from '../native-matrix/not-judged.mjs';
 
@@ -73,7 +74,7 @@ export function renderJobs(check) {
   const hardware = h => (h ? Object.entries(h).map(([k, v]) => `${k} ${v}`).join(', ') : 'unread');
   const sheet = j => (j.saveSheet?.length ? j.saveSheet.map(s => `${s.id} ${s.status}`).join(', ') : '-');
   return ['## The run jobs (ruling 1228)', '', '| job | runs | run id | attempt | image | VM | hardware | scenes | save sheet |', '|---|---|---|---|---|---|---|---|---|',
-    ...[...(check.base ? [{...check.base, dir: `${check.base.dir} (beneath)`}] : []), ...check.jobs].map(j => `| ${j.dir} | ${j.runs.join(', ')} | ${j.runId} | ${j.attempt} | ${j.image ?? '-'} | ${j.vm ?? '-'} | ${hardware(j.hardware)} | ${j.scenes?.join(', ') || '-'} | ${sheet(j)} |`),
+    ...[...(check.base ? [{...check.base, dir: `${check.base.dir} (beneath)`}] : []), ...(check.layers ?? []).flatMap(l => l.jobs.map(j => ({...j, dir: `${j.dir} (beneath, layer ${l.runId})`}))), ...check.jobs].map(j => `| ${j.dir} | ${j.runs.join(', ')} | ${j.runId} | ${j.attempt} | ${j.image ?? '-'} | ${j.vm ?? '-'} | ${hardware(j.hardware)} | ${j.scenes?.join(', ') || '-'} | ${sheet(j)} |`),
     '', ...(check.commits ? [`Harness commits: the jobs ${check.commits.jobs.join(', ') || 'none recorded'}${check.base ? `; the base ${check.commits.base?.join(', ') || 'none recorded'}` : ''}.`, ''] : []),
     ...check.jobs.flatMap(j => (j.saveSheet ?? []).filter(s => s.status !== 'PASS').map(s => `- ${j.dir} ${s.id}: ${s.status}${s.reason ? ` (${s.reason})` : ''}`)),
     ...(check.refused.length ? [`Refused to judge: ${check.refused.join('; ')}.`, ''] : [])];
@@ -121,6 +122,29 @@ export function baseCheck(io, {runId}) {
   return out;
 }
 
+// Ruling 1239: the base of a later filtered run, in layers, rebuilt from raw committed records by the current combine
+// and never read from an already combined result: the full run's committed evidence directory first (its records under
+// sitting/), then each judged rerun's over it in order (its run jobs' records, jobs/<artifact>/sitting, in name order).
+// `list(dir)`: the names in a directory, null when it is not one. -> [{dir, records: [dir]}].
+export function baseLayersOf(dirs, {list}) {
+  return dirs.map((dir, i) => {
+    if (i === 0) return {dir, records: [`${dir}/sitting`]};
+    const names = list(`${dir}/jobs`);
+    if (!names?.length) throw new Error(`${dir} holds no run jobs (jobs/<artifact>/sitting): a rerun's layer is its run jobs' records`);
+    return {dir, records: [...names].sort().map(name => `${dir}/jobs/${name}/sitting`)};
+  });
+}
+
+// Ruling 1239: a fix of the judge's own (expected/judge-fixes.json, `{about, fixes: [{commit, ruling, ids}]}`): the commit
+// that changed how the judge reads the same records, the ruling that approved it and the exact ids (`<section> <id>`)
+// it may move. rejudge-base expects a difference it lists; anything outside the list refuses as before.
+export const JUDGE_FIXES_FILE = new URL('../native-matrix/expected/judge-fixes.json', import.meta.url);
+export function readJudgeFixes(file = JUDGE_FIXES_FILE) {
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!Array.isArray(json?.fixes)) throw new Error(`${file.pathname ?? file}: no fixes list`);
+  return json.fixes;
+}
+
 // R1 (ruling 1230): the base's stored rows judged by the new judge against its own judgment at its commit (`was`: the
 // judge of that commit on the same records), cell by cell. A difference is expected only where this commit's own
 // declarations explain it (ruling 1234), never by a list kept beside them:
@@ -128,13 +152,14 @@ export function baseCheck(io, {runId}) {
 //   declared;
 // - a not-judged rule with a ticket (../native-matrix/not-judged.mjs) whose row leaves the judgment (any verdict, now not
 //   judged) and which the rule matches;
-// - an accepted miss (departures.json's acceptedMisses, ruling 1240) whose speed row was a miss and now reads accepted.
+// - an accepted miss (departures.json's acceptedMisses, ruling 1240) whose speed row was a miss and now reads accepted;
+// - a fix of the judge's own (readJudgeFixes, ruling 1239) that lists the cell.
 // The declaration counts only when it cites its ruling (`ruling`), whatever the base's commit declared: one with no
 // ruling explains nothing, a ticket notwithstanding. Any other difference refuses the judging, naming each cell. ->
 // {differences: [{cell, was, now, expected, by?: {kind, declaration, ticket, ruling}}], refused: [why]}.
 const rowKey = c => `${c.section} ${c.id}`;
 const cites = d => typeof d?.ruling === 'string' && /^\d+$/.test(d.ruling);
-function explanationOf({cell, was, now}, {departures, rules, acceptedMisses}) {
+function explanationOf({cell, was, now}, {departures, rules, acceptedMisses, fixes}) {
   const section = cell.slice(0, cell.indexOf(' ')), id = cell.slice(cell.indexOf(' ') + 1);
   const departure = departures.find(e => rowKey(e) === cell);
   if (departure && was !== 'not judged' && now === 'declared' && cites(departure)) {
@@ -148,20 +173,22 @@ function explanationOf({cell, was, now}, {departures, rules, acceptedMisses}) {
   if (accepted && ['missed', 'missed-remeasured'].includes(was) && now === 'accepted-miss' && cites(accepted)) {
     return {kind: 'accepted miss', declaration: null, ticket: accepted.ticket ?? null, ruling: accepted.ruling};
   }
-  return null;
+  const fix = fixes.find(f => cites(f) && typeof f.commit === 'string' && f.commit && Array.isArray(f.ids) && f.ids.includes(cell));
+  return fix ? {kind: 'fix', declaration: fix.commit, ticket: null, ruling: fix.ruling} : null;
 }
-export function baseRejudge(was, now, {departures = readDepartures(), rules = NOT_JUDGED_RULES, acceptedMisses = readAcceptedMisses()} = {}) {
+export function baseRejudge(was, now, {departures = readDepartures(), rules = NOT_JUDGED_RULES, acceptedMisses = readAcceptedMisses(), fixes = readJudgeFixes()} = {}) {
   const before = new Map(was.map(c => [rowKey(c), c.verdict])), after = new Map(now.map(c => [rowKey(c), c.verdict]));
   const differences = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(cell => {
     const d = {cell, was: before.get(cell) ?? 'not judged', now: after.get(cell) ?? 'not judged'};
-    const by = explanationOf(d, {departures, rules, acceptedMisses});
+    const by = explanationOf(d, {departures, rules, acceptedMisses, fixes});
     return {...d, expected: by !== null, ...(by ? {by} : {})};
   });
   const unexpected = differences.filter(d => !d.expected);
   return {differences, refused: unexpected.length ? [`the new judge reads the base differently from its own judgment at its commit: ${unexpected.map(d => `${d.cell} ${d.was}, now ${d.now}`).join('; ')}`] : []};
 }
-const byText = by => `expected: ${by.kind === 'departure' ? 'the declared departure' : by.kind === 'accepted miss' ? 'the accepted miss' : `the not-judged rule ${by.declaration}`}, ticket ${by.ticket ?? 'none'}, ruling ${by.ruling}${by.kind === 'departure' && by.declaration ? `: ${by.declaration}` : ''}`;
-export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records. A difference is expected only where a declaration of this commit that cites its ruling explains it (ruling 1234).`, '',
+const byText = by => (by.kind === 'fix' ? `expected: the judge's fix ${by.declaration}, ruling ${by.ruling}`
+  : `expected: ${by.kind === 'departure' ? 'the declared departure' : by.kind === 'accepted miss' ? 'the accepted miss' : `the not-judged rule ${by.declaration}`}, ticket ${by.ticket ?? 'none'}, ruling ${by.ruling}${by.kind === 'departure' && by.declaration ? `: ${by.declaration}` : ''}`);
+export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records${r.layers?.length > 1 ? `, its layers combined from their raw records by each commit's own combine (ruling 1239): ${r.layers.join(', then ')}` : ''}. A difference is expected only where a declaration of this commit that cites its ruling explains it (ruling 1234).`, '',
   ...(r.differences.length ? r.differences.map(d => `- ${d.cell}: ${d.was}, now ${d.now}${d.by ? ` (${byText(d.by)})` : d.expected ? ' (expected)' : ''}`) : ['- no cell reads differently']), '',
   ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : [])] : []);
 

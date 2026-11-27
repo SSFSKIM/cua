@@ -37,7 +37,7 @@ on:
         type: string
         default: ''
       base_run_id:
-        description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791)"
+        description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791), then, comma-separated, each judged split run whose run jobs are layered over it in order (ruling 1239; e.g. 45468052791,46069842660)"
         type: string
         default: ''
       jobs_run_id:
@@ -357,15 +357,23 @@ jobs:
           done
           echo "M5_JOBS=$(IFS=,; echo "${jobs[*]}")" >> "$GITHUB_ENV"
           if [ -n "$BASE_RUN_ID" ]; then
-            # The committed base whose README names the run; jobs-check verifies its digests and README again.
-            # Exactly one committed base may name the run: two would leave the base the judge reads a guess.
+            # The base's layers in order (ruling 1239): the full run, then each judged split run whose run jobs lie over it.
+            # Each is the committed directory whose README names its run; jobs-check verifies their digests and READMEs again.
+            # Exactly one committed directory may name a run: two would leave the layer the judge reads a guess.
             # A read loop: a macOS runner's bash is 3.2, without bash 4's array builtins.
-            readmes=()
-            while IFS= read -r f; do readmes+=("$f"); done < <(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md || true)
-            [ "${#readmes[@]}" -eq 1 ] || { echo "${#readmes[@]} committed bases name run $BASE_RUN_ID (${readmes[*]:-none}): exactly one must"; exit 1; }
-            readme=${readmes[0]}
-            [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "$(dirname "$readme") has no digests.sha256"; exit 1; }
-            echo "M5_BASE=$(dirname "$readme")" >> "$GITHUB_ENV"
+            ids=${BASE_RUN_ID//[[:space:]]/}
+            [[ "$ids" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "base_run_id is run ids, comma-separated, the full run first, not '$BASE_RUN_ID'"; exit 2; }
+            bases=()
+            for id in ${ids//,/ }; do
+              readmes=()
+              while IFS= read -r f; do readmes+=("$f"); done < <(grep -l "actions/runs/$id)" docs/evidence/*/README.md || true)
+              [ "${#readmes[@]}" -eq 1 ] || { echo "${#readmes[@]} committed bases name run $id (${readmes[*]:-none}): exactly one must"; exit 1; }
+              dir=$(dirname "${readmes[0]}")
+              [ -f "$dir/digests.sha256" ] || { echo "$dir has no digests.sha256"; exit 1; }
+              bases+=("$dir")
+            done
+            echo "M5_BASE=$(IFS=,; echo "${bases[*]}")" >> "$GITHUB_ENV"
+            echo "M5_BASE_RUN_ID=$ids" >> "$GITHUB_ENV"
           fi
       # Ruling 1234: the source run of a judge-only dispatch, from the API, against the pin and this dispatch's inputs,
       # before anything is judged; its section rides in sitting.md (source-run.json beside the judge's report).
@@ -409,7 +417,7 @@ jobs:
         run: |
           set -uo pipefail
           flags=(--split-judge --jobs "$M5_JOBS" --runs "$M5_RUNS")
-          [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE" --base-run-id "$BASE_RUN_ID")
+          [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE" --base-run-id "$M5_BASE_RUN_ID")
           [ -n "$FILTER" ] && flags+=(--only "$FILTER")
           code=0
           node scripts/hosted-sittings.mjs run c --out "$RUNNER_TEMP/m5-out/sitting" "${flags[@]}" || code=$?

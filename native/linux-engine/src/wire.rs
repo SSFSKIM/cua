@@ -72,10 +72,27 @@ impl Response {
 /// value. Node 24+'s `readline` ends a line at either character, so a reader built on it would cut a raw one's message
 /// in two (#572, #565, ruling 1192). Both can occur only inside a JSON string, where the escape is the same text.
 pub fn jsonl(value: &impl serde::Serialize) -> String {
-    serde_json::to_string(value)
-        .expect("a line always serializes")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029")
+    escape_separators(serde_json::to_string(value).expect("a line always serializes"))
+}
+
+/// `line` with U+2028 and U+2029 escaped in one pass: the line itself, its buffer not copied, when neither occurs, as
+/// in nearly every line (a `get_window_state` reply can be over 4 MiB), else a copy made at the first (#580).
+fn escape_separators(line: String) -> String {
+    const SEPARATORS: [char; 2] = ['\u{2028}', '\u{2029}'];
+    let Some(first) = line.find(SEPARATORS) else {
+        return line;
+    };
+    // each 3-byte character becomes a 6-byte escape: room for a few without growing
+    let mut escaped = String::with_capacity(line.len() + 16);
+    let mut kept = 0;
+    for (at, separator) in line[first..].match_indices(SEPARATORS) {
+        let at = first + at;
+        escaped.push_str(&line[kept..at]);
+        escaped.push_str(if separator == "\u{2028}" { "\\u2028" } else { "\\u2029" });
+        kept = at + separator.len();
+    }
+    escaped.push_str(&line[kept..]);
+    escaped
 }
 
 /// What one stdin line means.
@@ -386,6 +403,40 @@ mod tests {
             assert!(line.contains("a\\u2028b\\u2029c"), "{line:?}");
             assert!(!line.contains('\n'), "{line:?}");
             assert_eq!(serde_json::from_str::<Value>(&line).unwrap(), value);
+        }
+    }
+
+    /// #580: a line with neither U+2028 nor U+2029 is the serialized string itself, its buffer not copied, as a
+    /// `get_window_state` reply over 4 MiB is (`str::replace` copied it twice).
+    #[test]
+    fn a_line_with_nothing_to_escape_is_returned_as_it_was_serialized() {
+        let line = format!("{{\"text\":\"{}\u{e9}\u{2027}\u{202a}\"}}", "x".repeat(1 << 16));
+        let (at, capacity) = (line.as_ptr(), line.capacity());
+        let escaped = escape_separators(line.clone());
+        assert_eq!(escaped, line);
+        let kept = escape_separators(line);
+        assert_eq!(
+            (kept.as_ptr(), kept.capacity()),
+            (at, capacity),
+            "the same buffer, not a copy"
+        );
+    }
+
+    /// #580: the one-pass escape writes what `str::replace` wrote, wherever the characters fall: first, last, side by
+    /// side, between other multi-byte characters, and repeated.
+    #[test]
+    fn the_one_pass_escape_writes_what_two_replaces_wrote() {
+        let (ls, ps) = ('\u{2028}', '\u{2029}');
+        for line in [
+            format!("{ls}"),
+            format!("{ps}"),
+            format!("{ls}a{ps}"),
+            format!("{ls}{ps}{ps}{ls}"),
+            format!("\"\u{e9}{ls}\u{1f600}{ps}\u{2027}\u{202a}\""),
+            format!("{}{ps}{}", "x".repeat(1 << 16), "y".repeat(3)),
+        ] {
+            let two_replaces = line.replace(ls, "\\u2028").replace(ps, "\\u2029");
+            assert_eq!(escape_separators(line.clone()), two_replaces, "{line:?}");
         }
     }
 

@@ -622,9 +622,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     settleReads?, settleCapped?: true (the settle before the snapshot after a recent press_key, item 10.15),
     readFailure? (#590, on a roleUnreadable, fieldUnreadable, valueUnreadable or rangeUnreadable that a read which
     failed gave: {phase: "snapshot" | "poll", read: "role" | "subrole" | "value" | "range", axError?, retries,
-    msSinceLastKey? (a poll's), role?, subrole?, subroleFailed?: true}), readsRetried? (#590: reads that failed and then
-    answered)}; on a success with no field to read (#587: notTextField, noFocusedElement) confirmed is false and the
-    reason stays;
+    msSinceLastKey? (a poll's), role?, subrole? (as last read successfully)}), readsRetried? (#590: reads that failed
+    and then answered), noField?: true (#587: a search that finished found no field to read: notTextField, or
+    noFocusedElement from a finished walk)}; on such a success (a literal request's) confirmed is false and the reason
+    stays; a noFocusedElement without noField is a search that could not finish, typeUnconfirmed;
     value-free. A concealed request's is {confirmed, concealed: true, snapshotMs, reason?, keysUnconfirmed?: true,
     stoppedBeforeKey?: true, readFailure? (without retries and msSinceLastKey)}: no count and no poll time, which would tell the secret's control characters and segments
   keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
@@ -9190,6 +9191,33 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     its record; a mismatch beside a transient failure still throws; the snapshot's retries fit the time left),
     PasteActivationTests (the paste route's note; a failed read timed from the ⌘V), the service test. Live proof: the
     next sitting's `finder/frontmost/typeText.typeSelect` on cua.
+  Date/Author: 2026-11-27, cursor235's builder for #587 and #590.
+- Decision (#587 and #590, rulings 1242 and 1244, 2026-11-27, the review of e54eab41..106d2018; amends the entry
+  above): **ok-with-note only for a literal request whose search finished and found no field, and a retry never reads
+  more than its first try could.** Two invariants: (1) a retry or fallback reads nothing its first try could not, the
+  field classified again before every further read, and a password field's role or any change of role ends the
+  read-back; (2) only a finished search that found no field, on a request that is not concealed, answers ok with the
+  note.
+  - The lookup has three outcomes (`ReadbackFound`): a field; `.noField`, a search that finished with none; nil,
+    indeterminate. The walk answers `ReadbackWalkOutcome` (found, none focused in a walk that finished, unfinished: a
+    failed read, a node, depth or time bound, several focused fields, or a field found before a later failure). The
+    marker route answers `.noField` only when its climb reaches the web area (its marker names page content), and a
+    route that claimed nothing it can vouch for leaves the answer indeterminate whatever the walk finds. The
+    application's own answer of no focused element is never enough on its own: background Safari answers so over a
+    focused field (run 43752829833), so `.noField` always needs the finished walk, and a window that cannot be read is
+    indeterminate. The snapshot maps `.noField` and a non-text role to `ReadbackPlan.unread`; nil stays
+    `.refused(.noFocusedElement)` and throws as before #587.
+  - A concealed request whose search found no field, or could not finish, stays `typeUnconfirmed`, and its remedy never
+    advises an observation: "Because it is a secret and may have gone in where it can be seen, do not take a screenshot
+    or call getAXState() to check, and do not type it again; ask the person to check where it went."
+  - A no-field outcome under select_text's range is `selectionChanged`, nothing typed or pasted.
+  - Retries: a value or range retry, in the snapshot and its settle, runs only after the role and subrole are read again
+    (once, unretried) and still classify the field; a role read that names AXSecureTextField or another role ends a
+    poll's check whatever its subrole read answers, and only a failed role read, or the snapshot's role with a failed
+    subrole read, is tried again. A field the lookup took for a password field is classified by one role read, never
+    retried; its failure is `roleUnreadable` with the password field's warning. The keyed route's retries and polls are
+    bounded by the request's deadline, as the paste route's are. `readFailure` keeps the role and subrole last read
+    successfully; `subroleFailed` is gone (the failed attribute is `read`).
   Date/Author: 2026-11-27, cursor235's builder for #587 and #590.
 
 ## Outcomes & Retrospective

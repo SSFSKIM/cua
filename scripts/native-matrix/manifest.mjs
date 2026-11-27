@@ -16,8 +16,8 @@ export {SPEED_OPS};
 // rows; a method row also names what its case expects (plan.mjs: 'outcome' or 'refusal'). -> [{section, id, sample,
 // expect?}].
 export function manifestOf({run, samples}, plan = FULL_PLAN) {
-  // The speed-extra cell (ruling 1228, F): its ops' timings, `samples` each.
-  if (plan.speedExtra) return plan.frontmost.flatMap(t => speedExtraCases(t, 'timed').flatMap(c => Array.from({length: samples}, (_, i) => ({section: 'speed', id: methodTimingId(t, c), sample: i + 1}))));
+  // The speed-extra cell (ruling 1228, F): its ops' and their controls' timings (ruling 1232), `samples` each.
+  if (plan.speedExtra) return plan.frontmost.flatMap(t => speedExtraCases(t, 'timed', 'control').flatMap(c => Array.from({length: samples}, (_, i) => ({section: 'speed', id: methodTimingId(t, c), sample: i + 1}))));
   const out = [];
   for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
   for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});

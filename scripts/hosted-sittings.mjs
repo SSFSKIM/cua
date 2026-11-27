@@ -27,7 +27,8 @@
 //       save-sheet steps; --only the cells a filtered rerun needs, textedit/intervention.saveSheet for #212's), and the
 //       judging job over the run jobs' sitting dirs (a full run's beneath filtered reruns): jobs-check, combine, judge,
 //       key-route. --speed-extra (off by default): the run job also re-times the three speed ops full sitting C missed,
-//       ten samples each on both lanes, pooled by the judge for those ops alone. `plan` takes the same options.
+//       ten samples each on both lanes, judged on those samples alone, with three controls reported beside them (ruling
+//       1232). `plan` takes the same options.
 //   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>] --out <file>
 //       The run jobs' records, each with the hardware.json beside its dir: exit 2 when they are not one harness commit
 //       and one pair of engine versions (or two jobs ran one run), 0 otherwise; `run` lists the jobs in sitting.md.

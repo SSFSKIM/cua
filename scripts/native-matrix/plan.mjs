@@ -839,10 +839,17 @@ export const caseId = (target, regime, c, user = null) => `${target}/${regime}/$
 // A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
 export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${{openPanel: 'panel.', savePanel: 'savePanel.'}[target] ?? ''}${c.method}.${c.case}`;
 // Ruling 1228 (F): the speed ops full sitting C missed, re-timed by the speed-extra cell (./run.mjs), by target: the cases
-// timed each sample, and those run after them unrecorded so the next sample finds its field as the first did (TextEdit's
-// document written back whole; the Electron fixture's prepare sets its field itself).
-export const SPEED_EXTRA = Object.freeze({textedit: {timed: ['typeText.replace', 'paste.replace'], restore: ['setValue.document']}, electron: {timed: ['paste.replace'], restore: []}});
-export const speedExtraCases = (target, kind) => casesOf(target, 'frontmost').filter(c => SPEED_EXTRA[target]?.[kind].includes(`${c.method}.${c.case}`));
+// timed each sample (`timed`, judged on these samples alone, ruling 1232), the controls timed beside them (`control`,
+// ruling 1232: the base's most narrowly passing method timings on a scene the cell brings up, reported, never judged),
+// and those run after them unrecorded so the next sample finds its field as the first did (TextEdit's document written
+// back whole; the web fixtures' prepares set their fields themselves).
+export const SPEED_EXTRA = Object.freeze({
+  textedit: {timed: ['typeText.replace', 'paste.replace'], control: ['getAXState.tree'], restore: ['setValue.document']},
+  electron: {timed: ['paste.replace'], control: ['pressKey.tab'], restore: []},
+  chrome: {timed: [], control: ['paste.replace'], restore: []},
+});
+// A target's speed-extra cases of any of `kinds`, in the full run's order.
+export const speedExtraCases = (target, ...kinds) => casesOf(target, 'frontmost').filter(c => kinds.some(kind => SPEED_EXTRA[target]?.[kind].includes(`${c.method}.${c.case}`)));
 // The method rows judged by the device's reading of the field's caret beside the vendor's (#258, #259; ./caret.mjs).
 export const CARET_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c.caret).map(c => caseId(target, 'frontmost', c))));
 export const isCaretRow = id => CARET_ROWS.includes(id);

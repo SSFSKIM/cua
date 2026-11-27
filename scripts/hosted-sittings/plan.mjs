@@ -175,9 +175,9 @@ function sittingC(ctx) {
       ...(engine !== first ? {pair: `${ctx.out}/${first}/run-${i}/result.json`} : {}),
       argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i), '--first-lane', first, ...(matrixCells ? ['--only', matrixCells.join(',')] : []))});
   }
-  // Ruling 1228 (F), behind the run job's flag, off by default: the three speed ops full sitting C missed re-timed,
-  // SPEED_EXTRA_SAMPLES each on both lanes in the job's lane order, as its run's extra speed samples (the judge pools them
-  // for those ops alone, ../native-matrix/summary.mjs). Unchained, as the save-sheet cells: their preflight refuses a
+  // Ruling 1228 (F), behind the run job's flag, off by default: the three speed ops full sitting C missed re-timed, with
+  // their controls, SPEED_EXTRA_SAMPLES each on both lanes in the job's lane order, as its run's extra speed samples (the
+  // judge judges those ops on them alone and reports the controls, ruling 1232; ../native-matrix/summary.mjs). Unchained, as the save-sheet cells: their preflight refuses a
   // screen a run left.
   if (ctx.split?.speedExtra) for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `speed-extra-${engine}-${i}`,
     label: `the missed speed ops re-timed on ${engine}, run ${i} (${first} first; ruling 1228)`, kind: 'run', check: 'record', record: `${ctx.out}/speed-extra/${engine}/run-${i}/result.json`, engine,

@@ -204,18 +204,32 @@ const beatOf = (vendor, cua) => (vendor && cua ? cua.median <= BEAT * vendor.med
 // stats, deltaPct, beat: true|false|null, provisional, partial: {vendor, cua}, account}; beat null when not qualified;
 // `partial` every eligible reading's stats, partial runs included, and `provisional` the beat they would give: shown as
 // diagnostics, never counted.
-// `extra` (ruling 1228, F): {vendor: [row], cua: [row], runs} of the speed-extra cell, pooled with the complete runs'
-// samples (its rows of a cause left out); the account is the full runs' alone.
-export function judgeSpeed(vendorRows, cuaRows, {required = 1, pairable = all, planned = unknown, extra = null} = {}) {
+export function judgeSpeed(vendorRows, cuaRows, {required = 1, pairable = all, planned = unknown} = {}) {
   const {complete, partial, cuaCause} = measuredRuns(vendorRows, cuaRows, pairable, planned);
   const account = accountOf(vendorRows, cuaRows, cuaCause, {required, pairable, planned});
   const times = (rows, runs) => rows.filter(r => !causeOf(r) && runs.has(runOf(r))).map(r => r.inCellMs);
-  const extraTimes = rows => (rows ?? []).filter(r => !causeOf(r)).map(r => r.inCellMs);
-  const vendor = stats([...times(vendorRows, complete), ...extraTimes(extra?.vendor)]), cua = stats([...times(cuaRows, complete), ...extraTimes(extra?.cua)]);
+  const vendor = stats(times(vendorRows, complete)), cua = stats(times(cuaRows, complete));
   const seen = {vendor: stats(times(vendorRows, partial)), cua: stats(times(cuaRows, partial))};
   return {vendor, cua, deltaPct: vendor && cua ? round(((cua.median - vendor.median) / vendor.median) * 100) : null,
-    beat: account.qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(seen.vendor, seen.cua), partial: seen, account,
-    ...(extra ? {extra: {runs: extra.runs, vendor: extraTimes(extra.vendor).length, cua: extraTimes(extra.cua).length}} : {})};
+    beat: account.qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(seen.vendor, seen.cua), partial: seen, account};
+}
+// The speed-extra cell's samples of one op, `extra` ({vendor: [row], cua: [row], runs}), their rows of a cause left out.
+// -> {vendor: stats, cua: stats, deltaPct, runs}.
+export function remeasuredStats(extra) {
+  const times = rows => rows.filter(r => !causeOf(r)).map(r => r.inCellMs);
+  const vendor = stats(times(extra.vendor)), cua = stats(times(extra.cua));
+  return {vendor, cua, deltaPct: vendor && cua ? round(((cua.median - vendor.median) / vendor.median) * 100) : null, runs: extra.runs};
+}
+// Ruling 1232: one op the full runs missed, judged on its re-measurement alone (`extra`), never pooled with its full
+// runs' (`base`, judgeSpeed's, kept for reference). It qualifies on `required` runs re-measured on both lanes; the
+// account is the base's but for that. -> judgeSpeed's shape over the re-measurement, with `remeasured: {runs, vendor,
+// cua}` (its sample counts) and `base: {vendor, cua, deltaPct, beat}`.
+export function judgeRemeasured(base, extra, {required = 1} = {}) {
+  const {vendor, cua, deltaPct, runs} = remeasuredStats(extra);
+  const qualifies = runs.length >= required && Boolean(vendor && cua);
+  return {vendor, cua, deltaPct, beat: qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(vendor, cua), partial: {vendor, cua},
+    account: {...base.account, qualifies}, remeasured: {runs, vendor: vendor?.n ?? 0, cua: cua?.n ?? 0},
+    base: {vendor: base.vendor, cua: base.cua, deltaPct: base.deltaPct, beat: base.beat}};
 }
 
 // One finding row's samples on the complete run pairs, as speed's. -> {vendor: [row], cua: [row], account}.

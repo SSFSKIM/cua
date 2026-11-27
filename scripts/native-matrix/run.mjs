@@ -100,8 +100,10 @@ export const FULL_PLAN = Object.freeze({
   launch: [{scene: 'electron', user: 'finder'}],
 });
 const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: []};
-// The speed-extra cell's rows (ruling 1228, F; ./plan.mjs SPEED_EXTRA): the timings the judge pools for those ops alone.
+// The speed-extra cell's rows (ruling 1228, F; ./plan.mjs SPEED_EXTRA): the timings the judge judges those ops on alone
+// (ruling 1232), and the controls' it reports beside their base.
 export const SPEED_EXTRA_IDS = Object.freeze(Object.keys(SPEED_EXTRA).flatMap(t => speedExtraCases(t, 'timed').map(c => methodTimingId(t, c))));
+export const SPEED_CONTROL_IDS = Object.freeze(Object.keys(SPEED_EXTRA).flatMap(t => speedExtraCases(t, 'control').map(c => methodTimingId(t, c))));
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
 // A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
 // is 'full' only for the whole matrix.
@@ -125,10 +127,11 @@ function narrowed(kind, {scene, user}) {
     case 'method': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(front), background: FULL_PLAN.background.filter(back)};
     case 'speed': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => !isPanelTarget(t) && front(t)), speed: true, onlyMeasures: true};
     case 'finding': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => !isPanelTarget(t) && front(t)), finding: true, onlyMeasures: true};
-    // Ruling 1228 (F): the missed ops' timings alone, --samples each; the cases run for them record nothing else.
+    // Ruling 1228 (F): the missed ops' timings and their controls' (ruling 1232), --samples each; the cases run for them
+    // record nothing else.
     case 'speed-extra': {
-      const targets = Object.keys(SPEED_EXTRA).filter(front);
-      return {...EMPTY_PLAN, frontmost: targets, speed: true, speedExtra: true, only: new Set(targets.flatMap(t => speedExtraCases(t, 'timed').map(c => `speed ${methodTimingId(t, c)}`)))};
+      const targets = FULL_PLAN.frontmost.filter(t => SPEED_EXTRA[t] && front(t));
+      return {...EMPTY_PLAN, frontmost: targets, speed: true, speedExtra: true, only: new Set(targets.flatMap(t => speedExtraCases(t, 'timed', 'control').map(c => `speed ${methodTimingId(t, c)}`)))};
     }
     case 'background': return {...EMPTY_PLAN, background: FULL_PLAN.background.filter(back)};
     case 'launch': return {...EMPTY_PLAN, launch: FULL_PLAN.launch.filter(l => !scene || l.scene === scene)};
@@ -773,15 +776,15 @@ function fillTimings(ctx, target, plan, cases = casesOf(target, 'frontmost')) {
   }
 }
 
-// The speed-extra cell's samples of a target (ruling 1228, F): each sample its timed cases on their own prepares, as the
-// full run's sequence runs them, then its restoring cases (recorded nothing: the plan's `only`), so every sample finds its
+// The speed-extra cell's samples of a target (ruling 1228, F): each sample its timed and control cases on their own
+// prepares, as the full run's sequence runs them, then its restoring cases (recorded nothing: the plan's `only`), so every sample finds its
 // field as the first did. A sample's number is its row's (ctx.n stands for it while the cases run: their rows' only use).
 async function speedExtraSamples(ctx, target, plan) {
   const run = ctx.n;
   try {
     for (let k = 1; k <= ctx.samples; k++) {
       ctx.n = k;
-      for (const c of speedExtraCases(target, 'timed')) {
+      for (const c of speedExtraCases(target, 'timed', 'control')) {
         await caseRow(ctx, target, 'frontmost', c, {speed: true});
         fillTimings(ctx, target, plan, [c]);
       }
@@ -791,7 +794,7 @@ async function speedExtraSamples(ctx, target, plan) {
 }
 // Every sample of a speed-extra target that could not run, with the cause.
 function speedExtraRows(ctx, target, marks) {
-  for (let k = 1; k <= ctx.samples; k++) for (const c of speedExtraCases(target, 'timed')) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: k, ok: false, ...marks});
+  for (let k = 1; k <= ctx.samples; k++) for (const c of speedExtraCases(target, 'timed', 'control')) push(ctx, {section: 'speed', id: methodTimingId(target, c), engine: ctx.engine, sample: k, ok: false, ...marks});
 }
 
 // A pairing whose driven target is a panel is one opening: its rows carry the opening's id (./panels.mjs tagOpening).

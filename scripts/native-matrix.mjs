@@ -138,7 +138,7 @@ function combineDirs({dirs, out}, io, log) {
   // The speed-extra cell's records (ruling 1228, F) as they are, for the judge to pool (./native-matrix/summary.mjs).
   for (const {result} of results.filter(({result}) => result.cell === 'speed-extra')) io.writeResult(join(out, 'speed-extra', result.lanes[0].engine, `run-${result.meta.run}`), result);
   for (const c of account.combined) log(`combined run ${c.run} from job ${c.runId} attempt ${c.attempt}: ${c.cells.length} cell(s)`);
-  for (const f of account.flags) log(`FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun`);
+  for (const f of account.flags) log(`FLAG: ${f.cell}, run ${f.run}: ${f.why}${f.vendorRegressed ? '' : ': it passes only in the filtered rerun'}`);
   for (const p of [...unread, ...account.problems]) log(`problem: ${p}`);
   const problems = [...unread, ...account.problems];
   io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, vendorOnly: account.vendorOnly, problems});

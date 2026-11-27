@@ -31,12 +31,18 @@ function pairUnfit(lanes) {
 }
 // How a listed cell's rerun changed from its full run (I5, ruling 1231): {flag: why} when cua's side went from fail to
 // not (the pair's verdict, or cua's own row), the owner's; {vendorOnly: true} when only the vendor's row did (parity,
-// listed, never flagged); else null.
+// listed, never flagged); else null. The pair leaving fail only because the vendor's row went from pass to fail, cua's
+// failing in both (a shared limit now), is still flagged, with `vendorRegressed` and a reason that says so: no gain of
+// cua's.
 function rerunChange(cell, base, fresh) {
   const section = cell.slice(0, cell.indexOf(' ')), id = cell.slice(cell.indexOf(' ') + 1);
   const was = runVerdict(section, id, base.vendor, base.cua), now = runVerdict(section, id, fresh.vendor, fresh.cua);
+  const failed = rows => rows.some(r => r.ok === false && r.invalid === undefined), passed = rows => rows.length > 0 && rows.every(r => r.ok === true && r.invalid === undefined);
+  if (was === 'fail' && now !== 'fail' && passed(base.vendor) && failed(fresh.vendor) && failed(base.cua) && failed(fresh.cua)) {
+    return {flag: `pair now ${now}: vendor regressed; cua unchanged (fail)`, vendorRegressed: true};
+  }
   if (was === 'fail' && now !== 'fail') return {flag: `its pair was judged fail in the full run and ${now} in the rerun`};
-  const turned = e => base[e].some(r => r.ok === false && r.invalid === undefined) && fresh[e].length > 0 && fresh[e].every(r => r.ok === true && r.invalid === undefined);
+  const turned = e => failed(base[e]) && passed(fresh[e]);
   if (turned('cua')) return {flag: 'its cua row failed in the full run and passes in the rerun'};
   return turned('vendor') ? {vendorOnly: true} : null;
 }
@@ -67,7 +73,7 @@ export function combineReruns(full, reruns) {
     for (const cell of cells) {
       const rowsOf = side => Object.fromEntries(['vendor', 'cua'].map(e => [e, side[e].rows.filter(r => keyOf(r) === cell)]));
       const change = rerunChange(cell, rowsOf({vendor: under.vendor.result, cua: under.cua.result}), rowsOf(lanes));
-      if (change?.flag) flags.push({run, cell, why: change.flag, full: jobOf(under.vendor.result), rerun: job});
+      if (change?.flag) flags.push({run, cell, why: change.flag, ...(change.vendorRegressed ? {vendorRegressed: true} : {}), full: jobOf(under.vendor.result), rerun: job});
       if (change?.vendorOnly) vendorOnly.push({run, cell, full: jobOf(under.vendor.result), rerun: job});
     }
     for (const engine of ['vendor', 'cua']) {

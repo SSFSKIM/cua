@@ -544,7 +544,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
     ...unneeded.map(e => `departures: the file declares ${e.section} ${e.id}, which no sample of the full runs needed: remove it`),
-    ...evidence.flags.map(f => `rerun: ${f.cell}, run ${f.run}: ${f.why} (full run job ${f.full.runId}, attempt ${f.full.attempt}; rerun job ${f.rerun.runId}, attempt ${f.rerun.attempt}): it passes only in the filtered rerun`),
+    ...evidence.flags.map(f => `rerun: ${f.cell}, run ${f.run}: ${f.why} (full run job ${f.full.runId}, attempt ${f.full.attempt}; rerun job ${f.rerun.runId}, attempt ${f.rerun.attempt})${f.vendorRegressed ? '' : ': it passes only in the filtered rerun'}`),
   ];
   const blocking = [
     ...departureFailures,
@@ -619,7 +619,7 @@ export function renderEvidence(evidence) {
   const job = j => `job ${j.runId} attempt ${j.attempt}`;
   return ['## Evidence by job (ruling 1228)', '', 'Each run\'s cells come from its full run\'s job, but those a filtered rerun replaced, both lanes together (./combine.mjs).', '',
     ...evidence.jobs.map(e => `- run ${e.run}: ${job(e.full)}${e.reruns.map(r => `, but ${r.cells.length} cell${r.cells.length === 1 ? '' : 's'} from ${job(r)} (commit ${r.commit}): ${r.cells.join(', ')}`).join('')}`),
-    ...evidence.flags.map(f => `- FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun (the owner's)`), '',
+    ...evidence.flags.map(f => `- FLAG: ${f.cell}, run ${f.run}: ${f.why}${f.vendorRegressed ? '' : ': it passes only in the filtered rerun'} (the owner's)`), '',
     ...(evidence.vendorOnly?.length ? ['## Vendor-only changes between the base and the rerun (ruling 1231)', '',
       ...evidence.vendorOnly.map(v => `- ${v.cell}, run ${v.run}: the vendor's row failed in the full run (job ${v.full.runId}, attempt ${v.full.attempt}) and passes in the rerun (job ${v.rerun.runId}, attempt ${v.rerun.attempt}); cua's row and the pair's verdict unchanged`), ''] : [])];
 }

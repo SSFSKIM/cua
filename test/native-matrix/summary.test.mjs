@@ -1531,9 +1531,11 @@ test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declar
 // Ruling 1228 (E): combined records name, per run, the job each cell's evidence came from, and a cell that failed in the
 // full run on its own verdict and passes only in a filtered rerun goes to the owner, never silently replaced.
 test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a rerun flag is the owner\'s', () => {
-  const POINT = 'electron/frontmost/click.point', NAME = 'savePanel/frontmost/typeText.name';
+  const POINT = 'electron/frontmost/click.point', NAME = 'savePanel/frontmost/typeText.name', TAB = 'electron/frontmost/pressKey.tab';
+  const SHARED = 'pair now shared: vendor regressed; cua unchanged (fail)';
   const rerunMeta = run => ({runner: {run: {id: '45468052791', attempt: '1'}}, ...(run === 2 ? {reruns: [{runId: '777', attempt: '2', commit: 'c2', filter: [`method ${POINT}`], build: 'b'}],
-    rerunFlags: [{run: 2, cell: `method ${POINT}`, why: 'its pair was judged fail in the full run and equal in the rerun', full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}],
+    rerunFlags: [{run: 2, cell: `method ${POINT}`, why: 'its pair was judged fail in the full run and equal in the rerun', full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}},
+      {run: 2, cell: `method ${TAB}`, why: SHARED, vendorRegressed: true, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}],
     rerunVendorOnly: [{run: 2, cell: `method ${NAME}`, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
   const evidenced = (rows, run) => (run === 2 ? rows.map(r => (r.id === POINT ? {...r, evidence: {runId: '777', attempt: '2'}} : r)) : rows);
   const j = judged({vendor: {resolved: 9, axMs: 50, meta: rerunMeta, tweak: evidenced}, cua: {axMs: 40, meta: rerunMeta, tweak: evidenced}});
@@ -1545,6 +1547,11 @@ test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a 
   assert.match(text, /^## Evidence by job \(ruling 1228\)$/m);
   assert.match(text, new RegExp(`^- run 2: job 45468052791 attempt 1, but 1 cell from job 777 attempt 2 \\(commit c2\\): method ${POINT.replace(/[./]/g, c => `\\${c}`)}$`, 'm'));
   assert.doesNotMatch(renderSummary(judged()), /Evidence by job/);
+  // The pair moved from fail to shared by the vendor's regression: flagged with its own reason, never as a pass of cua's.
+  assert.ok(j.owner.includes(`rerun: method ${TAB}, run 2: ${SHARED} (full run job 45468052791, attempt 1; rerun job 777, attempt 2)`), j.owner.join('\n'));
+  assert.ok(!j.owner.some(o => o.includes(TAB) && /passes only/.test(o)), j.owner.join('\n'));
+  assert.ok(text.split('\n').includes(`- FLAG: method ${TAB}, run 2: ${SHARED} (the owner's)`), text);
+  assert.ok(text.split('\n').includes(`- FLAG: method ${POINT}, run 2: its pair was judged fail in the full run and equal in the rerun: it passes only in the filtered rerun (the owner's)`), 'the other flags keep their wording');
   // Ruling 1231: a vendor-only change between the base and the rerun is parity, listed, never the owner's flag.
   assert.deepEqual(j.evidence.vendorOnly.map(v => [v.run, v.cell]), [[2, `method ${NAME}`]]);
   assert.ok(!j.owner.some(o => o.includes(NAME)), j.owner.join('\n'));

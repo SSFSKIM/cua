@@ -61,6 +61,25 @@ test('a vendor-only fail to pass is listed as parity, not flagged; a cua row or 
   assert.deepEqual([cuaRow.flags.map(f => f.why), cuaRow.vendorOnly], [['its cua row failed in the full run and passes in the rerun'], []]);
   const verdict = combineReruns(pair(2, {cua: {ok: false}}), pair(2, {}, {filter: [B]}));
   assert.deepEqual(verdict.flags.map(f => f.why), ['its pair was judged fail in the full run and equal in the rerun']);
+  assert.ok(verdict.flags.every(f => f.vendorRegressed === undefined));
+});
+
+// The coordinator's: the vendor's row passing in the full run and failing in the rerun, cua's failing in both, moves the
+// pair from fail to shared: still flagged, its reason saying it is no gain of cua's.
+test('a vendor pass to fail with cua failing in both is flagged as the pair now shared, never as cua\'s gain', () => {
+  // A fixed-string row (ruling 1144): the same read-back failing on both engines is a shared limit.
+  const LINES = 'unicode chrome/korean/typeText.lines';
+  const falseOk = {ok: false, outcome: {exact: false, nfcEqual: false, length: 3, expectedLength: 5, hash: 'h1'}};
+  const pair = (run, {vendor = {}, cua = {}} = {}, meta = null) => ['vendor', 'cua'].map(engine => {
+    const rows = [row(LINES, engine, engine === 'vendor' ? vendor : cua), row(C, engine)];
+    return meta ? rerun(run, engine, rows, meta) : result(engine, run, rows);
+  });
+  const shared = combineReruns(pair(2, {cua: falseOk}), pair(2, {vendor: falseOk, cua: falseOk}, {filter: [LINES]}));
+  assert.deepEqual(shared.flags.map(f => [f.cell, f.why, f.vendorRegressed]), [[LINES, 'pair now shared: vendor regressed; cua unchanged (fail)', true]]);
+  assert.deepEqual(shared.vendorOnly, []);
+  // cua's own fail to pass keeps its wording.
+  const gained = combineReruns(pair(2, {cua: falseOk}), pair(2, {}, {filter: [LINES]}));
+  assert.deepEqual(gained.flags.map(f => [f.why, f.vendorRegressed]), [['its pair was judged fail in the full run and equal in the rerun', undefined]]);
 });
 
 // I5 of the split review: the cell judged per run, the full run's pair against the rerun's, as the judge reads it; a

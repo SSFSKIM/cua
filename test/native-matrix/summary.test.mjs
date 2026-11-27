@@ -973,6 +973,19 @@ test('a hosted pair is one job\'s run: a run with no runner record, or a pair fr
   assert.ok(none.missing.some(p => p.startsWith('run 1: a run records no hosted runner (meta.runner)')), none.missing.join('\n'));
   // Off a runner nothing changes: no run records one, and none is asked for.
   assert.ok(!judgeEach({vendor: () => ({resolved: 9, axMs: 50}), cua: () => ({axMs: 40})}).missing.some(p => /hosted runner/.test(p)));
+  // C2 of the split review (ruling 1228): sitting C split into one job per run number, each its own VM (and image build)
+  // of one workflow run at one commit. Each pair stays on one runner; across runs the runners and OS are reported, not
+  // held to one.
+  const job = n => ({hosted: true, os: {name: 'macOS', version: '27.0', build: `25A35${n}`}, runner: {...RUNNER('7'), run: {id: '7', attempt: n === 3 ? '2' : '1'}, vm: {id: `vm-${n}`, platformUuid: `P${n}`, bootedAt: 'B'}}});
+  const split = judgeEach({vendor: n => ({resolved: 9, axMs: 50, meta: job(n)}), cua: n => ({axMs: 40, meta: job(n)})});
+  assert.ok(!split.missing.some(p => /hosted runner|more than one OS/.test(p)), split.missing.join('\n'));
+  assert.deepEqual(split.runners.map(r => [r.run, r.runner, r.os]), [1, 2, 3].map(n => [n, `macos26 20261117.0516.1, run 7 attempt ${n === 3 ? 2 : 1}, VM vm-${n}`, `macOS 27.0 (25A35${n})`]));
+  assert.match(renderSummary(split), /^## Runners by run \(sitting C split into jobs, ruling 1228\)$/m);
+  assert.match(renderSummary(split), /^- run 3: macos26 20261117\.0516\.1, run 7 attempt 2, VM vm-3; macOS 27\.0 \(25A353\)$/m);
+  assert.equal(same.runners, null, 'one job: nothing to report beside the usual');
+  // A pair split across two VMs stays no pair, split jobs or not.
+  const torn = judgeEach({vendor: n => ({resolved: 9, axMs: 50, meta: job(n)}), cua: n => ({axMs: 40, meta: job(n === 2 ? 1 : n)})});
+  assert.ok(torn.missing.some(p => /^run 2's vendor and cua runs name more than one hosted runner/.test(p)), torn.missing.join('\n'));
 });
 
 const COMPOSING = 'textedit/composing@electron/typeText.hangul';

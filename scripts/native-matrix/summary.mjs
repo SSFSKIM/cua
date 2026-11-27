@@ -236,15 +236,30 @@ export function pairableRuns(full) {
 
 // Whether the full runs are one proof (the module's header), apart from each cell's qualification. -> [missing proof,
 // each a sentence].
+// C2 of the split review (ruling 1228): sitting C split into one job per run number. When every full run is hosted, all
+// of one workflow run at one harness commit, on more than one runner (each job its own VM, an attempt or an image build
+// apart), the runners and OS by run number are reported instead of held to one across runs; each pair is still held to
+// one runner and one OS (pairProblems), and the engines' builds to one across runs. -> [{run, runner, os}] or null.
+export function splitJobRunners(full) {
+  if (!full.length || !full.every(({result}) => result.meta?.hosted === true && hostedRunnerKey(result.meta))) return null;
+  const one = pick => new Set(full.map(({result}) => pick(result))).size === 1;
+  if (!one(r => r.meta.runner.run.id) || !one(r => r.meta?.commit) || one(r => hostedRunnerKey(r.meta))) return null;
+  const osText = os => (isOsRecord(os) ? `${os.name} ${os.version} (${os.build})` : 'no OS recorded');
+  return runsByNumber(full).map(([run, list]) => ({run, runner: hostedRunnerKey(list[0].result.meta), os: osText(list[0].result.meta?.os)}));
+}
+export const renderRunners = runners => (runners ? ['## Runners by run (sitting C split into jobs, ruling 1228)', '',
+  'Each run\'s pair stood on one runner; the runs did not need to.', '', ...runners.map(r => `- run ${r.run}: ${r.runner}; ${r.os}`), ''] : []);
+
 export function proofProblems(full) {
   const missing = [];
   const one = (what, values) => {
     const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
     if (seen.length > 1) missing.push(`the full runs name more than one ${what} (${seen.join(', ')}): one proof's runs are judged together`);
   };
+  const split = splitJobRunners(full);
   one('device', full.map(({result}) => result.device));
-  one('OS', full.map(({result}) => (isOsRecord(result.meta?.os) ? osKey(result.meta.os) : result.meta?.os)));
-  if (full.some(({result}) => result.meta?.hosted === true)) one('hosted runner', full.map(({result}) => hostedRunnerKey(result.meta)));
+  if (!split) one('OS', full.map(({result}) => (isOsRecord(result.meta?.os) ? osKey(result.meta.os) : result.meta?.os)));
+  if (!split && full.some(({result}) => result.meta?.hosted === true)) one('hosted runner', full.map(({result}) => hostedRunnerKey(result.meta)));
   for (const [n, list] of runsByNumber(full)) missing.push(...pairProblems(n, list));
   for (const engine of ['vendor', 'cua']) {
     const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);
@@ -537,7 +552,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
-    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, verdict};
+    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), verdict};
 }
 
 // Ruling 1228 (E): the jobs each run's evidence came from, the full runs combined with filtered reruns (./combine.mjs):
@@ -815,6 +830,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push(...renderFirstLaneSplit(j.firstLane));
   out.push(...renderComposingRetries(j.composingRetries));
   out.push(...renderEvidence(j.evidence));
+  out.push(...renderRunners(j.runners));
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {
     const list = j.speed.filter(s => s.scene === scene);

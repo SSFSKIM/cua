@@ -41,15 +41,20 @@ function unsettledOf(full) {
 }
 const APP_NAMES = Object.freeze({textedit: 'TextEdit', finder: 'Finder', chrome: 'Chrome', electron: 'the Electron fixture'});
 
-// The attempts by the path that emptied their field (ruling 1229(b)): those recording one, per path.
-const PATHS = ['harness', 'engine'];
-const noPaths = () => ({harness: 0, engine: 0});
+// The attempts by the path that confirmed their field empty (ruling 1229(b); ./unicode-run.mjs emptyFieldAt): those
+// that reached the emptying (an `emptiedBy` recorded, null when neither path confirmed it: `none`), per path, and how
+// many tried the engine's own emptying (`fallback`). Records from before 1229(b) name no path and count nowhere.
+const PATHS = ['harness', 'engine', 'none'];
+const noPaths = () => ({harness: 0, engine: 0, none: 0, fallbacks: 0});
 function pathsOf(readings) {
   const out = new Map();
   for (const r of readings ?? []) {
-    if (typeof r?.group !== 'string' || !PATHS.includes(r.emptiedBy)) continue;
+    if (typeof r?.group !== 'string' || !r || !('emptiedBy' in r)) continue;
+    const path = r.emptiedBy === 'harness' || r.emptiedBy === 'engine' ? r.emptiedBy : r.emptiedBy === null ? 'none' : null;
+    if (!path) continue;
     const p = out.get(r.group) ?? noPaths();
-    p[r.emptiedBy] += 1;
+    p[path] += 1;
+    if (r.fallback === true) p.fallbacks += 1;
     out.set(r.group, p);
   }
   return out;
@@ -57,7 +62,8 @@ function pathsOf(readings) {
 
 // `full`: [{result}] of the full runs. -> {lanes: {vendor, cua: {groups, retries, unconfirmed, emptiedBy?}}, groups:
 // [{group, engine, runs, retried, retries, unconfirmed, emptiedBy?}], findings: [text], unsettled: [{scene, unread,
-// attempts}]}. `emptiedBy` ({harness, engine}: attempts) only where some attempt recorded its path.
+// attempts}]}. `emptiedBy` ({harness, engine, none}: attempts) and `fallbacks` (attempts that tried the engine's own
+// emptying) only where some attempt recorded its path.
 export function composingRetriesOf(full) {
   const groups = new Map();
   let recorded = false;
@@ -67,21 +73,22 @@ export function composingRetriesOf(full) {
     const paths = pathsOf(result.meta?.unicode?.readings);
     for (const [group, g] of groupsOf(result.meta?.unicode?.readings)) {
       const k = `${group}\u0000${engine}`;
-      const c = groups.get(k) ?? {group, engine, runs: 0, retried: 0, retries: 0, unconfirmed: 0, emptiedBy: noPaths()};
+      const c = groups.get(k) ?? {group, engine, runs: 0, retried: 0, retries: 0, unconfirmed: 0, emptiedBy: {harness: 0, engine: 0, none: 0}, fallbacks: 0};
       c.runs += 1;
       if (g.attempts > 1) { c.retried += 1; c.retries += g.attempts - 1; }
       if (!g.composed) c.unconfirmed += 1;
       const p = paths.get(group);
-      if (p) { recorded = true; for (const path of PATHS) c.emptiedBy[path] += p[path]; }
+      if (p) { recorded = true; for (const path of PATHS) c.emptiedBy[path] += p[path]; c.fallbacks += p.fallbacks; }
       groups.set(k, c);
     }
   }
   const list = [...groups.values()].sort((a, b) => a.group.localeCompare(b.group) || a.engine.localeCompare(b.engine));
-  if (!recorded) for (const c of list) delete c.emptiedBy;
+  if (!recorded) for (const c of list) { delete c.emptiedBy; delete c.fallbacks; }
   const retriedIn = engine => list.filter(c => c.engine === engine && c.retried > 0);
   const sumPaths = engine => Object.fromEntries(PATHS.map(path => [path, list.filter(c => c.engine === engine).reduce((n, c) => n + c.emptiedBy[path], 0)]));
+  const fallbacksOf = engine => list.filter(c => c.engine === engine).reduce((n, c) => n + c.fallbacks, 0);
   const lanes = Object.fromEntries(LANES.map(engine => [engine, {groups: retriedIn(engine).length, retries: retriedIn(engine).reduce((n, c) => n + c.retries, 0),
-    unconfirmed: list.filter(c => c.engine === engine).reduce((n, c) => n + c.unconfirmed, 0), ...(recorded ? {emptiedBy: sumPaths(engine)} : {})}]));
+    unconfirmed: list.filter(c => c.engine === engine).reduce((n, c) => n + c.unconfirmed, 0), ...(recorded ? {emptiedBy: sumPaths(engine), fallbacks: fallbacksOf(engine)} : {})}]));
   const findings = LANES.flatMap(engine => {
     const other = LANES.find(e => e !== engine);
     const mine = retriedIn(engine);
@@ -104,7 +111,7 @@ export function renderComposingRetries(c) {
     ...(c.unsettled ?? []).map(s => `- The mechanism is unsettled for ${APP_NAMES[s.scene] ?? s.scene}: the marked range around emptyField read back unread in ${s.unread} of ${s.attempts} attempt(s); `
       + `${s.scene === 'textedit' ? 'no other app\'s reading stands in for it' : 'no inference is drawn from TextEdit\'s reading'}.`),
     ...(c.findings.length || c.unsettled?.length ? [''] : []),
-    ...(paths ? [`Each attempt's field was emptied by the harness's own Accessibility write (ruling 1229(b)), or by the lane's engine where that write did not read back empty: ${LANES.map(e => `${e} ${c.lanes[e].emptiedBy.harness} by the harness, ${c.lanes[e].emptiedBy.engine} by the engine`).join('; ')}.`, ''] : []),
-    `| group | engine | runs | runs retried | retries | never composed |${paths ? ' attempts emptied by the harness | by the engine |' : ''}`, `|---|---|---|---|---|---|${paths ? '---|---|' : ''}`,
-    ...c.groups.map(g => `| ${g.group} | ${g.engine} | ${g.runs} | ${g.retried} | ${g.retries} | ${g.unconfirmed} |${paths ? ` ${g.emptiedBy.harness} | ${g.emptiedBy.engine} |` : ''}`), ''];
+    ...(paths ? [`Each attempt's field was emptied by the harness's own Accessibility write (ruling 1229(b)), or by the lane's engine where that write did not read back empty: ${LANES.map(e => `${e} ${c.lanes[e].emptiedBy.harness} by the harness, ${c.lanes[e].emptiedBy.engine} by the engine, ${c.lanes[e].emptiedBy.none} by neither, the engine's own emptying tried on ${c.lanes[e].fallbacks}`).join('; ')}.`, ''] : []),
+    `| group | engine | runs | runs retried | retries | never composed |${paths ? ' attempts emptied by the harness | by the engine | by neither | engine fallbacks tried |' : ''}`, `|---|---|---|---|---|---|${paths ? '---|---|---|---|' : ''}`,
+    ...c.groups.map(g => `| ${g.group} | ${g.engine} | ${g.runs} | ${g.retried} | ${g.retries} | ${g.unconfirmed} |${paths ? ` ${g.emptiedBy.harness} | ${g.emptiedBy.engine} | ${g.emptiedBy.none} | ${g.fallbacks} |` : ''}`), ''];
 }

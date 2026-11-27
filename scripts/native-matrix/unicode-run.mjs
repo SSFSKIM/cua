@@ -254,7 +254,7 @@ async function composingAttempt(ctx, field, user, attempt) {
   const at = {};
   const setup = await behindUser(ctx, field, user, at);
   const record = {when: `composing@${user}`, group: `${field}@${user}`, attempt, engine: ctx.engine, prepared: at.prepared ?? null, markedAtEmpty: at.markedAtEmpty ?? null,
-    ...(at.emptiedBy ? {emptiedBy: at.emptiedBy, harnessEmpty: at.harnessEmpty} : {})};
+    ...(at.harnessEmpty ? {emptiedBy: at.emptiedBy ?? null, fallback: at.fallback ?? null, harnessEmpty: at.harnessEmpty} : {})};
   if (setup.skipped || setup.held || setup.invalid) return {...setup, record: {...record, setup: setup.invalid ?? (setup.held ? 'the alert guard held the setup' : 'the user window did not take front and key')}};
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
@@ -283,22 +283,31 @@ async function composingAttempt(ctx, field, user, attempt) {
 // both lanes and never the engine under test, whose setValue("") the failed vendor attempts of 46052931439 had followed.
 // Then the engine's emptyField with its steps, the one cell it was: it finds the field empty and only gives it the
 // focus; where the harness's write did not read back empty (a web view refusing it, or off a hosted runner), it empties
-// the field itself, as before 1229(b), for that attempt. `emptiedBy` names the last write before the probe's key: the
-// engine when its cell made a setValue, else the harness. The harness's own no-text reader reads just before the write
+// the field itself, as before 1229(b), for that attempt. Each attempt records only what it established: the harness's
+// answer (`harnessEmpty`) the moment it comes, so a guard that then holds the engine's cell leaves it on the attempt;
+// whether the engine's own emptying was tried (`fallback`: its cell's setValue made, false when its cell made none, null
+// when the cell gave no account of its steps); and the path that confirmed the field empty, the last write before the
+// probe's key (`emptiedBy`): the engine when its setValue was made and its cell answered the field ready, the harness when
+// its write read back empty and the engine wrote nothing after it, else null (neither confirmed it, the field perhaps
+// empty already). The harness's own no-text reader reads just before the write
 // and just after the cell, so the read after is the emptying's alone unless `prepared` names the cell's click too.
 // The prepared field is the element read after a cell that answered ready (emptyField found its field focused): each
 // side's `samePrepared` is its element's identity against it (sameAs), null when the cell was not ready or a frame was
-// not read. -> the cell's answer; `at` holds {prepared, emptiedBy, harnessEmpty, markedAtEmpty: {before, after}, field:
-// the prepared field's read or null}.
+// not read. -> the cell's answer; `at` holds {harnessEmpty, emptiedBy, fallback, prepared, markedAtEmpty: {before, after},
+// field: the prepared field's read or null}.
 async function emptyFieldAt(ctx, user, at) {
   const before = focusedTextOf(ctx, user);
   const harnessEmpty = harnessEmptyOf(ctx, user);
+  const byHarness = harnessEmpty.emptied === true;
+  Object.assign(at, {harnessEmpty, emptiedBy: byHarness ? 'harness' : null, fallback: null});
   const out = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user, {steps: true}));
   const after = focusedTextOf(ctx, user);
-  const did = out.ok ? out.value?.did : null;
-  const field = out.ok && out.value?.ready === true && after.frame ? after : null;
+  const did = out.ok ? out.value?.did ?? null : null;
+  const ready = out.ok && out.value?.ready === true;
+  const fallback = did ? did.setValue === true : null;
+  const field = ready && after.frame ? after : null;
   Object.assign(at, {prepared: !did ? null : did.setValue && did.click ? 'both' : did.setValue ? 'emptied' : did.click ? 'clicked' : 'neither',
-    emptiedBy: harnessEmpty.emptied === true && did?.setValue !== true ? 'harness' : 'engine', harnessEmpty,
+    emptiedBy: fallback ? (ready ? 'engine' : null) : byHarness ? 'harness' : null, fallback,
     markedAtEmpty: {before: markedSide(before, field), after: markedSide(after, field)}, field});
   return out;
 }

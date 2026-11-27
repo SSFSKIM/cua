@@ -184,7 +184,7 @@ test('the composing setup empties the user window\'s field by the harness\'s AX 
     const cell = code => { if (tagOf(code) === 'field.empty' && code.includes('__did')) { cells.push(asked.length); return {ready: true, did: {setValue: false, click: false}}; } return null; };
     const {result, steps} = await runWith({engine, plan: PLAN, cellName: 'korean', ops: withEmptying(HARNESS_EMPTIED, asked), cell});
     const [a] = attemptsOf(result);
-    assert.equal(a.emptiedBy, 'harness', engine);
+    assert.deepEqual([a.emptiedBy, a.fallback], ['harness', false], engine);
     assert.deepEqual(a.harnessEmpty, HARNESS_EMPTIED, engine);
     assert.equal(a.prepared, 'neither');
     // The write is the user window's (textedit, chrome@textedit's), made before the engine's cell ran.
@@ -203,11 +203,11 @@ test('a harness write that does not read back empty falls back to the engine\'s 
   const refused = {emptied: false, count: 1, settable: false, write: -25205, readBack: 3, reads: 4, reason: 'the field\'s value read back 3 characters after the write (AXError -25205)'};
   for (const engine of ['vendor', 'cua']) {
     const [a] = attemptsOf((await runWith({engine, plan: PLAN, cellName: 'korean', ops: withEmptying(refused), cell})).result);
-    assert.deepEqual([a.emptiedBy, a.prepared, a.harnessEmpty], ['engine', 'emptied', refused], engine);
+    assert.deepEqual([a.emptiedBy, a.fallback, a.prepared, a.harnessEmpty], ['engine', true, 'emptied', refused], engine);
   }
   // The helper's write read back empty but the engine's cell still wrote: its setValue was the last before the key.
   const [late] = attemptsOf((await runWith({plan: PLAN, cellName: 'korean', ops: withEmptying(HARNESS_EMPTIED), cell})).result);
-  assert.equal(late.emptiedBy, 'engine');
+  assert.deepEqual([late.emptiedBy, late.fallback], ['engine', true]);
   // A device command that throws is recorded and never the run's stop; the engine's emptying runs.
   const {result} = await runWith({plan: PLAN, cellName: 'korean', ops: withEmptying(new Error('the helper died')), cell});
   const [thrown] = attemptsOf(result);
@@ -219,26 +219,67 @@ test('a harness write that does not read back empty falls back to the engine\'s 
   assert.deepEqual([offHosted.emptiedBy, offHosted.harnessEmpty], ['engine', off]);
 });
 
-test('the retries section counts each lane\'s and group\'s attempts by the path that emptied the field', () => {
-  const emptied = (engine, group, n, composed, by) => ({...attempt(engine, group, n, composed), emptiedBy: by});
+// The review of 5da67ce0a: each attempt records only what it established. The helper's write is kept the moment it
+// answers, so a guard that then holds the engine's cell still leaves it on the attempt; the engine's own emptying is
+// recorded as tried (`fallback`) apart from the path that confirmed the field empty (`emptiedBy`), which is none when
+// neither did.
+const UNC = 'com.apple.UserNotificationCenter';
+const holdAfterWrite = answer => {
+  let hold = false;
+  return {matrix: (base, a) => {
+    const out = base(a);
+    if (a[0] === 'field-empty') { hold = true; return {answer, at: [1, 2]}; }
+    if (hold && a[0] === 'read' && a.includes('--with') && a[a.indexOf('--with') + 1].split(',').includes('alert-bounds')) { hold = false; return {...out, frontKey: {...out.frontKey, key: UNC}}; }
+    return out;
+  }};
+};
+test('the harness\'s write is on the attempt even when the alert guard holds the engine\'s emptyField cell after it', async () => {
+  const cells = [];
+  const cell = code => { if (tagOf(code) === 'field.empty' && code.includes('__did')) cells.push(code); return null; };
+  const {result} = await runWith({plan: PLAN, cellName: 'korean', ops: holdAfterWrite(HARNESS_EMPTIED), cell});
+  const [a] = attemptsOf(result);
+  assert.equal(a.setup, 'the alert guard held the setup', JSON.stringify(a));
+  assert.deepEqual(cells, [], 'the engine\'s cell was held, never sent');
+  assert.deepEqual([a.emptiedBy, a.fallback, a.harnessEmpty], ['harness', null, HARNESS_EMPTIED]);
+});
+
+test('an emptying neither path confirmed is recorded as none, never the engine\'s: a cell that wrote nothing, or a prepare that failed', async () => {
+  const refused = {emptied: false, count: 1, settable: false, write: -25205, readBack: 3, reads: 4, reason: 'the field\'s value read back 3 characters after the write (AXError -25205)'};
+  const attemptWith = async answer => attemptsOf((await runWith({plan: PLAN, cellName: 'korean', ops: withEmptying(refused),
+    cell: code => (tagOf(code) === 'field.empty' && code.includes('__did') ? answer : null)})).result)[0];
+  // The field was already empty: the engine's cell made no setValue, so nothing of either path emptied it.
+  const idle = await attemptWith({ready: true, did: {setValue: false, click: false}});
+  assert.deepEqual([idle.emptiedBy, idle.fallback], [null, false]);
+  // The engine's own emptying tried and not confirmed: the prepare failed.
+  const failed = await attemptWith({ready: false, reason: 'the field could not be emptied', prepared: ['emptying attempted, the field still read 3 characters'], did: {setValue: true, click: false}});
+  assert.deepEqual([failed.emptiedBy, failed.fallback], [null, true]);
+  // A cell that answered nothing about its steps.
+  const silent = await attemptWith({ready: false, reason: 'the scene window is not the app\'s front window'});
+  assert.deepEqual([silent.emptiedBy, silent.fallback], [null, null]);
+});
+
+test('the retries section counts each lane\'s and group\'s attempts by the path that emptied the field, and the engine fallbacks tried', () => {
+  const emptied = (engine, group, n, composed, by, fallback = by === 'engine') => ({...attempt(engine, group, n, composed), emptiedBy: by, fallback});
   const full = [
     run('vendor', 1, [emptied('vendor', 'chrome@textedit', 1, false, 'harness'), emptied('vendor', 'chrome@textedit', 2, true, 'engine'), emptied('vendor', 'textedit@electron', 1, true, 'engine')]),
     run('vendor', 2, [emptied('vendor', 'chrome@textedit', 1, true, 'harness')]),
     run('cua', 1, [emptied('cua', 'chrome@textedit', 1, true, 'harness'), emptied('cua', 'textedit@electron', 1, true, 'engine')]),
     // An attempt whose setup stopped before the emptying records no path.
     run('cua', 2, [{...attempt('cua', 'chrome@textedit', 1, false), setup: 'the user window did not take front and key'}, emptied('cua', 'chrome@textedit', 2, true, 'harness')]),
+    // Neither path confirmed: counted as none; the engine's emptying tried on one of them.
+    run('cua', 3, [emptied('cua', 'chrome@textedit', 1, false, null, true), emptied('cua', 'chrome@textedit', 2, true, null, false)]),
   ];
   const c = composingRetriesOf(full);
-  const byGroup = (engine, group) => c.groups.find(g => g.engine === engine && g.group === group).emptiedBy;
-  assert.deepEqual(byGroup('vendor', 'chrome@textedit'), {harness: 2, engine: 1});
-  assert.deepEqual(byGroup('vendor', 'textedit@electron'), {harness: 0, engine: 1});
-  assert.deepEqual(byGroup('cua', 'chrome@textedit'), {harness: 2, engine: 0});
-  assert.deepEqual(c.lanes.vendor.emptiedBy, {harness: 2, engine: 2});
-  assert.deepEqual(c.lanes.cua.emptiedBy, {harness: 2, engine: 1});
+  const byGroup = (engine, group) => { const g = c.groups.find(x => x.engine === engine && x.group === group); return {...g.emptiedBy, fallbacks: g.fallbacks}; };
+  assert.deepEqual(byGroup('vendor', 'chrome@textedit'), {harness: 2, engine: 1, none: 0, fallbacks: 1});
+  assert.deepEqual(byGroup('vendor', 'textedit@electron'), {harness: 0, engine: 1, none: 0, fallbacks: 1});
+  assert.deepEqual(byGroup('cua', 'chrome@textedit'), {harness: 2, engine: 0, none: 2, fallbacks: 1});
+  assert.deepEqual([c.lanes.vendor.emptiedBy, c.lanes.vendor.fallbacks], [{harness: 2, engine: 2, none: 0}, 2]);
+  assert.deepEqual([c.lanes.cua.emptiedBy, c.lanes.cua.fallbacks], [{harness: 2, engine: 1, none: 2}, 2]);
   const page = renderComposingRetries(c).join('\n');
-  assert.match(page, /^\| group \| engine \| runs \| runs retried \| retries \| never composed \| attempts emptied by the harness \| by the engine \|$/m);
-  assert.match(page, /^\| chrome@textedit \| vendor \| 2 \| 1 \| 1 \| 0 \| 2 \| 1 \|$/m);
-  assert.match(page, /Each attempt's field was emptied by the harness's own Accessibility write \(ruling 1229\(b\)\), or by the lane's engine where that write did not read back empty: vendor 2 by the harness, 2 by the engine; cua 2 by the harness, 1 by the engine\./);
+  assert.match(page, /^\| group \| engine \| runs \| runs retried \| retries \| never composed \| attempts emptied by the harness \| by the engine \| by neither \| engine fallbacks tried \|$/m);
+  assert.match(page, /^\| chrome@textedit \| vendor \| 2 \| 1 \| 1 \| 0 \| 2 \| 1 \| 0 \| 1 \|$/m);
+  assert.match(page, /Each attempt's field was emptied by the harness's own Accessibility write \(ruling 1229\(b\)\), or by the lane's engine where that write did not read back empty: vendor 2 by the harness, 2 by the engine, 0 by neither, the engine's own emptying tried on 2; cua 2 by the harness, 1 by the engine, 2 by neither, the engine's own emptying tried on 2\./);
   // The lopsided finding names the recorded path rather than the engine alone.
   const lopsided = composingRetriesOf([run('vendor', 1, [emptied('vendor', 'chrome@textedit', 1, false, 'harness'), emptied('vendor', 'chrome@textedit', 2, true, 'harness'),
     emptied('vendor', 'textedit@electron', 1, false, 'harness'), emptied('vendor', 'textedit@electron', 2, true, 'harness')]), run('cua', 1, [emptied('cua', 'chrome@textedit', 1, true, 'harness')])]);

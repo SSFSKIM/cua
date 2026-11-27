@@ -24,7 +24,7 @@ client's `/secret` field themselves.
    cache is replaced on every plugin update. Node 22.14+ or 23.7+: cua starts the runtime's anchor with
    `--disable-sigusr1`.
 2. **The runtime.** `cua install`, then `cua doctor`. On Linux first meet the README's Linux requirements (an X11
-   session, the apt packages; keep a copy of the deb for `--archive`). This gives the GUI surface. For the browser
+   session, the apt packages; Linux installs its own runtime and fetches no OpenAI package). This gives the GUI surface. For the browser
    surface too, follow the README's Chrome section on the device before enrolling: the cua extension in the Chrome
    profile to drive (from the Chrome Web Store, or loaded unpacked from the checkout's `extension/`, which needs the
    owner at the screen once; a VM from `deploy/cloud-vm/` has it by policy), `cua chrome register`, then

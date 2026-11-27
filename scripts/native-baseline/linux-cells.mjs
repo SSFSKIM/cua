@@ -1,6 +1,6 @@
-// The js cells of the native baseline on Linux (gedit on an X11 session, the vendor's sky_linux helper). They share the
-// timing envelope and marker of ./cells.mjs, and its rule: a cell returns counts, lengths, booleans, ids and the vendor's
-// error sentences, never accessibility text, window titles or screenshot bytes, and every observation passes
+// The js cells of the native baseline on Linux (gedit on an X11 session, cua's engine: the vendor's sky_linux lane is
+// refused since #171 M6b). They share the timing envelope and marker of ./cells.mjs, and its rule: a cell returns
+// counts, lengths, booleans, ids and the engine's error sentences, never accessibility text, window titles or screenshot bytes, and every observation passes
 // {emit: false}.
 //
 // On Linux an app is bound by X11 window (cua.getApp({windowId})), so the target of every observation and action is the

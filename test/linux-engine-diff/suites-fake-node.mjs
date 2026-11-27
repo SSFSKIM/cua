@@ -1,14 +1,17 @@
 // The suites runner's harness commands, faked for its tests (suites-runner.test.mjs): what each would answer, chosen by
 // FAKE_* variables, every call appended to FAKE_LOG. The runner's other node calls run the real node.
-//   FAKE_DIFF       repl-parity diff's exit status (0)
+//   FAKE_RUN        repl-parity run's exit status (0); the run writes M6a's stored cua lane to its --out
+//                   (parity-run-fixture.mjs), with the changes FAKE_LANE names (comma-separated: short, text, vendor,
+//                   elsewhere, incomplete), and on a candidate (--engine-bin) that candidate as every case's engine
 //   FAKE_CLEANUP    the exit statuses of repl-parity cleanup-prepared, in call order, comma-separated (0)
-//   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved, fail
 //   FAKE_CHECK      gate.mjs check --pinned's exit status (0)
 //   FAKE_PROBE      the fallback probe's exit statuses (scripts/accept/linux-fallback.mjs), in call order (0)
 //   bin/cua.mjs install (a fixture's run home) answers 0 and installs nothing
 // The sampler (watch.mjs, which would run the fixture) and the fallback probe log the selection they ran with too, as
 // `ENV CUA_NATIVE_ENGINE=<value>` or `ENV CUA_NATIVE_ENGINE unset`.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { writeCuaLane } from './parity-run-fixture.mjs';
 
 const args = process.argv.slice(2);
 const log = process.env.FAKE_LOG;
@@ -24,7 +27,20 @@ if (script.endsWith('linux-fallback.mjs')) { selection(); process.exit(Number(pi
 if (script.endsWith('repl-parity.mjs')) {
   if (action === 'prepare') console.log(JSON.stringify({ ownedPreparation: { home: '/fake/prepared-home' }, display: ':9', xSession: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/fake/bus' } }));
   if (action === 'cleanup-prepared') process.exit(Number(pick(process.env.FAKE_CLEANUP, nth(/cleanup-prepared/), '0')));
-  if (action === 'diff') process.exit(Number(process.env.FAKE_DIFF ?? '0'));
+  if (action === 'run') {
+    const out = args[args.indexOf('--out') + 1];
+    const lane = writeCuaLane(out, process.env.FAKE_LANE ? process.env.FAKE_LANE.split(',') : []);
+    const bin = args.includes('--engine-bin') ? args[args.indexOf('--engine-bin') + 1] : null;
+    if (bin) {
+      for (const entry of lane.meta.engineAnswered) {
+        entry.expected = bin;
+        entry.observed = entry.observed.map((o) => ({ ...o, exe: bin }));
+      }
+      lane.meta.engineBin = bin;
+      writeFileSync(join(out, 'meta.json'), `${JSON.stringify(lane.meta, null, 2)}\n`);
+    }
+    process.exit(Number(process.env.FAKE_RUN ?? '0'));
+  }
   process.exit(0);
 }
 if (script.endsWith('gate.mjs')) {
@@ -33,20 +49,4 @@ if (script.endsWith('gate.mjs')) {
   process.exit(code);
 }
 if (script === 'bin/cua.mjs') process.exit(0);
-if (script.endsWith('native-baseline.mjs')) {
-  if (action !== 'compare') process.exit(0);
-  const answer = pick(process.env.FAKE_COMPARE, nth(/native-baseline\.mjs compare/), 'pass');
-  if (answer === 'topup') {
-    console.error('TOP-UP NEEDED: click');
-    console.error('VERDICT: FAIL');
-    process.exit(1);
-  }
-  if (answer === 'fail') {
-    console.error('VERDICT: FAIL');
-    process.exit(1);
-  }
-  if (answer === 'unproved') console.error('UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples');
-  console.error('VERDICT: PASS');
-  process.exit(0);
-}
 process.exit(0);

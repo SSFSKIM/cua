@@ -7,12 +7,9 @@
 // engine: the field is found under the gedit process's own application, read empty before the call, and read again
 // after it settles. This shows text arriving through the real facade from the own parts; the rest of item 6 (Chrome's
 // textarea and address bar, the paste safety cases, the bus trace) is credited from M5 (F10).
+// (E5's read-only rollback onto the vendor's engine went with that engine in #171 M6b.)
 //
-// With --read-only it is E5's rollback observation instead, run under CUA_NATIVE_ENGINE=vendor: list the apps, bind the
-// harness gedit and read its tree, with no input; and a cell's import of pngjs still selected from the module tree. The
-// driver (./linux-runtime.mjs) judges which engine answered from its process watch.
-//
-//   node scripts/accept/linux-text.mjs [--read-only]   JSON report on stdout; exit 0 when every step passes
+//   node scripts/accept/linux-text.mjs   JSON report on stdout; exit 0 when every step passes; any argument is refused (exit 2)
 // Its whole GUI footprint is one standalone gedit on an empty file in a directory it creates, ended in `finally`. It
 // refuses to start on display :0 or with no DISPLAY: every run is on a private display.
 import {execFileSync, spawn} from 'node:child_process';
@@ -22,10 +19,9 @@ import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
 import {pinnedApprovals} from './lib.mjs';
-import {cellJson, selectionCell, selectionProblems} from './linux-browser-only.mjs';
+import {cellJson} from './linux-browser-only.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {Oracle} from '../linux-engine-diff/oracle.mjs';
 import {TEXT, occurrences} from '../linux-engine-diff/text.mjs';
@@ -92,14 +88,30 @@ function accessibilityOracle() {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+/**
+ * The fixture takes no argument -> null, or why `argv` is refused. `--read-only` was E5's rollback onto the vendor's
+ * engine, which went with that engine (#171 M6b): an old invocation is refused by name, before anything starts, and is
+ * never run as the typing witness (fix wave 1).
+ */
+export function argumentProblem(argv) {
+  if (!argv.length) return null;
+  if (argv.includes('--read-only')) return 'linux-text.mjs: --read-only (E5\'s read-only rollback onto the vendor\'s engine) was removed in cua 0.30.0 with that engine; this fixture is the item 6 typing witness and takes no argument';
+  return `linux-text.mjs takes no argument: ${argv.join(' ')}`;
+}
+
 async function main() {
-  const readOnly = process.argv.includes('--read-only');
+  const refused = argumentProblem(process.argv.slice(2));
+  if (refused) {
+    console.error(refused);
+    process.exitCode = 2;
+    return;
+  }
   const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
   const home = process.env.CUA_HOME ?? defaultHome();
   const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : []);
   const steps = [];
   const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-  const report = {fixture: readOnly ? 'linux-text --read-only' : 'linux-text', home, engineSetting: process.env.CUA_NATIVE_ENGINE ?? null, desktop: readOnly ? null : 'shared', steps};
+  const report = {fixture: 'linux-text', home, engineSetting: process.env.CUA_NATIVE_ENGINE ?? null, desktop: 'shared', steps};
   const dir = mkdtempSync(join(tmpdir(), 'cua-linux-text-'));
   const file = join(dir, `witness-${randomBytes(3).toString('hex')}.txt`);
   let gedit = null;
@@ -114,7 +126,7 @@ async function main() {
     writeFileSync(file, '');
     gedit = spawn(geditPath, ['--standalone', file], {detached: true, stdio: 'ignore'});
     const runBefore = runEntries();
-    const env = {...process.env, CUA_SHIM_PERSIST: 'session', ...(readOnly ? {} : {CUA_DESKTOP_MODE: 'shared'})};
+    const env = {...process.env, CUA_SHIM_PERSIST: 'session', CUA_DESKTOP_MODE: 'shared'};
     session = openSession({args: [CLI, 'serve'], env, clientName: 'cua-linux-text', onServerRequest: pinnedApprovals(() => pinned, asked)});
     await session.initialize();
 
@@ -126,45 +138,29 @@ async function main() {
       globalThis.fixtureWindow = win; nodeRepl.write(JSON.stringify({window: {id: win.id, app: win.app}}));`, 90_000);
     const window = cellJson(resultText(find), 'window');
     if (typeof window?.app === 'string' && window.app) pinned.add(window.app);
-    if (readOnly) {
-      const apps = await session.js('const apps = await cua.listApps({emit: false}); nodeRepl.write(JSON.stringify({apps: Array.isArray(apps) ? apps.length : null}));', 60_000);
-      const listed = cellJson(resultText(apps), 'apps');
-      step('list the apps', !apps.result?.isError && Number.isInteger(listed) && listed > 0, {apps: listed});
-    }
     const bind = window && await session.js(`globalThis.fixtureApp = await cua.getApp({windowId: fixtureWindow.id});
       const tree = await fixtureApp.getAXState({emit: false, disableDiffing: true});
       nodeRepl.write(JSON.stringify({bound: {source: /Accessibility source: (\\S+)/.exec(tree)?.[1] ?? null, lines: tree.split('\\n').length}}));`, 90_000);
     const bound = bind ? cellJson(resultText(bind), 'bound') : null;
-    if (!step(readOnly ? 'bind the harness gedit by X11 id and read its tree' : 'bind the harness gedit by X11 id', !find.result?.isError && pinned.size === 1 && !bind?.result?.isError && bound?.source === 'at_spi',
+    if (!step('bind the harness gedit by X11 id', !find.result?.isError && pinned.size === 1 && !bind?.result?.isError && bound?.source === 'at_spi',
       bound ?? {window: window ?? null, error: resultText(bind ?? find).slice(0, 300)})) throw new Error('bind');
 
-    if (readOnly) {
-      const chosen = await session.js(selectionCell(['pngjs']), 60_000);
-      const selection = cellJson(resultText(chosen), 'selection');
-      const runtime = resolveRuntime({home});
-      const imported = await session.js('const m = await import(\'pngjs\'); nodeRepl.write(JSON.stringify({imported: typeof (m.PNG ?? m.default?.PNG) === \'function\'}));', 60_000);
-      const problems = chosen.result?.isError ? [`the cell failed: ${resultText(chosen).slice(0, 300)}`] : selectionProblems({selected: selection?.selected, moduleDir: runtime.paths.moduleDir, specifiers: ['pngjs']});
-      if (cellJson(resultText(imported), 'imported') !== true) problems.push(`pngjs did not import: ${resultText(imported).slice(0, 300)}`);
-      report.imports = {selected: selection?.selected ?? null};
-      step('a cell\'s import still loads from the module tree', problems.length === 0, {selected: selection?.selected?.pngjs ?? null, problems});
-    } else {
-      // Through the fixture's own reads only: the field of the gedit process's own application.
-      const oracle = accessibilityOracle();
-      let field = null;
-      for (const deadline = Date.now() + 30_000; !field && Date.now() < deadline;) { field = findEditableText(oracle, gedit.pid); if (!field) await sleep(500); }
-      const read = () => { try { return field ? oracle.text(field) : null; } catch { return null; } };
-      const before = read();
-      step('the field is found and read through the fixture\'s own accessibility reads', !!field && typeof before === 'string', {found: !!field, before: before === null ? null : chars(before).length});
-      const typing = await session.js(`const answer = await fixtureApp.typeText(${JSON.stringify(TEXT)}); nodeRepl.write(JSON.stringify({typed: {ok: true, answer: answer === undefined ? null : answer}}));`, 90_000);
-      const typed = typing.result?.isError ? {ok: false, error: resultText(typing).split('\n').find(Boolean)?.slice(0, 300) ?? 'the cell failed'} : cellJson(resultText(typing), 'typed');
-      // The field after the answer, and again once a second has passed: a late second paste is read too.
-      const first = read();
-      await sleep(1000);
-      const after = read();
-      const problems = textProblems({typed, before, after});
-      report.text = {typed, after: after === null ? null : {characters: chars(after).length, occurrences: occurrences(after, TEXT), exact: after === TEXT}, settled: first === after};
-      step('typeText answers success, and the field holds acceptance 6\'s string exactly, once', problems.length === 0, {problems});
-    }
+    // Through the fixture's own reads only: the field of the gedit process's own application.
+    const oracle = accessibilityOracle();
+    let field = null;
+    for (const deadline = Date.now() + 30_000; !field && Date.now() < deadline;) { field = findEditableText(oracle, gedit.pid); if (!field) await sleep(500); }
+    const read = () => { try { return field ? oracle.text(field) : null; } catch { return null; } };
+    const before = read();
+    step('the field is found and read through the fixture\'s own accessibility reads', !!field && typeof before === 'string', {found: !!field, before: before === null ? null : chars(before).length});
+    const typing = await session.js(`const answer = await fixtureApp.typeText(${JSON.stringify(TEXT)}); nodeRepl.write(JSON.stringify({typed: {ok: true, answer: answer === undefined ? null : answer}}));`, 90_000);
+    const typed = typing.result?.isError ? {ok: false, error: resultText(typing).split('\n').find(Boolean)?.slice(0, 300) ?? 'the cell failed'} : cellJson(resultText(typing), 'typed');
+    // The field after the answer, and again once a second has passed: a late second paste is read too.
+    const first = read();
+    await sleep(1000);
+    const after = read();
+    const problems = textProblems({typed, before, after});
+    report.text = {typed, after: after === null ? null : {characters: chars(after).length, occurrences: occurrences(after, TEXT), exact: after === TEXT}, settled: first === after};
+    step('typeText answers success, and the field holds acceptance 6\'s string exactly, once', problems.length === 0, {problems});
 
     const ended = await session.call('end_task');
     step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);

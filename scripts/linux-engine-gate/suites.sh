@@ -7,16 +7,14 @@
 #   ENGINE=candidate  a candidate build, ENGINE_BIN, named to every cua lane (--engine-bin, CUA_LINUX_ENGINE_BIN), as
 #                     M4's facade.sh ran it (docs/evidence/…/m4/facade/scripts/, kept as M4's record; no step runs it)
 # The parts:
-#   parity    repl-parity's native suite on both engine lanes, prepared --native-only (installed: its prepared home
-#             checked), and the diff against scripts/repl-parity/expected/native-linux.json; a final cleanup that fails
-#             fails the part                                                                     (--session)
-#   baseline  native-baseline, three runs a lane interleaved, summaries and compare --engines (--session); installed:
-#             each cua run checks its own home by the pinned rule before any session (native-baseline --pinned-check).
-#             When the comparison names series only a top-up can decide (TOP-UP NEEDED), one top-up: three more runs a
-#             lane under $OUT/baseline-topup/, and compare --engines with it, whose verdict is the part's (the gate's R2,
-#             the design session, 2026-11-13). A series reported UNPROVED under a declared gap (F8a) is logged and
-#             listed in $OUT/baseline/unproved.txt, which the step's record carries (gate.mjs). A pilot (LABEL=pilot)
-#             takes no top-up (ruling 722): the series only it could decide are unjudged, $OUT/baseline/unjudged.txt
+#   parity    repl-parity's native suite on the cua lane, prepared --native-only (installed: its prepared home checked),
+#             by its own verdict (#171 M6b, its pre-flight §1.3; parity-verdict.mjs, into $OUT/parity/verdict.json):
+#             the run's exit status, the native suite's 34 cases complete, both text cases positive, and the engine the
+#             home's cua-engine (or the candidate) under the trusted worker. The final cleanup runs whatever the lane
+#             and its verdict did, and a cleanup that fails fails the part too                     (--session)
+#             Until M6b the part also ran a vendor lane and diffed the two (scripts/repl-parity/expected/
+#             native-linux.json); the vendor's Linux engine is gone, and `repl-parity.mjs diff` still judges stored runs.
+#             The baseline part (R2, native-baseline's compare --engines of a vendor lane and a cua lane) went with it.
 #   accept    scripts/accept/linux-native.mjs, CUA_NATIVE_ENGINE=cua, in a home of the run's (installed: checked), under
 #             the 50 ms sampler, whose record is judged (engine-watch.mjs)                       (--session)
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
@@ -48,9 +46,8 @@ if [ -n "${CUA_LINUX_ENGINE_BIN:-}" ]; then echo "CUA_LINUX_ENGINE_BIN is set ($
 # what the cua lanes are given: nothing on the installed engine, the candidate on a candidate
 lane_engine=()
 fixture_engine=()
-baseline_check=()
 case "$ENGINE" in
-  installed) [ -z "${ENGINE_BIN:-}" ] || { echo "ENGINE=installed takes no ENGINE_BIN" >&2; exit 2; }; baseline_check=(--pinned-check) ;;
+  installed) [ -z "${ENGINE_BIN:-}" ] || { echo "ENGINE=installed takes no ENGINE_BIN" >&2; exit 2; } ;;
   candidate) [ -n "${ENGINE_BIN:-}" ] || { echo "ENGINE=candidate needs ENGINE_BIN" >&2; exit 2; }; lane_engine=(--engine-bin "$ENGINE_BIN"); fixture_engine=(CUA_LINUX_ENGINE_BIN="$ENGINE_BIN") ;;
   *) echo "ENGINE is installed or candidate, not $ENGINE" >&2; exit 2 ;;
 esac
@@ -67,12 +64,12 @@ esac
 cd "$WT" || exit 2
 part=$1
 case "$part" in
-  parity|baseline|accept|device|fallback|inner-parity|inner-baseline|inner-accept|inner-device|inner-fallback) ;;
+  parity|accept|device|fallback|inner-parity|inner-accept|inner-device|inner-fallback) ;;
   *) echo "unknown part $part" >&2; exit 2 ;;
 esac
 case "${part#inner-}" in
   fallback) [ "$SELECTION" = default ] || { echo "the fallback part runs with SELECTION=default" >&2; exit 2; } ;;
-  parity|baseline) [ "$SELECTION" = explicit ] || { echo "the $part part names its lanes' engines; SELECTION=default is for accept, device and fallback" >&2; exit 2; } ;;
+  parity) [ "$SELECTION" = explicit ] || { echo "the $part part names its lane's engine; SELECTION=default is for accept, device and fallback" >&2; exit 2; } ;;
 esac
 node -e "import('$WT/scripts/repl-parity/devices.mjs').then(({declaredDevice}) => { if (declaredDevice(process.argv[1]).platform !== 'linux') throw new Error('not a Linux device'); })" "$DEVICE" \
   || { echo "DEVICE=$DEVICE is not a Linux device scripts/repl-parity/devices.mjs declares" >&2; exit 2; }
@@ -114,7 +111,7 @@ run_home() {
 }
 
 case "$part" in
-  parity|baseline|accept|device|fallback)
+  parity|accept|device|fallback)
     log "== $part head $SHA label $LABEL device $DEVICE engine $ENGINE${ENGINE_BIN:+ $ENGINE_BIN} selection $SELECTION dirty=$([ -n "$DIRTY" ] && echo yes || echo no)"
     node "$FACADE/private-desktop.mjs" --harness "$WT" --out "$L/desktop" --session -- "$0" "inner-$part"
     status=$?
@@ -131,54 +128,16 @@ case "$part" in
       node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > "$L/cleanup.out" 2>&1
       exit 1
     fi
-    rm -rf "$OUT/parity/vendor" "$OUT/parity/cua"
-    node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine vendor --out "$OUT/parity/vendor" > "$L/vendor.out" 2>&1; log "vendor exit $? $(tail -1 "$L/vendor.out")"
-    node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua ${lane_engine[@]+"${lane_engine[@]}"} --out "$OUT/parity/cua" > "$L/cua.out" 2>&1; log "cua exit $? $(tail -1 "$L/cua.out")"
-    node scripts/repl-parity.mjs diff "$OUT/parity/vendor" "$OUT/parity/cua" --expected scripts/repl-parity/expected/native-linux.json > "$OUT/parity/diff.json" 2> "$L/diff.err"; d=$?; log "diff exit $d"
+    rm -rf "$OUT/parity/cua"
+    node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua ${lane_engine[@]+"${lane_engine[@]}"} --out "$OUT/parity/cua" > "$L/cua.out" 2>&1
+    r=$?; log "cua exit $r $(tail -1 "$L/cua.out")"
+    # R1's own verdict on the lane, its exit status among what it judges (parity-verdict.mjs)
+    node scripts/linux-engine-gate/parity-verdict.mjs "$OUT/parity/cua" --exit "$r" ${lane_engine[@]+"${lane_engine[@]}"} > "$OUT/parity/verdict.json" 2> "$L/verdict.err"
+    v=$?; log "verdict exit $v"
     node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > "$L/cleanup.out" 2>&1; k=$?; log "cleanup exit $k"
-    # the diff's failure first; else a cleanup that did not finish fails the part (its prepared home may be left)
-    [ "$d" -ne 0 ] && exit "$d"
+    # the verdict's failure first; else a cleanup that did not finish fails the part (its prepared home may be left)
+    [ "$v" -ne 0 ] && exit "$v"
     exit $k ;;
-  inner-baseline)
-    if pgrep -x gedit > /dev/null; then log "a gedit runs: the baseline refuses; not started"; exit 1; fi
-    EXPERIMENT="171-m5-$(date -u +%Y%m%d)"
-    node scripts/native-baseline.mjs prepare --device "$DEVICE" --commit "$SHA" > "$L/prepare.out" 2>&1 || { log "prepare failed"; exit 1; }
-    # three runs a lane interleaved into $1 (cv, cc), each side summarised; the logs prefixed $2
-    sitting() {
-      rm -rf "$1/cv" "$1/cc"
-      for n in 1 2 3; do
-        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine vendor --out "$1/cv/run-$n" > "$L/${2}cv-run-$n.out" 2>&1; log "${2}cv run-$n exit $?"
-        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine cua ${lane_engine[@]+"${lane_engine[@]}"} ${baseline_check[@]+"${baseline_check[@]}"} --out "$1/cc/run-$n" > "$L/${2}cc-run-$n.out" 2>&1; log "${2}cc run-$n exit $?"
-      done
-      node scripts/native-baseline.mjs summary "$1/cv" > "$L/${2}summary-cv.out" 2>&1; log "${2}summary cv exit $?"
-      node scripts/native-baseline.mjs summary "$1/cc" > "$L/${2}summary-cc.out" 2>&1; log "${2}summary cc exit $?"
-    }
-    # a comparison's undetermined and unproved series into the log, the unproved ones into the step's record too
-    report() {
-      while read -r line; do log "$line"; done < <(grep -E '^(UNDETERMINED AFTER TOP-UP|UNPROVED)' "$1")
-      grep '^UNPROVED' "$1" > "$OUT/baseline/unproved.txt"
-    }
-    sitting "$OUT/baseline" ""
-    node scripts/native-baseline.mjs compare --engines "$OUT/baseline/cv" "$OUT/baseline/cc" --out "$OUT/baseline/engines.md" > "$L/compare.out" 2>&1; c=$?; log "compare exit $c $(grep -m1 VERDICT "$L/compare.out")"
-    report "$L/compare.out"
-    # Acceptance 3's remedy, once: the series the sitting left undetermined, when only they fail it, pooled with one
-    # top-up of the same engine and display (the same private desktop and experiment); never a second
-    need=$(sed -n 's/^TOP-UP NEEDED: //p' "$L/compare.out")
-    # a pilot takes no top-up (ruling 722): the series only a top-up could decide are unjudged, listed in
-    # $OUT/baseline/unjudged.txt for the step's record, never a pass; nothing else failed, so the part does not fail
-    if [ "$c" -ne 0 ] && [ -n "$need" ] && [ "$LABEL" = pilot ]; then
-      for op in $need; do echo "UNJUDGED (a pilot takes no top-up; not a pass): $op"; done > "$OUT/baseline/unjudged.txt"
-      log "pilot: no top-up; unjudged $need"
-      exit 0
-    fi
-    if [ "$c" -ne 0 ] && [ -n "$need" ]; then
-      log "top-up for $need"
-      sitting "$OUT/baseline-topup" "topup-"
-      node scripts/native-baseline.mjs compare --engines "$OUT/baseline/cv" "$OUT/baseline/cc" --top-up-baseline "$OUT/baseline-topup/cv" --top-up-candidate "$OUT/baseline-topup/cc" --out "$OUT/baseline/engines-topped-up.md" > "$L/compare-topped-up.out" 2>&1; c=$?
-      report "$L/compare-topped-up.out"
-      log "compare with its top-up exit $c $(grep -m1 VERDICT "$L/compare-topped-up.out")"
-    fi
-    exit $c ;;
   inner-accept|inner-device)
     run_home || exit 1
     if ! pinned_check "$CUA_HOME" "$OUT/$P/pinned.txt"; then rm -rf "$R"; exit 1; fi

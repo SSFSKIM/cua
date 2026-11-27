@@ -75,3 +75,17 @@ test('negative control: no editable text, no application for the process, or a t
   assert.equal(findEditableText(fakeOracle(wide, ['app']), 1, {limit: 10}), null);
   assert.equal(findEditableText(fakeOracle(wide, ['app']), 1), 'n49');
 });
+
+// fix wave 1 (Minor): the fixture takes no argument. `--read-only`, E5's rollback onto the vendor's engine, went with
+// that engine in #171 M6b; an old invocation is refused before anything starts, never run as the typing witness.
+test('linux-text.mjs refuses any argument, --read-only by name, before it starts gedit', async () => {
+  const {argumentProblem} = await import('../scripts/accept/linux-text.mjs');
+  assert.equal(argumentProblem([]), null);
+  assert.match(argumentProblem(['--read-only']), /--read-only .*removed in cua 0\.30\.0/);
+  assert.match(argumentProblem(['--selection', 'default']), /takes no argument: --selection default/);
+  const {spawnSync} = await import('node:child_process');
+  const run = spawnSync(process.execPath, [new URL('../scripts/accept/linux-text.mjs', import.meta.url).pathname, '--read-only'], {encoding: 'utf8', env: {PATH: process.env.PATH, DISPLAY: ':99'}, timeout: 20000});
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /--read-only/);
+  assert.equal(run.stdout, '', 'no report: nothing ran');
+});

@@ -1,0 +1,197 @@
+# #171 M6b T8 (task 173): the credit check (pre-flight §5.3) and engine-linux's paths (§5.2, N8), at H
+# H = 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b (#171 M6b: merge T7 (task 172): the docs say Linux's vendor engine is retired, and the cloud VM upgrades with update.sh)
+# run 2026-11-27T19:48:47Z on dc-linux171-1e68
+
+## 1. The engine's source at H is linux-engine-v0.4.5's: the stat prints nothing
+$ git rev-parse linux-engine-v0.4.5^{commit}
+77ed101d43ea9b071bd9783dd9bb3387733f9f6d
+(exit 0)
+
+$ git diff --stat linux-engine-v0.4.5 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b -- native/linux-engine
+(exit 0)
+
+## 2. The two hashes of runtime/engine/linux-engine.json at H are the release's assets'
+$ git show 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b:runtime/engine/linux-engine.json
+{
+  "version": "0.4.5",
+  "release": "linux-engine-v0.4.5",
+  "assets": {
+    "x64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-x64",
+      "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a"
+    },
+    "arm64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-arm64",
+      "sha256": "f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"
+    }
+  }
+}
+(exit 0)
+
+$ gh release view linux-engine-v0.4.5 --repo SSFSKIM/cua --json tagName,assets --jq '.tagName, (.assets[] | "\(.name) \(.size) \(.digest)")'
+linux-engine-v0.4.5
+cua-engine-0.4.5-linux-arm64 1905024 sha256:f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c
+cua-engine-0.4.5-linux-x64 2233216 sha256:ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a
+SHA256SUMS 188 sha256:df3f51e7566e62922bb54a15755bb5ce71ad7863b27d1701d25cc37029521540
+(exit 0)
+
+$ node: each pin hash against the asset digest of the same name
+x64 cua-engine-0.4.5-linux-x64 pin ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a release sha256:ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a equal
+arm64 cua-engine-0.4.5-linux-arm64 pin f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c release sha256:f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c equal
+both equal
+(exit 0)
+
+## 3. Main's service, facade and host are H's: the diff prints nothing
+$ git diff 854103aa5 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b -- src/services/engine/linux src/services/engine/policy.mjs src/services/sky.mjs src/cua-api src/repl-host docs/cua-api
+(exit 0)
+
+## 4. What changed from da7585c31 to 854103aa5 in the same paths and native/linux-engine (each file is assigned in README.md's bridge table)
+$ git diff --stat=200 da7585c31 854103aa5 -- src/services/engine/linux src/services/engine/policy.mjs src/services/sky.mjs src/cua-api src/repl-host docs/cua-api native/linux-engine
+ docs/cua-api/PROVENANCE.md                 |   9 ++-
+ docs/cua-api/agent-cursor.md               |  15 +++--
+ docs/cua-api/core.md                       |   2 +-
+ docs/cua-api/linux-engine.md               |   2 +
+ docs/cua-api/macos/accessibility-tree.md   |   1 +
+ docs/cua-api/macos/action-answers.md       |   1 +
+ docs/cua-api/macos/background-web-pages.md |   1 +
+ docs/cua-api/macos/click-checks.md         |   1 +
+ docs/cua-api/macos/typing.md               |   1 +
+ native/linux-engine/Cargo.lock             |   2 +-
+ native/linux-engine/Cargo.toml             |   2 +-
+ native/linux-engine/README.md              |  42 ++++++++++---
+ native/linux-engine/src/drop_cursor.rs     |  25 ++++++++
+ native/linux-engine/src/drop_settle.rs     |  54 +++++++++++++++-
+ native/linux-engine/src/engine.rs          |  32 ++++++++--
+ native/linux-engine/src/engine/handle.rs   | 185 ++++++++++++++++++++++++++++++++++++++++++------------
+ native/linux-engine/src/engine/pointer.rs  | 515 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------
+ native/linux-engine/src/release_sync.rs    | 241 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+ native/linux-engine/src/wire.rs            |  33 +++++++++-
+ native/linux-engine/tests/live.rs          | 102 ++++++++++++++++++++++++++++++
+ src/cua-api/bind-linux-app.mjs             |   7 ++-
+ src/cua-api/browser-api.mjs                |  16 +++--
+ src/cua-api/create-tinysky-alt.mjs         |  16 ++---
+ src/cua-api/documentation.mjs              |  44 +++++++++++--
+ src/cua-api/line-breaks.mjs                |  13 ++++
+ src/cua-api/linux-accessibility-tree.mjs   |  15 ++++-
+ src/repl-host/identity.mjs                 |   2 +-
+ src/repl-host/jsonl.mjs                    |  57 +++++++++++++++++
+ src/repl-host/kernel-child.mjs             |   6 +-
+ src/repl-host/kernel.mjs                   |   3 +-
+ src/repl-host/supervisor.mjs               |   6 +-
+ src/repl-host/worker-runtime.mjs           |   3 +-
+ src/services/engine/linux/client.mjs       |  22 +++++--
+ 33 files changed, 1330 insertions(+), 146 deletions(-)
+(exit 0)
+
+$ git log --oneline --first-parent da7585c31..854103aa5 -- src/services/engine/linux src/services/engine/policy.mjs src/services/sky.mjs src/cua-api src/repl-host docs/cua-api native/linux-engine
+854103aa5 linux-engine 0.4.5: a Chrome drop under load is answered as it landed (#512), and engine lines stay one line (#572) (#585)
+f6a6002ef JSONL: split lines at LF only and write U+2028/U+2029 escaped (#565) (#571)
+cb9973e82 #171 M6a: Linux sessions run on cua's own runtime, with no vendor tree read (#568)
+0e7f3de4a Linux tree: escape every line break, as macOS does, and document the escapes (#558) (#563)
+cf02ca3c5 Tree: join flattened text the vendor's way and print line breaks escaped (#526) (#562)
+da927265e #171: linux-engine 0.4.4 pinned as the Linux default (#487, #488), MIN_ENGINE_VERSION 0.4.4, plugin 0.29.9 (#516)
+a14d5c1d7 macOS agent cursor document: first-call rules inline, detail behind lookups, first cell under 40K (#503) (#515)
+c02bbaea9 Browser first-use documentation fits inline in Claude Code (#494) (#508)
+435420cce MAWS in-app browser: profile keys as browser ids, MAWS named, visible ignored on cua's host (#493, 0.29.3) (#498)
+(exit 0)
+
+$ git log --oneline da7585c31..854103aa5 -- src/services/engine/linux src/services/engine/policy.mjs src/services/sky.mjs src/cua-api src/repl-host docs/cua-api native/linux-engine
+854103aa5 linux-engine 0.4.5: a Chrome drop under load is answered as it landed (#512), and engine lines stay one line (#572) (#585)
+f6a6002ef JSONL: split lines at LF only and write U+2028/U+2029 escaped (#565) (#571)
+cb9973e82 #171 M6a: Linux sessions run on cua's own runtime, with no vendor tree read (#568)
+0e7f3de4a Linux tree: escape every line break, as macOS does, and document the escapes (#558) (#563)
+cf02ca3c5 Tree: join flattened text the vendor's way and print line breaks escaped (#526) (#562)
+da927265e #171: linux-engine 0.4.4 pinned as the Linux default (#487, #488), MIN_ENGINE_VERSION 0.4.4, plugin 0.29.9 (#516)
+a14d5c1d7 macOS agent cursor document: first-call rules inline, detail behind lookups, first cell under 40K (#503) (#515)
+c02bbaea9 Browser first-use documentation fits inline in Claude Code (#494) (#508)
+435420cce MAWS in-app browser: profile keys as browser ids, MAWS named, visible ignored on cua's host (#493, 0.29.3) (#498)
+(exit 0)
+
+## 5. engine-linux's three paths (.github/ci-kit.yml) from 854103aa5 to H (N8): the diff prints nothing
+$ git diff 854103aa5 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b -- native/linux-engine runtime/releases/node/24.22.0-linux-x64.json .github/ci-kit.yml
+(exit 0)
+
+## 4a. Each file of that stat with the commits that touched it
+$ bash x64/scripts/credit-files.sh
+docs/cua-api/PROVENANCE.md: 0e7f3de4a a14d5c1d7 435420cce 
+docs/cua-api/agent-cursor.md: cf02ca3c5 a14d5c1d7 
+docs/cua-api/core.md: 435420cce 
+docs/cua-api/linux-engine.md: 0e7f3de4a 
+docs/cua-api/macos/accessibility-tree.md: cf02ca3c5 a14d5c1d7 
+docs/cua-api/macos/action-answers.md: a14d5c1d7 
+docs/cua-api/macos/background-web-pages.md: a14d5c1d7 
+docs/cua-api/macos/click-checks.md: a14d5c1d7 
+docs/cua-api/macos/typing.md: a14d5c1d7 
+native/linux-engine/Cargo.lock: 854103aa5 da927265e 
+native/linux-engine/Cargo.toml: 854103aa5 da927265e 
+native/linux-engine/README.md: 854103aa5 da927265e 
+native/linux-engine/src/drop_cursor.rs: da927265e 
+native/linux-engine/src/drop_settle.rs: da927265e 
+native/linux-engine/src/engine.rs: 854103aa5 da927265e 
+native/linux-engine/src/engine/handle.rs: 854103aa5 da927265e 
+native/linux-engine/src/engine/pointer.rs: 854103aa5 da927265e 
+native/linux-engine/src/release_sync.rs: 854103aa5 
+native/linux-engine/src/wire.rs: 854103aa5 
+native/linux-engine/tests/live.rs: 854103aa5 
+src/cua-api/bind-linux-app.mjs: 0e7f3de4a 
+src/cua-api/browser-api.mjs: 435420cce 
+src/cua-api/create-tinysky-alt.mjs: a14d5c1d7 
+src/cua-api/documentation.mjs: a14d5c1d7 
+src/cua-api/line-breaks.mjs: 0e7f3de4a 
+src/cua-api/linux-accessibility-tree.mjs: 0e7f3de4a 
+src/repl-host/identity.mjs: a14d5c1d7 c02bbaea9 435420cce 
+src/repl-host/jsonl.mjs: f6a6002ef 
+src/repl-host/kernel-child.mjs: f6a6002ef 
+src/repl-host/kernel.mjs: f6a6002ef 
+src/repl-host/supervisor.mjs: f6a6002ef 
+src/repl-host/worker-runtime.mjs: f6a6002ef 
+src/services/engine/linux/client.mjs: 854103aa5 f6a6002ef cb9973e82 da927265e 
+(exit 0)
+
+## 6. Every file of §4's stat assigned to a row of the bridge table (pre-flight §5.3; README.md, "The bridges")
+#
+# Rows, by commit: A = #493, #494, #503 (435420cce, c02bbaea9, a14d5c1d7); B = #526 (cf02ca3c5); C = 0.4.4, #516
+# (da927265e); D = #558 (0e7f3de4a); E = M6a, #568 (cb9973e82); F = #565 (f6a6002ef); G = 0.4.5, #512 (854103aa5);
+# K = 0.4.5, #572 (854103aa5's wire.rs and tests/live.rs). A file that several commits touched takes every one's row.
+#
+# file                                         rows   what of it
+docs/cua-api/PROVENANCE.md                     A D    the documents' provenance lines for #493/#503's and #558's changes
+docs/cua-api/agent-cursor.md                   A B    the macOS agent-cursor document (#503), and #526's two macOS documents
+docs/cua-api/core.md                           A      "two lines of core.md" (#493)
+docs/cua-api/linux-engine.md                   D      #558 documents the tree's escapes
+docs/cua-api/macos/accessibility-tree.md       A B    macOS documents
+docs/cua-api/macos/action-answers.md           A      macOS document (#503)
+docs/cua-api/macos/background-web-pages.md     A      macOS document (#503)
+docs/cua-api/macos/click-checks.md             A      macOS document (#503)
+docs/cua-api/macos/typing.md                   A      macOS document (#503)
+native/linux-engine/Cargo.lock                 C G    the version 0.4.4, then 0.4.5
+native/linux-engine/Cargo.toml                 C G    the version 0.4.4, then 0.4.5
+native/linux-engine/README.md                  C G K  each release's change lines
+native/linux-engine/src/drop_cursor.rs         C      the handle end's settle (0.4.4)
+native/linux-engine/src/drop_settle.rs         C      the Electron drop's settle rest (0.4.4)
+native/linux-engine/src/engine.rs              C G    0.4.4's drop; 0.4.5's after-path tail and unconfirmed answer
+native/linux-engine/src/engine/handle.rs       C G    the same
+native/linux-engine/src/engine/pointer.rs      C G    the same
+native/linux-engine/src/release_sync.rs        G      #512 items 1 and 2
+native/linux-engine/src/wire.rs                K      #572: U+2028 and U+2029 written as escapes
+native/linux-engine/tests/live.rs              K      #572's live test (a window titled with U+2028, read by Node 24's readline)
+src/cua-api/bind-linux-app.mjs                 D      the Linux facade's tree text
+src/cua-api/browser-api.mjs                    A      the browser's ids (#493)
+src/cua-api/create-tinysky-alt.mjs             A      the loader both platforms share (#503)
+src/cua-api/documentation.mjs                  A      the first-use documents (#494, #503)
+src/cua-api/line-breaks.mjs                    D      #558's escapes
+src/cua-api/linux-accessibility-tree.mjs       D      #558's escapes
+src/repl-host/identity.mjs                     A      the host's identity string
+src/repl-host/jsonl.mjs                        F      #565's one JSONL framing
+src/repl-host/kernel-child.mjs                 F      the same
+src/repl-host/kernel.mjs                       F      the same
+src/repl-host/supervisor.mjs                   F      the same
+src/repl-host/worker-runtime.mjs               F      the same
+src/services/engine/linux/client.mjs           C E F G  MIN_ENGINE_VERSION 0.4.4 (C) and 0.4.5 (G); the installer remedy by path (E); jsonLine on stdin (F)
+#
+# 33 files, 33 assigned, none without a row. The rows' bridges (README.md): A by M6a's R1/R3/R4 at f41546d08, and R1's
+# cua lane, R3 and R4 rerun at H; B by its file list (macOS only); C by its reach at H9 (engine-044/reach/); D by FB and
+# R1's cua lane at H; E by acceptance 12 and its rerun here (items 1, 9, 10); F by R1's cua lane, R3, R4 and cells E1
+# and U3 at H; G by its reach at H10 (engine-045/reach/, engine-045/x300-arm64/); K by the engine's own tests in
+# engine-linux, which ran at H (ci-gate run 46056294731). Sections 1, 3 and 5 print nothing, as they should.
+# Credit: PASS.

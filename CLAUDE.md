@@ -1,7 +1,9 @@
 # cua
 
-A standalone MCP server (`cua serve`) that lets Claude Code drive OpenAI's computer-use runtime (`cua_repl`) without the
-Codex/ChatGPT desktop app: the pinned vendor release relocated under `CUA_HOME`, `{{secret:<KEY>}}` substitution by
+A standalone MCP server (`cua serve`) that lets Claude Code drive computer use (`cua_repl`) without the Codex/ChatGPT
+desktop app: on macOS OpenAI's computer-use runtime, the pinned vendor release relocated under `CUA_HOME`; on Linux cua's
+own runtime and engine (cua 0.30.0 retired the vendor's Linux engine and downloads no ChatGPT package,
+`docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`), `{{secret:<KEY>}}` substitution by
 trusted code from the plain-file store `~/.config/claude-secrets` (written by the plugin's `/secret` mod, `hooks/mods`), and the
 user's existing Chrome profiles through cua's own extension (`extension/`) and native host (`src/chrome/host.mjs`), with
 no ChatGPT account or Codex login (`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`; the ChatGPT
@@ -17,8 +19,8 @@ strings become handles that restore to their exact bytes on write); it is vendor
 is loaded, so one guard decides every handle.
 
 Working rules:
-- The vendor runtime is unmodified and version-pinned; cua wraps it and never patches it. Verify runtime claims against
-  a live probe or the readable vendor source (`--readable-source`), not against the spec alone.
+- On macOS the vendor runtime is unmodified and version-pinned; cua wraps it and never patches it. Verify runtime
+  claims against a live probe or the readable vendor source (`--readable-source`), not against the spec alone.
 - Never read or print `auth.json`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`, the extension's private key
   (`~/.config/cua/extension-key.pem`, the owner's; only `CUA_EXTENSION_KEY=… npm run extension:pack` reads it to sign)
   or any secret value; nothing in cua runs `codex login`. Never kill Chrome, the ChatGPT app or their hosts; never

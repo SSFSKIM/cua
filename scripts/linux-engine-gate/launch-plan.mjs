@@ -26,6 +26,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { launchCommand, parseGateArgs, runStep } from './gate.mjs';
+import { fixturePaths } from '../linux-engine-diff/vendor-fixture.mjs';
 import { STEPS } from './steps.mjs';
 
 /** The scratch names the runner makes afresh on each launch, printed as their pattern. */
@@ -70,6 +71,8 @@ export async function dryLaunch(step, { pinned, out, base = process.env }) {
     privateDisplay,
     leftovers: { roots: [], proc: null },
     start: () => ({ refused: [] }),
+    // the comparator fixture's paths, unchecked: a dry plan reads no fixture (a step's run checks it)
+    vendorFixture: ({ dir, arch }) => fixturePaths(dir, arch),
   });
   return { step: step.name, print, launch: launch && { ...launch, env: envDelta(launch.env, base) } };
 }

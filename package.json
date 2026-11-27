@@ -2,7 +2,7 @@
   "name": "cua",
   "version": "0.1.0",
   "private": true,
-  "description": "Standalone MCP server for OpenAI's computer-use runtime on macOS and Linux.",
+  "description": "Standalone MCP server for computer use: OpenAI's computer-use runtime on macOS, cua's own runtime and engine on Linux.",
   "type": "module",
   "engines": {
     "node": "^22.14 || >=23.7"

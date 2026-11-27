@@ -9,12 +9,14 @@
 //     (CODEX_HOME_LEFTOVERS, plus `*.sqlite` with its `-wal` and `-shm`, at CODEX_HOME's top level). What node_repl still
 //     keeps there for the macOS vendor host (config.toml, computer-use/sessions, node_repl/active_execs) is not on the
 //     list and never touched;
-//   - in an installed release tree, the CLI component its pin used to list and lists no more: CodexCLI.app (darwin, a
-//     directory; the darwin pin kept its release id when M2 dropped it) or `codex` (linux, a file; M3). Only in a tree
-//     cua installed (a real directory holding an install record valid for its checked-in pin), only by that exact name,
-//     and never while a session may be running from this home: run/ records no session's release, so any session the
-//     stale sweep leaves (a live owner, a record not yet readable, an entry with no record, or a run/ that cannot be
-//     read) defers it to a later install. A session started by a cua before #115 runs its children through that CLI.
+//   - on macOS, in an installed release tree, the CLI component its pin used to list and lists no more: CodexCLI.app (a
+//     directory; the darwin pin kept its release id when M2 dropped it). Only in a tree cua installed (a real directory
+//     holding an install record valid for its checked-in pin), only by that exact name, and never while a session may
+//     be running from this home: run/ records no session's release, so any session the stale sweep leaves (a live
+//     owner, a record not yet readable, an entry with no record, or a run/ that cannot be read) defers it to a later
+//     install. A session started by a cua before #115 runs its children through that CLI. On Linux the scan looks inside
+//     no release (#171 M6b, N4): the vendor's tree there is reported whole and left as it is (retired-tree.mjs), so its
+//     callers pass no pins, and runtimes/ is not looked at.
 // Only cua's own CODEX_HOME is ever looked at, $CUA_HOME/state/codex from the home's layout: the environment's
 // CODEX_HOME (the Codex CLI's own setting, which may name the user's ~/.codex) is never read.
 // Every path is reached from the real home through real directories only (a link on the way is not followed, and is
@@ -32,12 +34,13 @@ import {assertSessionParents, sweepRun} from './run-dir.mjs';
 
 export const CODEX_HOME_LEFTOVERS = ['auth.json', 'installation_id', 'models_cache.json', 'cache', 'plugins', 'skills', 'log', 'tmp/arg0', 'browser/sessions'];
 const SQLITE = /\.sqlite(-wal|-shm)?$/;
-// The Codex CLI component a release pin used to list, per platform, and whether it is a directory.
-const CLI_COMPONENT = {darwin: {name: 'CodexCLI.app', directory: true}, linux: {name: 'codex', directory: false}};
+// The Codex CLI component a release pin used to list, per platform, and whether it is a directory: macOS's alone, since
+// nothing looks inside a Linux release (N4).
+const CLI_COMPONENT = {darwin: {name: 'CodexCLI.app', directory: true}};
 // What a prune renames a release's CLI to before deleting it (removeCodexLeftovers); one left by a failed delete or a
 // crash is a leftover too, found by exactly this shape.
 const tombstoneName = name => `.${name}.pruning-${randomBytes(4).toString('hex')}`;
-const TOMBSTONE = /^\.(CodexCLI\.app|codex)\.pruning-[0-9a-f]+$/;
+const TOMBSTONE = /^\.(CodexCLI\.app)\.pruning-[0-9a-f]+$/;
 
 // A scan of the home: every lstat or listing error other than a missing path (ENOENT, ENOTDIR) is recorded in
 // `errors`, and every symbolic link on the way to a leftover (`ownDirectory`) in `uninspected`, so neither an
@@ -63,11 +66,12 @@ function scanner() {
 }
 
 // -> {codexHome, files: CODEX_HOME-relative names present, trees: [{release, name, path}], errors: [{path, code}],
-// uninspected: [path of a link on the way, not followed]}.
+// uninspected: [path of a link on the way, not followed]}. Without `pins` (Linux) no release is looked at, and `trees` is
+// empty.
 export function findCodexLeftovers({home, pins}) {
   const layout = homeLayout(realHome(home));
   const scan = scanner();
-  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout, scan), trees: unusedCliComponents(layout, pins, scan), errors: scan.errors, uninspected: scan.uninspected};
+  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout, scan), trees: pins ? unusedCliComponents(layout, pins, scan) : [], errors: scan.errors, uninspected: scan.uninspected};
 }
 
 function codexHomeLeftovers({home, codexHome}, {lstat, ownDirectory, names}) {
@@ -123,9 +127,8 @@ const PRUNE_ADVICE = `once every cua using this home is updated (an older one ma
 // A release's CLI is checked for sessions right before it goes and again after it is renamed aside to a tombstone in
 // its own directory (one rename, so no launch ever sees half a bundle); a session found the second time puts it back.
 // What remains is a session that starts after that second check and launches the CLI before the tombstone is deleted:
-// only an older cua does that (this one never launches it). On macOS its launch then fails; on Linux an older cua on
-// the vendor host may run its kernel unconfined after a failed launch (#135), so updating every cua that shares the
-// home before pruning is a precondition, not a nicety. A tombstone whose delete failed (an unreadable directory inside, a crash)
+// only an older cua does that (this one never launches it), and its launch then fails, so updating every cua that
+// shares the home before pruning is a precondition, not a nicety. Without `pins` (Linux) only state/codex is pruned. A tombstone whose delete failed (an unreadable directory inside, a crash)
 // stays a leftover by its exact shape, `.<component>.pruning-<hex>` in an installed tree: doctor names it and the next
 // prune removes it with no session condition, since no cua launches that name. It is never renamed back.
 export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {

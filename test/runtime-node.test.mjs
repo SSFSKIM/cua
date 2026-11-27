@@ -512,22 +512,22 @@ test('the Linux helper step: a common part after the module tree, from a local c
   const deps = installHelper => ({home: ctx.home, platform: 'linux', host: linux, env: {HOME: ctx.dir}, pins: () => [vendorPin], nodePins: () => [ctx.pin],
     installModules: async () => { calls.push('modules'); return {root: '/fixture/home/modules/m', moduleDir: '/fixture/home/modules/m/node_modules', lock: 'm', changed: false}; },
     installHelper: async options => { calls.push(['helper', options.home, options.path]); return installHelper(options); },
-    installEngine: async () => ({path: '/fixture/home/engine/linux/cua-engine', version: '0.4.3', release: 'linux-engine-v0.4.3', sha256: 'b'.repeat(64), changed: false}),
-    installRuntime: async () => { calls.push('vendor'); return runtimeInstalled(); }});
+    installEngine: async () => { calls.push('engine'); return {path: '/fixture/home/engine/linux/cua-engine', version: '0.4.3', release: 'linux-engine-v0.4.3', sha256: 'b'.repeat(64), changed: false}; },
+    installRuntime: async () => assert.fail('nothing of the vendor\'s is installed on Linux (#171 M6b)')});
   const text = await cliInstall(t, ['--no-node', '--sandbox-helper', '/fixture/asset'], deps(async () => placed));
   assert.equal(text.status, 0, text.stderr);
-  assert.deepEqual(calls, ['modules', ['helper', ctx.home, '/fixture/asset'], 'vendor']);
+  assert.deepEqual(calls, ['modules', ['helper', ctx.home, '/fixture/asset'], 'engine']);
   assert.match(text.stdout, /^installed cua's sandbox helper at \/fixture\/home\/sandbox\/rust-v0\.163\.0\/codex-linux-sandbox$/m);
   assert.match(text.stdout, /^skipped the pinned Node \(--no-node\): sessions here run on CUA_NODE, and are refused without it$/m);
   const json = JSON.parse((await cliInstall(t, ['--no-node', '--json'], deps(async () => ({...placed, changed: false})))).stdout);
   assert.deepEqual(json.sandboxHelper, {...placed, changed: false});
   const failed = await cliInstall(t, ['--no-node', '--json'], deps(async () => { throw new CuaError('archive_hash_mismatch', 'archive SHA-256 is x; the pin expects y'); }));
   assert.equal(failed.status, 1);
-  const {error, vendor} = JSON.parse(failed.stdout);
+  const {error, engine} = JSON.parse(failed.stdout);
   assert.equal(error.code, 'archive_hash_mismatch');
   assert.match(error.message, /^cua's sandbox helper was not installed: archive SHA-256 is x/);
   assert.match(error.hint, /^run `node \S+\/bin\/cua\.mjs install` again, or pass --sandbox-helper <file> with the pinned asset$/);
-  assert.equal(vendor.release, '0.0.1-fixture', 'the lanes are still attempted');
+  assert.equal(engine.release, 'linux-engine-v0.4.3', 'the engine is still attempted');
   const elsewhere = await cliInstall(t, ['--no-node', '--sandbox-helper', '/fixture/asset'], {...deps(async () => assert.fail('no helper step')), platform: 'darwin'});
   assert.equal(elsewhere.status, 2);
   assert.match(elsewhere.stderr, /--sandbox-helper on Linux only/);

@@ -1,0 +1,217 @@
+{
+ "fixture": "linux-native",
+ "home": "/tmp/c173-r3c-ROQJZ5/accept/home/cua",
+ "sandbox": "(unset: the platform default)",
+ "selection": {
+  "mode": "explicit",
+  "engine": "cua"
+ },
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "display": ":1",
+    "gedit": "/usr/bin/gedit"
+   }
+  },
+  {
+   "name": "bind the fixture window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 6291556,
+    "app": "org.gnome.gedit",
+    "title": "fixture-02aaa3.txt (/tmp/cua-linux-native-890rFD) - gedit"
+   }
+  },
+  {
+   "name": "type the marker and read it back from the accessibility tree",
+   "status": "PASS",
+   "detail": {
+    "source": "at_spi",
+    "readBack": true
+   }
+  },
+  {
+   "name": "the kernel reads no private state and no store",
+   "status": "PASS",
+   "detail": {
+    "state": "EACCES",
+    "store": "EACCES"
+   }
+  },
+  {
+   "name": "the kernel connects to nothing: the controls reach the X server, the bus and two listeners, the kernel is refused on each, under the pinned helper",
+   "status": "PASS",
+   "detail": []
+  },
+  {
+   "name": "screenshot of the window",
+   "status": "PASS",
+   "detail": {
+    "mimeType": "image/jpeg",
+    "bytes": 40007,
+    "savedTo": null
+   }
+  },
+  {
+   "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+   "status": "PASS",
+   "detail": {
+    "result": "launched",
+    "processes": 1,
+    "sameNamespace": true
+   }
+  },
+  {
+   "name": "end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "f8e9e4c1-e9dd-4c16-98b5-ee4da76176ff"
+   }
+  },
+  {
+   "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "pinned": [
+     "org.gnome.gedit",
+     "cua-accept-cua-f2-3ce81407.desktop"
+    ],
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.gedit",
+      "action": "accept"
+     },
+     {
+      "method": "elicitation/create",
+      "app": "cua-accept-cua-f2-3ce81407.desktop",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "no run entry left for the connection",
+   "status": "PASS",
+   "detail": {
+    "before": [],
+    "after": []
+   }
+  },
+  {
+   "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+   "status": "PASS",
+   "detail": {
+    "initialize": "initialize failed (no answer)",
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "stderr": [
+     "cua: CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua's own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua's own host [repl_host_refused]"
+    ]
+   }
+  }
+ ],
+ "confinement": {
+  "targets": {
+   "x11": {
+    "path": "/tmp/.X11-unix/X1"
+   },
+   "bus": {
+    "path": "/tmp/c173-r3c-ROQJZ5/accept/desktop/session/bus/dbus-tFJG0JQvmp"
+   },
+   "tcp": {
+    "host": "127.0.0.1",
+    "port": 39245
+   },
+   "unix": {
+    "path": "/tmp/cua-linux-native-890rFD/confinement.sock"
+   }
+  },
+  "controls": {
+   "x11": "ok",
+   "bus": "ok",
+   "tcp": "ok",
+   "unix": "ok"
+  },
+  "accepted": {
+   "afterControls": {
+    "tcp": 1,
+    "unix": 1
+   },
+   "afterKernel": {
+    "tcp": 1,
+    "unix": 1
+   }
+  },
+  "kernel": {
+   "x11": "EPERM",
+   "bus": "EPERM",
+   "tcp": "EPERM",
+   "unix": "EPERM"
+  },
+  "ancestry": {
+   "kernel": 982950,
+   "underServe": true,
+   "helper": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+   "ancestors": [
+    {
+     "pid": 982949,
+     "comm": "codex-linux-san",
+     "exe": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
+    },
+    {
+     "pid": 982948,
+     "comm": "bwrap",
+     "exe": "/usr/bin/bwrap"
+    },
+    {
+     "pid": 982942,
+     "comm": "codex-linux-san",
+     "exe": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/sandbox/rust-v0.163.0/codex-linux-sandbox"
+    },
+    {
+     "pid": 982929,
+     "comm": "MainThread",
+     "exe": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/node/24.22.0/bin/node"
+    },
+    {
+     "pid": 982922,
+     "comm": "MainThread",
+     "exe": "/usr/bin/node"
+    },
+    {
+     "pid": 982887,
+     "comm": "MainThread",
+     "exe": "/usr/bin/node"
+    }
+   ]
+  },
+  "identity": {
+   "pid": 2,
+   "starttime": "263973102"
+  },
+  "samples": 6,
+  "verdict": {
+   "pass": true,
+   "problems": []
+  }
+ },
+ "marker": "cua-f2-3ce81407",
+ "status": "PASS"
+}

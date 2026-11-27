@@ -1,0 +1,10 @@
+== r4 at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b 2026-11-27T19:28:11Z dirty=no
+free on /:   34G
+2026-11-27T19:28:11Z == device head 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b label counted device cua-171 engine installed selection default dirty=no
+2026-11-27T19:28:16Z run home /tmp/c173-r4-ngg9qp/device/home installed
+2026-11-27T19:28:20Z pinned check of /tmp/c173-r4-ngg9qp/device/home/cua: exit 0, acceptance on the pinned release: /tmp/c173-r4-ngg9qp/device/home/cua/engine/linux/cua-engine
+2026-11-27T19:28:51Z scripts/accept/linux-device-mode.mjs (selection default) exit 0
+2026-11-27T19:28:51Z engine watch: PASS (only /tmp/c173-r4-ngg9qp/device/home/cua/engine/linux/cua-engine, under the trusted worker; no sky_linux)
+private-desktop: :1 session; command exit 0; watchdog clean
+2026-11-27T19:28:51Z == device exit 0
+r4 (device) exit 0

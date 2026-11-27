@@ -1,0 +1,11 @@
+# FB: the engine binaries the step executed and the vendor client files it opened, from FB.strace.gz (strace -f -qq --seccomp-bpf -e trace=%file), 160247 lines
+# execve of an engine binary (count, path), successful calls only:
+      5 /Users/new/.local/share/cua-171/t173/run/src/cua/engine/linux/cua-engine
+      1 /tmp/cua171-candidate-rHOtxN/cua-engine
+# execve of any other path holding sky_linux, successful calls only: 0 lines in all (the counts above included)
+# opens of the vendor client's service.js (count, path), successful calls only:
+      2 /Users/new/.local/share/cua-171/vendor-x64-pinned/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js
+# any path under a runtimes/ directory, any call: 0
+# the SHA-256 of each executed engine binary:
+ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a  /Users/new/.local/share/cua-171/t173/run/src/cua/engine/linux/cua-engine
+(gone) /tmp/cua171-candidate-rHOtxN/cua-engine

@@ -1,8 +1,8 @@
 // The launch record on Linux (Phase F, #115 M3; cua's own runtime since #171 M6a): the X11 and session-bus variables
 // pass through the ambient allowlist (the bus address derived from XDG_RUNTIME_DIR when an SSH session lacks it), the
 // sandbox is cua's pinned helper under the home, cells import from cua's ModuleTree, and no macOS helper app is named.
-// The Node is the managed one or CUA_NODE, never one under the vendor's tree; the vendor's engine is named only from the
-// selection that resolved its tree. A macOS launch is unchanged by any of these variables.
+// The Node is the managed one or CUA_NODE, never one under the vendor's tree; the vendor's engine, retired by cua 0.30.0
+// (M6b), is refused before any launch. A macOS launch is unchanged by any of these variables.
 import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,7 @@ import {chmodSync, existsSync, mkdirSync, realpathSync, statSync, symlinkSync, w
 import {join} from 'node:path';
 import {buildLaunch, createLaunchDirs, removeLaunchDirs, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE, ENGINE_SERVICE_DIR, LINUX_ENGINE_SERVICE,
   REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, BIN_DIR, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {CUA_ENTRY, parsePin, resolveRuntime, runtimeFor, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {CUA_ENTRY, parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {MIN_ENGINE_VERSION} from '../src/services/engine/linux/client.mjs';
 import {scratch, fixturePin, forgeActiveRuntime} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledEngine, fakeManagedNode, fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
@@ -163,46 +163,33 @@ test('scoped on Linux: an XDG applications directory inside a write root is refu
   assertSandboxFits('default', inRun);
 });
 
-// ---- the vendor's engine, from the selection (#171 M6a, F5) ----
+// ---- the vendor's engine, retired (#171 M6b; its pre-flight's §2.1) ----
 
-// CUA_NATIVE_ENGINE=vendor: the selection resolves the vendor's tree once (launch.mjs linuxEngineFor), and the launch takes
-// the helper, the service and the trust of the service's own imports from what it resolved. Cells still import from
-// the ModuleTree.
-test('the vendor selection, its tree installed: the vendor helper and service, the vendor node_modules trusted, the module base still the ModuleTree', t => {
+// CUA_NATIVE_ENGINE=vendor is refused at the selection, its tree installed or not, so no launch is built for it.
+test('the vendor selection, its tree installed, is refused before any launch: engine_retired', t => {
   const {home, host, runtime} = linux(t, 'x64', {engine: false});
   forgeActiveRuntime(home, {}, {host, ownRuntime: false});
-  const tree = vendorLinuxRuntime({home, host});
   const ambient = {...AMBIENT, CUA_NATIVE_ENGINE: 'vendor'};
-  const replHost = replHostFor({platform: 'linux', arch: host.arch, surfaces: ['computer'], ambient, home, resolveOwnNode: ownNode});
-  assert.deepEqual(replHost.engine, {engine: 'vendor', reason: 'explicit', status: 'pass',
-    vendor: {release: tree.release, bin: tree.paths.skyLinuxBin, service: tree.paths.skyVendorService, moduleDir: tree.paths.moduleDir}});
-  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient, replHost, services: {sky: SKY_SERVICE}});
-  assert.equal(launch.env.OAI_SKY_LINUX_BIN, join(tree.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
-  assert.equal(launch.env.CUA_SKY_SERVICE, tree.paths.skyVendorService);
-  assert.ok(launch.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(tree.paths.moduleDir), 'the vendor service imports from its own tree');
-  assert.ok(!launch.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(runtime.paths.moduleDir), 'the ModuleTree is never trusted');
-  assert.equal(launch.env.CUA_REPL_NODE_MODULE_DIRS, runtime.paths.moduleDir, 'cells import from the ModuleTree under either engine');
-  for (const key of ['CUA_ENGINE_BIN', 'CUA_DESKTOP_MODE']) assert.equal(key in launch.env, false, key);
-  assert.equal(launch.linuxEngine, null);
+  assert.throws(() => replHostFor({platform: 'linux', arch: host.arch, surfaces: ['computer'], ambient, home, resolveOwnNode: ownNode}), {code: 'engine_retired'});
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode}), {code: 'engine_retired'});
 });
 
-// The selection is resolved once, at a connection's open, and every launch of it (the first, lazy one, and one after an
-// idle stop) builds from it: buildLaunch never looks for the vendor's tree itself.
-test('buildLaunch takes the vendor engine from the bound selection and never looks for the tree; a vendor selection without one is a programming error', t => {
-  const {home, runtime} = linux(t, 'x64', {engine: false});
+// buildLaunch takes cua's engine from the bound selection and runs nothing else: a Linux computer selection without
+// cua's `bin` is a programming error, the vendor's tree it once carried included, and no environment names the vendor's
+// helper or a module of @oai/sky.
+test('a Linux computer launch requires cua\'s engine from the selection: anything else is a TypeError, and nothing names the vendor\'s engine', t => {
+  const {home, runtime, enginePath} = linux(t, 'x64');
   const vendor = {release: 'bound', bin: '/bound/sky_linux_x64', service: '/bound/sky/service.js', moduleDir: '/bound/node_modules'};
-  const replHost = {host: 'cua', reason: 'linux', node: NODE, engine: {engine: 'vendor', reason: 'explicit', status: 'pass', vendor}};
-  for (let launch = 0; launch < 2; launch++) {
-    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, replHost, services: {sky: SKY_SERVICE}});
-    assert.equal(env.OAI_SKY_LINUX_BIN, vendor.bin);
-    assert.equal(env.CUA_SKY_SERVICE, vendor.service);
-    assert.ok(env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(vendor.moduleDir));
+  for (const engine of [{engine: 'vendor', reason: 'explicit', status: 'pass', vendor}, {engine: 'vendor', reason: 'explicit', status: 'pass'}, undefined]) {
+    const replHost = {host: 'cua', reason: 'linux', node: NODE, ...(engine ? {engine} : {})};
+    assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, replHost, services: {sky: SKY_SERVICE}}), TypeError, JSON.stringify(engine));
   }
-  assert.equal(existsSync(join(home, 'runtimes')), false, 'no vendor tree exists here, and none was needed');
-  const unbound = {host: 'cua', reason: 'linux', node: NODE, engine: {engine: 'vendor', reason: 'explicit', status: 'pass'}};
-  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, replHost: unbound, services: {sky: SKY_SERVICE}}), TypeError);
-  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, replHost: {host: 'cua', reason: 'linux', node: NODE}, services: {sky: SKY_SERVICE}}), TypeError,
-    'a Linux computer selection that names no engine');
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  assert.equal(env.CUA_ENGINE_BIN, enginePath);
+  assert.equal('OAI_SKY_LINUX_BIN' in env, false);
+  for (const [name, value] of Object.entries(env)) assert.doesNotMatch(value, /@oai\/sky|sky_linux/, name);
+  // A browser-only launch with CUA_NATIVE_ENGINE=vendor builds: it asks for no engine.
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, resolveOwnNode: ownNode}).linuxEngine, null);
 });
 
 // ---- the Node (#171 M6a; the pre-flight's §3.3, F2, F2a) ----

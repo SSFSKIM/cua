@@ -9,6 +9,8 @@ import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topolo
 import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
 const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor',INVALID_ENGINE='CUA_NATIVE_ENGINE must be vendor or cua';
+// On Linux the sentence names cua alone: cua 0.30.0 removed the vendor's engine there (#171 M6b).
+const INVALID_LINUX_ENGINE='CUA_NATIVE_ENGINE must be cua (cua 0.30.0 removed the vendor\'s engine from Linux)';
 // The engine a computer session drives when nothing selects one, per platform (this oracle's own statement of each,
 // flipped with production's): on macOS the vendor's until #117's M5 flips it; on Linux cua's since #171's M5, on the
 // owner's word.
@@ -49,11 +51,11 @@ export function expectedSelection(row){
 // none and the result attests none (the engine row reports it). An unknown engine is refused. Since M6a (F2, F3) the
 // default and an explicit setting refuse alike, at the open, and nothing falls back to the vendor's engine: cua's with
 // none installed (`installed` false), one older than this cua needs (`outdated`) or one no record of its bytes names
-// (`unrecorded`); the vendor's with its tree absent (`vendorTree` false; a home `cua install` made holds it).
-function linuxEngineTable({engine='unset',engineFrom='env',installed=false,vendorTree=true,defaultEngine=ORACLE_LINUX_DEFAULT_ENGINE}){
- if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
+// (`unrecorded`). Since M6b the vendor's is refused in every row (engine_retired), whatever the home holds.
+function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_LINUX_DEFAULT_ENGINE}){
+ if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_LINUX_ENGINE}:{})};
  const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine;
- if(selected==='vendor')return vendorTree?{status:'pass'}:{error:'engine_not_installed'};
+ if(selected==='vendor')return {error:'engine_retired'};
  if(!installed)return {error:'engine_not_installed'};
  if(installed==='outdated')return {error:'engine_outdated'};
  if(installed==='unrecorded')return {error:'engine_unrecorded'};
@@ -129,7 +131,7 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  assert.equal(doctor.status,status);
 }
 const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[]),
- ...(r.engine?[`engine ${r.engine}${r.engineFrom==='settings'?' (engine.json)':''}`,r.installed?(r.installed===true?'installed':r.installed):'not installed',...(r.vendorTree===false?['no vendor tree']:[])]:[])].join(', ');
+ ...(r.engine?[`engine ${r.engine}${r.engineFrom==='settings'?' (engine.json)':''}`,r.installed?(r.installed===true?'installed':r.installed):'not installed']:[])].join(', ');
 // Every failing row and check, by name; a lane that stopped early or recorded fewer rows than planned never passes.
 export function selectionVerdict(evidence){
  const failures=evidence.failures??[];

@@ -1,0 +1,53 @@
+{
+ "home": "/tmp/c168-fb-96t9lT/fallback/home/cua",
+ "kind": "previous",
+ "reason": "engine_outdated",
+ "remedy": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "home": "previous"
+   }
+  },
+  {
+   "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+   "status": "PASS"
+  },
+  {
+   "name": "the default refuses cua's engine for engine_outdated, its engine row a failure naming the reason and node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine (cua doctor --json)",
+   "status": "PASS",
+   "detail": {
+    "mode": "default",
+    "selected": null,
+    "reason": "engine_outdated",
+    "row": "fail",
+    "doctorExit": 1
+   }
+  },
+  {
+   "name": "cua serve refuses the open for engine_outdated: it exits 1 unanswered, naming the reason and node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine, with no engine below it",
+   "status": "PASS",
+   "detail": {
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "answered": false,
+    "samples": 4,
+    "observed": [],
+    "uninspectable": [],
+    "stderr": "cua: the default engine (cua) selects cua's own engine, and the engine installed in this cua home (/tmp/c168-fb-96t9lT/fallback/home/cua/engine/linux/cua-engine) is 0.4.3, older than 0.4.5, which this cua needs: run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/bin/cua.mjs install --engine` [engine_outdated]\n  a `cua` from another checkout installs that checkout's engine, not this one's\n"
+   }
+  }
+ ],
+ "selection": {
+  "mode": "default",
+  "selected": null,
+  "reason": "engine_outdated",
+  "row": "fail"
+ },
+ "status": "PASS"
+}

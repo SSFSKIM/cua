@@ -24,7 +24,7 @@ import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {REPL_HOST_META_KEY} from '../repl-host/identity.mjs';
 import {isMawsInstance} from '../chrome/extension.mjs';
-import {buildLaunch, createLaunchDirs, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {assertRunOutsideVendorTree, buildLaunch, createLaunchDirs, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
@@ -141,6 +141,8 @@ export const listingSandboxMode = ambient => sandboxModeFrom(ambient);
 export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, verifyHelper, resolveOwnNode, prepareLaunch = launch => launch}) {
   sandbox ??= listingSandboxMode(ambient);
   const sessionId = randomUUID();
+  // On Linux run/ is kept out of the vendor's tree before the session's record is written there (#589, #171 M6b).
+  if (runtime.manifest.platform === 'linux') assertRunOutsideVendorTree(home, sessionId);
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {

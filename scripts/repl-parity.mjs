@@ -26,7 +26,7 @@ import {runBrowserApiScenario} from './repl-parity/browser-api.mjs';
 import {fixtureProcess} from './browser-parity/resources.mjs';
 import {LINUX_COMPUTER_DEFAULT,compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
 import {DEVICES,isDeclaredDevice} from './repl-parity/devices.mjs';
-import {laneEngineProblem} from './repl-parity/engine-answered.mjs';
+import {LINUX_VENDOR_LANE_RETIRED,laneEngineProblem} from './repl-parity/engine-answered.mjs';
 import {checkEnginePair,declarationsFor,validateNativeLinuxExpected,vendorReleaseOf} from './repl-parity/native-linux.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
 const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
@@ -46,13 +46,15 @@ export function parseSelection(argv){
  if(v.suite==='native-mac'&&v['engine-bin']!==undefined)throw new Error('--engine-bin names a Linux cua-engine; the native-mac suite serves the approved engine');
  return {action,v,a,b};
 }
-// The Linux native cases' engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade
-// suites): `--engine vendor|cua` on cua's own host (the only one Linux serves), and `--engine-bin` (the cua lane only)
-// naming a cua-engine on the device, which the serve runs through CUA_LINUX_ENGINE_BIN instead of the installed one.
+// The Linux native cases' engine lane (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade
+// suites): `--engine cua` on cua's own host (the only one Linux serves), and `--engine-bin` naming a cua-engine on the
+// device, which the serve runs through CUA_LINUX_ENGINE_BIN instead of the installed one. The vendor lane is refused
+// since #171 M6b, saying where its last runs are stored, which `diff` still judges (./repl-parity/native-linux.mjs).
 function linuxEngineSelection(v){
  if(v['engine-bin']!==undefined&&v.engine!=='cua')throw new Error('--engine-bin names the engine of the cua lane: it needs --engine cua');
  if(v.engine===undefined)return;
- if(!['vendor','cua'].includes(v.engine))throw new Error('a Linux native run names its engine: --engine vendor|cua');
+ if(v.engine==='vendor')throw new Error(LINUX_VENDOR_LANE_RETIRED);
+ if(v.engine!=='cua')throw new Error('a Linux native run names its engine: --engine cua');
  if(v.host!=='cua')throw new Error('a Linux native engine lane runs on cua\'s own host, the only one Linux serves: --host cua');
  if(v['engine-bin']!==undefined&&!/^\/[^\0\n]*$/.test(v['engine-bin']))throw new Error('--engine-bin needs the absolute path of the cua-engine on the device');
 }
@@ -64,7 +66,7 @@ export function assertPreparationServes(prepared,suite){
 // A run whose selection holds native cases names its engine (the lane is never left to a default or to the device's
 // engine.json); the selection is known only once the prepared platform has chosen the cases.
 export function assertNativeEngine(selected,v){
- if(selected.some(s=>s.backend==='native')&&v.engine===undefined)throw new Error('a run of the Linux native cases names its engine: --engine vendor|cua (and, on the cua lane, --engine-bin <path> for a cua-engine that is not installed)');
+ if(selected.some(s=>s.backend==='native')&&v.engine===undefined)throw new Error('a run of the Linux native cases names its engine: --engine cua (and --engine-bin <path> for a cua-engine that is not installed)');
 }
 // The native-mac suite (#117; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system part 3)
 // and its prepare: on a declared macOS device, over the runtime and the engine the owner approved there, served in place
@@ -137,7 +139,7 @@ export async function main(argv=process.argv.slice(2)){
  assertNativeEngine(selected,v);
  const environmentPending=resolvePendingDeclarations({logicalCells:v['pending-cell']??[],reason:v['pending-reason'],platform:prepared.platform,through:v.through,scenarios:selected,newRun:true});
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,...(prepared.platform==='linux'?{vendorRelease:prepared.vendorRelease??null}:{}),ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:[...LINUX_COMPUTER_DEFAULT.surfaces],sandbox:LINUX_COMPUTER_DEFAULT.sandbox}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),...(v.engine!==undefined?{engine:v.engine,engineBin:v['engine-bin']??null,engineAnswered:[]}:{}),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:[...LINUX_COMPUTER_DEFAULT.surfaces],sandbox:LINUX_COMPUTER_DEFAULT.sandbox}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),...(v.engine!==undefined?{engine:v.engine,engineBin:v['engine-bin']??null,engineAnswered:[]}:{}),complete:false,connections:[],hostAttestations:[]};
  // --pause-file or CUA_PAUSE_FILE (scripts/mini-pause.mjs): every cell waits at its boundary while the file exists; each pause is evidence.
  const pauseFile=v['pause-file']??process.env.CUA_PAUSE_FILE;
  if(pauseFile){meta.pauses=[];usePauseGate(pauseGate({file:pauseFile,record:p=>meta.pauses.push(p),log:line=>console.error(`repl-parity: ${line}`)}));}
@@ -189,7 +191,7 @@ export async function main(argv=process.argv.slice(2)){
     }
     const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit,context:{host:v.host}});if(!assertion.ok)failed=true;
   }
-  // the connections' recorded provenance first: a Linux run's vendor release is borne out by it (./repl-parity/vendor-release.mjs)
+  // the connections' recorded provenance first (a stored Linux run's vendor release was borne out by it, ./repl-parity/vendor-release.mjs)
   Object.assign(meta,pool.metadata());
   const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
   const ended=await client.call('end_task');if(ended.isError)throw new Error('Task cleanup failed');

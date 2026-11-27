@@ -69,11 +69,13 @@ export async function evaluateSelection({cases,evaluateRow,checks,around=(row,ru
  for(const [check,run] of Object.entries(checks))await attempt({check},run);
  return failures;
 }
-// The install acquires only: pinned to the vendor engine, so it never builds an engine under the scratch HOME (#117 M4);
-// the rows keep their own selection.
-export function installSelectionRuntime(home,ambient,{run=execFileSync,inspect=executionFacts}={}){
+// The install acquires only: on macOS pinned to the vendor engine, so it never builds an engine under the scratch HOME
+// (#117 M4); on Linux, where cua 0.30.0 refuses that selection (#171 M6b), it names no engine, an ambient one included.
+// The rows keep their own selection.
+export function installSelectionRuntime(home,ambient,{run=execFileSync,inspect=executionFacts,platform=process.platform}={}){
  const env=nodeEnvironment({...ambient,CUA_HOME:home});
- run(process.execPath,['bin/cua.mjs','install'],{env:{...env,CUA_NATIVE_ENGINE:'vendor'},stdio:['ignore','ignore','pipe'],timeout:300000,maxBuffer:1024*1024});
+ const {CUA_NATIVE_ENGINE:_selected,...unselected}=env;
+ run(process.execPath,['bin/cua.mjs','install'],{env:platform==='linux'?unselected:{...env,CUA_NATIVE_ENGINE:'vendor'},stdio:['ignore','ignore','pipe'],timeout:300000,maxBuffer:1024*1024});
  const installed=inspect({source:home,ambient:env});assertManagedNode(installed);return installed;
 }
 export async function withManagedNodeUnavailable(home,run){

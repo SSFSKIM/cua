@@ -1,0 +1,3 @@
+2026-11-24T10:43:03Z run FB (df / 91G, load 0.68 0.23 0.08) as printed: /Users/new/.local/share/cua-171/locked.sh t165-arm64 /Users/new/.local/share/cua-171/node24/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t165-main/scripts/linux-engine-gate/gate.mjs run FB --pinned /Users/new/.local/share/cua-171/m6b/home-arm64-045-main --out /Users/new/.local/share/cua-171/m6b/out-arm64-fb
+2026-11-24T10:43:35Z end FB exit 0 load=1.00 0.34 0.13 quiet wait 0 s: load 0.68 0.23 0.08 stress-ng 0
+2026-11-24T10:43:35Z steps done: FB

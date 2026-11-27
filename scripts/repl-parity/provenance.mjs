@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {readCuaRecord,readVendorRecord,cuaRecordFile,vendorRecordFile,chromeRoute} from '../../src/chrome/route.mjs';
 import {execFileSync} from 'node:child_process';import {resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {Writable} from 'node:stream';
-import {loadPins,resolveRuntime,selectPin} from '../../src/runtime/manifest.mjs';
+import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
 import {managedNode} from '../../src/runtime/managed-node.mjs';
 import {isDeepStrictEqual} from 'node:util';
@@ -14,18 +14,16 @@ export function executionFacts({source,ambient=process.env}) {
  const runtime=resolveRuntime({home:source});const git=args=>execFileSync('git',args,{cwd:checkout,encoding:'utf8'}).trim();
  return {checkout,home:runtime.home,commit:git(['rev-parse','HEAD']),dirty:git(['status','--porcelain'])!=='',...runtimeFacts(runtime,{ambient}),node:process.version,platform:process.platform,ownNode:ownNodeFacts(ambient,{home:runtime.home}),browserRoute:browserRouteFacts(source),...(process.platform==='linux'&&process.env.CUA_PARITY_CAPTURE_CHROME==='1'?{chromeLaunch:chromeLaunchFacts(fs,{display:process.env.DISPLAY??JSON.parse(process.env.CUA_PARITY_EXPECTED??'{}').display,home:runtime.home})}:{})};
 }
-// The runtime's part of a run's provenance, from the runtime the home resolves -> {release, runtimeNode, vendorRelease?}.
-// `runtimeNode` is the version the runtime's own Node reports: the release's bundled Node on macOS; on Linux, whose
-// runtime is cua's own since #171 M6a and has no Node of its own tree, the managed Node cua installed in the home (its
-// recorded bytes, managed-node.mjs managedNode), or null when there is none (sessions there need CUA_NODE). On Linux
-// `vendorRelease` is the vendor release this checkout pins, which the vendor engine lane runs from (engine-answered.mjs
-// expectedEngine attests that its sky_linux is that tree's) and whose defects and declarations its runs are held to
-// (native-linux.mjs vendorReleaseOf); the vendor tree itself is not read here.
+// The runtime's part of a run's provenance, from the runtime the home resolves -> {release, runtimeNode}. `runtimeNode`
+// is the version the runtime's own Node reports: the release's bundled Node on macOS; on Linux, whose runtime is cua's
+// own since #171 M6a and has no Node of its own tree, the managed Node cua installed in the home (its recorded bytes,
+// managed-node.mjs managedNode), or null when there is none (sessions there need CUA_NODE). A Linux run records no vendor
+// release since #171 M6b removed the vendor's engine there; a stored run's (native-linux.mjs vendorReleaseOf) is still
+// read.
 export function runtimeFacts(runtime,{ambient=process.env,run=execFileSync}={}){
  const host={platform:runtime.manifest.platform,arch:runtime.manifest.arch},linux=host.platform==='linux';
  const node=linux?managedNode(runtime.home,{host}).path:runtime.paths.node;
- return {release:runtime.release,runtimeNode:node?String(run(node,['--version'],{encoding:'utf8',env:{PATH:ambient.PATH,HOME:ambient.HOME}})).trim():null,
-  ...(linux?{vendorRelease:selectPin(loadPins(),host).release}:{})};
+ return {release:runtime.release,runtimeNode:node?String(run(node,['--version'],{encoding:'utf8',env:{PATH:ambient.PATH,HOME:ambient.HOME}})).trim():null};
 }
 // Resolve for the actual home, not an ambient source home's Node. Task 1b supplies the managed candidate between
 // explicit CUA_NODE and the bootstrap/PATH Nodes. Keep the resolver boundary injectable until that producer lands.

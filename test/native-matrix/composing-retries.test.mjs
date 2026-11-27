@@ -214,3 +214,14 @@ test('the retries per lane and per group, and a lopsided pattern flagged for the
   // Nothing recorded: no section.
   assert.deepEqual(renderComposingRetries(composingRetriesOf([run('cua', 1, [])])), []);
 });
+
+test('the summary carries the retries as the judge\'s field and renders their section with the owner\'s finding', async () => {
+  const {judge, renderSummary} = await import('../../scripts/native-matrix/summary.mjs');
+  const result = (engine, readings) => ({path: `${engine}/run-1/result.json`, result: {cell: 'matrix', complete: true, lanes: [{host: engine, engine}], rows: [],
+    meta: {run: 1, samples: 2, planId: 'full', unicode: {readings}}}});
+  const j = judge([result('vendor', [attempt('vendor', 'chrome@textedit', 1, false), attempt('vendor', 'chrome@textedit', 2, true),
+    ...[1, 2, 3].map(n => attempt('vendor', 'textedit@electron', n, false))]), result('cua', [attempt('cua', 'chrome@textedit', 1, true)])], [], {departures: []});
+  assert.deepEqual(j.composingRetries.lanes.vendor, {groups: 2, retries: 3, unconfirmed: 1});
+  assert.equal(j.composingRetries.findings.length, 1);
+  assert.match(renderSummary(j), /^## Composing retries \(ruling 1229\)$[\s\S]*^- \*\*For the owner\*\*: composing retries are lopsided/m);
+});

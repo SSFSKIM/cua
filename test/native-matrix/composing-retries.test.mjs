@@ -269,3 +269,25 @@ test('no case act cell runs during a composing retry: the acts come only after t
   // one per row after the third.
   assert.deepEqual([acts[0] ?? 0, acts[1] ?? 0, acts[2] ?? 0, acts[3]], [0, 0, 0, rows.length]);
 });
+
+// Ruling 1230, R2: a marked-range read around emptyField that came back unread (open: null; Chromium may not answer it)
+// leaves the mechanism unsettled for that app, said so, and no other app's reading (TextEdit's) stands in for it.
+test('an unread marked range around emptyField leaves the mechanism unsettled for that app, with no inference from TextEdit\'s reading', () => {
+  const side = open => ({ok: true, marked: open === null ? {open: null, length: null, errors: {range: -25205, marker: -25205}} : {open, length: open ? 1 : 0}, samePrepared: true});
+  const withMarks = (engine, group, n, composed, before, after) => ({...attempt(engine, group, n, composed), markedAtEmpty: {before: side(before), after: side(after)}});
+  const full = [
+    run('vendor', 1, [withMarks('vendor', 'textedit@electron', 1, false, null, null), withMarks('vendor', 'textedit@electron', 2, true, null, null),
+      withMarks('vendor', 'chrome@textedit', 1, true, true, false)]),
+    run('cua', 1, [withMarks('cua', 'textedit@electron', 1, true, false, null), withMarks('cua', 'chrome@textedit', 1, true, false, false),
+      // A setup that stopped before emptyField read nothing there: not counted either way.
+      {...attempt('cua', 'electron@textedit', 1, false), markedAtEmpty: null, setup: 'the user window did not take front and key'}]),
+  ];
+  const c = composingRetriesOf(full);
+  assert.deepEqual(c.unsettled, [{scene: 'electron', unread: 3, attempts: 3}]);
+  const page = renderComposingRetries(c).join('\n');
+  assert.match(page, /^- The mechanism is unsettled for the Electron fixture: the marked range around emptyField read back unread in 3 of 3 attempt\(s\); no inference is drawn from TextEdit's reading\.$/m);
+  assert.doesNotMatch(page, /unsettled for TextEdit/);
+  // TextEdit's own unread reading names no other app's.
+  const te = composingRetriesOf([run('cua', 1, [withMarks('cua', 'chrome@textedit', 1, true, null, false)])]);
+  assert.match(renderComposingRetries(te).join('\n'), /^- The mechanism is unsettled for TextEdit: the marked range around emptyField read back unread in 1 of 1 attempt\(s\); no other app's reading stands in for it\.$/m);
+});

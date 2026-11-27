@@ -160,3 +160,82 @@ const byText = by => `expected: ${by.kind === 'departure' ? 'the declared depart
 export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records. A difference is expected only where a declaration of this commit explains it and cites its ruling, or declared the row at the base's commit (ruling 1234).`, '',
   ...(r.differences.length ? r.differences.map(d => `- ${d.cell}: ${d.was}, now ${d.now}${d.by ? ` (${byText(d.by)})` : d.expected ? ' (expected)' : ''}`) : ['- no cell reads differently']), '',
   ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : [])] : []);
+
+// Ruling 1234: a judge-only dispatch (the workflow's jobs_run_id) judges the run jobs of an earlier run of this
+// workflow without re-running them. Before anything is judged: that run is this workflow's in this repo (`pin.repo`),
+// completed, at the pinned attempt and drawing commit; every artifact the judge picked is among that run's (the API's
+// list: its run id and head commit) and the latest attempt of its run job there, that job (of that attempt) concluded
+// success, and its records name that run, that attempt and the drawing commit; the runs, filter and speed_extra this
+// dispatch gives are what the records ran (their meta.run, the matrix records' meta.filter as `resolveFilter` resolves
+// the dispatch's filter, the save-sheet and speed-extra records being there); and nothing under native/, src/ or
+// package.json differs between the drawing and the judging commit (`diff`, the caller's git diff). jobs-check still
+// applies as before. `run`, `jobs`, `artifacts`: the API's run, its jobs of every attempt, its artifacts; `picked`:
+// [{name, results}] the artifacts the judge took, by artifact name. -> {runId, attempt, workflow, drawing, judging,
+// picked: [{run, name, attempt}], compared, refused: [why]}.
+export const SOURCE_WORKFLOW = '.github/workflows/m5-sittings.yml';
+const RUN_ARTIFACT = /^m5-sitting-c-run-(\d+)-(\d+)$/;
+export function sourceRunCheck({run, jobs = [], artifacts = [], picked = [], pin, inputs, resolveFilter, diff, judging}) {
+  const id = String(pin.runId), attempt = Number(pin.attempt), refused = [];
+  if (String(run?.id) !== id) refused.push(`the API's run is ${run?.id ?? 'none'}, not the pinned ${id}`);
+  if (run?.repository?.full_name !== pin.repo) refused.push(`run ${id} is of ${run?.repository?.full_name ?? 'no repository'}, not ${pin.repo}`);
+  if (!String(run?.path ?? '').startsWith(SOURCE_WORKFLOW)) refused.push(`run ${id} is of ${run?.path ?? 'no workflow'}, not ${SOURCE_WORKFLOW}`);
+  if (run?.status !== 'completed') refused.push(`run ${id} is ${run?.status ?? 'unread'}, not completed`);
+  if (Number(run?.run_attempt) !== attempt) refused.push(`run ${id} is at attempt ${run?.run_attempt ?? 'unread'}, not the pinned ${attempt}: an attempt other than the pinned one is not judged`);
+  if (run?.head_sha !== pin.commit) refused.push(`run ${id} ran ${run?.head_sha ?? 'no commit'}, not the pinned drawing commit ${pin.commit}`);
+  if (!diff?.clean) refused.push(`the drawing commit and the judging commit differ under native, src or package.json${diff?.error ? ` (${diff.error})` : ''}: the jobs ran another harness than this judge reads`);
+  let want = null;
+  const cells = inputs.only.filter(c => c !== SAVE_SHEET_CELL), wantSheet = !inputs.only.length || inputs.only.includes(SAVE_SHEET_CELL);
+  if (cells.length) { try { want = [...resolveFilter(cells)].sort(); } catch (error) { refused.push(`this dispatch's filter does not resolve: ${error.message}`); } }
+  const out = [];
+  for (const {name, results} of picked) {
+    const m = RUN_ARTIFACT.exec(name);
+    if (!m) { refused.push(`${name} is not a run job's artifact`); continue; }
+    const n = Number(m[1]), at = Number(m[2]);
+    out.push({run: n, name, attempt: at});
+    const listed = artifacts.find(a => a.name === name);
+    if (!listed) refused.push(`${name} is not among run ${id}'s artifacts`);
+    else {
+      if (String(listed.workflow_run?.id) !== id) refused.push(`${name} is run ${listed.workflow_run?.id ?? 'unknown'}'s artifact, not run ${id}'s`);
+      if (listed.workflow_run?.head_sha !== pin.commit) refused.push(`${name} was made at ${listed.workflow_run?.head_sha ?? 'no commit'}, not the pinned drawing commit ${pin.commit}`);
+      if (listed.expired) refused.push(`${name} has expired`);
+    }
+    const latest = Math.max(...artifacts.map(a => RUN_ARTIFACT.exec(a.name)).filter(x => x && Number(x[1]) === n).map(x => Number(x[2])));
+    if (latest !== at && Number.isFinite(latest)) refused.push(`run job ${n}'s latest attempt among run ${id}'s artifacts is ${latest}; the judge picked ${at}`);
+    if (at > attempt) refused.push(`${name} is of attempt ${at}, past the pinned ${attempt}`);
+    const job = jobs.find(j => j.name === `split_run (${n})` && Number(j.run_attempt) === at);
+    if (job?.conclusion !== 'success') refused.push(`run job ${n} (attempt ${at}) concluded ${job?.conclusion ?? 'unread'}, not success`);
+    const ours = results.filter(r => OURS.has(r.result?.cell));
+    const elsewhere = ours.filter(r => String(r.result.meta?.runner?.run?.id) !== id || Number(r.result.meta?.runner?.run?.attempt) !== at);
+    if (elsewhere.length) refused.push(`${name}: ${elsewhere.length} record(s) name another run or attempt than ${id} attempt ${at}`);
+    const commits = [...new Set(ours.map(r => r.result.meta?.commit))];
+    if (commits.length !== 1 || commits[0] !== pin.commit) refused.push(`${name}'s records ran ${commits.join(', ') || 'no commit'}, not the pinned drawing commit ${pin.commit}`);
+    if (ours.some(r => r.result.meta?.run !== n)) refused.push(`${name}'s records name another run number than ${n}`);
+    // The dispatch's inputs against what the records ran.
+    const matrix = ours.filter(r => r.result.cell === 'matrix'), sheet = ours.some(r => r.result.cell === 'intervention-save-sheet'), extra = ours.some(r => r.result.cell === 'speed-extra');
+    if (extra !== inputs.speedExtra) refused.push(`${name} ${extra ? 'has' : 'has no'} speed-extra records; this dispatch's speed_extra is ${inputs.speedExtra}`);
+    if (sheet !== wantSheet) refused.push(`${name} ${sheet ? 'has' : 'has no'} save-sheet records; this dispatch's filter ${wantSheet ? 'runs' : 'does not run'} the save-sheet cell`);
+    if (!inputs.only.length) {
+      if (!matrix.length || matrix.some(r => r.result.meta?.planId !== 'full')) refused.push(`${name} is ${matrix.length ? 'a filtered rerun' : 'no matrix run'}; this dispatch's filter is empty`);
+    } else if (!cells.length) {
+      if (matrix.length) refused.push(`${name} ran matrix cells; this dispatch's filter names the save-sheet cell alone`);
+    } else if (want) {
+      if (!matrix.length) refused.push(`${name} has no matrix records; this dispatch's filter names ${want.length} matrix cell(s)`);
+      for (const r of matrix) {
+        const got = [...(r.result.meta?.filter ?? [])].sort();
+        if (r.result.meta?.planId !== 'filtered') refused.push(`${name} is a full run job; this dispatch's filter names ${want.length} cell(s)`);
+        else if (JSON.stringify(got) !== JSON.stringify(want)) {
+          const apart = [...got.filter(c => !want.includes(c)), ...want.filter(c => !got.includes(c))];
+          refused.push(`${name} ran the filter of ${got.length} cell(s); this dispatch's filter resolves to ${want.length} (they differ in ${apart.slice(0, 3).join(', ')}${apart.length > 3 ? ', …' : ''})`);
+        }
+      }
+    }
+  }
+  const handed = [...new Set(out.map(p => p.run))].sort((a, b) => a - b), asked = [...inputs.runs].sort((a, b) => a - b);
+  if (JSON.stringify(handed) !== JSON.stringify(asked)) refused.push(`the judge was handed runs ${handed.join(', ') || 'none'}; this dispatch's runs are ${asked.join(', ')}`);
+  return {runId: id, attempt, workflow: SOURCE_WORKFLOW, status: run?.status ?? null, drawing: pin.commit, judging, picked: out.sort((a, b) => a.run - b.run),
+    compared: 'the runs, filter and speed_extra against the run jobs\' own records (meta.run, the matrix records\' meta.filter, the save-sheet and speed-extra records)', refused: [...new Set(refused)]};
+}
+export const renderSourceRun = r => (r ? ['## The source run (a judge-only dispatch, ruling 1234)', '',
+  `- source run: ${r.runId}, attempt ${r.attempt} (${r.workflow}, ${r.status ?? 'unread'})`, `- drawing commit (the run jobs'): ${r.drawing}`, `- judging commit (this judge's): ${r.judging}`,
+  ...r.picked.map(p => `- run ${p.run}: ${p.name}, attempt ${p.attempt}`), `- compared: ${r.compared}`, '',
+  ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : [])] : []);

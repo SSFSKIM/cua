@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {createHash} from 'node:crypto';
-import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict} from '../../scripts/hosted-sittings/split.mjs';
+import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
@@ -138,13 +138,37 @@ test('the workflow\'s split form: a run job per run number, each attempt its own
   assert.match(judge, /for run in \$\{M5_RUNS\/\/,\/ \}; do/);
   assert.doesNotMatch(judge.slice(judge.indexOf('M5_RUNS=')), /\$SPLIT_RUNS|\$\{SPLIT_RUNS/, 'no step after it reads the raw input');
   assert.match(judge, /pattern: m5-sitting-c-run-\*/);
-  assert.doesNotMatch(judge, /run-id:|actions: read/, 'H1: the base is the committed directory, not an artifact of another run');
+  // H1: the base is the committed directory, never an artifact; only a judge-only dispatch's run jobs come from another run.
+  assert.equal((judge.match(/run-id:/g) ?? []).length, 1);
+  assert.match(judge, /- if: inputs\.jobs_run_id != ''\n\s+uses: actions\/download-artifact@[0-9a-f]{40} # v8\.0\.1\n\s+with:\n\s+pattern: m5-sitting-c-run-\*\n\s+path: \$\{\{ runner\.temp \}\}\/m5-jobs\n\s+run-id: \$\{\{ inputs\.jobs_run_id \}\}\n\s+github-token: \$\{\{ github\.token \}\}/);
+  assert.match(judge, /- if: inputs\.jobs_run_id == ''\n\s+uses: actions\/download-artifact@[0-9a-f]{40} # v8\.0\.1\n\s+with:\n\s+pattern: m5-sitting-c-run-\*\n\s+path: \$\{\{ runner\.temp \}\}\/m5-jobs\n/);
   assert.match(judge, /grep -l "actions\/runs\/\$BASE_RUN_ID\)" docs\/evidence\/\*\/README\.md/);
   assert.match(judge, /\[ "\$\{#readmes\[@\]\}" -eq 1 \] \|\| \{ echo .*exactly one must"; exit 1; \}/, 'two committed bases naming the run refuse');
   assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS" --runs "\$M5_RUNS"\)\n\s+\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
   assert.match(judge, /tee "\$RUNNER_TEMP\/m5-out\/sitting\/attempts\.md"/, 'every attempt listed in sitting.md too');
   assert.match(job('split_refused'), /inputs\.form == 'split' && inputs\.sitting != 'c'[\s\S]*exit 2/);
   assert.match(judge, /name: m5-sitting-c-judge-\$\{\{ github\.run_attempt \}\}/);
+});
+
+// Ruling 1234: a judge-only dispatch (jobs_run_id, its attempt and drawing commit pinned) skips the run jobs and judges
+// the source run's, checked by source-run before anything is judged.
+test('the workflow\'s judge-only dispatch: no run job, the source run\'s artifacts, and source-run before the judging', () => {
+  const workflow = WORKFLOW(), jobs = new Map(jobsOf(workflow).map(j => [j.id, j.text]));
+  for (const input of ['jobs_run_id', 'jobs_run_attempt', 'jobs_commit']) assert.match(workflow, new RegExp(`\\n      ${input}:\\n.*\\n\\s+type: string\\n\\s+default: ''`), input);
+  assert.match(jobs.get('split_run'), /if: \$\{\{ !cancelled\(\) && .*inputs\.jobs_run_id == '' && needs\.engine\.result == 'success' \}\}/);
+  const judge = jobs.get('split_judge');
+  // A skipped split_run leaves the judge running: its condition is a status function's, never needs.split_run's result.
+  assert.match(judge, /needs: \[engine, split_run\]\n\s+if: \$\{\{ !cancelled\(\) && /);
+  assert.doesNotMatch(judge, /needs\.split_run/);
+  assert.match(judge, /permissions:\n\s+contents: read\n\s+actions: read\n/);
+  assert.match(judge, /\[\[ "\$JOBS_RUN_ID" =~ \^\[0-9\]\+\$ && "\$JOBS_RUN_ATTEMPT" =~ \^\[0-9\]\+\$ && "\$JOBS_COMMIT" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+  const step = judge.slice(judge.indexOf('- name: The source run (a judge-only dispatch)'));
+  assert.match(step, /^- name: The source run \(a judge-only dispatch\)\n\s+if: inputs\.jobs_run_id != ''\n\s+shell: bash\n\s+env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}/);
+  for (const call of ['gh api "$api" > "$src/run.json"', 'gh api --paginate --slurp "$api/jobs?filter=all&per_page=100" > "$src/jobs.json"', 'gh api --paginate --slurp "$api/artifacts?per_page=100" > "$src/artifacts.json"']) assert.ok(step.includes(call), call);
+  assert.match(step, /node scripts\/hosted-sittings\.mjs source-run --jobs "\$M5_JOBS" --source "\$src" --run-id "\$JOBS_RUN_ID" --attempt "\$JOBS_RUN_ATTEMPT" --commit "\$JOBS_COMMIT" \\\n\s+--repo "\$GITHUB_REPOSITORY" --runs "\$M5_RUNS" --only "\$FILTER" \$\{flags\[@\]\+"\$\{flags\[@\]\}"\} --out "\$RUNNER_TEMP\/m5-out\/sitting\/source-run\.json"/);
+  // Before anything is judged: after the run jobs are listed, before the judge's own setup and steps.
+  const at = name => judge.indexOf(`- name: ${name}`);
+  assert.ok(at('The run jobs (every attempt listed, each run\'s latest judged)') < at('The source run (a judge-only dispatch)') && at('The source run (a judge-only dispatch)') < at('The judge'));
 });
 
 // A macOS runner's `shell: bash` is /bin/bash 3.2: a bash-4 builtin or expansion dies there, mid-job.
@@ -188,6 +212,63 @@ test('the judge\'s base lookup under the runner\'s bash: one README names the ba
   const two = lookup(['45468052791', '45468052791']);
   assert.equal(two.status, 1, two.out);
   assert.match(two.out, /^2 committed bases name run 45468052791 \(docs\/evidence\/base-0\/README\.md docs\/evidence\/base-1\/README\.md\): exactly one must$/m);
+});
+
+// Ruling 1234: a judge-only dispatch judges the run jobs of an earlier run (jobs_run_id) without re-running them, and
+// only when that run is this workflow's in this repo, completed at its pinned attempt and drawing commit, every artifact
+// judged is that run's at that commit and the latest attempt of its run job, that job concluded success, its records
+// name that run, attempt and commit, the dispatch's runs, filter and speed_extra are what the records ran, and nothing
+// under native/, src/ or package.json differs between the drawing commit and the judging one.
+const SHA = '313fbf534c6dcfe8495318fb8441b67a35d87ccd', JUDGING = 'a'.repeat(40), RUN_ID = '46052931439';
+const PICKED_FILTER = ['savePanel/frontmost/typeText.name', 'electron/frontmost/click.point'];
+const resolveFilter = ids => new Set(ids.map(id => `method ${id}`));
+function source({runs = [1, 2, 3], attempts = {}, over = {}} = {}) {
+  const at = n => attempts[n] ?? 1;
+  const record = (n, cell, meta = {}) => ({result: {cell, lanes: [{engine: 'vendor'}], rows: [], meta: {run: n, commit: SHA, runner: {run: {id: RUN_ID, attempt: String(at(n))}}, ...meta}}});
+  const picked = runs.map(n => ({name: `m5-sitting-c-run-${n}-${at(n)}`, results: [record(n, 'matrix', {planId: 'filtered', filter: PICKED_FILTER.map(id => `method ${id}`)}), record(n, 'intervention-save-sheet'), record(n, 'speed-extra', {planId: 'speed-extra'})]}));
+  return {
+    run: {id: Number(RUN_ID), repository: {full_name: 'SSFSKIM/cua'}, path: '.github/workflows/m5-sittings.yml', status: 'completed', conclusion: 'failure', run_attempt: 1, head_sha: SHA, event: 'workflow_dispatch'},
+    jobs: runs.map(n => ({name: `split_run (${n})`, run_attempt: at(n), conclusion: 'success'})),
+    artifacts: runs.map(n => ({name: `m5-sitting-c-run-${n}-${at(n)}`, expired: false, workflow_run: {id: Number(RUN_ID), head_sha: SHA}})),
+    picked, pin: {runId: RUN_ID, attempt: '1', commit: SHA, repo: 'SSFSKIM/cua'},
+    inputs: {runs: [1, 2, 3], only: [SAVE_SHEET_CELL, ...PICKED_FILTER], speedExtra: true}, resolveFilter, diff: {clean: true, paths: ['native', 'src', 'package.json']}, judging: JUDGING, ...over,
+  };
+}
+test('a judge-only dispatch: the source run, its artifacts, jobs and records checked against the pin and the dispatch\'s inputs', () => {
+  const ok = sourceRunCheck(source());
+  assert.deepEqual(ok.refused, []);
+  assert.deepEqual([ok.runId, ok.attempt, ok.drawing, ok.judging], [RUN_ID, 1, SHA, JUDGING]);
+  const text = renderSourceRun(ok).join('\n');
+  assert.match(text, /^## The source run \(a judge-only dispatch, ruling 1234\)$/m);
+  assert.match(text, new RegExp(`^- source run: ${RUN_ID}, attempt 1 \\(\\.github/workflows/m5-sittings\\.yml, completed\\)$`, 'm'));
+  assert.match(text, new RegExp(`^- drawing commit \\(the run jobs'\\): ${SHA}$`, 'm'));
+  assert.match(text, new RegExp(`^- judging commit \\(this judge's\\): ${JUDGING}$`, 'm'));
+  assert.match(text, /^- run 2: m5-sitting-c-run-2-1, attempt 1$/m);
+  const refused = (over, why) => { const r = sourceRunCheck({...source(), ...over}); assert.ok(r.refused.some(x => why.test(x)), `${why}\n${r.refused.join('\n')}`); };
+  const base = source();
+  refused({run: {...base.run, path: '.github/workflows/other.yml'}}, /is of \.github\/workflows\/other\.yml, not \.github\/workflows\/m5-sittings\.yml/);
+  refused({run: {...base.run, repository: {full_name: 'someone/cua'}}}, /is of someone\/cua, not SSFSKIM\/cua/);
+  refused({run: {...base.run, status: 'in_progress'}}, /is in_progress, not completed/);
+  refused({run: {...base.run, run_attempt: 2}}, /is at attempt 2, not the pinned 1/);
+  refused({run: {...base.run, head_sha: 'b'.repeat(40)}}, /ran b{40}, not the pinned drawing commit/);
+  refused({diff: {clean: false, paths: ['native', 'src', 'package.json']}}, /the drawing commit and the judging commit differ under native, src or package\.json/);
+  refused({artifacts: base.artifacts.slice(1)}, /m5-sitting-c-run-1-1 is not among run 46052931439's artifacts/);
+  refused({artifacts: base.artifacts.map((a, i) => (i ? a : {...a, workflow_run: {id: 1, head_sha: SHA}}))}, /m5-sitting-c-run-1-1 is run 1's artifact, not run 46052931439's/);
+  refused({artifacts: base.artifacts.map((a, i) => (i ? a : {...a, workflow_run: {id: Number(RUN_ID), head_sha: 'c'.repeat(40)}}))}, /m5-sitting-c-run-1-1 was made at c{40}, not the pinned drawing commit/);
+  refused({artifacts: [...base.artifacts, {name: 'm5-sitting-c-run-1-2', expired: false, workflow_run: {id: Number(RUN_ID), head_sha: SHA}}]}, /run job 1's latest attempt among run 46052931439's artifacts is 2; the judge picked 1/);
+  refused({jobs: base.jobs.map((j, i) => (i ? j : {...j, conclusion: 'failure'}))}, /run job 1 \(attempt 1\) concluded failure, not success/);
+  refused({picked: base.picked.map((p, i) => (i ? p : {...p, results: p.results.map(r => ({result: {...r.result, meta: {...r.result.meta, runner: {run: {id: RUN_ID, attempt: '2'}}}}}))}))}, /m5-sitting-c-run-1-1: 3 record\(s\) name another run or attempt than 46052931439 attempt 1/);
+  refused({picked: base.picked.map((p, i) => (i ? p : {...p, results: p.results.map(r => ({result: {...r.result, meta: {...r.result.meta, commit: 'd'.repeat(40)}}}))}))}, /m5-sitting-c-run-1-1's records ran d{40}, not the pinned drawing commit/);
+  // The dispatch's inputs against what the records ran.
+  refused({inputs: {...base.inputs, runs: [1, 2]}}, /the judge was handed runs 1, 2, 3; this dispatch's runs are 1, 2/);
+  refused({inputs: {...base.inputs, speedExtra: false}}, /m5-sitting-c-run-1-1 has speed-extra records; this dispatch's speed_extra is false/);
+  refused({inputs: {...base.inputs, only: PICKED_FILTER}}, /m5-sitting-c-run-1-1 has save-sheet records; this dispatch's filter does not run the save-sheet cell/);
+  refused({inputs: {...base.inputs, only: [SAVE_SHEET_CELL, PICKED_FILTER[0]]}}, /m5-sitting-c-run-1-1 ran the filter of 2 cell\(s\); this dispatch's filter resolves to 1/);
+  refused({inputs: {...base.inputs, only: []}}, /m5-sitting-c-run-1-1 is a filtered rerun; this dispatch's filter is empty/);
+  refused({resolveFilter: () => { throw new Error('--only names nope'); }}, /this dispatch's filter does not resolve: --only names nope/);
+  const twice = sourceRunCheck(source({attempts: {2: 2}, over: {run: {...source().run, run_attempt: 2}, pin: {...source().pin, attempt: '2'}}}));
+  assert.deepEqual(twice.refused, [], 'a run job re-run in a later attempt is judged at that attempt');
+  assert.match(renderSourceRun({...twice, refused: ['x']}).join('\n'), /^Refused to judge: x\.$/m);
 });
 
 test('the CLI: a split option outside a split sitting C refuses, and jobs-check reads each job\'s hardware beside it', () => {

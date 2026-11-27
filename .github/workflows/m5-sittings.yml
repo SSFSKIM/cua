@@ -10,6 +10,8 @@ name: m5-sittings
 # secret is used; replayd's store is never written (ruling 1141). Each job uploads its output, whatever its result.
 # form=split (sitting c, ruling 1228): one job per run number (split_runs; filter for a filtered rerun over the full run
 # base_run_id names), then a judging job that refuses jobs of another harness commit or engine version (split.mjs).
+# jobs_run_id (ruling 1234): a judge-only dispatch, the judging job alone over the run jobs of that earlier run (its
+# attempt and drawing commit pinned by jobs_run_attempt and jobs_commit), refused unless they check out (source-run).
 on:
   push:
     branches: ['feat/117-m5']
@@ -36,6 +38,18 @@ on:
         default: ''
       base_run_id:
         description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791)"
+        type: string
+        default: ''
+      jobs_run_id:
+        description: "split, judge only (ruling 1234): the run id whose run jobs to judge without re-running them (empty: run them in this dispatch); runs, filter, base_run_id and speed_extra must be that run's"
+        type: string
+        default: ''
+      jobs_run_attempt:
+        description: "split, judge only: the attempt of jobs_run_id judged (its latest; the judge refuses another)"
+        type: string
+        default: ''
+      jobs_commit:
+        description: "split, judge only: the full harness commit the run jobs drew at (the judge refuses records of another)"
         type: string
         default: ''
       speed_extra:
@@ -181,7 +195,7 @@ jobs:
   # and the judge lists them all and takes each run's latest.
   split_run:
     needs: engine
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.engine.result == 'success' }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && inputs.jobs_run_id == '' && needs.engine.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -264,15 +278,24 @@ jobs:
   # A run job fails only on a harness or infrastructure stop (its verdicts ride in its artifact), so the judge runs
   # whenever the run jobs ended, on each run's artifact; one missing fails it closed. The base (a filtered rerun's) is the
   # committed evidence directory whose README names base_run_id, checked against its digests before it is read (H1).
+  # A judge-only dispatch (jobs_run_id, ruling 1234) skips split_run (!cancelled() keeps this job running) and reads the
+  # run jobs' artifacts of that run, checked against the API and the pin before anything is judged.
   split_judge:
     needs: [engine, split_run]
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.engine.result == 'success' }}
     runs-on: ${{ inputs.image == 'default' && 'xcode-27' || inputs.image }}
     timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
     env:
       SPLIT_RUNS: ${{ inputs.split_runs }}
       FILTER: ${{ inputs.filter }}
       BASE_RUN_ID: ${{ inputs.base_run_id }}
+      SPEED_EXTRA: ${{ inputs.speed_extra }}
+      JOBS_RUN_ID: ${{ inputs.jobs_run_id }}
+      JOBS_RUN_ATTEMPT: ${{ inputs.jobs_run_attempt }}
+      JOBS_COMMIT: ${{ inputs.jobs_commit }}
     steps:
       - name: Job start
         shell: bash
@@ -294,13 +317,29 @@ jobs:
           runs=${SPLIT_RUNS//[[:space:]]/}
           [[ "$runs" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "split_runs is run numbers, comma-separated (e.g. 1,2,3), not '$SPLIT_RUNS'"; exit 2; }
           echo "M5_RUNS=$runs" >> "$GITHUB_ENV"
+          # A judge-only dispatch names its source run's id, attempt and drawing commit, all three; none of them otherwise.
+          if [ -n "$JOBS_RUN_ID" ]; then
+            [[ "$JOBS_RUN_ID" =~ ^[0-9]+$ && "$JOBS_RUN_ATTEMPT" =~ ^[0-9]+$ && "$JOBS_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
+              || { echo "jobs_run_id needs jobs_run_attempt and jobs_commit (the full sha): '$JOBS_RUN_ID' '$JOBS_RUN_ATTEMPT' '$JOBS_COMMIT'"; exit 2; }
+          elif [ -n "$JOBS_RUN_ATTEMPT$JOBS_COMMIT" ]; then
+            echo 'jobs_run_attempt and jobs_commit belong to a judge-only dispatch (jobs_run_id)'; exit 2
+          fi
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) runs=$runs base=$BASE_RUN_ID"
           npm ci --no-audit --no-fund
           mkdir -p "$RUNNER_TEMP/m5-out"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - if: inputs.jobs_run_id == ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: m5-sitting-c-run-*
           path: ${{ runner.temp }}/m5-jobs
+      # A judge-only dispatch: the run jobs' artifacts of the source run, every attempt, as the source-run step checks them.
+      - if: inputs.jobs_run_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: m5-sitting-c-run-*
+          path: ${{ runner.temp }}/m5-jobs
+          run-id: ${{ inputs.jobs_run_id }}
+          github-token: ${{ github.token }}
       - name: The run jobs (every attempt listed, each run's latest judged)
         shell: bash
         run: |
@@ -328,6 +367,27 @@ jobs:
             [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "$(dirname "$readme") has no digests.sha256"; exit 1; }
             echo "M5_BASE=$(dirname "$readme")" >> "$GITHUB_ENV"
           fi
+      # Ruling 1234: the source run of a judge-only dispatch, from the API, against the pin and this dispatch's inputs,
+      # before anything is judged; its section rides in sitting.md (source-run.json beside the judge's report).
+      - name: The source run (a judge-only dispatch)
+        if: inputs.jobs_run_id != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="repos/$GITHUB_REPOSITORY/actions/runs/$JOBS_RUN_ID" src="$RUNNER_TEMP/m5-source"
+          mkdir -p "$src"
+          gh api "$api" > "$src/run.json"
+          gh api --paginate --slurp "$api/jobs?filter=all&per_page=100" > "$src/jobs.json"
+          gh api --paginate --slurp "$api/artifacts?per_page=100" > "$src/artifacts.json"
+          git cat-file -e "$JOBS_COMMIT^{commit}" 2>/dev/null || git fetch --no-tags origin "$JOBS_COMMIT"
+          flags=()
+          [ "$SPEED_EXTRA" = true ] && flags+=(--speed-extra)
+          code=0
+          node scripts/hosted-sittings.mjs source-run --jobs "$M5_JOBS" --source "$src" --run-id "$JOBS_RUN_ID" --attempt "$JOBS_RUN_ATTEMPT" --commit "$JOBS_COMMIT" \
+            --repo "$GITHUB_REPOSITORY" --runs "$M5_RUNS" --only "$FILTER" ${flags[@]+"${flags[@]}"} --out "$RUNNER_TEMP/m5-out/sitting/source-run.json" | tee -a "$GITHUB_STEP_SUMMARY" || code=$?
+          exit $code
       - name: Pin the O0 source for the TCC writer
         shell: bash
         env:

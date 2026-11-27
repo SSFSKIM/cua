@@ -29,6 +29,11 @@
 //       key-route. --speed-extra (off by default): the run job also re-times the three speed ops full sitting C missed,
 //       ten samples each on both lanes, judged on those samples alone, with three controls reported beside them (ruling
 //       1232). `plan` takes the same options.
+//   node scripts/hosted-sittings.mjs source-run --jobs <dir>,… --source <dir> --run-id <id> --attempt <n> --commit <sha>
+//       --repo <owner/name> --runs <n>,… --only <filter> [--speed-extra] --out <file>
+//       A judge-only dispatch's source run (ruling 1234): the API's run, jobs and artifacts (run.json, jobs.json and
+//       artifacts.json in <dir>, gh api's pages) and the run jobs' records against the pinned run, attempt and drawing
+//       commit and this dispatch's inputs; exit 2 when anything differs, 0 otherwise; `run` lists it in sitting.md.
 //   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>] --out <file>
 //       The run jobs' records, each with the hardware.json beside its dir: exit 2 when they are not one harness commit
 //       and one pair of engine versions (or two jobs ran one run), 0 otherwise; `run` lists the jobs in sitting.md.
@@ -51,7 +56,7 @@
 import {spawnSync} from 'node:child_process';
 import {appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {dirname, join, resolve} from 'node:path';
+import {basename, dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import {firstLaneSplitOf, judge, readResults, renderFirstLaneSplit, renderNotJudged} from './native-matrix/summary.mjs';
 import {hostedApprove} from './hosted-sittings/approve.mjs';
@@ -59,8 +64,8 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, runJobStops, saveSheetVerdict} from './hosted-sittings/split.mjs';
-import {scenesOf} from './native-matrix/run.mjs';
+import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
+import {filteredPlan, scenesOf} from './native-matrix/run.mjs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
@@ -223,7 +228,7 @@ async function runCommand(sitting, values) {
   }
   // The judging job's run jobs (ruling 1228): each one's runner, hardware and scenes, every attempt the workflow found,
   // the base re-judged (ruling 1230), and the refusal, when there was one. A record that cannot be read is said.
-  for (const [file, render] of [['attempts.md', null], ['jobs.json', renderJobs], ['base-rejudge.json', renderBaseRejudge]]) {
+  for (const [file, render] of [['attempts.md', null], ['source-run.json', renderSourceRun], ['jobs.json', renderJobs], ['base-rejudge.json', renderBaseRejudge]]) {
     const path = join(out, file);
     if (!existsSync(path)) continue;
     try { parts.push(...(render ? render(JSON.parse(readFileSync(path, 'utf8'))) : [readFileSync(path, 'utf8'), ''])); } catch (error) { parts.push(`${file} could not be read: ${error.message}`, ''); }
@@ -291,7 +296,8 @@ async function main(argv) {
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
     report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, 'base-run-id': {type: 'string'}, 'jobs-file': {type: 'string'}, runs: {type: 'string'}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
-    'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
+    'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'},
+    source: {type: 'string'}, 'run-id': {type: 'string'}, attempt: {type: 'string'}, repo: {type: 'string'}}});
   switch (command) {
     case 'setup': {
       const report = await hostedSetup({checkout: REPO, commit: commitOf(), engineArchive: values['engine-archive'] ? resolve(values['engine-archive']) : null, home: homedir(),
@@ -337,6 +343,25 @@ async function main(argv) {
       return timing.answered ? 0 : 1;
     }
     case 'textedit': return textedit(positionals[0], values);
+    case 'source-run': {
+      // Ruling 1234: a judge-only dispatch's source run, checked before anything of it is judged (exit 2 refuses).
+      if (!values.jobs || !values.source || !/^\d+$/.test(values['run-id'] ?? '') || !/^\d+$/.test(values.attempt ?? '') || !/^[0-9a-f]{40}$/.test(values.commit ?? '') || !values.repo
+        || !/^\d+(,\d+)*$/.test(values.runs ?? '') || values.only === undefined || !values.out) {
+        usage('source-run --jobs <dir>,… --source <dir> --run-id <id> --attempt <n> --commit <full sha> --repo <owner/name> --runs <n>,… --only <filter> [--speed-extra] --out <file>');
+      }
+      const read = file => JSON.parse(readFileSync(join(resolve(values.source), file), 'utf8'));
+      const pages = (file, key) => [read(file)].flat().flatMap(page => page[key] ?? []);
+      const diffed = spawnSync('git', ['diff', '--quiet', values.commit, 'HEAD', '--', 'native', 'src', 'package.json'], {cwd: REPO, encoding: 'utf8'});
+      const diff = {clean: diffed.status === 0, ...(diffed.status !== 0 && diffed.status !== 1 ? {error: (diffed.stderr || diffed.error?.message || 'git diff failed').trim()} : {})};
+      const picked = values.jobs.split(',').filter(Boolean).map(d => ({name: basename(dirname(resolve(d))), results: jobDir(resolve(d)).results}));
+      const check = sourceRunCheck({run: read('run.json'), jobs: pages('jobs.json', 'jobs'), artifacts: pages('artifacts.json', 'artifacts'), picked,
+        pin: {runId: values['run-id'], attempt: values.attempt, commit: values.commit, repo: values.repo},
+        inputs: {runs: values.runs.split(',').map(Number), only: values.only.split(',').filter(Boolean), speedExtra: values['speed-extra']},
+        resolveFilter: ids => filteredPlan(ids).only, diff, judging: commitOf()});
+      writeJson(resolve(values.out), check);
+      process.stdout.write(renderSourceRun(check).join('\n'));
+      return check.refused.length ? 2 : 0;
+    }
     case 'jobs-check': {
       // Ruling 1228: the run jobs' records, refused when they are not one harness and one pair of engines (exit 2). The
       // base (H1) is its committed evidence directory, read only once its digests and README check.

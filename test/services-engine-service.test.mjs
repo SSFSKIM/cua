@@ -727,6 +727,28 @@ test('#414: a password field\'s length confirmation rides as cua/typeReadback wi
   assert.deepEqual(record.items, [lengthNote], 'and adds no text');
 });
 
+test('#587, #590: a type_text into a focused element that is not a text field answers with its note in the tool result\'s text, and a failed read\'s record rides as cua/typeReadback', async t => {
+  const unreadNote = 'The text was typed, but the focused element is not a text field, so the text could not be read back to confirm it. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again.';
+  const notTextField = {confirmed: false, reason: 'notTextField', snapshotMs: 0.3, pollMs: 0, reads: 0};
+  const readFailure = {phase: 'poll', read: 'role', axError: -25204, retries: 2, msSinceLastKey: 230.4, role: 'AXTextArea'};
+  const unreadable = {confirmed: false, reason: 'fieldUnreadable', snapshotMs: 1.1, pollMs: 230.4, reads: 0, readFailure};
+  let target = 'outline';
+  const {getApp, call, meta, record} = await session(t, {handlers: {
+    'execute:type_text': () => {
+      if (target === 'outline') return {meta: {...INPUT_META, inputRoute: "2'", entered: 4, typeReadback: notTextField}, note: unreadNote};
+      throw new EngineFailure(-10005, 'The text was typed, but the field\'s text could not be read back, so it is not confirmed and some or all of it may have gone in. Observe the field with getAXState() before going on, then use setValue to put it right; do not type the text again.',
+        'typeUnconfirmed', {meta: {...INPUT_META, inputRoute: "2'", entered: 3, typeReadback: unreadable}});
+    },
+  }});
+  const {app} = await getApp('Finder');
+  await call(() => app.typeText('Docs'));
+  assert.deepEqual(meta['cua/typeReadback'], notTextField);
+  assert.deepEqual(record.items, [unreadNote], 'the note in the text the model reads');
+  target = 'field';
+  await assert.rejects(call(() => app.typeText('abc')), /could not be read back/);
+  assert.deepEqual(meta['cua/typeReadback'], unreadable, 'the failed read named, never its value');
+});
+
 test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed reaches the model with its sentence, name and meta', async t => {
   const seen = {seen: 'ancestor', openBefore: 0, polls: 2, ms: 21.4};
   const unseen = {seen: null, openBefore: 1, polls: 51, ms: 1000.2, actionError: -25204};

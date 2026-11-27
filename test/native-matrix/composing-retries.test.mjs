@@ -291,3 +291,17 @@ test('an unread marked range around emptyField leaves the mechanism unsettled fo
   const te = composingRetriesOf([run('cua', 1, [withMarks('cua', 'chrome@textedit', 1, true, null, false)])]);
   assert.match(renderComposingRetries(te).join('\n'), /^- The mechanism is unsettled for TextEdit: the marked range around emptyField read back unread in 1 of 1 attempt\(s\); no other app's reading stands in for it\.$/m);
 });
+
+// Ruling 1230, R3: the lopsided flag is a finding for the owner page only: it never enters the judge's owner, blocking
+// or missing lists, so the verdict is the one the same runs give without it.
+test('a lopsided retry pattern leaves the verdict and the judge\'s owner, blocking and missing lists unchanged', async () => {
+  const {judge} = await import('../../scripts/native-matrix/summary.mjs');
+  const result = (engine, readings) => ({path: `${engine}/run-1/result.json`, result: {cell: 'matrix', complete: true, lanes: [{host: engine, engine}], rows: [],
+    meta: {run: 1, samples: 2, planId: 'full', unicode: {readings}}}});
+  const lopsided = [attempt('vendor', 'chrome@textedit', 1, false), attempt('vendor', 'chrome@textedit', 2, true), attempt('vendor', 'textedit@electron', 1, false), attempt('vendor', 'textedit@electron', 2, true)];
+  const flagged = judge([result('vendor', lopsided), result('cua', [attempt('cua', 'chrome@textedit', 1, true)])], [], {departures: []});
+  const plain = judge([result('vendor', []), result('cua', [])], [], {departures: []});
+  assert.equal(flagged.composingRetries.findings.length, 1);
+  assert.deepEqual([flagged.verdict, flagged.owner, flagged.blocking, flagged.missing], [plain.verdict, plain.owner, plain.blocking, plain.missing]);
+  assert.ok(![...flagged.owner, ...flagged.blocking, ...flagged.missing].some(line => /lopsided|composing retr/.test(line)));
+});

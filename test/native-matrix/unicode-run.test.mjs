@@ -41,10 +41,11 @@ test('cell korean --scene textedit: every row in run order under its source, Acc
   // The run's Latin; then each target's source read with it in front (this double's context always reads Korean): the
   // Latin condition's and the mid-switch's selected there, the one after the switch; the Korean condition's read as
   // held, then read again after the refocus; the composition's Latin with its user window in front (ending any
-  // composition there), then Korean read as held and read again after the refocus; then the per-context condition's,
-  // read and read after the refocus, the user window's Latin, and the read-back after the driven scene came back.
+  // composition there), then Korean read as held and read again after the refocus, and the source read after the
+  // probe's key (ruling 1229's record); then the per-context condition's, read and read after the refocus, the user
+  // window's Latin, and the read-back after the driven scene came back.
   assert.deepEqual(sources(steps), ['state', 'save', 'per-context off', 'select ABC', 'current', 'select ABC', 'current', 'select ABC', 'select ABC', 'current', 'current',
-    'select ABC', 'current', 'current', 'per-context on', 'current', 'current', 'select ABC', 'current', 'restore']);
+    'select ABC', 'current', 'current', 'current', 'per-context on', 'current', 'current', 'select ABC', 'current', 'restore']);
   // The mid-switch: the probe's switch scheduled inside the typing, finished after it.
   assert.deepEqual(matrixSteps(steps, 'probe').map(a => a[1]), ['input-source', 'finish', 'keystroke', 'finish']);
   const mid = result.rows.find(r => r.condition === 'midSwitch');
@@ -99,7 +100,8 @@ test('a composition the user window did not show, or a per-context context that 
   }}});
   assert.ok(noComposition.result.rows.filter(r => r.condition === 'composing').every(r => /no composition in progress/.test(r.invalid)));
   // What the field read instead is named (pilot C-2: composing@textedit's rows said only that the jamo was not read).
-  assert.ok(noComposition.result.rows.filter(r => r.condition === 'composing').every(r => /\(it read the probe's raw key, uncomposed\)$/.test(r.invalid)));
+  // A field that never composed was given every attempt (ruling 1229).
+  assert.ok(noComposition.result.rows.filter(r => r.condition === 'composing').every(r => /\(it read the probe's raw key, uncomposed\); 3 attempts$/.test(r.invalid)));
   assert.equal(noComposition.result.meta.unicode.readings.find(r => r.when === 'composing@textedit').read, 'raw key');
   // A context that did not read Korean back: NO VERDICT `venue`, naming the read-back (pilot C-2 and the mini alike: the
   // preference read on, the context read ABC after its reactivation), never a sample counted against an engine.

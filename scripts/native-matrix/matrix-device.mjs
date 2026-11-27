@@ -506,15 +506,30 @@ function engineOwns(pid, roots, io) {
 
 // The scene's focused text element as a type_text's read-back would find it, read right after a typeUnconfirmed (#590;
 // ruling 1223, R5 ii) by the harness's own reader, outside either engine: its role, character count (its value's length;
-// the reader never reads a value) and selected range, each read that failed named with its AXError.
-// -> {ok, role, characters, selected, failed, errors} | {ok: false, reason}.
+// the reader never reads a value) and selected range, each read that failed named with its AXError. Where the reader
+// read the marked range (ruling 1229: an input method's composition still open in the element), `marked` (markedOf)
+// and the element's frame, which tells the composing groups' prepared field from another, come with it.
+// -> {ok, role, characters, selected, failed, errors, marked?, frame?} | {ok: false, reason}.
 export function focusedText({scene}, io) {
   const pid = io.state().scenes?.[scene]?.pid;
   if (!Number.isSafeInteger(pid)) return {ok: false, reason: 'the scene is not up in this run'};
   let a;
   try { a = io.axText(pid); } catch (error) { return {ok: false, reason: String(error.message).slice(0, 160)}; }
   if (a?.trusted !== true) return {ok: false, reason: 'the reader is not trusted for Accessibility'};
-  return {ok: a.ok === true, role: a.role ?? null, characters: a.characters ?? null, selected: a.selected ?? null, failed: a.failed ?? [], errors: a.errors ?? {}};
+  return {ok: a.ok === true, role: a.role ?? null, characters: a.characters ?? null, selected: a.selected ?? null, failed: a.failed ?? [], errors: a.errors ?? {},
+    ...(a.marked === undefined ? {} : {marked: markedOf(a.marked), frame: a.frame ?? null})};
+}
+
+// The reader's marked-range reads (../cursor-sitting/ax-state.swift `text`) as presence and length only: the Cocoa
+// text system's AXTextInputMarkedRange, a web view's AXTextInputMarkedTextMarkerRange with its length. Open when either
+// reads a length above 0; closed when one reads 0 or answers no value (kAXErrorNoValue: the element keeps a marked
+// range and none is open); else not known, with each read's AXError. -> {open, length} | {open: null, length: null, errors}.
+const AX_NO_VALUE = -25212;
+export function markedOf({range, rangeError, markerLength, markerError}) {
+  const lengths = [range?.length, markerLength].filter(Number.isSafeInteger);
+  if (lengths.some(n => n > 0)) return {open: true, length: Math.max(...lengths)};
+  if (lengths.length || rangeError === AX_NO_VALUE || markerError === AX_NO_VALUE) return {open: false, length: 0};
+  return {open: null, length: null, errors: {range: rangeError ?? null, marker: markerError ?? null}};
 }
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).

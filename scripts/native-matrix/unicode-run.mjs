@@ -166,18 +166,19 @@ async function frontmostRows(ctx, field, rows, source) {
 // also ends a composition that selection did not reach, the switch being made with the field focused as in MAWS B2),
 // and only then is its field emptied, so nothing an earlier row left composes onto the probe's key. A composition still
 // open after all that shows as a field not reading exactly the jamo: the rows are invalid, never counted.
+// The user window's emptying is instrumented into `at` (ruling 1229, emptyFieldAt).
 // -> {userWindow}, {skipped: readings} (the user window's activation did not take front and key), {held: the alert
 // guard's row mark} or {invalid}.
-async function behindUser(ctx, field, user) {
+async function behindUser(ctx, field, user, at) {
   await quiet(ctx, field);
   await quiet(ctx, user);
-  try { return await behindUserPrepared(ctx, field, user); } catch (error) {
+  try { return await behindUserPrepared(ctx, field, user, at); } catch (error) {
     // A field's focus click the alert guard refused (./steps.mjs AlertGuarded): no row of the group was sent.
     if (!(error instanceof AlertGuarded)) throw error;
     return {held: error.row};
   }
 }
-async function behindUserPrepared(ctx, field, user) {
+async function behindUserPrepared(ctx, field, user, at) {
   const driven = await js(ctx, 'harness', `unicode:prepare:${field}`, emptyFieldCell(field));
   if (!driven.ok || !driven.value?.ready) return {invalid: `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
   const front = activate(ctx, user);
@@ -187,7 +188,7 @@ async function behindUserPrepared(ctx, field, user) {
   if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const korean = koreanIn(ctx, user, `composing@${user}`);
   if (korean) return {invalid: `no composition in progress: ${korean.why}`};
-  const prepared = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user));
+  const prepared = await emptyFieldAt(ctx, user, at);
   if (!prepared.ok || !prepared.value?.ready) return {invalid: `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
   const r0 = read(ctx, null, {frontKey: true});
   const userWindow = userWindowOf(r0.reading, ctx.records[user].pid);
@@ -210,12 +211,48 @@ function composedRead(hash) {
 // user window in front), read back by the
 // focus probe as the composed jamo; then the rows behind it, each also requiring the user's field to keep that value.
 // After a row disturbed it, the rest say nothing about the composition: invalid.
+//
+// Ruling 1229: a composition check that reads anything but the jamo (the probe having posted) redoes the group's setup
+// and re-posts, up to COMPOSING_ATTEMPTS attempts in all. Each attempt is its own record on the readings (composingAttempt),
+// naming the lane's engine, since the setup's emptying ran through it; a group composed on a later attempt runs and
+// counts normally, its rows carrying the attempt's number (`composingAttempt`); one still not composed after the last
+// stays invalid, every attempt on each of its rows (`composing`), as is any row a setup failure left invalid.
+export const COMPOSING_ATTEMPTS = 3;
 async function composingRows(ctx, field, rows) {
   const {user} = rows[0];
-  const setup = await behindUser(ctx, field, user);
-  if (setup.skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: setup.skipped}); return; }
-  if (setup.held) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...setup.held}); return; }
-  if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus, setup.userWindowSeen); return; }
+  const records = [];
+  const invalid = (r, reason, extra = {}) => push(ctx, {...rowBase(ctx, r), invalid: reason, ...extra, composing: records});
+  for (let n = 1; ; n++) {
+    if (n > 1) await ctx.checkpoint();
+    const out = await composingAttempt(ctx, field, user, n);
+    records.push(out.record);
+    ctx.meta.unicode.readings.push(out.record);
+    const earlier = n > 1 ? {composing: records} : {};
+    if (out.skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: out.skipped, ...earlier}); return; }
+    if (out.held) { for (const r of rows) push(ctx, {...rowBase(ctx, r), ...out.held, ...earlier}); return; }
+    if (out.invalid) { for (const r of rows) invalid(r, out.invalid, {...(out.focus === undefined ? {} : {focus: out.focus}), ...(out.userWindowSeen ? {userWindowSeen: out.userWindowSeen} : {})}); return; }
+    if (out.retry && n < COMPOSING_ATTEMPTS) continue;
+    if (out.problem) { for (const r of rows) invalid(r, `no composition in progress: ${out.problem}${n > 1 ? `; ${n} attempts` : ''}`); return; }
+    let disturbed = false;
+    for (const r of rows) {
+      if (disturbed) { invalidRow(ctx, r, 'an earlier row disturbed the user window\'s composition').composingAttempt = n; continue; }
+      const row = await caseRow(ctx, field, 'background', unicodeCase(r), {...options(r), extra: {condition: r.condition, composingAttempt: n}, user, userWindow: out.userWindow, userValue: out.composed});
+      if (!row.invalid && row.outcome?.userKept === false) disturbed = true;
+    }
+    return;
+  }
+}
+// One attempt: the group's setup (behindUser) and the probe's key, read back. Its record (ruling 1229, G1), with no
+// characters in it: emptyField's `prepared` (which of its setValue("") and click it made: emptied, clicked, both or
+// neither), whether marked text was open in the user window's field just before and just after it (markedAtEmpty),
+// the probe's post (`probe`: its time, units, layout and mode), and after the key the source as read and the focused
+// element (`afterKey`: its role, character count, selected and marked ranges, and whether it is the field emptyField
+// prepared). -> {record, ...behindUser's answer} | {record, problem, retry?, composed, userWindow}.
+async function composingAttempt(ctx, field, user, attempt) {
+  const at = {};
+  const setup = await behindUser(ctx, field, user, at);
+  const record = {when: `composing@${user}`, group: `${field}@${user}`, attempt, engine: ctx.engine, prepared: at.prepared ?? null, markedAtEmpty: at.markedAtEmpty ?? null};
+  if (setup.skipped || setup.held || setup.invalid) return {...setup, record: {...record, setup: setup.invalid ?? (setup.held ? 'the alert guard held the setup' : 'the user window did not take front and key')}};
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
   const finished = device(ctx, ['probe', 'finish']);
@@ -228,16 +265,50 @@ async function composingRows(ctx, field, rows) {
     composed = read(ctx, focusOf(userWindow)).focus?.valueHash ?? null;
   }
   const got = composedRead(composed);
-  ctx.meta.unicode.readings.push({when: `composing@${user}`, scheduled: started?.scheduled ?? null, posted: !probeProblem(finished?.answer), composed: composed === jamo, read: got, reads});
-  const problem = probeProblem(finished?.answer) ?? (composed === jamo ? null : `the user window's field did not read the composed jamo after the probe's key (${COMPOSED_READ[got]})`);
-  if (problem) { for (const r of rows) invalidRow(ctx, r, `no composition in progress: ${problem}`); return; }
-  let disturbed = false;
-  for (const r of rows) {
-    if (disturbed) { invalidRow(ctx, r, 'an earlier row disturbed the user window\'s composition'); continue; }
-    const row = await caseRow(ctx, field, 'background', unicodeCase(r), {...options(r), user, userWindow, userValue: composed});
-    if (!row.invalid && row.outcome?.userKept === false) disturbed = true;
+  const source = device(ctx, ['source', 'current']);
+  const afterKey = {source: {current: source?.current ?? null, layout: source?.layout ?? null}, focused: focusedRecord(focusedTextOf(ctx, user), at.field)};
+  const postProblem = probeProblem(finished?.answer);
+  const missed = composed === jamo ? null : `the user window's field did not read the composed jamo after the probe's key (${COMPOSED_READ[got]})`;
+  const problem = postProblem ?? missed;
+  Object.assign(record, {scheduled: started?.scheduled ?? null, posted: !postProblem, probe: probeRecord(finished?.answer), composed: composed === jamo, read: got, reads, afterKey,
+    ...(problem ? {failed: problem} : {})});
+  return {record, problem, retry: !postProblem && missed !== null, composed, userWindow};
+}
+
+// The user window's field emptied through the engine under test (emptyField with its steps), read by the harness's
+// own no-text reader just before and just after the cell: only a read (its observe) stands between the first read and
+// its setValue(""), and the record names the click when the cell also made one, so the read after is the setValue's
+// alone unless `prepared` says both. The cell is the one cell it was, so the engine's calls are unchanged. -> the
+// cell's answer; `at` holds {prepared, markedAtEmpty: {before, after}, field: the read after}.
+async function emptyFieldAt(ctx, user, at) {
+  const before = focusedTextOf(ctx, user);
+  const out = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user, {steps: true}));
+  const after = focusedTextOf(ctx, user);
+  const did = out.ok ? out.value?.did : null;
+  Object.assign(at, {prepared: !did ? null : did.setValue && did.click ? 'both' : did.setValue ? 'emptied' : did.click ? 'clicked' : 'neither',
+    markedAtEmpty: {before: before.marked ?? null, after: after.marked ?? null}, field: after});
+  return out;
+}
+// The harness's own read of `scene`'s focused text element (./matrix-device.mjs focusedText; the reads #590's read-back
+// uses), a read that threw recorded and never the run's stop. -> its answer | {ok: false, reason}.
+function focusedTextOf(ctx, scene) {
+  try { return device(ctx, ['focused-text', '--scene', scene]) ?? {ok: false, reason: 'no answer'}; } catch (error) {
+    if (error instanceof Stop) throw error;
+    return {ok: false, reason: String(error?.message ?? error).slice(0, 160)};
   }
 }
+// The focused element after the key: role, counts and ranges, and whether it is the prepared field (its role and frame
+// those read after emptyField; null when either frame was not read).
+const sameFrame = (a, b) => ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
+function focusedRecord(now, prepared) {
+  if (now.role === undefined) return {ok: false, reason: now.reason ?? 'no answer'};
+  const same = now.frame && prepared?.frame ? now.role === prepared.role && sameFrame(now.frame, prepared.frame) : null;
+  return {ok: now.ok === true, role: now.role ?? null, characters: now.characters ?? null, selected: now.selected ?? null, marked: now.marked ?? null, samePrepared: same};
+}
+// The keystroke probe's answer without its keys' characters (its presses' and key specs'): when it posted, how many
+// units, under which layout and mode, and whether it stopped part-way.
+const probeRecord = a => (a && typeof a === 'object'
+  ? {postedAt: a.postedAt ?? null, units: a.units ?? null, layout: a.layout ?? null, mode: a.mode ?? null, ...(a.aborted ? {aborted: true} : {})} : null);
 
 // The per-context preference's write failing on the device: the one setup failure the condition recovers from.
 export class PerContextWriteFailed extends Error {}

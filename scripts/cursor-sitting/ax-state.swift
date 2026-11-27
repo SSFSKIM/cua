@@ -15,10 +15,11 @@
 //       window was not matched or its children could not be read, `failed` then naming "sheet").
 //   ax-state text <pid> <offset>...
 //       The geometry of the app's focused text element: {"trusted", "ok", "failed", "errors", "role", "frame",
-//       "characters", "selected", "bounds"}: its role, frame, character count, selected range, and for each offset the
-//       frame of the one character there (AXBoundsForRange), null where it could not be read; `errors` the AXError of
-//       each read that failed, by its name in `failed` (#590, ruling 1223). Numbers and a role only: no text, so its
-//       value is never read (its length is the character count).
+//       "characters", "selected", "bounds", "marked"}: its role, frame, character count, selected range, and for each
+//       offset the frame of the one character there (AXBoundsForRange), null where it could not be read; `errors` the
+//       AXError of each read that failed, by its name in `failed` (#590, ruling 1223); `marked` its marked range,
+//       {"range", "rangeError", "marker", "markerLength", "markerError"} (ruling 1229). Numbers and a role only: no
+//       text, so its value is never read (its length is the character count).
 //   ax-state actions <pid> <x,y,w,h> <role>
 //       The actions the first element of <role> under the window at those bounds advertises (#187's premise: whether
 //       Chrome's textarea offers AXPress yet): {"trusted", "ok", "failed", "found", "count", "walked", "actions"}: the
@@ -269,6 +270,23 @@ if characters == nil { failedRead("characters", charactersRead.status) }
 let selectedRead = read(focused, kAXSelectedTextRangeAttribute)
 let selected = axValue(selectedRead.value, .cfRange, CFRange(location: 0, length: 0))
 if selected == nil { failedRead("selected", selectedRead.status) }
+// The marked range (ruling 1229: an input method's composition still open in the element), presence and length only:
+// the Cocoa text system's AXTextInputMarkedRange, and a web view's AXTextInputMarkedTextMarkerRange with its length
+// (AXLengthForTextMarkerRange). Never named in `failed`: an element that keeps no marked range is a reading, and the
+// read-back's `ok` (#590) does not rest on it. Each read that gave no number keeps its AXError.
+var marked: [String: Any] = ["range": NSNull(), "rangeError": NSNull(), "marker": false, "markerLength": NSNull(), "markerError": NSNull()]
+let markedRead = read(focused, "AXTextInputMarkedRange")
+if let r = axValue(markedRead.value, .cfRange, CFRange(location: 0, length: 0)) {
+  marked["range"] = ["location": r.location == kCFNotFound ? NSNull() : r.location as Any, "length": r.length]
+} else { marked["rangeError"] = Int(markedRead.status == .success ? AXError.noValue.rawValue : markedRead.status.rawValue) }
+let markerRead = read(focused, "AXTextInputMarkedTextMarkerRange")
+if let m = markerRead.value, CFGetTypeID(m) == AXTextMarkerRangeGetTypeID() {
+  marked["marker"] = true
+  var length: CFTypeRef?
+  let status = AXUIElementCopyParameterizedAttributeValue(focused, "AXLengthForTextMarkerRange" as CFString, m, &length)
+  if status == .success, let n = length as? Int { marked["markerLength"] = n }
+  else { marked["markerError"] = Int(status == .success ? AXError.noValue.rawValue : status.rawValue) }
+} else { marked["markerError"] = Int(markerRead.status == .success ? AXError.noValue.rawValue : markerRead.status.rawValue) }
 var bounds: [Any] = []
 for offset in offsets {
   var range = CFRange(location: offset, length: 1)
@@ -282,4 +300,4 @@ for offset in offsets {
   bounds.append(rectWire(rect))
 }
 emit(["trusted": true, "ok": failed.isEmpty, "failed": failed, "errors": errors, "role": role ?? NSNull(), "frame": rectWire(box), "characters": characters ?? NSNull(),
-      "selected": selected.map { ["location": $0.location, "length": $0.length] } ?? NSNull(), "bounds": bounds])
+      "selected": selected.map { ["location": $0.location, "length": $0.length] } ?? NSNull(), "bounds": bounds, "marked": marked])

@@ -129,27 +129,29 @@ const actMs = performance.now() - __t, endAt = Date.now();
 return {actMs, callAt, endAt, late: Math.max(0, callAt - __at), threw: __m.threw !== null, errorName: __m.errorName, message: __m.threw};`);
 
 // A text scene's typing field (./plan.mjs TEXT_FIELDS) emptied and given the focus, the emptying named in `prepared`
-// when it was needed; a trailer a selection still masks is its own reason (./plan.mjs FOCUS_REASONS). -> {ready,
-// prepared?} or {ready: false, reason, prepared?}.
-export const emptyFieldCell = scene => cell(`${prelude(scene)}
+// when it was needed; a trailer a selection still masks is its own reason (./plan.mjs FOCUS_REASONS). With `steps`
+// (the composing groups' prepare, ruling 1229) it also says which calls it made, `did`: its setValue("") and its click,
+// each true when made, so the harness's reads around the cell can be told apart; without, the body is unchanged.
+// -> {ready, prepared?, did?} or {ready: false, reason, prepared?, did?}.
+export const emptyFieldCell = (scene, options) => cell(`${prelude(scene)}
 // cua-matrix-cell: field.empty
-${emptyField(scene)}`);
+${emptyField(scene, options)}`);
 // The body: shared with the Unicode matrix's prepare (./unicode-plan.mjs).
-export const emptyField = scene => `let ax = await observe();
+export const emptyField = (scene, {steps = false} = {}) => `let ax = await observe();
 if (!inFront(ax)) return {ready: false, reason: "the scene window is not the app's front window"};
 const __find = ax => ${TEXT_FIELDS[scene]};
 let __index = __find(ax);
 if (__index === null) return {ready: false, reason: "the field is not in the text"};
-const __prepared = [];
+const __prepared = [];${steps ? '\nconst __did = {setValue: false, click: false};' : ''}
 if (plain(valueOfIndex(ax, __index) ?? "") !== "") {
-  await __app.setValue(__index, ""); ax = await observe(); __index = __find(ax);
+  await __app.setValue(__index, "");${steps ? ' __did.setValue = true;' : ''} ax = await observe(); __index = __find(ax);
   // Named emptied only on a read-back that shows it empty (ruling 1204); else what the read-back showed.
   const __left = __index === null ? null : plain(valueOfIndex(ax, __index) ?? "").length;
   __prepared.push(__left === 0 ? "field emptied" : __left === null ? "emptying attempted, the field no longer in the text" : "emptying attempted, the field still read " + __left + " characters");
 }
-if (__index !== null && focusedIndexOf(ax) !== __index) { await __app.click(__index); ax = await observe(); __index = __find(ax); }
+if (__index !== null && focusedIndexOf(ax) !== __index) { await __app.click(__index);${steps ? ' __did.click = true;' : ''} ax = await observe(); __index = __find(ax); }
 const __empty = __index !== null && plain(valueOfIndex(ax, __index) ?? "") === "", __focus = __index === null ? "unfocused" : focusReading(ax, __index);
-const __stated = __prepared.length ? {prepared: __prepared} : {};
+const __stated = __prepared.length ? {prepared: __prepared} : {};${steps ? '\n__stated.did = __did;' : ''}
 if (!__empty || __focus !== "focused") return {ready: false, reason: !__empty ? "the field could not be emptied" : __focus === "masked" ? ${j(FOCUS_REASONS.masked)} : ${j(FOCUS_REASONS.unfocused)}, ...__stated};
 return {ready: true, ...__stated};`;
 

@@ -391,6 +391,44 @@ test('the new provisioner on a checkout older than 0.30.0, or one whose own prov
   }
 });
 
+// The desktop user owns /opt/cua, so a tracked file there can differ from its commit: an edit to a file both commits
+// share survives a checkout, and none runs when HEAD is already the commit. The provisioner refuses before the checkout
+// moves and before npm ci and cua install, naming how to see the edits and set them aside, and discards nothing. An
+// untracked file is not the commit's code and does not count.
+const escaped = text => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const trackedEdits = (root, head, files) => new RegExp(`the checkout at ${escaped(root)}/opt/cua has changes to tracked files that its commit ${head} does not have, and cua-provision\\.sh runs only a commit's own files: see them as cua with git -C ${escaped(root)}/opt/cua status and git -C ${escaped(root)}/opt/cua diff HEAD, set them aside with git -C ${escaped(root)}/opt/cua stash push \\(or commit them on a branch of their own\\), then run cua-provision\\.sh again\\n${files.map(file => `  ${escaped(file)}\\n`).join('')}`);
+test('the new provisioner refuses a checkout whose tracked files are not its commit\'s, at the commit or before moving to it, and keeps the edits; an untracked file does not count', {skip: noJq}, async t => {
+  const shared = 'deploy/cloud-vm/update.sh';   // the same in c0 and c, so a checkout between them carries an edit to it
+  for (const [at, edit, listed] of [
+    ['c', vm => appendFileSync(vm.path(`opt/cua/${shared}`), '# a local edit\n'), [` M ${shared}`]],
+    ['c0', vm => { appendFileSync(vm.path(`opt/cua/${shared}`), '# a staged edit\n'); git(vm.path('opt/cua'), 'add', shared); }, [`M  ${shared}`]],
+  ]) {
+    const vm = await makeVm(t, {script: newProvisioner()});
+    const ids = repos(vm);
+    vm.checkout(ids.origin, ids[at]);
+    vm.setConf({CUA_REF: 'main', CUA_REPO: ids.origin});
+    edit(vm);
+    const edited = readFileSync(vm.path(`opt/cua/${shared}`));
+    const run = vm.provision();
+    assert.equal(run.status, 1, `${at}: ${run.stdout}${run.stderr}`);
+    assert.match(vm.log(), trackedEdits(vm.root, ids[at], listed), at);
+    assert.equal(vm.head(), ids[at], `${at}: the checkout did not move`);
+    assert.deepEqual(readFileSync(vm.path(`opt/cua/${shared}`)), edited, `${at}: the edit is kept`);
+    const steps = stepsOf(vm.calls());
+    assert.ok(!steps.npmCi, at);
+    assert.deepEqual(steps.install, [], at);
+  }
+  const vm = await makeVm(t, {script: newProvisioner()});
+  const ids = repos(vm);
+  vm.checkout(ids.origin, ids.c);
+  vm.setConf({CUA_REF: 'main', CUA_REPO: ids.origin});
+  writeFileSync(vm.path('opt/cua/NOTES'), 'the owner\'s notes\n');
+  const run = vm.provision();
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(stepsOf(vm.calls()).install, ['cua install --json']);
+  assert.equal(vm.read('opt/cua/NOTES'), 'the owner\'s notes\n');
+});
+
 test('the new provisioner checks a commit ID out exactly, whatever origin\'s branches say, and exits 1 before cua install when origin cannot give it', {skip: noJq}, async t => {
   const vm = await makeVm(t, {script: newProvisioner()});
   const {origin, c, next} = repos(vm, {push: 'next'});
@@ -677,6 +715,22 @@ test('update.sh exits nonzero, naming the commit it found, when the checkout end
   const run = vm.update(ids.operator, ['--ref', 'main'], {VM_PROVISION_OVERRIDE: `git -C '${vm.path('opt/cua')}' fetch -q '${ids.operator}' next && git -C '${vm.path('opt/cua')}' checkout -q --detach ${ids.next}`});
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.equal(run.stderr, `update.sh: the VM's checkout /opt/cua is at ${ids.next}, not ${ids.c}\n`);
+});
+
+// Finding 6 of M6b's whole-branch review: a VM already at C whose checkout has an edit to a tracked file. The run stops
+// before npm ci and cua install, so update.sh does not report the VM as at C.
+test('update.sh does not report a VM at the commit when its checkout has a tracked edit', {skip: noJq}, async t => {
+  const {vm, ids} = await deployed(t);
+  assert.equal(vm.update(ids.operator, ['--ref', 'main']).status, 0);
+  assert.equal(vm.head(), ids.c);
+  appendFileSync(vm.path('opt/cua/deploy/cloud-vm/update.sh'), '# a local edit\n');
+  const calls = vm.calls().length;
+  const run = vm.update(ids.operator, ['--ref', 'main']);
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout + run.stderr, trackedEdits(vm.root, ids.c, [' M deploy/cloud-vm/update.sh']));
+  assert.equal(run.stderr.split('\n').filter(Boolean).at(-1), `update.sh: /usr/local/sbin/cua-provision.sh exited 1 on root@203.0.113.7 (its log: /var/log/cua-provision.log there); its checkout /opt/cua is at ${ids.c}`);
+  assert.doesNotMatch(run.stdout, /the VM's checkout is at/);
+  assert.deepEqual(stepsOf(vm.calls().slice(calls)).install, []);
 });
 
 test('update.sh: usage', () => {

@@ -142,7 +142,11 @@ to the user only while the user has none, and everything under the user's home i
 To upgrade, run `deploy/cloud-vm/update.sh root@<vm> [--ref <ref>] [--bundle]` from your checkout. It resolves the ref
 (default `HEAD`) once to a commit, checks that the VM's `CUA_REPO` can give exactly that commit (`--bundle` first
 replaces a stale uploaded bundle with one of yours), installs that commit's `cua-provision.sh` on the VM, sets
-`CUA_REF` to the commit's ID, runs it, and checks that the checkout ends there. From cua 0.30.0 a template must be
+`CUA_REF` to the commit's ID, runs it, and checks that the checkout ends there. The provisioner refuses, before the
+checkout moves, a checkout at `/opt/cua` whose index or tracked files differ from its commit (the desktop user's own
+edits, which a checkout would carry or none would run over): it lists them, keeps them, and says how to look at them
+(`git -C /opt/cua status`, `git diff HEAD`) and set them aside (`git stash push`) as the desktop user. An untracked
+file does not count. From cua 0.30.0 a template must be
 rendered from the ref it provisions: the provisioner stops before `npm ci` and `cua install` unless it is byte for
 byte the checked-out commit's own `deploy/cloud-vm/cua-provision.sh`, and it provisions cua 0.30.0 or later only.
 

@@ -270,7 +270,8 @@ elif ((changed)); then
 fi
 
 # 7. The cua checkout at /opt/cua, owned by the user, at CUA_REF from CUA_REPO (origin follows the conf); `cua` on PATH.
-# It ends exactly at one commit, which must be cua 0.30.0 or later and whose provisioner must be this script.
+# It ends exactly at one commit, with that commit's tracked files; the commit must be cua 0.30.0 or later and its
+# provisioner must be this script.
 repo="$CUA_REPO"
 if [[ "$CUA_REPO" == upload ]]; then
   # The operator copies the bundle to /var/cache/cua/cua.bundle (create-hetzner.sh --repo does, and touches
@@ -303,6 +304,18 @@ else
   as_user git -C /opt/cua fetch -q origin "$CUA_REF"
   commit="$(as_user git -C /opt/cua rev-parse 'FETCH_HEAD^{commit}')"
   log "ref $CUA_REF is commit $commit"
+fi
+# The index and the tracked files must be HEAD's before the checkout moves: the desktop user owns /opt/cua, a checkout
+# carries an edit to a file both commits share, and none runs when HEAD is already the commit. So a clean checkout of
+# the commit is exactly its files, and what npm ci and cua install then run is the commit's. An untracked file is not
+# a commit's code (npm ci replaces node_modules) and does not count. Nothing is discarded: the owner sets edits aside.
+edits="$(as_user git -C /opt/cua status --porcelain --untracked-files=no)"
+if [[ -n "$edits" ]]; then
+  {
+    echo "the checkout at /opt/cua has changes to tracked files that its commit $(as_user git -C /opt/cua rev-parse HEAD) does not have, and cua-provision.sh runs only a commit's own files: see them as $CUA_USER with git -C /opt/cua status and git -C /opt/cua diff HEAD, set them aside with git -C /opt/cua stash push (or commit them on a branch of their own), then run cua-provision.sh again"
+    sed 's/^/  /' <<<"$edits"
+  } >&2
+  exit 1
 fi
 if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$commit" ]]; then
   as_user git -C /opt/cua checkout -q --detach "$commit"

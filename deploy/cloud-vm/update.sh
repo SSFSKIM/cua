@@ -16,7 +16,8 @@
 # 5. The staged script is copied to a name of this run's own in /usr/local/sbin, its SHA-256 checked there, and renamed
 #    over /usr/local/sbin/cua-provision.sh.
 # 6. CUA_REF in the conf becomes C.
-# 7. The script runs; 8. the checkout's HEAD must then be C.
+# 7. The script runs, and it refuses, before npm ci and cua install, a checkout whose index or tracked files are not
+#    its commit's; 8. its exit 0 and the checkout's HEAD at C then mean that what ran is C's own files.
 # The script that runs as root comes from this checkout, over the operator's SSH, as the first one did; nothing the
 # desktop user can write is run as root. `ssh root@<vm> /usr/local/sbin/cua-provision.sh` stays the repair at the same
 # commit.
@@ -115,7 +116,7 @@ vm "sed -e \"s/^CUA_REF=.*/CUA_REF='$C'/\" $conf >$conf.update.$run && grep -qx 
   || fail "could not set CUA_REF in $target:$conf (its provisioner is already the one at $C): run update.sh again"
 say "CUA_REF=$C in $target:$conf"
 
-# 7 and 8. The run, then the checkout it left.
+# 7 and 8. The run, then the checkout it left (the run checked its tracked files against C).
 status=0
 vm "$dest" || status=$?
 head="$(vm "runuser -u $(q "$user") -- git -C /opt/cua rev-parse HEAD")" || head='unknown'

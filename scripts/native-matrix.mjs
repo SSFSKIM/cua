@@ -123,7 +123,8 @@ export function parseCommand(argv) {
 
 // Ruling 1228 (E): the full runs under `dirs` combined with the filtered reruns there (./native-matrix/combine.mjs),
 // written per lane to <out>/<engine>/run-<n>/ (the rerun flags on each combined run's meta.rerunFlags) and the account
-// to <out>/combined.json; `summary` and `compare` then read <out>/vendor and <out>/cua. -> the account.
+// to <out>/combined.json; `summary` and `compare` then read <out>, each problem there missing proof (judgeDirs). -> 0
+// when everything was combined, 4 (NO VERDICT) when a problem left a rerun or a result out; its VERDICT line says which.
 function combineDirs({dirs, out}, io, log) {
   const {results, problems: unread} = io.readResults(dirs);
   const own = ({result}) => result.cell === 'matrix';
@@ -138,8 +139,19 @@ function combineDirs({dirs, out}, io, log) {
   for (const c of account.combined) log(`combined run ${c.run} from job ${c.runId} attempt ${c.attempt}: ${c.cells.length} cell(s)`);
   for (const f of account.flags) log(`FLAG: ${f.cell} on ${f.engine}, run ${f.run}: failed in the full run, passes only in the filtered rerun`);
   for (const p of [...unread, ...account.problems]) log(`problem: ${p}`);
-  io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, problems: [...unread, ...account.problems]});
-  return account;
+  const problems = [...unread, ...account.problems];
+  io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, problems});
+  log(`VERDICT: ${problems.length ? 'NO VERDICT' : 'PASS'}`);
+  return problems.length ? VERDICT_CODE['NO VERDICT'] : 0;
+}
+// The problems combine recorded under `dirs` (<dir>/combined.json), each the judges' missing proof (I6 of the split
+// review: a rerun that could not be combined never vanishes from the verdict). -> [sentence].
+function combineProblems(dirs) {
+  return dirs.flatMap(dir => {
+    const file = join(dir, 'combined.json');
+    if (!fs.existsSync(file)) return [];
+    try { return (JSON.parse(fs.readFileSync(file, 'utf8')).problems ?? []).map(p => `combine: ${p}`); } catch (error) { return [`combine: ${file} could not be read (${error.message})`]; }
+  });
 }
 
 // The judgment of results under `dirs`. -> {judged, text}.
@@ -147,7 +159,7 @@ function judgeDirs(dirs) {
   for (const dir of dirs) if (!fs.existsSync(dir)) throw new Error(`${dir} does not exist`);
   const {results, problems} = readResults(dirs);
   if (!results.length) throw new Error(`no cell results under ${dirs.join(', ')}`);
-  const judged = judge(results, problems);
+  const judged = judge(results, [...problems, ...combineProblems(dirs)]);
   return {judged, text: renderSummary(judged)};
 }
 const VERDICT_CODE = {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4};

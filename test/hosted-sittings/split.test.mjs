@@ -59,7 +59,7 @@ test('the judge job checks the jobs, combines their records (a full run beneath)
   const [check, combine, summary, compare] = judge.steps;
   assert.deepEqual(check.argv.slice(2), ['jobs-check', '--jobs', '/j/1,/j/2,/j/3', '--base', '/b', '--out', '/w/out/jobs.json']);
   assert.deepEqual(combine.argv.slice(2), ['combine', '/b', '/j/1', '/j/2', '/j/3', '--out', '/w/out/combined']);
-  assert.deepEqual([combine.needs, summary.needs, compare.needs], [['jobs-check'], ['combine'], ['combine']]);
+  assert.deepEqual([combine.check, combine.needs, summary.needs, compare.needs], ['verdict', ['jobs-check'], ['jobs-check'], ['jobs-check']], 'a combine problem is the judges\' missing proof, never a skip');
   assert.deepEqual([summary.argv.slice(3, 4), compare.argv.slice(3, 4)], [['/w/out/combined'], ['/w/out/combined']], 'the judges read the lanes and any speed-extra records combine wrote');
   assert.deepEqual(judge.counts, ['/w/out/combined/vendor', '/w/out/combined/cua', '/j/1/save-sheet', '/j/2/save-sheet', '/j/3/save-sheet']);
   assert.deepEqual(plan({judge: true, jobs: ['/j/1'], base: null}).steps[0].argv.slice(2), ['jobs-check', '--jobs', '/j/1', '--out', '/w/out/jobs.json']);

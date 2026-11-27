@@ -116,12 +116,13 @@ function splitJudge(ctx) {
   return [
     {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228)', kind: 'verdict', check: 'exit',
       argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base] : []), '--out', `${ctx.out}/jobs.json`]},
-    // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F).
-    {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
+    // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F). Its
+    // verdict is NO VERDICT when a rerun could not be combined; the judges still run, each such problem their missing proof.
+    {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'verdict', needs: ['jobs-check'],
       argv: matrix('combine', ...(base ? [base] : []), ...jobs, '--out', combined)},
-    {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: ['combine'],
+    {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: ['jobs-check'],
       argv: matrix('summary', combined, '--out', `${ctx.out}/summary.md`)},
-    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['combine'], argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
+    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['jobs-check'], argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
     {id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
       check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
       argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]},

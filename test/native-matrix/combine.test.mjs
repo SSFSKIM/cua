@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {combineReruns} from '../../scripts/native-matrix/combine.mjs';
 import {main, parseCommand} from '../../scripts/native-matrix.mjs';
 
@@ -77,4 +79,26 @@ test('F: combine writes a speed-extra cell\'s records through as they are, besid
   const io = {readResults: () => ({results: [...base(2), speedExtra('vendor'), speedExtra('cua'), sheet], problems: []}), writeResult: dir => { written.push(dir); }, writeJson: () => {}};
   await main(['combine', '/j', '--out', '/o'], {log: () => {}, io: {combine: io}});
   assert.deepEqual(written, ['/o/vendor/run-2', '/o/cua/run-2', '/o/speed-extra/vendor/run-2', '/o/speed-extra/cua/run-2']);
+});
+
+// C1/I6 of the split review: the real CLI, as the judge job runs it. combine exits 0 when it combined everything, 4 (NO
+// VERDICT) when a rerun could not be combined, and the judges read its problems from combined.json as missing proof.
+test('the real combine CLI exits an integer, NO VERDICT on a problem, and summary carries each problem as missing proof', () => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'combine-cli-'));
+  const cli = (...args) => spawnSync(process.execPath, ['scripts/native-matrix.mjs', ...args], {encoding: 'utf8'});
+  const valid = (engine, run, planId, extra = {}) => cellResult({cell: 'matrix', device: 'mini', started: '2026-11-27T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v'}], complete: true,
+    rows: [row(A, engine), row(C, engine)], meta: {run, samples: 1, sitting: 's', commit: 'c1', planId, runner: {run: {id: '45468052791', attempt: '1'}}, ...extra}});
+  try {
+    for (const engine of ['vendor', 'cua']) writeCellResult(join(root, 'base', engine, 'run-2'), valid(engine, 2, 'full'));
+    const clean = cli('combine', join(root, 'base'), '--out', join(root, 'combined'));
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /^VERDICT: PASS$/m);
+    // A rerun with its cua lane missing: not combined, a problem, NO VERDICT.
+    writeCellResult(join(root, 'job', 'vendor', 'run-2'), valid('vendor', 2, 'filtered', {filter: [A], runner: {run: {id: '9', attempt: '1'}}}));
+    const lone = cli('combine', join(root, 'base'), join(root, 'job'), '--out', join(root, 'combined-2'));
+    assert.equal(lone.status, 4, lone.stderr);
+    assert.match(lone.stdout, /^VERDICT: NO VERDICT$/m);
+    const summary = cli('summary', join(root, 'combined-2'), '--out', join(root, 'summary.md'));
+    assert.match(fs.readFileSync(join(root, 'summary.md'), 'utf8'), /combine: run 2's filtered rerun \(job 9, attempt 1\) has no cua lane: not combined/, summary.stderr);
+  } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });

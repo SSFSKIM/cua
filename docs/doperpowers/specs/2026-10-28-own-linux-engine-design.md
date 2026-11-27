@@ -513,28 +513,33 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 ```
 
 **From M6b** (cua 0.30.0), what runs at H on a Linux device.
-- **The differential harness and the facade suites** run as the gate's steps, which T3 built and T8 ran: `E1` (the events step), `FB` and `R1` (the cua lane, by its own verdict), through `scripts/linux-engine-gate/gate.mjs`.
+- **The differential harness and the facade suites** run as the gate's steps, the ones the M6b pre-flight names: `E1` (the events step), `FB` and `R1` (the cua lane, by its own verdict), through `scripts/linux-engine-gate/gate.mjs`.
   - The gate takes the pinned build and the vendor's client from the comparator fixture, which it checks before each step that runs them.
-  - A `:0` step's printed command checks the fixture again in its launch path (`scripts/linux-engine-gate/fixture-check.mjs`).
+  - `gate.mjs run` takes no lock itself. The command that `gate.mjs --list` gives for a step is wrapped in the host lock (`locked.sh <holder> …`), and the block runs that command. A `:0` step's command also checks the fixture again in its launch path (`scripts/linux-engine-gate/fixture-check.mjs`).
   - `--pinned <home>` is acceptance on the pinned release. It needs a run home where this checkout's `cua install --engine` placed the pinned engine, with no `runtimes/` (the pre-flight's §5.2). With `--pilot <n>` added, it is a development run, never counted.
 - **A stored vendor and cua pair of one sitting** is judged offline, with no device: M5's R1 and R2 on both arches, and M6a's R1 on x64.
-- **A new pair of cua lanes** of one preparation is judged by `repl-parity.mjs diff` alone. `run` makes only its `--out` leaf, so the block makes its parent in a fresh root.
+- **A new pair of cua lanes** of one preparation is judged by `repl-parity.mjs diff` alone. `run` makes only its `--out` leaf, so the block makes its parent in a fresh root. It holds the host lock across the whole sitting, preparation to cleanup.
 
 ```bash
 RUN="$(mktemp -d)"   # a fresh output root: the gate makes <out>/<step>.<label>, repl-parity appends to its leaf
 PINNED="$RUN/cua"    # a run home of this checkout's install, which holds no runtimes/
-CUA_HOME="$PINNED" node bin/cua.mjs install --engine
+LOCK="$HOME/.local/share/cua-171/locked.sh" HOLDER=m6b-steps   # the host lock and this sitting's holder name
+CUA_HOME="$PINNED" "$LOCK" "$HOLDER" node bin/cua.mjs install --engine
 node scripts/linux-engine-gate/gate.mjs check --pinned "$PINNED"
-for step in E1 FB R1; do
-  node scripts/linux-engine-gate/gate.mjs run "$step" --pinned "$PINNED" --newest "$NEWEST" --out "$RUN/gate"
+LIST="$(node scripts/linux-engine-gate/gate.mjs --list --pinned "$PINNED" --newest "$NEWEST" --out "$RUN/gate" --holder "$HOLDER")"
+for step in E1 FB R1; do   # each step's command as --list prints it, under the host lock; --list starts and writes nothing
+  eval "$(printf '%s\n' "$LIST" | awk -v s="$step" '$1 == s { getline; sub(/^ +/, ""); print; exit }')"
 done
-# expected: each step's record under "$RUN/gate", its vendor_fixture hashes the manifest's; add --pilot 1 for a development run
+# expected: each step's record under "$RUN/gate"; E1's and FB's name the fixture's hashes (vendor_fixture), R1's none
+# a development run, never counted: add --pilot 1 to the --list line
 mkdir "$RUN/parity"
-node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$(git rev-parse HEAD)"
-node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua --out "$RUN/parity/cua-1"
-node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua --out "$RUN/parity/cua-2"
+CUA_LOCK_MAX=100m "$LOCK" "$HOLDER" bash -c 'node scripts/repl-parity.mjs prepare --device "$1" --commit "$(git rev-parse HEAD)" || exit
+node scripts/repl-parity.mjs run --device "$1" --suite native --host cua --engine cua --out "$2/cua-1" &&
+  node scripts/repl-parity.mjs run --device "$1" --suite native --host cua --engine cua --out "$2/cua-2"
+status=$?
+node scripts/repl-parity.mjs cleanup-prepared --device "$1"
+exit "$status"' sitting "$DEVICE" "$RUN/parity"
 node scripts/repl-parity.mjs diff "$RUN/parity/cua-1" "$RUN/parity/cua-2"
-node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE"
 # expected: each run prints assertions PASS; the cua and cua diff takes no --expected file, so any difference it reports is undeclared
 EV=docs/evidence/2026-10-28-own-linux-engine
 node scripts/repl-parity.mjs diff "$EV/m6a/x64/regression/parity/vendor" "$EV/m6a/x64/regression/parity/cua" --expected scripts/repl-parity/expected/native-linux.json

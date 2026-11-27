@@ -254,3 +254,18 @@ test('the summary carries the retries as the judge\'s field and renders their se
   assert.equal(j.composingRetries.findings.length, 1);
   assert.match(renderSummary(j), /^## Composing retries \(ruling 1229\)$[\s\S]*^- \*\*For the owner\*\*: composing retries are lopsided/m);
 });
+
+// Review m7: a retry redoes only the group's setup and the probe; no case cell (no act) runs until an attempt composed.
+test('no case act cell runs during a composing retry: the acts come only after the attempt that composed', async () => {
+  let posts = 0;
+  const acts = [];
+  const lane = code => { if (code.includes('the case was not prepared; nothing was sent')) acts[posts] = (acts[posts] ?? 0) + 1; };
+  const {matrix} = missing(2);
+  const ops = {matrix: (base, a) => { if (a[0] === 'probe' && a[1] === 'keystroke') posts += 1; return matrix(base, a); }};
+  const {result} = await runWith({plan: PLAN, cellName: 'korean', ops, lane});
+  const rows = composingRows(result);
+  assert.ok(rows.length > 0 && rows.every(r => r.composingAttempt === 3 && !r.invalid));
+  // Indexed by the probe posts so far: none before the first, none after the first or second (the failed attempts),
+  // one per row after the third.
+  assert.deepEqual([acts[0] ?? 0, acts[1] ?? 0, acts[2] ?? 0, acts[3]], [0, 0, 0, rows.length]);
+});

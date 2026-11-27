@@ -1,0 +1,11 @@
+== r1 at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b 2026-11-27T19:19:02Z dirty=no
+free on /:   34G
+2026-11-27T19:19:02Z == parity head 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b label counted device cua-171 engine installed selection explicit dirty=no
+2026-11-27T19:19:15Z prepared home /Users/new/.local/share/cua-parity-remote/parity-pAoON1 on :1 unix:path=/tmp/c173-r1-OPf9pA/parity/desktop/session/bus/dbus-yvZUag1hhV,guid=ce12a6b37945a4cb08beb52b6b09d7a6
+2026-11-27T19:19:21Z pinned check of /Users/new/.local/share/cua-parity-remote/parity-pAoON1: exit 0, acceptance on the pinned release: /Users/new/.local/share/cua-parity-remote/parity-pAoON1/engine/linux/cua-engine
+2026-11-27T19:22:09Z cua exit 0 {"out":"/Users/new/.local/share/cua-171/t173/run/reg/r1/out/parity/cua","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"PASS","coveredCases":34,"recordedVendorDefects":0,"engine":"cua"}
+2026-11-27T19:22:09Z verdict exit 0
+2026-11-27T19:22:10Z cleanup exit 0
+private-desktop: :1 session; command exit 0; watchdog clean
+2026-11-27T19:22:11Z == parity exit 0
+r1 (parity) exit 0

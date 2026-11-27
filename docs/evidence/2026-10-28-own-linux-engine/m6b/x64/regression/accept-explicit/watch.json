@@ -1,0 +1,22 @@
+{
+ "exit": {
+  "code": 0,
+  "signal": null
+ },
+ "samples": 3370,
+ "maxSkyLinux": 0,
+ "engines": [
+  {
+   "pid": 982970,
+   "exe": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/engine/linux/cua-engine",
+   "ppid": "982929",
+   "parent": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/node/24.22.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/src/repl-host/supervisor.mjs"
+  },
+  {
+   "pid": 982993,
+   "exe": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/engine/linux/cua-engine",
+   "ppid": "982977",
+   "parent": "/tmp/c173-r3c-ROQJZ5/accept/home/cua/node/24.22.0/bin/node --experimental-vm-modules /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/src/repl-host/trusted-worker.mjs"
+  }
+ ]
+}

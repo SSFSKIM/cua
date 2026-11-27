@@ -1,0 +1,45 @@
+2026-11-27T18:58:23Z start npmci
+2026-11-27T18:58:26Z end npmci exit 0
+2026-11-27T18:58:26Z start fxverify
+2026-11-27T18:58:28Z end fxverify exit 0
+2026-11-27T18:58:28Z start cells
+2026-11-27T19:17:07Z end cells exit 0
+2026-11-27T19:17:07Z start srchome
+2026-11-27T19:17:11Z end srchome exit 0
+2026-11-27T19:17:11Z start r1
+2026-11-27T19:17:11Z end r1 exit 2
+2026-11-27T19:17:11Z start r3d
+2026-11-27T19:17:11Z end r3d exit 2
+2026-11-27T19:17:11Z start r3c
+2026-11-27T19:17:12Z end r3c exit 2
+2026-11-27T19:17:12Z start r4
+2026-11-27T19:17:12Z end r4 exit 2
+2026-11-27T19:17:12Z start fallback
+2026-11-27T19:17:13Z end fallback exit 2
+2026-11-27T19:17:13Z start fixture-plain
+2026-11-27T19:17:13Z end fixture-plain exit 1
+2026-11-27T19:17:13Z start fixture-trace
+2026-11-27T19:17:14Z end fixture-trace exit 1
+2026-11-27T19:17:14Z start prov
+2026-11-27T19:18:10Z end prov exit 0
+2026-11-27T19:18:10Z chain done
+2026-11-27 rerun after setup failure (xprobe not built)
+2026-11-27T19:18:31Z start xprobe
+2026-11-27T19:19:00Z end xprobe exit 0
+2026-11-27T19:19:00Z start fxverify
+2026-11-27T19:19:02Z end fxverify exit 0
+2026-11-27T19:19:02Z start r1
+2026-11-27T19:22:11Z end r1 exit 0
+2026-11-27T19:22:11Z start r3d
+2026-11-27T19:25:11Z end r3d exit 0
+2026-11-27T19:25:11Z start r3c
+2026-11-27T19:28:11Z end r3c exit 0
+2026-11-27T19:28:11Z start r4
+2026-11-27T19:28:51Z end r4 exit 0
+2026-11-27T19:28:51Z start fallback
+2026-11-27T19:29:18Z end fallback exit 0
+2026-11-27T19:29:18Z start fixture-plain
+2026-11-27T19:37:53Z end fixture-plain exit 0
+2026-11-27T19:37:53Z start fixture-trace
+2026-11-27T19:47:01Z end fixture-trace exit 0
+2026-11-27T19:47:01Z chain done

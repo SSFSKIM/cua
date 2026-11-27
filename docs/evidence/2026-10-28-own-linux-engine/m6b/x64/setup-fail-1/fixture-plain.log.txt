@@ -1,0 +1,4 @@
+== fixture at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b 2026-11-27T19:17:13Z dirty=no
+free on /:   34G
+E1 exit 2
+FB exit 2

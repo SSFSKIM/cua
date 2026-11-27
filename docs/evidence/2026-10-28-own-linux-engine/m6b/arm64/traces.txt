@@ -1,0 +1,224 @@
+# arm64 (arm64) at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b, older 854103aa58b56521ba85afb4b392e1f3c5a8287d: every traced run's process-path witness (each program a successful exec ran, by path, with its count) beside its counts
+# (from runtime.json; <run> is the run directory, raw strace files stay in its scratch)
+
+## E0: cua install, logged and traced (03-install)
+  whole: complete; processes 15; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  <run>/user/.local/share/cua/staging/node-24.22.0-1a4byI/node/bin/node
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/gzip
+       1  /usr/bin/tar
+
+## E1: linux-native (06-smoke-traced)
+  whole: complete; processes 152; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /bin/sh
+       6  <run>/user/.local/share/cua/engine/linux/cua-engine
+       3  <run>/user/.local/share/cua/node/24.22.0/bin/node
+       4  <run>/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+       5  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       8  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/gedit
+       1  /usr/bin/gio
+       3  /usr/bin/git
+       4  /usr/bin/mkfifo
+       6  /usr/bin/pgrep
+       7  /usr/bin/ps
+       4  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+       1  /usr/bin/zenity
+       1  /usr/lib/aarch64-linux-gnu/glib-2.0/gio-launch-desktop
+
+## E1: linux-text (08-witness-traced)
+  whole: complete; processes 1039; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /bin/sh
+       4  <run>/user/.local/share/cua/engine/linux/cua-engine
+       3  <run>/user/.local/share/cua/node/24.22.0/bin/node
+       4  <run>/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+       3  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+     941  /usr/bin/busctl
+       7  /usr/bin/bwrap
+       1  /usr/bin/gedit
+       1  /usr/bin/git
+       4  /usr/bin/mkfifo
+       6  /usr/bin/pgrep
+       7  /usr/bin/ps
+       3  /usr/bin/true
+
+## E2: linux-browser-only (10-browser-traced)
+  whole: complete; processes 82; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       3  <run>/user/.local/share/cua/node/24.22.0/bin/node
+       4  <run>/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+       3  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       7  /usr/bin/bwrap
+       1  /usr/bin/git
+       4  /usr/bin/mkfifo
+       5  /usr/bin/pgrep
+       7  /usr/bin/ps
+       3  /usr/bin/true
+
+## E3: open under CUA_NATIVE_ENGINE=vendor (12-open-CUA_NATIVE_ENGINE=vendor)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/git
+
+## E3: doctor under CUA_NATIVE_ENGINE=vendor (13-doctor-CUA_NATIVE_ENGINE=vendor)
+  whole: complete; processes 14; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## E3: open under "engine": "vendor" in engine.json (14-open-"engine": "vendor" in engine.json)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/git
+
+## E3: doctor under "engine": "vendor" in engine.json (15-doctor-"engine": "vendor" in engine.json)
+  whole: complete; processes 14; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## E3: open under both (16-open-both)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/git
+
+## E3: doctor under both (17-doctor-both)
+  whole: complete; processes 14; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## E3: open under CUA_LINUX_ENGINE_BIN naming 0.4.4 (18-open-CUA_LINUX_ENGINE_BIN naming 0.4.4)
+  whole: complete; processes 10; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  <run>/outdated/cua-engine
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/git
+
+## E3: doctor under CUA_LINUX_ENGINE_BIN naming 0.4.4 (19-doctor-CUA_LINUX_ENGINE_BIN naming 0.4.4)
+  whole: complete; processes 15; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 1
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  <run>/outdated/cua-engine
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## U0: linux-native (23-smoke-traced)
+  whole: complete; processes 153; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 2675, open 1, fstat 1, opendir 327
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /bin/sh
+       6  <run>/upgraded/cua/engine/linux/cua-engine
+       3  <run>/upgraded/cua/node/24.22.0/bin/node
+       4  <run>/upgraded/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+       5  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       8  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/gedit
+       1  /usr/bin/gio
+       3  /usr/bin/git
+       4  /usr/bin/mkfifo
+       6  /usr/bin/pgrep
+       7  /usr/bin/ps
+       4  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+       1  /usr/bin/zenity
+       1  /usr/lib/aarch64-linux-gnu/glib-2.0/gio-launch-desktop
+
+## U0: open under CUA_NATIVE_ENGINE=vendor, its tree there (24-open-CUA_NATIVE_ENGINE=vendor, its tree there)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: none
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/git
+
+## U0: doctor under CUA_NATIVE_ENGINE=vendor, its tree there (25-doctor-CUA_NATIVE_ENGINE=vendor, its tree there)
+  whole: complete; processes 14; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 2675, open 1, fstat 1, opendir 327
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## U1: cua doctor --json, traced (27-doctor-U1-traced)
+  whole: complete; processes 19; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 2675, open 1, fstat 1, opendir 327
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       2  <run>/upgraded/cua/engine/linux/cua-engine
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+       1  /usr/bin/bwrap
+       2  /usr/bin/dbus-send
+       1  /usr/bin/git
+       1  /usr/bin/true
+       1  /usr/bin/xdpyinfo
+
+## U2: cua install, logged and traced (28-install-U2)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 2675, open 1, fstat 1, opendir 327
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  <run>/upgraded/cua/node/24.22.0/bin/node
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+
+## U2: cua install --json from the same state, logged and traced (29-install-U2-json)
+  whole: complete; processes 9; unread lines 0, orphans 0
+  calls under runtimes/ by kind: lstat 2675, open 1, fstat 1, opendir 327
+  serve's tree under runtimes/: 0 calls, complete
+  programs:
+       1  <run>/upgraded/cua/node/24.22.0/bin/node
+       1  /opt/hostedtoolcache/node/24.22.3/arm64/bin/node
+

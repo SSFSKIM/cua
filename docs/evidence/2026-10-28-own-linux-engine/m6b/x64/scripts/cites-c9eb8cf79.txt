@@ -1,0 +1,67 @@
+# README docs/evidence/2026-10-28-own-linux-engine/m6b/README.md at c9eb8cf790e5055077fac32179724ed0d7878056; H 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b
+at H    docs/cua-api
+at H    docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-preflight.md
+at H    docs/evidence/2026-10-28-own-linux-engine/engine-044/reach
+at H    docs/evidence/2026-10-28-own-linux-engine/engine-045/reach/arm64
+at H    docs/evidence/2026-10-28-own-linux-engine/engine-045/reach/x64
+at H    docs/evidence/2026-10-28-own-linux-engine/engine-045/x300-arm64
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/README.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/arm64/README.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/arm64/h6/out/D2.pinned-release/run/summary.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/arm64/h8/out/D1.pinned-release/run/summary.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/t10/README.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/x64/README.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/x64/h6/out/D2.pinned-release/run/summary.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m5/x64/h8/out/D1.pinned-release/run/summary.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m6a/README.md
+at H    docs/evidence/2026-10-28-own-linux-engine/m6a/f10-credit.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/arm64/runtime.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/arm64/traces.txt
+MISSING docs/evidence/2026-10-28-own-linux-engine/m6b/ci-gate-default.log
+MISSING docs/evidence/2026-10-28-own-linux-engine/m6b/ci-gate-engine-linux.log
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/credit.txt
+at f18235d8e docs/evidence/2026-10-28-own-linux-engine/m6b/fb-arm64-main
+at H    docs/evidence/2026-10-28-own-linux-engine/m6b/provenance.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64-hosted/runtime.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64-hosted/traces.txt
+MISSING docs/evidence/2026-10-28-own-linux-engine/m6b/x64/chain.log
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/bindings.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/fixture-verify.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/plain/E1/summary.md
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/plain/FB/summary.md
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/traced/E1/process-paths.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/traced/E1/summary.md
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/traced/FB/process-paths.txt
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/fixture/traced/FB/summary.md
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/accept-default/accept-linux-native-cua.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/accept-explicit/accept-linux-native-cua.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/device/device-mode.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/fallback/none.json
+MISSING docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/logs/r1.log
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/parity/verdict.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/regression/source-install.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/runtime.json
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/scripts/t8.sh
+added   docs/evidence/2026-10-28-own-linux-engine/m6b/x64/traces.txt
+case    native/app/paste
+case    native/app/typetext
+at H    native/linux-engine
+at H    runtime/engine/linux-engine.json
+at H    runtime/modules/provenance.json
+at H    scripts/accept/linux-device-mode.mjs
+at H    scripts/accept/linux-native.mjs
+at H    scripts/accept/linux-runtime-env.sh
+at H    scripts/accept/linux-runtime.mjs
+at H    scripts/linux-engine-gate/suites.sh
+at H    scripts/linux-engine-gate/vendor-fixture.json
+at H    scripts/modules-pin.mjs
+at H    test/cua-api/core-documentation.test.mjs
+at H    test/cua-api/facade-scenarios.mjs
+at H    test/linux-engine-diff/engine-stats.test.mjs
+at H    test/mcp-server.test.mjs
+at H    test/mcp-upstream.test.mjs
+at H    test/repl-host/jsonl.test.mjs
+at H    test/repl-host/line-separators.test.mjs
+at H    test/services-engine-render.test.mjs
+64 targets, 4 missing from c9eb8cf79
+exit 1

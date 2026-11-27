@@ -1,0 +1,10 @@
+== r3c at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b 2026-11-27T19:25:11Z dirty=no
+free on /:   34G
+2026-11-27T19:25:11Z == accept head 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b label counted device cua-171 engine installed selection explicit dirty=no
+2026-11-27T19:25:16Z run home /tmp/c173-r3c-ROQJZ5/accept/home installed
+2026-11-27T19:25:21Z pinned check of /tmp/c173-r3c-ROQJZ5/accept/home/cua: exit 0, acceptance on the pinned release: /tmp/c173-r3c-ROQJZ5/accept/home/cua/engine/linux/cua-engine
+2026-11-27T19:28:10Z scripts/accept/linux-native.mjs (selection explicit) exit 0
+2026-11-27T19:28:11Z engine watch: PASS (only /tmp/c173-r3c-ROQJZ5/accept/home/cua/engine/linux/cua-engine, under the trusted worker; no sky_linux)
+private-desktop: :1 session; command exit 0; watchdog clean
+2026-11-27T19:28:11Z == accept exit 0
+r3c (accept) exit 0

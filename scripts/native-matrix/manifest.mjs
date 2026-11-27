@@ -2,7 +2,7 @@
 // declared-departures file's checks (./departures.mjs), which may name only a judged row of it.
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {exclusionOf} from './not-judged.mjs';
-import {caseId, casesOf, isPanelTarget, methodTimingId, SCENE_OF} from './plan.mjs';
+import {caseId, casesOf, isPanelTarget, methodTimingId, SCENE_OF, speedExtraCases} from './plan.mjs';
 import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN, SPEED_OPS} from './run.mjs';
 import {unicodeRowsOf} from './unicode-plan.mjs';
@@ -16,6 +16,8 @@ export {SPEED_OPS};
 // rows; a method row also names what its case expects (plan.mjs: 'outcome' or 'refusal'). -> [{section, id, sample,
 // expect?}].
 export function manifestOf({run, samples}, plan = FULL_PLAN) {
+  // The speed-extra cell (ruling 1228, F): its ops' timings, `samples` each.
+  if (plan.speedExtra) return plan.frontmost.flatMap(t => speedExtraCases(t, 'timed').flatMap(c => Array.from({length: samples}, (_, i) => ({section: 'speed', id: methodTimingId(t, c), sample: i + 1}))));
   const out = [];
   const judged = id => !exclusionOf({section: 'method', id});
   for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) if (judged(caseId(target, 'frontmost', c))) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});

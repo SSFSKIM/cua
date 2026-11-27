@@ -25,6 +25,7 @@ export const MATRIX_CELLS = Object.freeze({
   matrix: {section: 'method', plan: 'matrix', describe: 'the whole matrix: both regimes, the speed and finding-elements cells, the probe cells, the Korean matrix, the launch path (what run runs)'},
   method: {section: 'method', plan: 'method', describe: 'the method cases in both regimes (--scene narrows to one scene\'s targets, --user to one pairing)'},
   speed: {section: 'speed', plan: 'speed', describe: 'getAXState, getScreenshot and listApps in-cell, --samples each (--scene narrows)'},
+  'speed-extra': {section: 'speed', plan: 'speed-extra', describe: 'ruling 1228 (F): the three method timings full sitting C missed (paste.replace in TextEdit and the Electron fixture, TextEdit\'s typeText.replace), --samples each on its own prepare; pooled by the judge with the full runs\' for those ops'},
   finding: {section: 'finding', plan: 'finding', describe: 'the finding-elements scorer: ten targets per scene resolved by name, the titled share, the ID count (--scene narrows)'},
   'non-interference': {section: 'method', plan: 'background', describe: 'the background regime\'s cells under the oracle: --scene <driven> [--user <user window\'s scene>]'},
   launch: {section: 'launch', plan: 'launch', describe: 'the launch path: TextEdit and the Electron fixture resolved while not running, behind the user window (--scene narrows)'},

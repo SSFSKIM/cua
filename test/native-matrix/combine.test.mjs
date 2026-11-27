@@ -69,3 +69,12 @@ test('the combine command reads every result under its directories and writes th
   assert.ok(lines.some(l => /^combined run 2 from job 777 attempt 2: 2 cell\(s\)$/.test(l)), lines.join('\n'));
   assert.ok(lines.some(l => /^FLAG: method electron\/frontmost\/click\.point on vendor, run 2/.test(l)), lines.join('\n'));
 });
+
+test('F: combine writes a speed-extra cell\'s records through as they are, beside the combined lanes, and nothing else of another cell', async () => {
+  const speedExtra = engine => ({path: `/j/speed-extra/${engine}/run-2/result.json`, result: {cell: 'speed-extra', lanes: [{engine}], rows: [], meta: {run: 2, planId: 'speed-extra'}}});
+  const sheet = {path: '/j/save-sheet/cua/run-2/result.json', result: {cell: 'intervention-save-sheet', lanes: [{engine: 'cua'}], rows: [], meta: {run: 2}}};
+  const written = [];
+  const io = {readResults: () => ({results: [...base(2), speedExtra('vendor'), speedExtra('cua'), sheet], problems: []}), writeResult: dir => { written.push(dir); }, writeJson: () => {}};
+  await main(['combine', '/j', '--out', '/o'], {log: () => {}, io: {combine: io}});
+  assert.deepEqual(written, ['/o/vendor/run-2', '/o/cua/run-2', '/o/speed-extra/vendor/run-2', '/o/speed-extra/cua/run-2']);
+});

@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
-import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
+import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {jobsCheck, renderJobs, SAVE_SHEET_CELL} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 
@@ -42,14 +42,25 @@ test('a filtered run job runs only the listed cells: the matrix lanes with --onl
   assert.ok(plan({run: 3, only: [...cells, SAVE_SHEET_CELL]}).steps.every(s => !s.argv.includes(SAVE_SHEET_CELL)), 'the save-sheet id never reaches the matrix');
 });
 
+test('F: a run job re-times the three missed speed ops only behind --speed-extra, off by default, both lanes in its lane order', () => {
+  const off = plan({run: 2}), on = plan({run: 2, speedExtra: true});
+  assert.ok(off.steps.every(s => !s.id.startsWith('speed-extra')), 'flag off: nothing added');
+  assert.deepEqual(on.steps.map(s => s.id), ['witness-tap', 'matrix-cua-2', 'matrix-vendor-2', 'speed-extra-cua-2', 'speed-extra-vendor-2', 'save-sheet-cua-2', 'save-sheet-vendor-2']);
+  const step = on.steps.find(s => s.id === 'speed-extra-vendor-2');
+  assert.deepEqual([step.argv.slice(2, 4), flag(step.argv, '--out'), flag(step.argv, '--samples'), flag(step.argv, '--run-number'), step.check, step.record, step.needs],
+    [['cell', 'speed-extra'], '/w/out/speed-extra/vendor', String(SPEED_EXTRA_SAMPLES), '2', 'record', '/w/out/speed-extra/vendor/run-2/result.json', undefined]);
+  assert.ok(SPEED_EXTRA_SAMPLES >= 10);
+  assert.deepEqual(plan({run: 1, only: ['electron/frontmost/click.point'], speedExtra: true}).steps.map(s => s.id), ['witness-tap', 'matrix-vendor-1', 'matrix-cua-1', 'speed-extra-vendor-1', 'speed-extra-cua-1'], 'a filtered run job takes it too');
+});
+
 test('the judge job checks the jobs, combines their records (a full run beneath), judges them and runs key-route last', () => {
   const judge = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], base: '/b'});
   assert.deepEqual(judge.steps.map(s => s.id), ['jobs-check', 'combine', 'summary', 'compare', 'key-route']);
   const [check, combine, summary, compare] = judge.steps;
   assert.deepEqual(check.argv.slice(2), ['jobs-check', '--jobs', '/j/1,/j/2,/j/3', '--base', '/b', '--out', '/w/out/jobs.json']);
-  assert.deepEqual(combine.argv.slice(2), ['combine', '/b/vendor', '/b/cua', '/j/1/vendor', '/j/1/cua', '/j/2/vendor', '/j/2/cua', '/j/3/vendor', '/j/3/cua', '--out', '/w/out/combined']);
+  assert.deepEqual(combine.argv.slice(2), ['combine', '/b', '/j/1', '/j/2', '/j/3', '--out', '/w/out/combined']);
   assert.deepEqual([combine.needs, summary.needs, compare.needs], [['jobs-check'], ['combine'], ['combine']]);
-  assert.deepEqual(compare.argv.slice(3, 5), ['/w/out/combined/vendor', '/w/out/combined/cua']);
+  assert.deepEqual([summary.argv.slice(3, 4), compare.argv.slice(3, 4)], [['/w/out/combined'], ['/w/out/combined']], 'the judges read the lanes and any speed-extra records combine wrote');
   assert.deepEqual(judge.counts, ['/w/out/combined/vendor', '/w/out/combined/cua', '/j/1/save-sheet', '/j/2/save-sheet', '/j/3/save-sheet']);
   assert.deepEqual(plan({judge: true, jobs: ['/j/1'], base: null}).steps[0].argv.slice(2), ['jobs-check', '--jobs', '/j/1', '--out', '/w/out/jobs.json']);
 });
@@ -92,7 +103,8 @@ test('the workflow\'s split form: a run job per run number, each attempt its own
   assert.match(run, /name: m5-sitting-c-run-\$\{\{ matrix\.run \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(run, /hardware\.json/);
   assert.match(run, /run c --out "\$RUNNER_TEMP\/m5-out\/sitting" "\$\{flags\[@\]\}"/);
-  assert.match(run, /flags=\(--split-run "\$RUN"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+  assert.match(run, /flags=\(--split-run "\$RUN"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)\n\s+\[ "\$SPEED_EXTRA" = true \] && flags\+=\(--speed-extra\)/);
+  assert.match(workflow, /speed_extra:\n.*\n\s+type: boolean\n\s+default: false/, 'F\'s flag is off unless a dispatch sets it');
   for (const j of [run, judge]) assert.equal(Number(/timeout-minutes: (\d+)/.exec(j)?.[1]), JOB_LIMIT_MINUTES);
   assert.match(judge, /needs: \[engine, split_run\]/);
   assert.match(judge, /needs\.split_run\.result == 'success'/, 'a run job that stopped is re-run before anything is judged');
@@ -110,6 +122,8 @@ test('the CLI: a split option outside a split sitting C refuses, and jobs-check 
   refused(['b', '--out', '/w/out', '--split-run', '1'], /only sitting C is split/);
   refused(['c', '--out', '/w/out', '--only', 'x'], /belong to a split sitting C/);
   refused(['c', '--out', '/w/out', '--split-run', 'two'], /--split-run <run number>/);
+  refused(['c', '--out', '/w/out', '--speed-extra'], /belong to a split sitting C/);
+  refused(['c', '--out', '/w/out', '--split-judge', '--jobs', '/j/1', '--speed-extra'], /--split-judge --jobs/);
   const root = fs.mkdtempSync(join(tmpdir(), 'split-cli-')), sitting = join(root, 'job-1', 'sitting');
   fs.mkdirSync(join(sitting, 'cua'), {recursive: true});
   fs.writeFileSync(join(root, 'job-1', 'hardware.json'), JSON.stringify({model: 'VirtualMac2,1'}));

@@ -265,7 +265,7 @@ test('C\'s chain: an older record at a gated path refuses the sitting before any
 // kind and no measured family still takes the mean of what was measured. Sitting C's full form, from its first run step,
 // projects its three runs' lanes and save-sheet cells and the key-route diagnostic, not 703 min.
 test('the projection\'s priors: a matrix lane 60 or 50 min, a save-sheet step 6, key-route 27, setup 5, each replaced once measured', async () => {
-  assert.deepEqual(PROJECTION_PRIOR_MINUTES, {'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'key-route': 27, setup: 5});
+  assert.deepEqual(PROJECTION_PRIOR_MINUTES, {'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'speed-extra': 6, 'key-route': 27, setup: 5});
   const ids = [1, 2, 3].flatMap(n => [`matrix-vendor-${n}`, `matrix-cua-${n}`]).concat([1, 2, 3].flatMap(n => [`save-sheet-vendor-${n}`, `save-sheet-cua-${n}`]));
   const minutes = {'matrix-vendor-1': 70};
   let t = 0;

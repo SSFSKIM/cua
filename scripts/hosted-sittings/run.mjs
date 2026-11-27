@@ -160,7 +160,7 @@ const wallText = w => `the sitting ${minutes(w.sittingMs)} so far${w.jobMs === n
 // job's time already. Verdicts and cleanups are left out, and so is whether a step will be skipped: a warning, never a
 // plan. Past PROJECTION_WARN_MINUTES the step's note, the log and the report say so; nothing is split or skipped.
 export const PROJECTION_WARN_MINUTES = 300;
-export const PROJECTION_PRIOR_MINUTES = Object.freeze({'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'key-route': 27, setup: 5});
+export const PROJECTION_PRIOR_MINUTES = Object.freeze({'matrix-vendor': 60, 'matrix-cua': 50, 'save-sheet': 6, 'speed-extra': 6, 'key-route': 27, setup: 5});
 const familyOf = id => id.replace(/-\d+$/, '');
 const priorOf = id => {
   const family = familyOf(id), kind = Object.keys(PROJECTION_PRIOR_MINUTES).find(k => family === k || family.startsWith(`${k}-`));

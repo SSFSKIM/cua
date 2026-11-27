@@ -204,14 +204,18 @@ const beatOf = (vendor, cua) => (vendor && cua ? cua.median <= BEAT * vendor.med
 // stats, deltaPct, beat: true|false|null, provisional, partial: {vendor, cua}, account}; beat null when not qualified;
 // `partial` every eligible reading's stats, partial runs included, and `provisional` the beat they would give: shown as
 // diagnostics, never counted.
-export function judgeSpeed(vendorRows, cuaRows, {required = 1, pairable = all, planned = unknown} = {}) {
+// `extra` (ruling 1228, F): {vendor: [row], cua: [row], runs} of the speed-extra cell, pooled with the complete runs'
+// samples (its rows of a cause left out); the account is the full runs' alone.
+export function judgeSpeed(vendorRows, cuaRows, {required = 1, pairable = all, planned = unknown, extra = null} = {}) {
   const {complete, partial, cuaCause} = measuredRuns(vendorRows, cuaRows, pairable, planned);
   const account = accountOf(vendorRows, cuaRows, cuaCause, {required, pairable, planned});
   const times = (rows, runs) => rows.filter(r => !causeOf(r) && runs.has(runOf(r))).map(r => r.inCellMs);
-  const vendor = stats(times(vendorRows, complete)), cua = stats(times(cuaRows, complete));
+  const extraTimes = rows => (rows ?? []).filter(r => !causeOf(r)).map(r => r.inCellMs);
+  const vendor = stats([...times(vendorRows, complete), ...extraTimes(extra?.vendor)]), cua = stats([...times(cuaRows, complete), ...extraTimes(extra?.cua)]);
   const seen = {vendor: stats(times(vendorRows, partial)), cua: stats(times(cuaRows, partial))};
   return {vendor, cua, deltaPct: vendor && cua ? round(((cua.median - vendor.median) / vendor.median) * 100) : null,
-    beat: account.qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(seen.vendor, seen.cua), partial: seen, account};
+    beat: account.qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(seen.vendor, seen.cua), partial: seen, account,
+    ...(extra ? {extra: {runs: extra.runs, vendor: extraTimes(extra.vendor).length, cua: extraTimes(extra.cua).length}} : {})};
 }
 
 // One finding row's samples on the complete run pairs, as speed's. -> {vendor: [row], cua: [row], account}.

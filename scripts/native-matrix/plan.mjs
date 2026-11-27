@@ -836,6 +836,11 @@ export const isAcceptance3 = (target, regime, c, user) => regime === 'background
 export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;
 // A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
 export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${{openPanel: 'panel.', savePanel: 'savePanel.'}[target] ?? ''}${c.method}.${c.case}`;
+// Ruling 1228 (F): the speed ops full sitting C missed, re-timed by the speed-extra cell (./run.mjs), by target: the cases
+// timed each sample, and those run after them unrecorded so the next sample finds its field as the first did (TextEdit's
+// document written back whole; the Electron fixture's prepare sets its field itself).
+export const SPEED_EXTRA = Object.freeze({textedit: {timed: ['typeText.replace', 'paste.replace'], restore: ['setValue.document']}, electron: {timed: ['paste.replace'], restore: []}});
+export const speedExtraCases = (target, kind) => casesOf(target, 'frontmost').filter(c => SPEED_EXTRA[target]?.[kind].includes(`${c.method}.${c.case}`));
 // The method rows judged by the device's reading of the field's caret beside the vendor's (#258, #259; ./caret.mjs).
 export const CARET_ROWS = Object.freeze(Object.entries(CASES).flatMap(([target, cases]) => cases.filter(c => c.caret).map(c => caseId(target, 'frontmost', c))));
 export const isCaretRow = id => CARET_ROWS.includes(id);

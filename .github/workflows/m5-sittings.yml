@@ -38,6 +38,10 @@ on:
         description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791)"
         type: string
         default: ''
+      speed_extra:
+        description: "split: each run job also re-times the three speed ops full sitting C missed, ten samples each on both lanes (about 10 min), pooled by the judge for those ops alone"
+        type: boolean
+        default: false
       image:
         description: "The sittings' runner: default puts C on xcode-27 (macOS 27) and A, B, D, F on macos-latest; the builder and E always take macos-latest"
         type: choice
@@ -177,6 +181,7 @@ jobs:
       RUN: ${{ matrix.run }}
       FILTER: ${{ inputs.filter }}
       BASE_RUN_ID: ${{ inputs.base_run_id }}
+      SPEED_EXTRA: ${{ inputs.speed_extra }}
     steps:
       - name: Job start
         shell: bash
@@ -231,6 +236,7 @@ jobs:
           set -uo pipefail
           flags=(--split-run "$RUN")
           [ -n "$FILTER" ] && flags+=(--only "$FILTER")
+          [ "$SPEED_EXTRA" = true ] && flags+=(--speed-extra)
           code=0
           node scripts/hosted-sittings.mjs run c --out "$RUNNER_TEMP/m5-out/sitting" "${flags[@]}" || code=$?
           [ -f "$RUNNER_TEMP/m5-out/sitting/sitting.md" ] && cat "$RUNNER_TEMP/m5-out/sitting/sitting.md" >> "$GITHUB_STEP_SUMMARY"

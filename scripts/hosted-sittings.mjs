@@ -21,12 +21,13 @@
 //       per-cell counts, and in the pilot what it read; C's judge keeps its own summary.md). --flipped: this commit
 //       selects cua's engine by default (sitting E's lanes are then expected to pass). Exit 0 PASS, 1 a step failed,
 //       4 NO VERDICT, 5 a full sitting holds a step not built yet, 3 OWNER, 2 usage or refused.
-//   node scripts/hosted-sittings.mjs run c --out <dir> --split-run <n> [--only <cell>,…]
+//   node scripts/hosted-sittings.mjs run c --out <dir> --split-run <n> [--only <cell>,…] [--speed-extra]
 //   node scripts/hosted-sittings.mjs run c --out <dir> --split-judge --jobs <dir>,… [--base <dir>]
 //       Sitting C split into jobs (ruling 1228, scripts/hosted-sittings/split.mjs): run job n (its own pair, its run's
 //       save-sheet steps; --only the cells a filtered rerun needs, textedit/intervention.saveSheet for #212's), and the
 //       judging job over the run jobs' sitting dirs (a full run's beneath filtered reruns): jobs-check, combine, judge,
-//       key-route. `plan` takes the same options.
+//       key-route. --speed-extra (off by default): the run job also re-times the three speed ops full sitting C missed,
+//       ten samples each on both lanes, pooled by the judge for those ops alone. `plan` takes the same options.
 //   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>] --out <file>
 //       The run jobs' records, each with the hardware.json beside its dir: exit 2 when they are not one harness commit
 //       and one pair of engine versions (or two jobs ran one run), 0 otherwise; `run` lists the jobs in sitting.md.
@@ -99,16 +100,16 @@ function planOf(sitting, values) {
 // --split-judge --jobs <dir>,… [--base <dir>] the judging job. -> {split} or {}.
 function splitOf(sitting, values) {
   if (values['split-run'] === undefined && !values['split-judge']) {
-    if (values.only !== undefined || values.jobs !== undefined || values.base !== undefined) usage('--only, --jobs and --base belong to a split sitting C');
+    if (values.only !== undefined || values.jobs !== undefined || values.base !== undefined || values['speed-extra']) usage('--only, --speed-extra, --jobs and --base belong to a split sitting C');
     return {};
   }
   if (sitting !== 'c') usage('only sitting C is split into jobs');
   if (values['split-judge']) {
-    if (values['split-run'] !== undefined || values.only !== undefined || !values.jobs) usage('--split-judge --jobs <dir>,… [--base <dir>]');
+    if (values['split-run'] !== undefined || values.only !== undefined || values['speed-extra'] || !values.jobs) usage('--split-judge --jobs <dir>,… [--base <dir>]');
     return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), base: values.base ? resolve(values.base) : null}};
   }
   if (!/^\d+$/.test(values['split-run'])) usage('--split-run <run number>');
-  return {split: {run: Number(values['split-run']), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
+  return {split: {run: Number(values['split-run']), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {}), ...(values['speed-extra'] ? {speedExtra: true} : {})}};
 }
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
 function jobDir(dir) {
@@ -220,7 +221,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
+    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
     'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {

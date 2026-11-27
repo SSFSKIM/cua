@@ -97,6 +97,8 @@ function sittingB(ctx) {
 // Each run is told its order (--first-lane), which it records (meta.laneOrder); the key-route diagnostic runs its two
 // engines once, in its own fixed order, recorded beside the schedule. -> {runs: [{run, first}], keyRoute}.
 export const laneOrderOf = runs => ({runs: Array.from({length: runs}, (_, i) => ({run: i + 1, first: i % 2 === 0 ? 'vendor' : 'cua'})), keyRoute: [...KEY_ROUTE_ENGINES]});
+// The speed-extra cell's samples a lane (ruling 1228, F: ten or more of each op).
+export const SPEED_EXTRA_SAMPLES = 10;
 // Sitting C's schedule: one run a lane in the pilot, three in the full form, run job n's run alone when split; its steps
 // and its plan's record read the same.
 const sittingCOrder = ctx => {
@@ -114,11 +116,12 @@ function splitJudge(ctx) {
   return [
     {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228)', kind: 'verdict', check: 'exit',
       argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base] : []), '--out', `${ctx.out}/jobs.json`]},
+    // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F).
     {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
-      argv: matrix('combine', ...[...(base ? [base] : []), ...jobs].flatMap(d => [`${d}/vendor`, `${d}/cua`]), '--out', combined)},
+      argv: matrix('combine', ...(base ? [base] : []), ...jobs, '--out', combined)},
     {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: ['combine'],
-      argv: matrix('summary', `${combined}/vendor`, `${combined}/cua`, '--out', `${ctx.out}/summary.md`)},
-    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['combine'], argv: matrix('compare', `${combined}/vendor`, `${combined}/cua`, '--out', `${ctx.out}/comparison.md`)},
+      argv: matrix('summary', combined, '--out', `${ctx.out}/summary.md`)},
+    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['combine'], argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
     {id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
       check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
       argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]},
@@ -162,6 +165,13 @@ function sittingC(ctx) {
       ...(engine !== first ? {pair: `${ctx.out}/${first}/run-${i}/result.json`} : {}),
       argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i), '--first-lane', first, ...(matrixCells ? ['--only', matrixCells.join(',')] : []))});
   }
+  // Ruling 1228 (F), behind the run job's flag, off by default: the three speed ops full sitting C missed re-timed,
+  // SPEED_EXTRA_SAMPLES each on both lanes in the job's lane order, as its run's extra speed samples (the judge pools them
+  // for those ops alone, ../native-matrix/summary.mjs). Unchained, as the save-sheet cells: their preflight refuses a
+  // screen a run left.
+  if (ctx.split?.speedExtra) for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `speed-extra-${engine}-${i}`,
+    label: `the missed speed ops re-timed on ${engine}, run ${i} (${first} first; ruling 1228)`, kind: 'run', check: 'record', record: `${ctx.out}/speed-extra/${engine}/run-${i}/result.json`, engine,
+    argv: matrix('cell', 'speed-extra', ...lane(engine), '--out', `${ctx.out}/speed-extra/${engine}`, '--run-number', String(i), '--first-lane', first, '--samples', String(SPEED_EXTRA_SAMPLES))});
   // #212's cell one step a run, by the same lane order, each reading its run's record (one run in the pilot).
   if (runsSheet) for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `save-sheet-${engine}-${i}`, label: `#212's save-sheet cell on ${engine}, run ${i} (${first} first)`,
     kind: 'run', check: 'saveSheet', records: [`${ctx.out}/save-sheet/${engine}/run-${i}/result.json`], row: 'textedit/intervention.saveSheet', engine,

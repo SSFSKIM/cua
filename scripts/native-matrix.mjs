@@ -133,6 +133,8 @@ function combineDirs({dirs, out}, io, log) {
     const flags = account.flags.filter(f => f.run === result.meta.run);
     io.writeResult(join(out, result.lanes[0].engine, `run-${result.meta.run}`), flags.length ? {...result, meta: {...result.meta, rerunFlags: flags}} : result);
   }
+  // The speed-extra cell's records (ruling 1228, F) as they are, for the judge to pool (./native-matrix/summary.mjs).
+  for (const {result} of results.filter(({result}) => result.cell === 'speed-extra')) io.writeResult(join(out, 'speed-extra', result.lanes[0].engine, `run-${result.meta.run}`), result);
   for (const c of account.combined) log(`combined run ${c.run} from job ${c.runId} attempt ${c.attempt}: ${c.cells.length} cell(s)`);
   for (const f of account.flags) log(`FLAG: ${f.cell} on ${f.engine}, run ${f.run}: failed in the full run, passes only in the filtered rerun`);
   for (const p of [...unread, ...account.problems]) log(`problem: ${p}`);

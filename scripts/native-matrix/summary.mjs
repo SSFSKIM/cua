@@ -86,7 +86,7 @@ import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
 import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
-import {FULL_PLAN} from './run.mjs';
+import {FULL_PLAN, SPEED_EXTRA_IDS} from './run.mjs';
 import {exclusionOf, NOT_JUDGED_RULES, notJudgedRefusal, notJudgedRuleOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, PRESS_KEY, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
@@ -293,6 +293,21 @@ export function findingMeasures(rows) {
 const oracleJudges = r => (r.section === 'method' && r.regime === 'background') || r.section === 'launch' || r.section === 'concurrent'
   || (r.section === 'unicode' && r.id.split('/')[1]?.includes('@'));
 
+// Ruling 1228 (F): the speed-extra cell's samples (../native-matrix/run.mjs SPEED_EXTRA_IDS), of the runs whose two lanes
+// both have them, by op: the judge pools them with the full runs' for those ops alone. -> Map(id -> {vendor, cua, runs}).
+function speedExtrasOf(results, own) {
+  const extra = results.filter(r => own(r) && r.result.cell === 'speed-extra' && r.result.meta?.planId === 'speed-extra');
+  const lane = (engine, run) => extra.filter(r => r.result.lanes[0]?.engine === engine && r.result.meta?.run === run);
+  const runs = [...new Set(extra.map(r => r.result.meta?.run))].filter(run => lane('vendor', run).length && lane('cua', run).length).sort((a, b) => a - b);
+  const byId = new Map();
+  for (const run of runs) for (const engine of ['vendor', 'cua']) for (const {result} of lane(engine, run)) for (const row of result.rows) {
+    if (row.section !== 'speed' || !SPEED_EXTRA_IDS.includes(row.id)) continue;
+    if (!byId.has(row.id)) byId.set(row.id, {vendor: [], cua: [], runs});
+    byId.get(row.id)[engine].push(row);
+  }
+  return byId;
+}
+
 // The judgment of everything read. `problems`: results that could not be read, missing proof; `departures`: the
 // declared-departures file's entries (./departures.mjs). -> {problems, runs, narrowed, methods, launch, speed, finding,
 // findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures, cells, others, owner, blocking,
@@ -356,10 +371,10 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   methods.sort((a, b) => a.id.localeCompare(b.id));
 
   // Speed.
-  const speed = [];
+  const speed = [], extras = speedExtrasOf(results, own);
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'speed'), r => r.id)) {
     const [scene, op] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
-    speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('speed', id)})});
+    speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('speed', id), extra: extras.get(id) ?? null})});
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -812,6 +827,9 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     const side = st => `median ${ms(st.median)}, p95 ${ms(st.p95)} (${st.n})`;
     const diagnostic = list.filter(s => s.beat === null && s.provisional !== null);
     if (diagnostic.length) out.push(...diagnostic.map(s => `- ${s.op} (diagnostic, not counted): every eligible reading, partial runs included: vendor ${side(s.partial.vendor)}; cua ${side(s.partial.cua)}; would beat: ${s.provisional ? 'yes' : 'no'}`), '');
+    // Ruling 1228 (F): an op whose figures pool the speed-extra cell's samples says so.
+    const pooled = list.filter(s => s.extra);
+    if (pooled.length) out.push(...pooled.map(s => `- ${s.op}: pooled with the speed-extra cell's samples of run${s.extra.runs.length === 1 ? '' : 's'} ${s.extra.runs.join(', ')} (vendor ${s.extra.vendor}, cua ${s.extra.cua})`), '');
   }
 
   out.push('## Finding elements', '', '| scene | vendor resolved | cua resolved | vendor titled share | cua titled share | vendor ID count | cua ID count |', '|---|---|---|---|---|---|---|');

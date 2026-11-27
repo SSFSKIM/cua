@@ -114,7 +114,8 @@ ${clear ? `if (focusReading(now, index) === "masked") {
 if (focusReading(now, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
 __m.focus = {index, trailer: focusReading(now, index)};`;
 };
-// The row's verdict on a prepare's focus reading `focus` ({index, trailer}), given the engine's meta of the prepare's
+// The row's verdict on a prepare's focus reading `focus` ({index, trailer}; a trailer 'selection' is a panel field's whole
+// value selected and held by it alone, panelTyping's proof of its focus), given the engine's meta of the prepare's
 // last observation (`cua/observation`, ./lane.mjs engineMetaOf; null on the vendor, which reports none). cua's names the
 // focused element by index (src/services/engine/service.mjs), which no selection masks, so it is read in the trailer's
 // place whenever it is there; it is the prepare's last observation, the state the act starts from. -> {by:
@@ -125,7 +126,7 @@ export function focusVerdict(focus, observation) {
       : `${FOCUS_REASONS.unfocused}${typeof observation.focusRead === 'string' ? ` (the focus read answered ${observation.focusRead})` : ''}`;
     return {by: 'observation', problem};
   }
-  return {by: 'trailer', problem: focus.trailer === 'focused' ? null : FOCUS_REASONS[focus.trailer] ?? FOCUS_REASONS.unfocused};
+  return {by: 'trailer', problem: ['focused', 'selection'].includes(focus.trailer) ? null : FOCUS_REASONS[focus.trailer] ?? FOCUS_REASONS.unfocused};
 }
 
 const observed = `const ax = await observe();
@@ -358,16 +359,28 @@ return {ok: closed && front, outcome: {closed, documentInFront: front}};`});
 // on the field leaves the row not prepared, no typing sent. A prepare refused for the focus says what it read before and
 // after its click (`seen`: the field's index, the trailer's focused index and the reading; pilot C-4's vendor rows kept
 // none of it), and the run reads the panel's focused element on the device beside it (./run.mjs panelCase).
+// The panel's field focused before typing. A trailer a selection masks proves the field's focus only when the selection
+// is the field's whole, non-empty value and no other element holds that value (ruling 1228, C2: the Save sheet opens
+// with its name selected; review finding 5's name text selected in another control stays unproven): read so
+// ('selection'), the field is not clicked, on either engine. In sitting C's full run the vendor's click on the name field
+// took the sheet away in every run, a click the prepare never needed.
 const panelTyping = (target, kase, field, text, what) => ({method: 'typeText', case: kase, expect: 'outcome', keys: ['typeText'], regimes: ['frontmost'],
   prepare: `let ax = await observe();
 if (!${PANEL_UP[target]}) return {ready: false, reason: ${j(`${what} is not up`)}};
 let index = ${field};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-const __seen = {before: {field: index, focused: focusedIndexOf(ax), reading: focusReading(ax, index)}, clicked: false};
-if (focusReading(ax, index) !== "focused") { await __app.click(index); __seen.clicked = true; ax = await observe(); index = ${field}; }
+const reading = () => {
+  const r = focusReading(ax, index);
+  if (r !== "masked") return r;
+  const v = plain(valueOfIndex(ax, index) ?? "");
+  const holders = v === "" ? 0 : elementLines(ax).filter(l => plain(valueOfIndex(ax, l.index) ?? "") === v).length;
+  return v !== "" && plain(selectedTextOf(ax) ?? "") === v && holders === 1 ? "selection" : r;
+};
+const __seen = {before: {field: index, focused: focusedIndexOf(ax), reading: reading()}, clicked: false};
+if (!["focused", "selection"].includes(reading())) { await __app.click(index); __seen.clicked = true; ax = await observe(); index = ${field}; }
 if (index === null || focusReading(ax, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)},
-  seen: {...__seen, after: {field: index, focused: focusedIndexOf(ax), reading: index === null ? null : focusReading(ax, index)}}};
-const trailer = focusReading(ax, index);
+  seen: {...__seen, after: {field: index, focused: focusedIndexOf(ax), reading: index === null ? null : reading()}}};
+const trailer = reading();
 const value = plain(valueOfIndex(ax, index) ?? "");
 if (value !== "") { await __app.selectText(index, value); ax = await observe(); index = ${field}; __m.prepared.push("field selected"); }
 const selected = selectedTextOf(ax);

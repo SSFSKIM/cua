@@ -421,7 +421,7 @@ async function runCell(text, apps) {
 // when `writes`).
 // `blind`: the trailer never names a focused element (an engine's focus read that cannot see the panel's), the click
 // taking all the same; `vanish`: once clicked, the Open panel's search field leaves the text (its re-find fails).
-function standInTextEdit({saveName = '', writes = true, elsewhere = false, write = null, blind = false, vanish = false} = {}) {
+function standInTextEdit({saveName = '', writes = true, elsewhere = false, write = null, blind = false, vanish = false, fieldClickCloses = false, openSelects = true} = {}) {
   const sent = {keys: [], texts: [], values: [], selections: [], clicks: []};
   let up = null, value = '', focused = null, selected = null, clicked = false;
   const CANCEL = 3;
@@ -442,7 +442,7 @@ function standInTextEdit({saveName = '', writes = true, elsewhere = false, write
     async pressKey(k) {
       sent.keys.push(k);
       if (k === 'super+o') up = 'open';
-      if (k === 'super+s') { up = 'save'; value = saveName; focused = elsewhere ? 4 : 2; selected = saveName || null; }
+      if (k === 'super+s') { up = 'save'; value = saveName; focused = elsewhere ? 4 : 2; selected = openSelects ? saveName || null : null; }
       if (k === 'Escape') close();
     },
     async typeText(t) { sent.texts.push(t); value = selected !== null ? value.replace(selected, t) : value + t; selected = null; },
@@ -452,7 +452,7 @@ function standInTextEdit({saveName = '', writes = true, elsewhere = false, write
       if (writes) { value = v; selected = null; }
     },
     async selectText(i, t) { sent.selections.push([i, t]); if (i === focused && value.includes(t)) selected = t; },
-    async click(i) { sent.clicks.push(i); if (i === CANCEL) close(); else { clicked = true; if (!elsewhere) { focused = i; selected = null; } } },
+    async click(i) { sent.clicks.push(i); if (i === CANCEL || (fieldClickCloses && up === 'save' && i === 2)) close(); else { clicked = true; if (!elsewhere) { focused = i; selected = null; } } },
   };
   return {app, sent, open: () => { up = 'open'; }};
 }
@@ -582,7 +582,8 @@ test('setValue.name thrown: landed passes, a partial change fails as changed, a 
   assert.deepEqual([quiet.ok, quiet.outcome.final, quiet.outcome.returnedOk, quiet.outcome.trace.missing], [false, 'unread', true, true]);
 });
 test('a field whose value the prepare cannot select whole is not prepared, by a reason that says so, nothing typed', async () => {
-  const stand = standInTextEdit({saveName: 'Untitled'});
+  // The name focused with nothing selected (a selection the opening made would already be whole, ruling 1228).
+  const stand = standInTextEdit({saveName: 'Untitled', openSelects: false});
   stand.app.selectText = async () => {};
   const name = (await standInCases(stand)).find(r => r.case === 'typeText.name');
   assert.equal(name.prepare.ready, false);
@@ -868,4 +869,27 @@ test('the field-focus diagnostic looks the panel window up again and records the
   assert.deepEqual(row.deviceFocus.panelWindow, {placed: 994, now: 995});
   assert.equal(row.deviceFocus.fieldFocused, true, 'read in the window found now');
   assert.deepEqual(asked, [995, 995]);
+});
+
+// Ruling 1228 (C2): in sitting C's full run (45468052791) the vendor's typeText.name was "not prepared: the field could
+// not be given the focus" in all 3 runs, each the same reading: before the click the name field found and the trailer
+// masked (the sheet opens with its name selected), after the vendor's click the field gone from the observation, the
+// document's text view focused and the sheet's window no longer on screen (C-7's case (c)). The click was never needed:
+// the name field already held the focus, its whole value the selection. A selection that is the name field's whole
+// value, held by no other element, now reads as the field's focus on either engine, and the prepare clicks nothing;
+// a click that would take the sheet away (the stand-in's, as the vendor's did) is never sent.
+test('the Save sheet\'s name selected whole at the opening is its focus: no click, the token typed over it and read back, on a sheet a field click closes', async () => {
+  const stand = standInTextEdit({saveName: 'Untitled', fieldClickCloses: true});
+  const name = (await standInCases(stand)).find(r => r.case === 'typeText.name');
+  assert.equal(name.prepare.ready, true, JSON.stringify(name.prepare));
+  assert.deepEqual(name.check.outcome, {readBack: true, length: SAVE_PANEL_NAME.length, up: true});
+  assert.ok(!stand.sent.clicks.includes(2), `the name field never clicked: ${JSON.stringify(stand.sent.clicks)}`);
+  assert.deepEqual(name.prepare.focus, {index: 2, trailer: 'selection'});
+  assert.deepEqual(focusVerdict(name.prepare.focus, null), {by: 'trailer', problem: null}, 'the vendor: the selection is the field\'s');
+  assert.deepEqual(focusVerdict(name.prepare.focus, {focusedIndex: 2}), {by: 'observation', problem: null}, 'cua: its own focused index, as before');
+  // Before the change the same sheet lost its field under the click: what the full run recorded.
+  const old = standInTextEdit({saveName: 'Untitled', fieldClickCloses: true});
+  await old.app.pressKey('super+s');
+  await old.app.click(2);
+  assert.doesNotMatch(await old.app.getAXState(), /saveAsNameTextField/);
 });

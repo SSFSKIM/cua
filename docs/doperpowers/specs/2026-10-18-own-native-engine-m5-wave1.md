@@ -311,6 +311,36 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-27, rulings 1230–1232 (the design session, on the split's review and before its first dispatch). They
+  settle what the filtered split dispatch over 45468052791 proves and how its judge reads it.
+  - **One build under the base (1230).** The filtered jobs must agree with each other. Their engine versions and cua
+    build must be identical to the base's: build 2de28fcc909d7577, which is a hash of the engine source
+    (`src/runtime/engine-bundle.mjs`). native/, src/ and package.json are unchanged from bfa8cf486 to the dispatch
+    commit. Both harness commits are recorded.
+    - The judge re-judges the base's own rows with its own judge. Only the drag cell (now a departure) may change
+      verdict; any other change stops the judging.
+    - The witness tap and the engine's receivedAt both read Date() unix ms on the same VM, so they share one clock.
+    - Whether download-artifact can see an earlier attempt's artifacts is undocumented. A missing artifact fails
+      closed, as missing proof.
+    - The judge refuses a run job that stopped and a dispatched job that is missing. A save-sheet step that stopped or
+      is missing counts as no proof. The base lookup must find exactly one committed README naming the run.
+  - **Owner flags (1231).** A rerun flags a cell to the owner only when cua's side moves from fail: cua's own row, or
+    the pair's verdict. A change on the vendor's side alone is listed as parity ("Vendor-only changes between the base
+    and the rerun") and flags nothing. Any refusal by the judge, or any job near its time limit, is reported to the
+    design session verbatim at once.
+  - **savePanel typeText.name's speed row (1231).** Not judged; it names #592. Filtered reruns record no timing, and
+    the vendor's prepare failed in the base, so no sample exists to judge. The row leaves the manifest, the coverage
+    check and the missing list. Not-judged entries match on section plus id, so a method id cannot drop a speed row.
+  - **Speed re-measurement (1232).** This replaces 1229's "waits, off": the dispatch runs with speed_extra on.
+    - The three missed ops are judged on the extra samples alone: 10 a lane in each of runs 1–3, so n = 30 a side.
+      Nothing is pooled with the full runs. Each op shows the base's 3 samples beside it as a reference.
+    - An op qualifies only if all 3 runs re-measured it on both lanes. Otherwise it is NO VERDICT.
+    - A pass reads "passes on re-measurement" (verdict `beat-remeasured`) and is counted apart from plain beats. Every
+      re-measured op stays on the owner's list whatever its numbers.
+    - Controls, reported and never judged: chrome paste.replace (the narrowest median pass the cell can host, 0.75),
+      textedit getAXState.tree, and electron pressKey.tab (the narrowest on p95, 0.63).
+    - The narrower savePanel/panel pressKey.escape and the scene-level getAXState and getScreenshot ops were skipped.
+      They would need a panel opened for every sample, or new timing code.
 - 2026-11-27, rulings 1227–1229 (the design session, after C's first full form, 45468052791 at bfa8cf486). The run:
   all six matrix runs were complete, every put-back held, and the job took 335 of 360 min (C-7's fast lanes had made
   the 240-min projection wrong). Key-route was skipped for time.

@@ -261,6 +261,29 @@ test('the sheet variant (ruling 1238): cua acting is judged only with the tap\'s
   assert.equal(off.result.verdict, 'no-verdict');
 });
 
+// The review of 37f32fdf9: cua's guard refuses before anything is posted (Input.swift pressKey, checkBeforePosting), so
+// a refused opening reports its receipt and no action interval. Recognised as a refusal before the action, its window is
+// bounded by the cell's own recorded end, as the vendor's is, its receipt still cua's own: the tap then decides it.
+test('the sheet variant: cua refusing super+w before posting (a receipt, no action interval) fails on the tap\'s proof and is invalid without it', async () => {
+  const prePost = c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
+    : sheetCells({open: c2 => opening(c2, {interval: null, over: refusing(STILL_INTERACTING)}), follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c));
+  const proved = await sheetWitnessed({cell: prePost});
+  const o = proved.row.outcome;
+  assert.deepEqual([proved.row.ok, proved.row.invalid, proved.row.attempts, o.openingRefused, o.answer], [false, undefined, 1, true, 'refuse'], JSON.stringify(o));
+  assert.deepEqual([o.intervalMs, o.receivedAt, o.actEnd], [null, o.callAt + 40, o.callAt + 200], 'the cell\'s own end bounds the window');
+  assert.deepEqual(o.witness.window, [o.callAt - SHEET_PROBE_BEFORE_MS, o.callAt + 200]);
+  assert.ok(o.findings.includes('cua refused though the probe\'s key reached the Electron fixture, another app, 300 ms before the engine received the opening (expected: act)'), o.findings?.join('; '));
+  assert.equal(proved.result.verdict, 'fail');
+  const unseen = await sheetWitnessed({cell: prePost, keyAt: null});
+  assert.match(unseen.row.invalid, /^the witness does not show the probe's key reaching the Electron fixture before the engine received the opening \(the probe's key was not seen on the Electron fixture's pid\)$/);
+  assert.equal(unseen.result.verdict, 'no-verdict');
+  // Without its receipt, the refusal is still no sample; an opening that is no refusal still needs its interval.
+  const unreceived = await sheetWitnessed({cell: c => (tagOf(c) === 'sheet.open' ? (({_meta: {'cua/receivedAt': _r, ...meta}, ...rest}) => ({...rest, _meta: meta}))(opening(c, {interval: null, over: refusing(STILL_INTERACTING)})) : prePost(c))});
+  assert.match(unreceived.row.invalid, /the opening carried no cua\/receivedAt/);
+  const silent = await sheetWitnessed({cell: sheetCells({open: c => opening(c, {interval: null})})});
+  assert.match(silent.row.invalid, /reported no interval/);
+});
+
 test('the sheet variant (ruling 1238): the vendor is judged by its own declared answer, against its opening\'s call time', async () => {
   const vendorOpening = c => ({...opening(c), _meta: {'cua/inputRoute': "2'"}});
   const vendorFollow = c => ({...followUp(c), _meta: {}});

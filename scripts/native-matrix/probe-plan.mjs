@@ -88,11 +88,12 @@ export function postValidity(postedAt, interval) {
 }
 
 // The sheet variant's validity from the probe's own answer, before R3's witness decides (ruling 1238): a post time, the
-// opening's interval, and the post before the opening's receipt (cua's own clock; the vendor reports none, so its cell's
-// call time, which comes before the vendor can receive it). -> null or why not.
-export function preArmValidity({engine, postedAt, interval, receivedAt = null, callAt = null}) {
+// opening's interval (none needed of a cua refusal before anything was posted, `refusedBeforePosting`: it has none), and
+// the post before the opening's receipt (cua's own clock; the vendor reports none, so its cell's call time, which comes
+// before the vendor can receive it). -> null or why not.
+export function preArmValidity({engine, postedAt, interval, receivedAt = null, callAt = null, refusedBeforePosting = false}) {
   if (!Number.isFinite(postedAt)) return 'the probe printed no post time';
-  if (!interval) return 'the action reported no interval (nothing was posted, or the engine reported none)';
+  if (!interval && !refusedBeforePosting) return 'the action reported no interval (nothing was posted, or the engine reported none)';
   const at = engine === 'cua' ? receivedAt : callAt;
   if (!Number.isFinite(at)) return engine === 'cua' ? 'the opening carried no cua/receivedAt' : 'the cell recorded no call time';
   if (postedAt >= at) return `the probe posted ${postedAt - at} ms after ${engine === 'cua' ? 'the engine received the opening' : 'the opening was called'}`;

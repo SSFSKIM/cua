@@ -21,6 +21,15 @@
 //       per-cell counts, and in the pilot what it read; C's judge keeps its own summary.md). --flipped: this commit
 //       selects cua's engine by default (sitting E's lanes are then expected to pass). Exit 0 PASS, 1 a step failed,
 //       4 NO VERDICT, 5 a full sitting holds a step not built yet, 3 OWNER, 2 usage or refused.
+//   node scripts/hosted-sittings.mjs run c --out <dir> --split-run <n> [--only <cell>,…]
+//   node scripts/hosted-sittings.mjs run c --out <dir> --split-judge --jobs <dir>,… [--base <dir>]
+//       Sitting C split into jobs (ruling 1228, scripts/hosted-sittings/split.mjs): run job n (its own pair, its run's
+//       save-sheet steps; --only the cells a filtered rerun needs, textedit/intervention.saveSheet for #212's), and the
+//       judging job over the run jobs' sitting dirs (a full run's beneath filtered reruns): jobs-check, combine, judge,
+//       key-route. `plan` takes the same options.
+//   node scripts/hosted-sittings.mjs jobs-check --jobs <dir>,… [--base <dir>] --out <file>
+//       The run jobs' records, each with the hardware.json beside its dir: exit 2 when they are not one harness commit
+//       and one pair of engine versions (or two jobs ran one run), 0 otherwise; `run` lists the jobs in sitting.md.
 //   node scripts/hosted-sittings.mjs plan <a..f> --out <dir> [--pilot] [--flipped]     the steps, as JSON; runs nothing
 //   node scripts/hosted-sittings.mjs counts <dir>...                                   per-cell counts of result dirs
 //   node scripts/hosted-sittings.mjs focus-timing --approved-engine <bundle> --out <file>   the focus probe's cost
@@ -48,6 +57,7 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
+import {jobsCheck, renderJobs} from './hosted-sittings/split.mjs';
 import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs';
 import {execStep, jobStartedOf, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
@@ -81,8 +91,32 @@ function planOf(sitting, values) {
   if (!values.out) usage('--out <dir> names the sitting\'s output directory (outside this checkout)');
   const out = resolve(values.out);
   const scratch = join(process.env.RUNNER_TEMP ?? dirname(out), 'hosted-sittings-scratch');
-  return sittingPlan(sitting, sittingContext(sitting, {record: readRunnerRecord(homedir()), commit: commitOf(), out, scratch, olderNode: olderNode(),
-    pilot: values.pilot, flipped: values.flipped}));
+  const split = splitOf(sitting, values);
+  return sittingPlan(sitting, {...sittingContext(sitting, {record: readRunnerRecord(homedir()), commit: commitOf(), out, scratch, olderNode: olderNode(),
+    pilot: values.pilot, flipped: values.flipped}), ...split});
+}
+// Sitting C split into jobs (ruling 1228, ./hosted-sittings/split.mjs): --split-run <n> [--only <cell>,…] is run job n,
+// --split-judge --jobs <dir>,… [--base <dir>] the judging job. -> {split} or {}.
+function splitOf(sitting, values) {
+  if (values['split-run'] === undefined && !values['split-judge']) {
+    if (values.only !== undefined || values.jobs !== undefined || values.base !== undefined) usage('--only, --jobs and --base belong to a split sitting C');
+    return {};
+  }
+  if (sitting !== 'c') usage('only sitting C is split into jobs');
+  if (values['split-judge']) {
+    if (values['split-run'] !== undefined || values.only !== undefined || !values.jobs) usage('--split-judge --jobs <dir>,… [--base <dir>]');
+    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), base: values.base ? resolve(values.base) : null}};
+  }
+  if (!/^\d+$/.test(values['split-run'])) usage('--split-run <run number>');
+  return {split: {run: Number(values['split-run']), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
+}
+// A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
+function jobDir(dir) {
+  const {results} = readResults(['vendor', 'cua'].map(d => join(dir, d)).filter(existsSync));
+  const file = join(dirname(dir), 'hardware.json');
+  let hardware = null;
+  try { hardware = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; } catch { hardware = null; }
+  return {dir, results, hardware};
 }
 
 async function runCommand(sitting, values) {
@@ -121,6 +155,9 @@ async function runCommand(sitting, values) {
       parts.push(reads);
     }
   }
+  // The judging job's run jobs (ruling 1228): each one's runner and hardware, and the refusal, when there was one.
+  const jobsFile = join(out, 'jobs.json');
+  if (existsSync(jobsFile)) { try { parts.push(...renderJobs(JSON.parse(readFileSync(jobsFile, 'utf8')))); } catch {} }
   // The alert guard's tally (rulings 1154, 1160, 1164): per step and cell, its refusals and the key cells sent with
   // their key reading not taken, from every record the plan names.
   const readRecord = path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } };
@@ -183,7 +220,8 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
+    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
+    'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {
       const report = await hostedSetup({checkout: REPO, commit: commitOf(), engineArchive: values['engine-archive'] ? resolve(values['engine-archive']) : null, home: homedir(),
@@ -229,6 +267,14 @@ async function main(argv) {
       return timing.answered ? 0 : 1;
     }
     case 'textedit': return textedit(positionals[0], values);
+    case 'jobs-check': {
+      // Ruling 1228: the run jobs' records, refused when they are not one harness and one pair of engines (exit 2).
+      if (!values.jobs || !values.out) usage('jobs-check --jobs <dir>,… [--base <dir>] --out <file>');
+      const check = jobsCheck(values.jobs.split(',').filter(Boolean).map(d => jobDir(resolve(d))), {base: values.base ? jobDir(resolve(values.base)) : null});
+      writeJson(resolve(values.out), check);
+      process.stdout.write(json(check));
+      return check.refused.length ? 2 : 0;
+    }
     case 'key-route': {
       // Refused off a GitHub-hosted runner inside, before anything is read, built, written or opened.
       if (!values['approved-runtime'] || !values['approved-engine'] || !values.sitting || !values.out) usage('key-route --approved-runtime <home> --approved-engine <bundle> --sitting <id> --out <dir>');

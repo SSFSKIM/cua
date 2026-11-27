@@ -23,6 +23,7 @@
 //             cleanup failure (C's key-route diagnostic, ruling 1198); `section`: its Markdown, appended to sitting.md
 // `needs`: the steps that must have passed first (else this one is skipped). `keep`: files a step writes elsewhere,
 // copied into the sitting's output after it. `missing`: why a step cannot run here (a failure, not run).
+import {SAVE_SHEET_CELL} from './split.mjs';
 import {KEY_ROUTE_ENGINES} from './key-route-report.mjs';
 
 export const DEVICE = 'hosted-macos';
@@ -96,12 +97,43 @@ function sittingB(ctx) {
 // Each run is told its order (--first-lane), which it records (meta.laneOrder); the key-route diagnostic runs its two
 // engines once, in its own fixed order, recorded beside the schedule. -> {runs: [{run, first}], keyRoute}.
 export const laneOrderOf = runs => ({runs: Array.from({length: runs}, (_, i) => ({run: i + 1, first: i % 2 === 0 ? 'vendor' : 'cua'})), keyRoute: [...KEY_ROUTE_ENGINES]});
-// Sitting C's schedule: one run a lane in the pilot, three in the full form; its steps and its plan's record read the same.
-const sittingCOrder = ctx => laneOrderOf(ctx.pilot ? 1 : 3);
+// Sitting C's schedule: one run a lane in the pilot, three in the full form, run job n's run alone when split; its steps
+// and its plan's record read the same.
+const sittingCOrder = ctx => {
+  const order = laneOrderOf(ctx.pilot ? 1 : 3);
+  if (!ctx.split || ctx.split.judge) return order;
+  if (!order.runs.some(r => r.run === ctx.split.run)) throw new Error(`a run job is one of ${order.runs.map(r => r.run).join(', ')}`);
+  return {...order, runs: order.runs.filter(r => r.run === ctx.split.run)};
+};
+const sittingCSchedule = ctx => sittingCOrder(ctx).runs;
+// The judging job (ruling 1228, ./split.mjs): the run jobs' records checked, combined (with a full run beneath filtered
+// reruns) per lane, judged, and key-route last. Each job dir is a run job's sitting output (vendor, cua, save-sheet).
+function splitJudge(ctx) {
+  const {jobs, base = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
+  const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args], keyRoute = `${ctx.out}/key-route`;
+  return [
+    {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228)', kind: 'verdict', check: 'exit',
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base] : []), '--out', `${ctx.out}/jobs.json`]},
+    {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
+      argv: matrix('combine', ...[...(base ? [base] : []), ...jobs].flatMap(d => [`${d}/vendor`, `${d}/cua`]), '--out', combined)},
+    {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: ['combine'],
+      argv: matrix('summary', `${combined}/vendor`, `${combined}/cua`, '--out', `${ctx.out}/summary.md`)},
+    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['combine'], argv: matrix('compare', `${combined}/vendor`, `${combined}/cua`, '--out', `${ctx.out}/comparison.md`)},
+    {id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
+      check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]},
+  ];
+}
 const ordered = first => (first === 'vendor' ? ['vendor', 'cua'] : ['cua', 'vendor']);
 
+// Ruling 1227, refined by 1228 (E): sitting C split into jobs. `ctx.split` {run: n, only?} is run job n (its pair in the
+// lane order v/c/v by job, its run's save-sheet steps; `only` the cells a filtered rerun needs, the save-sheet's id
+// SAVE_SHEET_CELL among them for its steps); {judge: true, jobs, base} the judging job (./split.mjs). None: one job.
 function sittingC(ctx) {
-  const sitting = `hosted-${ctx.runId}-c`, steps = [], schedule = sittingCOrder(ctx).runs;
+  if (ctx.split?.judge) return splitJudge(ctx);
+  const sitting = `hosted-${ctx.runId}-c`, steps = [], schedule = sittingCSchedule(ctx);
+  const only = ctx.split?.only ?? null, matrixCells = only?.filter(c => c !== SAVE_SHEET_CELL) ?? null;
+  const runsMatrix = !only || matrixCells.length > 0, runsSheet = !only || only.includes(SAVE_SHEET_CELL);
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args];
   const lane = engine => ['--device', DEVICE, '--host', engine, '--engine', engine, ...approvedArgs(ctx), '--sitting', sitting];
   if (ctx.pilot) steps.push({id: 'focus-timing', label: 'the focus probe\'s cost on this runner', kind: 'pilot',
@@ -122,18 +154,19 @@ function sittingC(ctx) {
   steps.push({id: 'witness-tap', label: 'R3\'s witness tap built and granted Input Monitoring (ruling 1225)', kind: 'diagnostic', check: 'witnessTap',
     report: `${ctx.out}/witness-tap.json`, argv: ['node', 'scripts/hosted-sittings.mjs', 'witness-tap', '--out', `${ctx.out}/witness-tap.json`]});
   const runSteps = [];
-  for (const {run: i, first} of schedule) for (const engine of ordered(first)) {
+  if (runsMatrix) for (const {run: i, first} of schedule) for (const engine of ordered(first)) {
     const before = runSteps.at(-1);
     runSteps.push(`matrix-${engine}-${i}`);
     steps.push({id: `matrix-${engine}-${i}`, label: `the matrix on ${engine}'s host and engine, run ${i} (${first} first)`, kind: 'run', check: 'record', record: `${ctx.out}/${engine}/run-${i}/result.json`, engine,
       ...(before ? {needs: [before], gate: {putBack: `${ctx.out}/${before.replace(/^matrix-(\w+)-(\d+)$/, '$1/run-$2')}/result.json`}} : {}),
       ...(engine !== first ? {pair: `${ctx.out}/${first}/run-${i}/result.json`} : {}),
-      argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i), '--first-lane', first)});
+      argv: matrix('run', ...lane(engine), '--out', `${ctx.out}/${engine}`, '--run-number', String(i), '--first-lane', first, ...(matrixCells ? ['--only', matrixCells.join(',')] : []))});
   }
   // #212's cell one step a run, by the same lane order, each reading its run's record (one run in the pilot).
-  for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `save-sheet-${engine}-${i}`, label: `#212's save-sheet cell on ${engine}, run ${i} (${first} first)`,
+  if (runsSheet) for (const {run: i, first} of schedule) for (const engine of ordered(first)) steps.push({id: `save-sheet-${engine}-${i}`, label: `#212's save-sheet cell on ${engine}, run ${i} (${first} first)`,
     kind: 'run', check: 'saveSheet', records: [`${ctx.out}/save-sheet/${engine}/run-${i}/result.json`], row: 'textedit/intervention.saveSheet', engine,
     argv: matrix('cell', 'intervention-save-sheet', ...lane(engine), '--out', `${ctx.out}/save-sheet/${engine}`, '--run-number', String(i), '--first-lane', first)});
+  if (ctx.split) return steps;
   steps.push({id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, argv: matrix('summary', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/summary.md`)});
   steps.push({id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', pilotNoVerdict: true, argv: matrix('compare', `${ctx.out}/vendor`, `${ctx.out}/cua`, '--out', `${ctx.out}/comparison.md`)});
   // Ruling 1198's diagnostic, last: after the counted lanes and their judges, never among judged cells. It needs none of
@@ -198,7 +231,8 @@ export function sittingPlan(sitting, ctx) {
   if (!build) throw new Error(`no sitting ${sitting}: the sittings are ${SITTINGS.join(', ')}`);
   const [title, proves] = TITLES[sitting];
   return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
-    counts: sitting === 'c' ? ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`) : [], pilotReads: sitting === 'c' && Boolean(ctx.pilot),
+    counts: sitting !== 'c' || (ctx.split && !ctx.split.judge) ? [] : ctx.split?.judge ? [`${ctx.out}/combined/vendor`, `${ctx.out}/combined/cua`, ...ctx.split.jobs.map(d => `${d}/save-sheet`)]
+      : ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`), pilotReads: sitting === 'c' && Boolean(ctx.pilot),
     ...(sitting === 'c' ? {laneOrder: sittingCOrder(ctx)} : {}),
     scratchDirs: sitting === 'd' ? [acceptConfig(ctx)] : []};
 }

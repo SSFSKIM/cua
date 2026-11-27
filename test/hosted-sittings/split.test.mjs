@@ -118,9 +118,10 @@ test('a judge\'s fix explains exactly the cells it lists, citing its ruling; any
   assert.equal(baseRejudge(baseCells({}), moved, {fixes: [{...fix, commit: ''}]}).refused.length, 1);
 });
 
-test('the committed fix-declaration names ad285cedf under ruling 1239, its list as design approves it', () => {
+test('the committed fix-declaration names ad285cedf under ruling 1239 with the two openPanel cells design approved (ruling 1248)', () => {
   const [fix, ...rest] = readJudgeFixes();
-  assert.deepEqual([fix.commit, fix.ruling, Array.isArray(fix.ids), rest], ['ad285cedf', '1239', true, []]);
+  assert.deepEqual([fix.commit, fix.ruling, fix.ids, rest],
+    ['ad285cedf', '1239', ['method openPanel/background/getAXState.panel@finder', 'method openPanel/background/click.cancel@finder'], []]);
 });
 
 // A job's record as the judge reads it: its results (each with the runner, commit and lanes) and its hardware.
@@ -414,8 +415,8 @@ test('plan c --split-judge over a layered base: combine reads the full run\'s re
 });
 
 // The two-layer rebuild against the judgment recorded at c0b2ce8f1 (that commit's own combine and judge over the same raw
-// records), cell by cell; with the fix list empty, the cells ad285cedf moved refuse (ruling 1239: design approves the
-// list). Needs c0b2ce8f1 in the checkout's history.
+// records), cell by cell: the four differences each explained, the two openPanel cells by ad285cedf's declaration
+// (ruling 1248), so the judging goes on. Needs c0b2ce8f1 in the checkout's history.
 const HAS_JUDGING_COMMIT = spawnSync('git', ['cat-file', '-e', 'c0b2ce8f1b01a2fda19f3d384f40557feb96fa7b^{commit}']).status === 0;
 test('rejudge-base over the committed layers: the rebuild\'s differences from the judgment recorded at c0b2ce8f1', {skip: HAS_JUDGING_COMMIT ? false : 'c0b2ce8f1 is not in this checkout'}, () => {
   const root = fs.mkdtempSync(join(tmpdir(), 'split-rejudge-')), out = join(root, 'base-rejudge.json');
@@ -423,14 +424,14 @@ test('rejudge-base over the committed layers: the rebuild\'s differences from th
     const r = spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', 'rejudge-base', '--base', `${FULL_BASE},${SPLIT_BASE}`, '--out', out], {encoding: 'utf8'});
     const report = JSON.parse(fs.readFileSync(out, 'utf8'));
     assert.equal(report.at, 'c0b2ce8f1b01a2fda19f3d384f40557feb96fa7b');
-    const fixed = new Set(readJudgeFixes()[0].ids);
-    assert.deepEqual(report.differences.map(d => [d.cell, d.was, d.now, d.by?.kind ?? (fixed.has(d.cell) ? 'fix' : null)]).sort((a, b) => a[0].localeCompare(b[0])), [
-      ['method openPanel/background/click.cancel@finder', 'no-verdict', 'equal', fixed.has('method openPanel/background/click.cancel@finder') ? 'fix' : null],
-      ['method openPanel/background/getAXState.panel@finder', 'no-verdict', 'equal', fixed.has('method openPanel/background/getAXState.panel@finder') ? 'fix' : null],
-      ['speed textedit/method.panel.typeText.search', 'no-verdict', 'not judged', 'not judged'],
-      ['speed textedit/method.typeText.replace', 'missed-remeasured', 'accepted-miss', 'accepted miss'],
+    assert.deepEqual(report.differences.map(d => [d.cell, d.was, d.now, d.expected, d.by?.kind ?? null]).sort((a, b) => a[0].localeCompare(b[0])), [
+      ['method openPanel/background/click.cancel@finder', 'no-verdict', 'equal', true, 'fix'],
+      ['method openPanel/background/getAXState.panel@finder', 'no-verdict', 'equal', true, 'fix'],
+      ['speed textedit/method.panel.typeText.search', 'no-verdict', 'not judged', true, 'not judged'],
+      ['speed textedit/method.typeText.replace', 'missed-remeasured', 'accepted-miss', true, 'accepted miss'],
     ]);
-    assert.equal(r.status, report.refused.length ? 2 : 0, r.stdout + r.stderr);
+    assert.deepEqual(report.refused, []);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 

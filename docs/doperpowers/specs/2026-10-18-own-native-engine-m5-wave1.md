@@ -311,6 +311,59 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-27, rulings 1234–1237 (the design session, after the first split dispatch).
+  - **What happened.** Split run 46052931439 (at 313fbf534) ran its three run jobs to success. Its judge then refused
+    at rejudge-base, because 1231's #592 rule moved the savePanel name timing row from no verdict to not judged, and
+    the allowance named only the drag cell.
+  - **The judge-only pass (1234).** One judge-only pass over 46052931439 was approved: run 46069842660, judging at
+    c0b2ce8f1.
+    - The judging commit may differ from the drawing commit only on the judging side. Here that meant rejudge-base's
+      allowance, the `jobs_run_id`/`jobs_run_attempt`/`jobs_commit` inputs, compare taking one combined dir, and their
+      tests. plan.mjs changed only one label; departures.json and not-judged.mjs gained only a `ruling` field.
+    - The judge checks the source run against the API: its run, attempt, jobs and artifacts, and the records' commit.
+      It refuses if native/, src/, package.json or package-lock.json differ from the drawing commit, and it applies
+      jobs-check unchanged. Its report names the drawing commit and the judging commit separately.
+    - rejudge-base accepts a difference only when a declaration that cites its ruling covers it, and lists each one.
+      A ticket without a ruling explains nothing, and what the base's commit declared is never consulted.
+    - The pass was one pass: a refusal for a new reason was to be reported, not retried.
+  - **The result (1236).** The pass was accepted. Sitting C is FAIL, blocked only by #587's three Finder typeSelect
+    cells.
+    - Save sheet (#212): PASS ×3 on both engines; cua refused before acting.
+    - Rerun flags 0 and vendor-only changes 0.
+    - Speed: the 63 base beats stand. On re-measurement (n = 30 a side), electron and textedit paste.replace pass and
+      textedit typeText.replace misses; all three stay the owner's, and the speed judge does not change. The
+      savePanel name timing (#592, 1231) is not judged, and from 1235 neither is the panel search timing.
+    - The records are committed in `docs/evidence/2026-11-27-m5-sitting-c-split/`. They are the base of later
+      filtered C runs.
+    - The design session takes #587 and #590 on the engine side, in a separate PR.
+    - This round, in order:
+      1. concurrent.sheet@electron arms its probe a fixed interval before the act on both lanes, judged under the
+         save sheet's rule. It had 6 of 6 samples invalid, the probe posting 32–127 ms after the act's interval. cua's
+         typeUnconfirmed there counts as #590's second occurrence.
+      2. An element-addressed panel opening's pair stands on one venue when both panels read back inside the strip;
+         both frames are recorded, and point-addressed cells keep exact equality. A 2 px read-back difference had
+         left both openPanel@finder cells without a verdict in run 2.
+      3. 1229(b), below.
+      4. A filtered run for #587's live proof is prepared but not dispatched. It holds #587's three cells,
+         `textedit/latin/typeText.latin` (#590's evidence), concurrent.sheet@electron and the two openPanel@finder
+         cells. It runs over the combined C result once the #587 fix merges into feat/117-m5.
+  - **The panel search timing (1235).** `textedit/method.panel.typeText.search` is not judged, under #588 and ruling
+    1235: neither engine does the op, so it has no speed to compare.
+  - **Composing (1237).**
+    - combine had kept the base's run-level composing readings, so the judged report's retries section showed the
+      base's attempts. The rerun's own records show cua with one attempt in every group, and the vendor with 3 attempts
+      in run 1's electron@textedit and 2 in run 3's chrome@textedit. Every group composed in the end, and the pattern
+      is lopsided under 1229(a). The reporting is fixed in the harness, and the evidence README flags the stale
+      section.
+    - Marked text was read, and closed, before and after emptyField on all 21 attempts of both lanes. So "emptying
+      cancelled a composition in progress" is ruled out.
+    - Two of the vendor's 9 emptied attempts did not compose, and all 9 of cua's did; the cause is not shown. Both
+      vendor failures followed its own setValue(""), and their retries, which emptied nothing, composed.
+    - The mechanism is recorded as unsettled. Nothing implicates cua, and no cua ticket is needed. The parity record
+      states those counts.
+    - 1229(b): before sitting D, if it is cheap, the composing setup's emptying moves to a neutral path that is the
+      same on both lanes and is not the engine under test, with the recorded retry kept as a fallback. If no neutral
+      path is cheap, its cost goes to the design session before anything is built.
 - 2026-11-27, rulings 1230–1232 (the design session, on the split's review and before its first dispatch). They
   settle what the filtered split dispatch over 45468052791 proves and how its judge reads it.
   - **One build under the base (1230).** The filtered jobs must agree with each other. Their engine versions and cua

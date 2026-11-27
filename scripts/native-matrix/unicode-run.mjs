@@ -278,17 +278,28 @@ async function composingAttempt(ctx, field, user, attempt) {
 // The user window's field emptied through the engine under test (emptyField with its steps), read by the harness's
 // own no-text reader just before and just after the cell: only a read (its observe) stands between the first read and
 // its setValue(""), and the record names the click when the cell also made one, so the read after is the setValue's
-// alone unless `prepared` says both. The cell is the one cell it was, so the engine's calls are unchanged. -> the
-// cell's answer; `at` holds {prepared, markedAtEmpty: {before, after}, field: the read after}.
+// alone unless `prepared` says both. The cell is the one cell it was, so the engine's calls are unchanged.
+// The prepared field is the element read after a cell that answered ready (emptyField found its field focused): each
+// side's `samePrepared` is its element's identity against it (sameAs), null when the cell was not ready or a frame was
+// not read. -> the cell's answer; `at` holds {prepared, markedAtEmpty: {before, after}, field: the prepared field's read
+// or null}.
 async function emptyFieldAt(ctx, user, at) {
   const before = focusedTextOf(ctx, user);
   const out = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user, {steps: true}));
   const after = focusedTextOf(ctx, user);
   const did = out.ok ? out.value?.did : null;
+  const field = out.ok && out.value?.ready === true && after.frame ? after : null;
   Object.assign(at, {prepared: !did ? null : did.setValue && did.click ? 'both' : did.setValue ? 'emptied' : did.click ? 'clicked' : 'neither',
-    markedAtEmpty: {before: before.marked ?? null, after: after.marked ?? null}, field: after});
+    markedAtEmpty: {before: markedSide(before, field), after: markedSide(after, field)}, field});
   return out;
 }
+// One read around emptyField: its marked range and its element's identity against the prepared field, a failed read's
+// reason (a read that failed whole) or the reads it names failed with their AXErrors kept.
+function markedSide(now, field) {
+  if (now.role === undefined) return {ok: false, reason: now.reason ?? 'no answer', samePrepared: null};
+  return {ok: now.ok === true, marked: now.marked ?? null, samePrepared: sameAs(now, field), ...failures(now)};
+}
+const failures = now => (now.failed?.length ? {failed: now.failed, errors: now.errors ?? {}} : {});
 // The harness's own read of `scene`'s focused text element (./matrix-device.mjs focusedText; the reads #590's read-back
 // uses), a read that threw recorded and never the run's stop. -> its answer | {ok: false, reason}.
 function focusedTextOf(ctx, scene) {
@@ -297,13 +308,15 @@ function focusedTextOf(ctx, scene) {
     return {ok: false, reason: String(error?.message ?? error).slice(0, 160)};
   }
 }
-// The focused element after the key: role, counts and ranges, and whether it is the prepared field (its role and frame
-// those read after emptyField; null when either frame was not read).
+// Whether a read's element is the prepared field: its role and frame those read after emptyField; null when either
+// frame was not read.
 const sameFrame = (a, b) => ['x', 'y', 'width', 'height'].every(k => a[k] === b[k]);
-function focusedRecord(now, prepared) {
+const sameAs = (now, field) => (now.frame && field?.frame ? now.role === field.role && sameFrame(now.frame, field.frame) : null);
+// The focused element after the key: role, counts and ranges, whether it is the prepared field, and the reads that
+// failed.
+function focusedRecord(now, field) {
   if (now.role === undefined) return {ok: false, reason: now.reason ?? 'no answer'};
-  const same = now.frame && prepared?.frame ? now.role === prepared.role && sameFrame(now.frame, prepared.frame) : null;
-  return {ok: now.ok === true, role: now.role ?? null, characters: now.characters ?? null, selected: now.selected ?? null, marked: now.marked ?? null, samePrepared: same};
+  return {ok: now.ok === true, role: now.role ?? null, characters: now.characters ?? null, selected: now.selected ?? null, marked: now.marked ?? null, samePrepared: sameAs(now, field), ...failures(now)};
 }
 // The keystroke probe's answer without its keys' characters (its presses' and key specs'): when it posted, how many
 // units, under which layout and mode, and whether it stopped part-way.

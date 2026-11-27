@@ -96,7 +96,9 @@ test('each attempt records emptyField\'s preparation, the marked text open befor
   const {result} = await runWith({plan: PLAN, cellName: 'korean', ops, cell});
   const [a] = attemptsOf(result);
   assert.equal(a.prepared, 'emptied');
-  assert.deepEqual(a.markedAtEmpty, {before: {open: true, length: 1}, after: {open: true, length: 1}});
+  // Each side's element checked against the prepared field: the read after the cell is that field (emptyField answered
+  // it focused), the read before the same element by role and frame.
+  assert.deepEqual(a.markedAtEmpty, {before: {ok: true, marked: {open: true, length: 1}, samePrepared: true}, after: {ok: true, marked: {open: true, length: 1}, samePrepared: true}});
   assert.deepEqual(Object.keys(a.probe).sort(), ['layout', 'mode', 'postedAt', 'units']);
   assert.equal(a.probe.units, 1);
   assert.equal(a.probe.layout, 'com.apple.keylayout.2SetHangul');
@@ -107,6 +109,33 @@ test('each attempt records emptyField\'s preparation, the marked text open befor
   answers[2] = {...answers[2], frame: {...frame, y: 400}};
   const moved = await runWith({plan: PLAN, cellName: 'korean', ops, cell});
   assert.equal(attemptsOf(moved.result)[0].afterKey.focused.samePrepared, false);
+});
+
+// Review m4: around emptyField each read keeps its element's identity against the prepared field and, when it failed,
+// why (its reason, or the reads it names failed with their AXErrors), never only the marked range.
+test('the reads around emptyField keep their element\'s identity against the prepared field and a failed read\'s reason and errors', async () => {
+  const frame = {x: 10, y: 20, width: 300, height: 40};
+  const run = async (before, after, ready = true) => {
+    let texts = 0;
+    const ops = {matrix: (base, a) => {
+      if (a[0] === 'focused-text') { texts += 1; return {answer: texts === 1 ? before : texts === 2 ? after : {ok: true, role: 'AXTextArea', characters: 0, selected: null, frame}, at: [1, 2]}; }
+      return base(a);
+    }};
+    const cell = code => (tagOf(code) === 'field.empty' && code.includes('__did') ? (ready ? {ready: true, did: {setValue: false, click: false}} : {ready: false, reason: 'the field could not be emptied', did: {setValue: true, click: false}}) : null);
+    return attemptsOf((await runWith({plan: PLAN, cellName: 'korean', ops, cell})).result)[0].markedAtEmpty;
+  };
+  const field = {ok: true, role: 'AXTextArea', characters: 0, selected: {location: 0, length: 0}, failed: [], errors: {}, marked: {open: false, length: 0}, frame};
+  // Another element focused before the cell: its frame another.
+  assert.deepEqual(await run({...field, frame: {...frame, x: 600}}, field), {before: {ok: true, marked: {open: false, length: 0}, samePrepared: false}, after: {ok: true, marked: {open: false, length: 0}, samePrepared: true}});
+  // A read that failed whole keeps its reason; one with failed reads keeps their names and AXErrors; a frame not read is
+  // no identity (null).
+  const failedWhole = {ok: false, reason: 'the reader is not trusted for Accessibility'};
+  const partly = {...field, ok: false, failed: ['selected'], errors: {selected: -25212}, marked: {open: null, length: null, errors: {range: -25205, marker: -25205}}, frame: null};
+  assert.deepEqual(await run(failedWhole, partly), {before: {ok: false, reason: 'the reader is not trusted for Accessibility', samePrepared: null},
+    after: {ok: false, marked: {open: null, length: null, errors: {range: -25205, marker: -25205}}, samePrepared: null, failed: ['selected'], errors: {selected: -25212}}});
+  // The cell not ready: the read after is not shown to be the prepared field, so neither side's identity is known.
+  const notReady = await run(field, field, false);
+  assert.deepEqual([notReady.before.samePrepared, notReady.after.samePrepared], [null, null]);
 });
 
 test('no text field anywhere in the new records: presence, lengths, counts, roles, ranges and times only', async () => {

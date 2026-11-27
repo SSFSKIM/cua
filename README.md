@@ -151,7 +151,8 @@ touches:
 pins, so a home that already ran its sessions on cua's own runtime needs no install to keep them. One kind of home is
 refused at once: one with a vendor selection in effect. A valid, nonempty `CUA_NATIVE_ENGINE` wins over the file, so
 `CUA_NATIVE_ENGINE=vendor`, or `"engine": "vendor"` in `~/.config/cua/engine.json` while the variable is unset or empty,
-now refuses every Linux computer session as `engine_retired`. The sentence names what selected it (the file too, when
+now refuses a Linux computer session as `engine_retired` once it reaches engine selection (a `CUA_REPL_HOST=vendor` that
+is also set is refused first, as `repl_host_refused`). The sentence names what selected it (the file too, when
 the variable decided and the file also says vendor) and says what to undo, then gives one command,
 `node <checkout>/bin/cua.mjs install --engine`. A browser-only session asks for no engine, so this setting does not
 refuse it. And `cua install` no longer downloads OpenAI's package on Linux (`--archive` and `--release` are macOS-only
@@ -1562,9 +1563,9 @@ the file, or both) and the one command, `node <this cua>/bin/cua.mjs install --e
 `invalid_setting`. cua's engine runs only when the
 installed one is at least the version this cua needs (0.4.5), read from the bytes, not by running it: the pinned asset's
 version, or `install.json`'s while its SHA-256 is the file's (a file that is the pinned asset needs no `install.json`).
-A home with no engine of cua's, with an older one, or with one its `install.json` does not match has its computer
-sessions refused when they open (`engine_not_installed`, `engine_outdated`, `engine_unrecorded`), and `cua doctor`'s
-`engine` row fails the same way. Each of these sentences says what was selected and why it cannot run, then, after a
+A home with no engine of cua's, or with an older one, has its computer sessions refused when they open
+(`engine_not_installed`, `engine_outdated`); so has one whose engine neither matches the current pin nor is identified by
+its `install.json` (`engine_unrecorded`). `cua doctor`'s `engine` row fails the same way. Each of these sentences says what was selected and why it cannot run, then, after a
 colon, what to undo first where a setting selected it (unset `CUA_LINUX_ENGINE_BIN` for an override's; move aside a link
 that leads the installed engine or its record into the vendor's tree, which the installer would refuse as well), then
 that one command, with `--engine`. No session falls back to another engine. A connection resolves its engine once, when it opens, and keeps it for every launch
@@ -1612,9 +1613,10 @@ the API document on every Linux computer session, and in the `js` tool's rules.
 from `cua engine build`, an older release or an unknown file), the service that drives it, the device mode and the
 engine's capability report (`backend`, `tree`, `input`, `capture`, `text`), read from the engine started for the check
 and stopped. It warns for a release behind or ahead of the pin, a local build or `CUA_LINUX_ENGINE_BIN`, and fails
-where computer sessions are refused. `accessibility.enabled` checks `IsEnabled`. A vendor selection in effect fails the row, since every Linux computer session is then refused (`engine_retired`): it
-gives the selection's sentence and what the home holds, and the `repl.host` row reports the same refusal. With the
-computer surface off (`CUA_SHIM_SURFACES`), no session asks for an engine and the row is `skip`.
+where computer sessions are refused. `accessibility.enabled` checks `IsEnabled`. A vendor selection in effect fails the row when `repl.host` reports `engine_retired`, since every Linux computer session
+is then refused: the row gives the selection's sentence and what the home holds, and the two rows share the refusal.
+Where host selection refuses first (`CUA_REPL_HOST=vendor`), or with the computer surface off (`CUA_SHIM_SURFACES`), the
+row is `skip`.
 
 ### Known limitations (cua's engine)
 

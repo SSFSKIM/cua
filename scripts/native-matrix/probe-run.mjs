@@ -641,6 +641,11 @@ async function saveSheetAttempt(ctx, {id, key, span}) {
   if (!sheetOpen || files?.length || savedSeen) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why}}, {cleanup});
   if (files === null) return span.end({...row, ok: false, invalid: 'the run\'s save folder could not be read after the act'}, {cleanup});
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, cleanup});
+  // m1 of the cell review: only a set_value that returned, or stopped part-way, acted; any other throw is no answer of
+  // the gate's, named and invalid, never judged by the witness.
+  if (cua && value.threw && !refused && !stopped && !refusedSaid && !stoppedSaid) {
+    return span.end({...row, ok: false, invalid: `set_value threw ${errorNameOf(act) ?? 'an error'}, neither a refusal nor a stop part-way: ${value.message ?? 'no message'}`}, {cleanup});
+  }
   if (cua && !agree) return span.end(row, {cleanup});
   if (unsaved.unread) return span.end({...row, ok: false, invalid: `nothing saved was not proved: ${unsaved.unread}`}, {cleanup});
   // cua acted: the witness decides once the run ends (finishSaveSheetWitness); until then the row says nothing.
@@ -706,24 +711,6 @@ const savedFindings = unsaved => [
 ];
 // The proof as a row keeps it: the reading, else why it is unread, and the cancel's answer.
 const unsavedOutcome = unsaved => ({unsaved: unsaved.reading ?? {unread: unsaved.unread}, cancel: unsaved.cancel});
-// cua's lane: the probe's post after the engine received the request and before the cell had its response. -> null,
-// or why the sample says nothing.
-function responseWindowValidity(postedAt, receivedAt, endAt) {
-  if (!Number.isFinite(postedAt)) return 'the probe printed no post time';
-  if (!Number.isFinite(receivedAt)) return 'the answer carried no cua/receivedAt';
-  if (!Number.isFinite(endAt)) return 'the cell recorded no response time';
-  if (postedAt < receivedAt) return `the probe posted ${receivedAt - postedAt} ms before the request was received`;
-  if (postedAt > endAt) return `the probe posted ${postedAt - endAt} ms after the response`;
-  return null;
-}
-// Whether cua's answer, its sentence and account agreeing, says the probe's event came during the action. -> null, or
-// why the sample says nothing.
-function stopValidity(value, stopped) {
-  if (stopped) return null;
-  if (refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED)) return 'the probe posted before the request was received: refused before the action, not stopped part-way';
-  if (!value.threw) return 'set_value returned before the probe\'s event was seen';
-  return null;
-}
 // The Save sheet cancelled and the untitled document closed, once the probe's debounce is out, under TextEdit's own key
 // guard; the scene's document not in front again (a save that renamed it, say) stops the run with what the cleanup saw.
 async function closeSaveSheet(ctx, keys) {

@@ -924,6 +924,16 @@ test('#212 (ruling 1228): cua acting with the probe\'s key not shown before its 
   assert.match(rowOf(off.result, SAVE_SHEET).invalid, /witness tap.*off a GitHub-hosted runner/);
 });
 
+// m1 of the cell review: only a set_value that returned, or stopped part-way, acted; any other throw is no answer of
+// the gate's, so it is invalid and named, never judged by the witness.
+test('#212 (ruling 1228): a cua set_value that threw neither a refusal nor a stop did not act: invalid, the throw named, even with the witness against it', async () => {
+  const {row, result} = await savedWitnessed({act: c => saveAct(c, {threw: 'the element is not settable', interruption: null}), keyAt: receivedAt => receivedAt - 140});
+  assert.deepEqual([row.ok, row.outcome.refused, row.outcome.stopped], [false, false, false]);
+  assert.equal(row.invalid, 'set_value threw Error, neither a refusal nor a stop part-way: the element is not settable');
+  assert.equal(row.outcome.witness, undefined, 'no witness asked of a row that did not act');
+  assert.equal(result.verdict, 'no-verdict');
+});
+
 test('#212 (ruling 1228): the vendor passes on nothing saved and fails on a save, whatever its answer and with no witness asked', async () => {
   const kept = await runWith({engine: 'vendor', plan: planOf('intervention-save-sheet'), cellName: 'intervention-save-sheet', cell: saveCells({act: c => ({...saveActed(c), _meta: {}})})});
   const row = rowOf(kept.result, SAVE_SHEET);

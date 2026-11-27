@@ -79,7 +79,8 @@
 import {stats} from '../native-baseline/summary.mjs';
 import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeSpeed, runOf} from './cell-verdict.mjs';
-import {departureProblems, readDepartures, usableDepartures} from './departures.mjs';
+import {departureProblems, readDepartures, usableDepartures, vendorAnsweredOk} from './departures.mjs';
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
 import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
@@ -409,7 +410,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
 
   // The declared departures observed: every entry that covered a sample, and those no sample needed.
   const judgedCells = [...methods, ...launch, ...probe, ...unicode];
-  const applied = judgedCells.filter(c => c.declared > 0).map(c => ({...byRow.get(`${c.section} ${c.id}`), samples: c.declared}));
+  const applied = judgedCells.filter(c => c.declared > 0).map(c => ({...byRow.get(`${c.section} ${c.id}`), samples: c.declared,
+    measured: departureMeasured(rows.filter(r => r.section === c.section && r.id === c.id && r.engine === 'vendor' && pairable(r.run)))}));
   // cua refusing or answering unconfirmed where the vendor gave a false ok (ruling 1144): better, listed beside them.
   const honest = judgedCells.filter(c => c.honest.length).map(c => ({section: c.section, id: c.id, cua: c.honest[0].cua, samples: c.honest.length}));
   // The rows judged against an oracle where cua read it and the vendor did not (ruling 1219): a declared departure
@@ -520,6 +522,22 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     firstLane: firstLaneSplitOf(full), verdict};
 }
 
+// A declared departure's known capability difference as the runs measured it (ruling 1228): of the vendor's runs of
+// the row (`vendorRows`, the pairable runs' samples), how many did what the row asks cleanly (every sample answered ok,
+// its interference reading held), and whether the user scene stayed front and key throughout every sample (its
+// before and after front and key the user's app; null where no sample read them, off a hosted runner).
+// -> {runs, clean, user, frontKey: true | false | null}.
+const APP_NAMES = Object.freeze({textedit: 'TextEdit', finder: 'Finder', chrome: 'Chrome', electron: 'the Electron fixture'});
+export function departureMeasured(vendorRows) {
+  const runs = [...new Set(vendorRows.map(r => r.run))];
+  const clean = runs.filter(n => vendorRows.filter(r => r.run === n).every(r => vendorAnsweredOk(r) && r.interference?.ok !== false)).length;
+  const user = vendorRows.find(r => r.user)?.user ?? null, bundle = user ? SCENES[user]?.bundleId : null;
+  const read = vendorRows.filter(r => r.frontKey?.before && r.frontKey?.after);
+  const frontKey = !bundle || !read.length ? null
+    : read.length === vendorRows.length && read.every(r => [r.frontKey.before, r.frontKey.after].every(x => x.front === bundle && x.key === bundle));
+  return {runs: runs.length, clean, user: user ? APP_NAMES[user] ?? user : null, frontKey};
+}
+
 // Ruling 1226: a sitting alternates which lane runs first by run (meta.laneOrder), so state one lane leaves for the
 // other (C-7: Go To reopened on the vendor's path) shows. Every failed sample (its own check, or not interfering) and
 // every sample without a verdict (sampleCause), per cell and engine, counted by the lane that ran first in its run.
@@ -550,6 +568,14 @@ export function firstLaneSplitOf(results) {
   return {runs: {vendor: numbers.vendor.size, cua: numbers.cua.size},
     disagree: [...sides].filter(([, list]) => new Set(list.map(x => x.first)).size > 1).map(([run, list]) => ({run, sides: list})),
     cells: [...cells.values()].sort((a, b) => order(a).localeCompare(order(b)))};
+}
+// A departure's known capability difference, as measured (departureMeasured), or nothing for an entry that names no
+// capability. -> text ending '; ' or ''.
+function measuredLine(d) {
+  if (!d.capability || !d.measured) return '';
+  const m = d.measured;
+  const user = m.user === null ? '' : m.frontKey === true ? `, ${m.user} front and key throughout` : m.frontKey === false ? `, ${m.user} NOT front and key throughout` : `, ${m.user}'s front and key not read`;
+  return `known capability difference: the vendor ${d.capability} cleanly in ${m.clean} of ${m.runs} runs${user}; `;
 }
 // The split as a report section, nothing when no run recorded its order. -> [line].
 export function renderFirstLaneSplit(split) {
@@ -788,7 +814,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     : s.kind === 'venue' ? `nothing of the person's moved (${s.seen.join(', ')}): the venue's, ${notJudgedListed(s) ? 'not judged on its recorded evidence (below)' : 'NO VERDICT on cua'}` : `the record does not say what moved (${s.seen.join(', ')}): unread, NO VERDICT on cua`} (rulings 1219 and 1222)`);
   if (j.sharedInterference?.length) out.push('');
   out.push('## What changes for a user', '', 'The places where cua refuses or answers unconfirmed where the vendor answered ok (R3), each declared with its Decision Log entry; nothing else can be here.', '');
-  if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${d.decision}`);
+  if (j.departures.length) for (const d of j.departures) out.push(`- ${d.section} ${d.id}: the vendor answered ok, cua ${d.cua.answer} ("${d.cua.sentence}") in ${d.samples} sample(s); ${measuredLine(d)}${d.decision}`);
   for (const h of j.honest) out.push(`- ${h.section} ${h.id}: the vendor answered ok with other text (a false ok), cua answered ${h.cua.kind} (${h.cua.name}) in ${h.samples} sample(s): better, no entry needed`);
   for (const o of j.oracleDepartures ?? []) out.push(`- ${o.section} ${o.id}: judged against ruling 1119's oracle ${o.expected} on each engine (ruling 1219): cua read it in ${o.cuaRight} sample(s), the vendor composed otherwise in ${o.vendorWrong}; a declared departure where cua is right, the vendor's own failure and no cua block`);
   if (!j.departures.length && !j.honest.length && !j.oracleDepartures?.length) out.push('No declared departure was observed in these runs.');

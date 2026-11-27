@@ -23,6 +23,8 @@
 //                 of short words, is refused)
 //   decision      the Decision Log entry that made cua conservative there (date and title), listed beside the row under
 //                 "What changes for a user"
+//   capability    optional: what the vendor does there, in a few words ("made the selection"), the known capability
+//                 difference the report states with what the runs measured (./summary.mjs departureMeasured)
 // An entry of any other kind, or one that names no judged row, cites nothing or names no sentence, is itself a failure
 // (departureProblems; the judge lists it as blocking) and applies to nothing.
 //
@@ -83,6 +85,7 @@ function entryProblems(entry, judged) {
   else if (!compiles(entry.cua.sentence)) out.push(`${name}: its sentence is not a regular expression's source`);
   else if (tooBroad(entry.cua.sentence)) out.push(`${name}: its sentence is too broad: it must match the case's own answer, with at least ${SENTENCE_LITERAL} literal characters in a row and never the empty string`);
   if (typeof entry?.decision !== 'string' || !entry.decision.trim()) out.push(`${name} cites no Decision Log entry`);
+  if (entry?.capability !== undefined && (typeof entry.capability !== 'string' || !entry.capability.trim())) out.push(`${name}: its capability, when given, says what the vendor does there in a few words`);
   return out;
 }
 

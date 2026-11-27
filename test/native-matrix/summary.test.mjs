@@ -14,6 +14,7 @@ import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-resu
 import {isCaretRow, isPointerdownRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN} from '../../scripts/native-matrix/run.mjs';
 import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
+import {readDepartures} from '../../scripts/native-matrix/departures.mjs';
 import {firstLaneSplitOf, judge, judgeMethod, judgeSpeed, manifestOf, readResults, renderFirstLaneSplit, renderSummary, toTopOf, witnessOf} from '../../scripts/native-matrix/summary.mjs';
 import {NOT_JUDGED, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {NOT_JUDGED_RULES, notJudgedRefusal} from '../../scripts/native-matrix/not-judged.mjs';
@@ -496,7 +497,7 @@ test('the hold is judged per run number: each run\'s vendor and cua results shar
     for (const n of numbers.vendor) writeCellResult(join(dir, 'vendor', `run-${n}`), fullRun('vendor', n, {resolved: 9, axMs: 50, meta: vendorMeta(n)}));
     for (const n of numbers.cua) writeCellResult(join(dir, 'cua', `run-${n}`), fullRun('cua', n, {meta: cuaMeta(n)}));
     const {results, problems} = readResults([dir]);
-    return judge(results, problems);
+    return judge(results, problems, {departures: []});
   };
   try {
     const split = judgeRuns(hold, hold);
@@ -1458,4 +1459,36 @@ test('shared interference per pair: one pair with windowOrder evidence is the ve
   const split = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, r) => half(rows, r, 'vendor')}, cua: {axMs: 40, tweak: (rows, r) => half(rows, r, 'cua')}});
   assert.deepEqual(split.sharedInterference.map(s => [s.kind, s.samples]), [['unread', 1]]);
   assert.ok(!split.notJudged.some(n => n.id === BACK));
+});
+
+// Ruling 1228: sitting C's full run (45468052791 at bfa8cf486) re-judged for Chrome's background drag, its rows as
+// recorded (one sample a run): the vendor dragged and selected across the lines, TextEdit front and key; cua refused with
+// backgroundClickRefused, nothing changed, TextEdit front and key. With the shipped declaration the cell is declared,
+// never blocking, and the report lists it as a known capability difference with the measured fact.
+const DRAG = 'chrome/background/drag.select@textedit';
+const DRAG_FRONT_KEY = {apps: ['com.google.chrome.for.testing', 'com.apple.TextEdit'], activate: {app: 'com.apple.TextEdit', front: true, key: true},
+  before: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}, after: {front: 'com.apple.TextEdit', key: 'com.apple.TextEdit'}};
+const DRAG_INTERFERENCE = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false, windowOrder: {before: false, after: false}};
+const DRAG_ROWS = {
+  vendor: {ok: true, inputRoute: null, outcome: {selected: true, spansLines: true, unchanged: true}, interference: DRAG_INTERFERENCE, frontKey: DRAG_FRONT_KEY},
+  cua: {ok: false, inputRoute: 3, interference: DRAG_INTERFERENCE, frontKey: DRAG_FRONT_KEY, outcome: {selected: false, spansLines: false, unchanged: true, effect: false,
+    threw: 'Computer Use server error -10005: Google Chrome for Testing\'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward',
+    errorName: 'backgroundClickRefused'}},
+};
+const dragAsRecorded = engine => rows => rows.map(r => (r.id === DRAG ? {...r, ...DRAG_ROWS[engine]} : r));
+test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declared departure, listed with its measured fact, never blocking', () => {
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: dragAsRecorded('vendor')}, cua: {axMs: 40, tweak: dragAsRecorded('cua')}, departures: readDepartures()});
+  const cell = j.methods.find(x => x.id === DRAG);
+  assert.equal(cell.verdict, 'declared', JSON.stringify(cell).slice(0, 1500));
+  assert.ok(!j.blocking.some(b => b.includes(DRAG)), j.blocking.join('; '));
+  assert.deepEqual(j.departures.map(d => [d.id, d.samples, d.measured]), [[DRAG, 3, {runs: 3, clean: 3, user: 'TextEdit', frontKey: true}]]);
+  const text = renderSummary(j);
+  assert.match(text, /^- method chrome\/background\/drag\.select@textedit: the vendor answered ok, cua refused \(".*"\) in 3 sample\(s\); known capability difference: the vendor made the selection cleanly in 3 of 3 runs, TextEdit front and key throughout; Decision Log, .*#282.*#591.*$/m);
+  // Without the declaration the same rows fail: the departure is what the judge applies, nothing else.
+  assert.ok(judged({vendor: {resolved: 9, axMs: 50, tweak: dragAsRecorded('vendor')}, cua: {axMs: 40, tweak: dragAsRecorded('cua')}}).blocking.includes(`method: ${DRAG} is worse on cua`));
+  // A vendor run that did not keep TextEdit front and key is said as measured.
+  const keyLost = set(DRAG, {frontKey: {...DRAG_FRONT_KEY, after: {front: 'com.apple.TextEdit', key: 'com.google.chrome.for.testing'}}});
+  const lost = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, run) => (run === 2 ? keyLost(dragAsRecorded('vendor')(rows)) : dragAsRecorded('vendor')(rows))},
+    cua: {axMs: 40, tweak: dragAsRecorded('cua')}, departures: readDepartures()});
+  assert.match(renderSummary(lost), /the vendor made the selection cleanly in 3 of 3 runs, TextEdit NOT front and key throughout/);
 });

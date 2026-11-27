@@ -65,3 +65,25 @@ test('answeredAs: the act threw cua\'s declared error, named so, with its senten
   assert.deepEqual(answeredAs(unconfirmed, row({threw: 'typeUnconfirmed: the field did not read back', unchanged: true})), {answered: true, effect: true});
   assert.deepEqual(answeredAs(unconfirmed, row({threw: 'typeUnconfirmed: the field did not read back', effect: false})), {answered: true, effect: false});
 });
+
+// Ruling 1228: Chrome's background drag is the one declared departure: cua refuses a drag into a background Chromium web
+// area by design (#282, shared mode), where the vendor drags. Its sentence matches the engine's own words, as recorded
+// in sitting C's full run (45468052791), and nothing broader; it cites #282's entry and #591's study.
+test('the shipped file declares Chrome\'s background drag: cua\'s backgroundClickRefused, its own sentence, #282 and #591', () => {
+  const [drag, ...rest] = readDepartures();
+  assert.deepEqual(rest, []);
+  assert.deepEqual([drag.section, drag.id, drag.vendor, drag.cua.answer, drag.cua.errorName], ['method', 'chrome/background/drag.select@textedit', {answer: 'ok'}, 'refused', 'backgroundClickRefused']);
+  assert.match(drag.decision, /#282/);
+  assert.match(drag.decision, /#591/);
+  assert.equal(drag.capability, 'made the selection');
+  const recorded = 'Computer Use server error -10005: Google Chrome for Testing\'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward';
+  assert.match(recorded, new RegExp(drag.cua.sentence));
+  for (const other of ['Finder\'s web page does not accept a background click', 'the background click was refused', 'Google Chrome for Testing did not accept the drag']) assert.doesNotMatch(other, new RegExp(drag.cua.sentence));
+  assert.deepEqual(answeredAs(drag, {ok: false, outcome: {threw: recorded, errorName: 'backgroundClickRefused', unchanged: true}}), {answered: true, effect: true});
+});
+
+test('an entry\'s capability, when given, is what the vendor does there in a few words', () => {
+  assert.deepEqual(departureProblems([entry({capability: 'made the selection'})]), []);
+  assert.match(departureProblems([entry({capability: ''})]).join('; '), /capability, when given, says what the vendor does there/);
+  assert.match(departureProblems([entry({capability: 3})]).join('; '), /capability, when given, says what the vendor does there/);
+});

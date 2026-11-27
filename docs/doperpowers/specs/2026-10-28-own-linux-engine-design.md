@@ -3093,7 +3093,7 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - **Checking the fixture.** The check runs in the `:0` launch path itself: `scripts/linux-engine-gate/fixture-check.mjs`, under the host lock, before the sitting launcher. Checking only when the command was printed would leave the time until launch unchecked.
       - A repeated or `=`-form comparator flag is refused, since the harness takes the last.
       - A linked `extracted/` cache root is refused.
-    - **R1's engine binding is per case.** Each case's engine must be `<home>/engine/linux/cua-engine` of the home that its own connection's attested provenance names. The case count is repl-parity's native selection, 34, not a literal.
+    - **R1's engine binding is per case.** Each case's engine must be `<home>/engine/linux/cua-engine` of the home that its own connection's attested provenance names. The expected case set is repl-parity's own native selection, which a test holds at 34.
     - **A cua and cua pair** needs each run's runtime to be cua's own by its derived name, borne out by every connection's attested release.
     - **The fallback judges** match the refusal sentence whole for the default source, not by a substring scan.
   - **The provenance move and #589 (task 169).**

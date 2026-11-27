@@ -225,9 +225,9 @@ test('the fake VM\'s remap places every VM path, leaves only what is safe, and r
   // `//` is left only as a URL's authority (a scheme before it) or as jq's operator; a path with a `..` segment is
   // refused whatever it would normalize to, since the original spelling is what the shell resolves under the root
   for (const text of ['cat //opt/cua/x', 'ls //etc', 'x=//usr/local/bin', '/etc/../../../../opt/cua', 'cp a /var/cache/cua/../../../../../opt/cua/x',
-    'ls /opt/cua/..', 'ls /usr/share/../../home'])
+    'ls /opt/cua/..', 'ls /usr/share/../../home', 'ls //', 'cd // && ls'])
     assert.throws(() => placed(text), /the fake VM would not place/, text);
-  for (const text of ['git clone git+ssh://host.example/r', 'curl file://localhost/etc', 'jq \'.a // empty\''])
+  for (const text of ['git clone git+ssh://host.example/r', 'curl file://localhost/etc', 'jq \'.a // empty\'', 'jq -r \'.d //= 1\' f'])
     assert.equal(placed(text), text);
   assert.equal(contained(`${root}/var/cache/cua/cua.bundle.update`, root), `${root}/var/cache/cua/cua.bundle.update`);
   for (const path of [`${root}/../escape`, `${root}/var/cache/../../../escape`, root, '/etc/passwd'])
@@ -271,6 +271,16 @@ test('the fake VM\'s scp copies nothing through a link inside the root that lead
     assert.match(scp.stderr, /through the link/);
   }
   assert.deepEqual(readdirSync(outside), [], 'nothing written where the links lead');
+  // A destination that is a directory would have cp add the source's own name, a component no guard saw: here a link
+  // to a marker outside the root. It is refused; the updater always names the exact file.
+  writeFileSync(join(outside, 'marker'), 'outside');
+  symlinkSync(join(outside, 'marker'), vm.path('var/cache/cua/payload'));
+  for (const dest of ['/var/cache/cua', '/var/cache/cua/']) {
+    const scp = spawnSync(join(vm.bin, 'scp'), [payload, `root@vm:${dest}`], {env: vm.env, encoding: 'utf8'});
+    assert.equal(scp.status, 97, `${dest}: ${scp.stderr}`);
+    assert.match(scp.stderr, /is a directory/);
+  }
+  assert.equal(readFileSync(join(outside, 'marker'), 'utf8'), 'outside', 'the marker is untouched');
   // a plain destination under the root still copies
   const ok = spawnSync(join(vm.bin, 'scp'), [payload, 'root@vm:/var/cache/cua/plain'], {env: vm.env, encoding: 'utf8'});
   assert.equal(ok.status, 0, ok.stderr);

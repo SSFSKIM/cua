@@ -3,6 +3,11 @@
 // host. It is fail-closed, because the scripts run as the test's user and the host may itself be a VM this template
 // made, its /opt/cua that user's own: every absolute path in the text is placed or kept by name, and any other refuses
 // the whole text before any of it runs.
+//
+// What it guards is this fixture's own scripts (the provisioners, update.sh's remote commands) in the shell syntax they
+// use: absolute paths written out, `//` only in URLs and in single-quoted jq filters. It is not a sandbox for arbitrary
+// shell programs: a path built at run time (a variable that expands to `..`, a computed string) is beyond what a
+// reading of the text can see.
 import {lstatSync} from 'node:fs';
 import {posix} from 'node:path';
 
@@ -32,7 +37,8 @@ const refuse = (path, why) => { throw new Error(`the fake VM would not place ${p
 // would climb back out of it.
 function placeLine(line, root, scratch) {
   return line.replace(ABSOLUTE, (path, _path, offset) => {
-    if (path === '//') return path;   // jq's `//` and `//=`
+    // jq's `//` and `//=`, inside the single-quoted filter the scripts always write
+    if (path === '//' && (line.slice(0, offset).split("'").length - 1) % 2 === 1) return path;
     if (path.startsWith('//')) {
       if (/[A-Za-z][A-Za-z0-9+.-]*:$/.test(line.slice(0, offset))) return path;
       refuse(path, 'a path that starts with //, outside a URL');
@@ -47,8 +53,10 @@ function placeLine(line, root, scratch) {
 }
 
 // A path that must lie inside the fake VM's root, as a copy's destination does: by its spelling, and on disk, where no
-// component of it below the root that exists may be a link (cp follows one, wherever it leads).
+// component of it below the root that exists may be a link (cp follows one, wherever it leads). Nor may it be a
+// directory: cp would add the source's name, a component this never saw. The updater always names the exact file.
 export function contained(path, root) {
+  if (path.endsWith('/')) throw new Error(`${path} is a directory: a copy names its exact file`);
   const resolved = posix.resolve(path);
   if (!resolved.startsWith(`${root}/`)) throw new Error(`${path} is outside the fake VM (${root})`);
   let at = root;
@@ -60,6 +68,7 @@ export function contained(path, root) {
       throw error;
     }
     if (stat.isSymbolicLink()) throw new Error(`${path} is outside the fake VM (${root}): a copy there would go through the link ${at}`);
+    if (at === resolved && stat.isDirectory()) throw new Error(`${path} is a directory: a copy names its exact file`);
   }
   return path;
 }

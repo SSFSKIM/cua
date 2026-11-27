@@ -11,6 +11,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan} from '../../scripts/hosted-sittings/plan.mjs';
 import {jobsCheck, renderJobs, SAVE_SHEET_CELL} from '../../scripts/hosted-sittings/split.mjs';
+import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
   approvedEngine: '/Users/runner/Library/Application Support/cua/engine/cua Engine.app', runId: '9-1', olderNode: null, scratch: '/t', flipped: false, pilot: false};
@@ -79,6 +80,27 @@ test('the sitting report lists every job with its runner and hardware, and the j
   assert.match(lines, /^\| \/j\/2 \| 2 \| 50 \| 1 \| macos27 20261104 \| vm-\/j\/2 \| unread \|$/m);
   assert.match(lines, /^Refused to judge: the jobs ran more than one harness commit/m);
   assert.deepEqual(renderJobs(null), []);
+});
+
+test('the workflow\'s split form: a run job per run number, each attempt its own artifact, and a judge after them all', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/m5-sittings.yml', import.meta.url), 'utf8');
+  const job = id => { const at = workflow.indexOf(`\n  ${id}:\n`); assert.ok(at > 0, id); const rest = workflow.slice(at + 1); const end = rest.slice(1).search(/\n  [a-z_]+:\n/); return end < 0 ? rest : rest.slice(0, end + 1); };
+  assert.match(job('sitting'), /inputs\.form != 'split'/, 'the one-job sitting stands down for the split form');
+  const run = job('split_run'), judge = job('split_judge');
+  assert.match(run, /inputs\.form == 'split' && inputs\.sitting == 'c'/);
+  assert.match(run, /run: \$\{\{ fromJSON\(format\('\[\{0\}\]', inputs\.split_runs\)\) \}\}/);
+  assert.match(run, /name: m5-sitting-c-run-\$\{\{ matrix\.run \}\}-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(run, /hardware\.json/);
+  assert.match(run, /run c --out "\$RUNNER_TEMP\/m5-out\/sitting" "\$\{flags\[@\]\}"/);
+  assert.match(run, /flags=\(--split-run "\$RUN"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+  for (const j of [run, judge]) assert.equal(Number(/timeout-minutes: (\d+)/.exec(j)?.[1]), JOB_LIMIT_MINUTES);
+  assert.match(judge, /needs: \[engine, split_run\]/);
+  assert.match(judge, /needs\.split_run\.result == 'success'/, 'a run job that stopped is re-run before anything is judged');
+  assert.match(judge, /pattern: m5-sitting-c-run-\*/);
+  assert.match(judge, /run-id: \$\{\{ inputs\.base_run_id \}\}/);
+  assert.match(judge, /actions: read/);
+  assert.match(judge, /flags=\(--split-judge --jobs "\$M5_JOBS"\)/);
+  assert.match(judge, /name: m5-sitting-c-judge-\$\{\{ github\.run_attempt \}\}/);
 });
 
 test('the CLI: a split option outside a split sitting C refuses, and jobs-check reads each job\'s hardware beside it', () => {

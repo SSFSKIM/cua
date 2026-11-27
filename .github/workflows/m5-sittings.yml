@@ -8,6 +8,8 @@ name: m5-sittings
 # overrides that for all but E. TCC rows are written only by the kit's one guarded writer (scripts/hosted-sittings/tcc.mjs),
 # which refuses unless RUNNER_ENVIRONMENT=github-hosted and the O0 entry is in the Decision Log (ruling 1111). No repository
 # secret is used; replayd's store is never written (ruling 1141). Each job uploads its output, whatever its result.
+# form=split (sitting c, ruling 1228): one job per run number (split_runs; filter for a filtered rerun over the full run
+# base_run_id names), then a judging job that refuses jobs of another harness commit or engine version (split.mjs).
 on:
   push:
     branches: ['feat/117-m5']
@@ -20,10 +22,22 @@ on:
         options: [all, a, b, c, d, e, f]
         default: all
       form:
-        description: full, or pilot (every sitting once, its smallest form, with the pilot's readings)
+        description: "full; pilot (every sitting once, its smallest form, with the pilot's readings); or split (sitting c only: one job per run number, then a judging job)"
         type: choice
-        options: [full, pilot]
+        options: [full, pilot, split]
         default: full
+      split_runs:
+        description: "split: the run numbers to run, one job each (e.g. 1,2,3, or 2 for a rerun after a recorded stop)"
+        type: string
+        default: '1,2,3'
+      filter:
+        description: "split: the cells a filtered rerun needs, comma-separated (empty: every cell; textedit/intervention.saveSheet for #212's)"
+        type: string
+        default: ''
+      base_run_id:
+        description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791)"
+        type: string
+        default: ''
       image:
         description: "The sittings' runner: default puts C on xcode-27 (macOS 27) and A, B, D, F on macos-latest; the builder and E always take macos-latest"
         type: choice
@@ -76,7 +90,7 @@ jobs:
           retention-days: 7
   sitting:
     needs: engine
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && (needs.engine.result == 'success' || needs.engine.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form != 'split' && (needs.engine.result == 'success' || needs.engine.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -143,6 +157,184 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: m5-sitting-${{ matrix.sitting }}-${{ inputs.form }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/m5-out
+          retention-days: 14
+          if-no-files-found: warn
+  # Ruling 1228 (E): sitting C split into one job per run number, each its own runner (setup, witness tap, its run's
+  # vendor/cua pair in the lane order v/c/v by job, its run's save-sheet steps), then a judging job. A run job is re-run
+  # ("Re-run failed jobs") only after a recorded infrastructure or harness stop; each attempt uploads its own artifact,
+  # and the judge lists them all and takes each run's latest.
+  split_run:
+    needs: engine
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.engine.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(format('[{0}]', inputs.split_runs)) }}
+    runs-on: ${{ inputs.image == 'default' && 'xcode-27' || inputs.image }}
+    timeout-minutes: 360
+    env:
+      RUN: ${{ matrix.run }}
+      FILTER: ${{ inputs.filter }}
+      BASE_RUN_ID: ${{ inputs.base_run_id }}
+    steps:
+      - name: Job start
+        shell: bash
+        run: echo "M5_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          # A filtered rerun is judged over the full run beneath it, so it names that run.
+          [ -z "$FILTER" ] || [ -n "$BASE_RUN_ID" ] || { echo 'a filter needs base_run_id, the full run beneath it'; exit 2; }
+          git log -1 --format='sitting %H %s'
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) run=$RUN filter=$FILTER"
+          npm ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/m5-out"
+      - name: The runner's hardware, for the judge's record of each job
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # the script is JavaScript, its ${} the template's
+          node -e 'const {execFileSync: x} = require("node:child_process"), s = k => x("sysctl", ["-n", k], {encoding: "utf8"}).trim();
+            require("node:fs").writeFileSync(process.argv[1], JSON.stringify({model: s("hw.model"), cpu: s("machdep.cpu.brand_string"), cpus: Number(s("hw.ncpu")),
+              memoryGB: Math.round(Number(s("hw.memsize")) / 2 ** 30), macOS: x("sw_vers", ["-productVersion"], {encoding: "utf8"}).trim(),
+              image: `${process.env.ImageOS} ${process.env.ImageVersion}`}, null, 2) + "\n")' "$RUNNER_TEMP/m5-out/hardware.json"
+          cat "$RUNNER_TEMP/m5-out/hardware.json"
+      - name: Pin the O0 source for the TCC writer
+        shell: bash
+        env:
+          DECISION_COMMIT: ${{ inputs.decision_commit }}
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs pin-decision ${DECISION_COMMIT:+--commit "$DECISION_COMMIT"} --env-file "$GITHUB_ENV" | tee "$RUNNER_TEMP/m5-out/decision-pin.txt"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m5-sittings-engine
+          path: ${{ runner.temp }}/m5-engine
+      - name: The runner's setup (loopback device, install, engine, TCC rows, relaunch, two-pass approve, record)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs setup --engine-archive "$RUNNER_TEMP/m5-engine/m5-engine.tgz" --report "$RUNNER_TEMP/m5-out/setup.json"
+      - name: The run job
+        shell: bash
+        run: |
+          set -uo pipefail
+          flags=(--split-run "$RUN")
+          [ -n "$FILTER" ] && flags+=(--only "$FILTER")
+          code=0
+          node scripts/hosted-sittings.mjs run c --out "$RUNNER_TEMP/m5-out/sitting" "${flags[@]}" || code=$?
+          [ -f "$RUNNER_TEMP/m5-out/sitting/sitting.md" ] && cat "$RUNNER_TEMP/m5-out/sitting/sitting.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: m5-sitting-c-run-${{ matrix.run }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/m5-out
+          retention-days: 14
+          if-no-files-found: warn
+  # The judging job: every run job's artifact (each attempt listed, each run's latest judged), a full run's beneath
+  # filtered reruns, refused when the jobs differ in harness commit or engine version; then the judge and key-route.
+  split_judge:
+    needs: [engine, split_run]
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.split_run.result == 'success' }}
+    runs-on: ${{ inputs.image == 'default' && 'xcode-27' || inputs.image }}
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SPLIT_RUNS: ${{ inputs.split_runs }}
+      BASE_RUN_ID: ${{ inputs.base_run_id }}
+    steps:
+      - name: Job start
+        shell: bash
+        run: echo "M5_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          git log -1 --format='judge %H %s'
+          sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) runs=$SPLIT_RUNS base=$BASE_RUN_ID"
+          npm ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/m5-out"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: m5-sitting-c-run-*
+          path: ${{ runner.temp }}/m5-jobs
+      - if: inputs.base_run_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: m5-sitting-c-full-*
+          path: ${{ runner.temp }}/m5-base
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ github.token }}
+      - name: The run jobs (every attempt listed, each run's latest judged)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2012 # the artifact names are ours: m5-sitting-c-<run|full>-<n>-<attempt>
+          latest() { ls -d "$1"-* 2>/dev/null | awk -F- '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2-; }
+          { echo '## Run job attempts'; for d in "$RUNNER_TEMP"/m5-jobs/*; do echo "- ${d##*/}"; done; } | tee "$RUNNER_TEMP/m5-out/attempts.md" >> "$GITHUB_STEP_SUMMARY"
+          jobs=()
+          for run in ${SPLIT_RUNS//,/ }; do
+            dir=$(latest "$RUNNER_TEMP/m5-jobs/m5-sitting-c-run-$run") || true
+            [ -n "$dir" ] || { echo "no artifact of run job $run"; exit 1; }
+            jobs+=("$dir/sitting")
+          done
+          echo "M5_JOBS=$(IFS=,; echo "${jobs[*]}")" >> "$GITHUB_ENV"
+          if [ -n "$BASE_RUN_ID" ]; then
+            base=$(latest "$RUNNER_TEMP/m5-base/m5-sitting-c-full") || true
+            [ -n "$base" ] || { echo "no full sitting C artifact in run $BASE_RUN_ID"; exit 1; }
+            echo "M5_BASE=$base/sitting" >> "$GITHUB_ENV"
+          fi
+      - name: Pin the O0 source for the TCC writer
+        shell: bash
+        env:
+          DECISION_COMMIT: ${{ inputs.decision_commit }}
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs pin-decision ${DECISION_COMMIT:+--commit "$DECISION_COMMIT"} --env-file "$GITHUB_ENV" | tee "$RUNNER_TEMP/m5-out/decision-pin.txt"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: m5-sittings-engine
+          path: ${{ runner.temp }}/m5-engine
+      - name: The runner's setup (loopback device, install, engine, TCC rows, relaunch, two-pass approve, record)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/hosted-sittings.mjs setup --engine-archive "$RUNNER_TEMP/m5-engine/m5-engine.tgz" --report "$RUNNER_TEMP/m5-out/setup.json"
+      - name: The judge
+        shell: bash
+        run: |
+          set -uo pipefail
+          flags=(--split-judge --jobs "$M5_JOBS")
+          [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE")
+          code=0
+          node scripts/hosted-sittings.mjs run c --out "$RUNNER_TEMP/m5-out/sitting" "${flags[@]}" || code=$?
+          [ -f "$RUNNER_TEMP/m5-out/sitting/sitting.md" ] && cat "$RUNNER_TEMP/m5-out/sitting/sitting.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: m5-sitting-c-judge-${{ github.run_attempt }}
           path: ${{ runner.temp }}/m5-out
           retention-days: 14
           if-no-files-found: warn

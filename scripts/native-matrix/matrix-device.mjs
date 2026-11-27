@@ -62,6 +62,12 @@
 //       the scene's focused text element right after a typeUnconfirmed (#590, ruling 1223), by the harness's own reader
 //       (../cursor-sitting/ax-state.swift text), outside either engine -> {answer: {ok, role, characters, selected,
 //       failed, errors} | {ok: false, reason}, at}: a role, numbers and AXErrors only
+//   field-empty --run <dir> --scene textedit|electron
+//       the user window's typing field emptied by the harness's own AX helper (./panel-ax.swift empty: its AXValue
+//       written "" and read back), never the engine under test: the composing groups' setup, the same write on both
+//       lanes (ruling 1229(b); ./unicode-run.mjs emptyFieldAt). The field is the one emptyField finds (./plan.mjs
+//       TEXT_FIELDS; USER_FIELDS) in the scene's recorded window -> {answer: {emptied, count, settable, write, readBack,
+//       reads, reason?}, at}: numbers and booleans only. Hosted only -> {answer: {emptied: false, refused}, at} off a runner
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -271,6 +277,36 @@ export function documentState({scene, window}, io) {
   if (a.ok !== true) return {ok: false, number, ...read, reason: a.found === false ? 'Accessibility lists no window at its bounds'
     : (a.failed ?? []).includes('ambiguous') ? `Accessibility lists ${a.atBounds ?? 'several'} windows at its bounds: which one is the run's cannot be told` : `a read failed: ${(a.failed ?? []).join(', ') || 'unnamed'}`};
   return {ok: true, number, ...read};
+}
+
+// The user windows' typing fields as the engine's emptyField finds them (./plan.mjs TEXT_FIELDS, the composing groups'
+// user windows, ./unicode-plan.mjs UNICODE_USERS): TextEdit's document text view by its identifier ("First Text View"),
+// the Electron fixture's textarea by its aria-label ("Fixture text", AXDescription or AXTitle as Chromium names it).
+export const USER_FIELDS = Object.freeze({textedit: {role: 'AXTextArea', name: 'First Text View'}, electron: {role: 'AXTextArea', name: 'Fixture text'}});
+// The user window's field emptied by the harness's AX helper (./panel-ax.swift empty), outside either engine (ruling
+// 1229(b)): emptied only when exactly one field matched and its value read back empty. Hosted only, as every helper
+// write. io: {state, windows, panelAx(args), env?, platform?}. -> {emptied, count, settable, write, readBack, reads,
+// reason?} | {emptied: false, reason} | {emptied: false, refused}.
+export function emptyUserField({scene}, io) {
+  const field = USER_FIELDS[scene];
+  if (!field) throw new Error(`field-empty names a user window's scene (${Object.keys(USER_FIELDS).join(', ')})`);
+  const refused = moveRefusal(io, null);
+  if (refused) return {emptied: false, refused: refused.refused};
+  const record = io.state().scenes?.[scene], pid = record?.pid, number = record?.window?.number;
+  if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(number)) return {emptied: false, reason: 'the scene is not up in this run'};
+  let windows = null;
+  try { windows = io.windows(); } catch { windows = null; }
+  if (!Array.isArray(windows)) return {emptied: false, reason: 'the window list was unread'};
+  const w = sceneWindowOf(windows, {pid, number});
+  if (!w) return {emptied: false, reason: `window ${number} is not on screen`};
+  const a = io.panelAx(['empty', String(pid), rectArg(w.bounds), field.role, field.name]);
+  if (a?.trusted !== true) return {emptied: false, reason: 'the helper is not trusted for Accessibility'};
+  if (a.found !== true || a.kind !== 'window') return {emptied: false, reason: 'Accessibility lists no window at the scene window\'s bounds'};
+  const num = v => (Number.isSafeInteger(v) ? v : null);
+  const read = {count: num(a.count) ?? 0, settable: typeof a.settable === 'boolean' ? a.settable : null, write: num(a.write), readBack: num(a.readBack), reads: num(a.reads) ?? 0};
+  if (read.count !== 1) return {emptied: false, ...read, reason: read.count === 0 ? 'Accessibility lists no matching field in the window' : `Accessibility lists ${read.count} matching fields in the window: which one is the field cannot be told`};
+  if (read.readBack === 0) return {emptied: true, ...read};
+  return {emptied: false, ...read, reason: `the field's value read back ${read.readBack === null ? 'nothing' : `${read.readBack} characters`} after the write (AXError ${read.write ?? 'none'})`};
 }
 
 // The frame of the one element of `role` in the scene's window, in that window's points (top-left origin), read by
@@ -832,7 +868,7 @@ function parse(argv) {
 export const axStateOf = (dir, {exec = run, compile = compiled} = {}) => axStateReader(args => exec(compile(AX_STATE_SCRIPT, dir), args));
 // The readings `read --with` adds.
 const READ_WITH = Object.freeze(['front-key', 'window-order', 'alert-bounds']);
-const USAGE = 'usage: matrix-device.mjs compile|read|text-range|focused-text|field-frame|document|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|text-range|focused-text|field-empty|field-frame|document|place|panel|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -914,6 +950,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'load': return timed(() => deviceLoad());
     case 'document': return timed(() => documentState({scene: flags.scene, window: flags.window}, io));
     case 'field-frame': return timed(() => fieldFrame({scene: flags.scene, role: flags.role}, io));
+    case 'field-empty': return timed(() => emptyUserField({scene: flags.scene}, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

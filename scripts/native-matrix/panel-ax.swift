@@ -29,13 +29,22 @@
 //       breadth first (at most 5000 elements, 40 levels); else the window's own AXCancel action.
 //       -> {"trusted", "found", "windows", "via": "cancelButton" | "button" | "action" | null, "pressed", "walked"}:
 //       `pressed` the AXError of the press (0 is success, null when nothing was found to press).
+//   panel-ax empty <pid> <x,y,w,h> <role> <name>
+//       A text field of that top-level window emptied (ruling 1229(b): the composing groups' setup, the same write on
+//       both lanes and never the engine under test): the one element of <role> under the window (breadth first, as
+//       cancel walks) whose AXIdentifier, AXDescription or AXTitle is <name>, its AXValue written "" and its value read
+//       back, up to 4 reads 250 ms apart while it is not empty (a web view's value follows its DOM asynchronously).
+//       -> {"trusted", "found", "windows", "kind", "count", "walked", "settable", "write", "readBack", "reads"}: `count`
+//       the elements that matched (nothing is written unless exactly one did), `settable` whether AXValue is settable
+//       there, `write` the AXError of the write (0 is success, null when not attempted), `readBack` the value's length
+//       read back (null when unread), never the value.
 //   panel-ax raise <pid> <x,y,w,h>
 //       That top-level window (never a sheet) raised: its AXRaise action (ruling 1221, H2: a background row's user
 //       window that its activation left under another, ../repl-parity/scenes-mac.mjs activateScene `top`).
 //       -> {"trusted", "found", "windows", "kind", "raised"}: the AXError of the action (0 is success, null when no
 //       top-level window was at the bounds).
 // Numbers and booleans only: a title is compared inside, never printed.
-// Hosted only (rulings 1188, 1195 and 1221): move, cancel and raise act on another app's windows, and element serves only a
+// Hosted only (rulings 1188, 1195, 1221 and 1229(b)): move, cancel, empty and raise act on another app's windows, and element serves only a
 // hosted fallback, so each refuses off a GitHub-hosted runner here, before any Accessibility call, however the binary was run (exit 3). It never asks for a grant: an
 // untrusted process answers {"trusted": false} and touches nothing.
 import ApplicationServices
@@ -46,10 +55,10 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 4, ["move", "cancel", "element", "raise"].contains(args[1]), let pid = Int32(args[2]),
-      args.count == (["cancel", "raise"].contains(args[1]) ? 4 : 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
+guard args.count >= 4, ["move", "cancel", "element", "empty", "raise"].contains(args[1]), let pid = Int32(args[2]),
+      args.count == (["cancel", "raise"].contains(args[1]) ? 4 : args[1] == "empty" ? 6 : 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
       args[1] != "element" || ["focused", "search", "name"].contains(args[4]) else {
-  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
+  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax empty <pid> <x,y,w,h> <role> <name> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 if ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
@@ -147,6 +156,30 @@ func walk(_ root: AXUIElement, _ matches: (AXUIElement) -> Bool) -> AXUIElement?
     depth += 1
   }
   return nil
+}
+
+if args[1] == "empty" {
+  let wanted = args[5]
+  let named = { (e: AXUIElement) -> Bool in [kAXIdentifierAttribute, kAXDescriptionAttribute, kAXTitleAttribute].contains { (read(e, $0) as? String) == wanted } }
+  var matches: [AXUIElement] = []
+  // Every match counted (the walk's own bound), so a name two fields share is refused rather than the first written.
+  if let topLevel { _ = walk(topLevel, { e in if role(e) == args[4] && named(e) { matches.append(e) }; return false }) }
+  answer["count"] = matches.count; answer["walked"] = walked
+  answer["settable"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0
+  if topLevel != nil, matches.count == 1, let field = matches.first {
+    var settable: DarwinBoolean = false
+    if AXUIElementIsAttributeSettable(field, kAXValueAttribute as CFString, &settable) == .success { answer["settable"] = settable.boolValue }
+    answer["write"] = Int(AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "" as CFString).rawValue)
+    var length: Int? = nil, reads = 0
+    while reads < 4, length != 0 {
+      if reads > 0 { usleep(250_000) }
+      length = (read(field, kAXValueAttribute) as? String).map { $0.utf16.count }
+      reads += 1
+    }
+    answer["readBack"] = length.map { $0 as Any } ?? NSNull(); answer["reads"] = reads
+  }
+  emit(answer)
+  exit(0)
 }
 
 if args[1] == "element" {

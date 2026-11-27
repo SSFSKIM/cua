@@ -167,8 +167,10 @@ test('panel element: the focused element\'s or the search field\'s frame read by
 // read of its size to enable.
 test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere in it', () => {
   const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
-  const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)/g)].map(m => m[1]);
-  assert.deepEqual([...new Set(writes)], ['kAXPositionAttribute']);
+  const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)[^,]*,\s*([^)]+)\)/g)].map(m => [m[1], m[2].trim()]);
+  // The one other write is `empty`'s (ruling 1229(b)): a text field's AXValue, and only ever "".
+  assert.deepEqual([...new Set(writes.map(w => w[0]))], ['kAXPositionAttribute', 'kAXValueAttribute']);
+  assert.deepEqual(writes.filter(w => w[0] === 'kAXValueAttribute').map(w => w[1]), ['"" as CFString']);
 });
 
 // Pilot C-4: the focused element's reading names it (role, subrole, AXIdentifier), whether or not it lies in the panel.
@@ -199,5 +201,60 @@ test('panel element search|name: the field\'s frame and the element at its centr
     assert.deepEqual(asked.at(-1), ['element', '300', '0,80,880,448', 'search']);
     await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'search', '--with', 'front-key'], {io}), /--with hit/);
     await assert.rejects(main(['panel', 'element', '--run', dir, '--window', '994', '--element', 'focused', '--with', 'hit'], {io}), /--with hit/);
+  });
+});
+
+// ---- field-empty (ruling 1229(b)): the composing groups' emptying, the same harness write on both lanes ------------
+
+// The user windows' fields, as the engine's emptyField finds them (./plan.mjs TEXT_FIELDS): TextEdit's document text view
+// by its AXIdentifier, the Electron fixture's textarea by its aria-label.
+const ELECTRON = {pid: 400, window: {number: 20}};
+const FIXTURE = {ownerPid: 400, ownerName: 'cua matrix fixture', ownerBundleId: 'com.example.fixture', layer: 0, number: 20, bounds: rect(900, 78, 600, 500)};
+const withScenes = async body => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'field-empty-'));
+  try { writeState(dir, {scenes: {textedit: TEXTEDIT, electron: ELECTRON}}); return await body(dir); } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+};
+const emptier = (answer = {}) => {
+  const asked = [];
+  const io = {...HOSTED, windows: () => [DOCUMENT, FIXTURE],
+    panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', count: 1, walked: 12, settable: true, write: 0, readBack: 0, reads: 1, ...answer}; }};
+  return {io, asked};
+};
+
+test('field-empty: the user window\'s field, found as emptyField finds it, emptied by the harness\'s AX helper and read back empty', async () => {
+  await withScenes(async dir => {
+    const {io, asked} = emptier();
+    const out = await main(['field-empty', '--run', dir, '--scene', 'textedit'], {io});
+    assert.deepEqual(asked, [['empty', '300', '213,78,507,877', 'AXTextArea', 'First Text View']]);
+    assert.deepEqual(out.answer, {emptied: true, count: 1, settable: true, write: 0, readBack: 0, reads: 1});
+    assert.ok(Array.isArray(out.at) && out.at.length === 2);
+    await main(['field-empty', '--run', dir, '--scene', 'electron'], {io});
+    assert.deepEqual(asked.at(-1), ['empty', '400', '900,78,600,500', 'AXTextArea', 'Fixture text']);
+  });
+});
+
+test('field-empty: a write the field refuses, a read-back not empty, or a field that cannot be told is not emptied, with why', async () => {
+  await withScenes(async dir => {
+    const answerOf = async (answer, scene = 'electron') => (await main(['field-empty', '--run', dir, '--scene', scene], {io: emptier(answer).io})).answer;
+    assert.deepEqual(await answerOf({settable: false, write: -25205, readBack: 3, reads: 4}),
+      {emptied: false, count: 1, settable: false, write: -25205, readBack: 3, reads: 4, reason: 'the field\'s value read back 3 characters after the write (AXError -25205)'});
+    assert.deepEqual((await answerOf({write: 0, readBack: null})).reason, 'the field\'s value read back nothing after the write (AXError 0)');
+    assert.deepEqual(await answerOf({count: 2, settable: null, write: null, readBack: null, reads: 0}),
+      {emptied: false, count: 2, settable: null, write: null, readBack: null, reads: 0, reason: 'Accessibility lists 2 matching fields in the window: which one is the field cannot be told'});
+    assert.equal((await answerOf({count: 0, settable: null, write: null, readBack: null, reads: 0})).reason, 'Accessibility lists no matching field in the window');
+    assert.deepEqual(await answerOf({found: false, kind: null, count: 0, write: null, readBack: null}), {emptied: false, reason: 'Accessibility lists no window at the scene window\'s bounds'});
+    assert.deepEqual(await answerOf({trusted: false}), {emptied: false, reason: 'the helper is not trusted for Accessibility'});
+    // A scene that is not up, or a window not on screen: nothing asked of the helper.
+    const none = {...HOSTED, windows: () => [DOCUMENT], panelAx: () => assert.fail('the helper is not asked')};
+    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'electron'], {io: none})).answer, {emptied: false, reason: 'window 20 is not on screen'});
+    await withRun(async only => assert.deepEqual((await main(['field-empty', '--run', only, '--scene', 'electron'], {io: none})).answer, {emptied: false, reason: 'the scene is not up in this run'}));
+    await assert.rejects(main(['field-empty', '--run', dir, '--scene', 'finder'], {io: none}), /field-empty names a user window's scene/);
+  });
+});
+
+test('field-empty off a GitHub-hosted runner: refused before anything is read or asked of the helper', async () => {
+  await withScenes(async dir => {
+    const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), windows: () => assert.fail('nothing read')};
+    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {emptied: false, refused: MOVE_REFUSED_OFF_HOSTED});
   });
 });

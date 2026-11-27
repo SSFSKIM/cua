@@ -214,7 +214,8 @@ function composedRead(hash) {
 //
 // Ruling 1229: a composition check that reads anything but the jamo (the probe having posted) redoes the group's setup
 // and re-posts, up to COMPOSING_ATTEMPTS attempts in all. Each attempt is its own record on the readings (composingAttempt),
-// naming the lane's engine, since the setup's emptying ran through it; a group composed on a later attempt runs and
+// naming the lane's engine and the path that emptied the field (the harness's or, failing that, the engine's; ruling
+// 1229(b), emptyFieldAt); a group composed on a later attempt runs and
 // counts normally, its rows carrying the attempt's number (`composingAttempt`); one still not composed after the last
 // stays invalid, every attempt on each of its rows (`composing`), as is any row a setup failure left invalid.
 export const COMPOSING_ATTEMPTS = 3;
@@ -244,14 +245,16 @@ async function composingRows(ctx, field, rows) {
 }
 // One attempt: the group's setup (behindUser) and the probe's key, read back. Its record (ruling 1229, G1), with no
 // characters in it: emptyField's `prepared` (which of its setValue("") and click it made: emptied, clicked, both or
-// neither), whether marked text was open in the user window's field just before and just after it (markedAtEmpty),
+// neither), the path that emptied the field (`emptiedBy`, with the harness's write as `harnessEmpty`; ruling 1229(b),
+// emptyFieldAt), whether marked text was open in the user window's field just before and just after it (markedAtEmpty),
 // the probe's post (`probe`: its time, units, layout and mode), and after the key the source as read and the focused
 // element (`afterKey`: its role, character count, selected and marked ranges, and whether it is the field emptyField
 // prepared). -> {record, ...behindUser's answer} | {record, problem, retry?, composed, userWindow}.
 async function composingAttempt(ctx, field, user, attempt) {
   const at = {};
   const setup = await behindUser(ctx, field, user, at);
-  const record = {when: `composing@${user}`, group: `${field}@${user}`, attempt, engine: ctx.engine, prepared: at.prepared ?? null, markedAtEmpty: at.markedAtEmpty ?? null};
+  const record = {when: `composing@${user}`, group: `${field}@${user}`, attempt, engine: ctx.engine, prepared: at.prepared ?? null, markedAtEmpty: at.markedAtEmpty ?? null,
+    ...(at.emptiedBy ? {emptiedBy: at.emptiedBy, harnessEmpty: at.harnessEmpty} : {})};
   if (setup.skipped || setup.held || setup.invalid) return {...setup, record: {...record, setup: setup.invalid ?? (setup.held ? 'the alert guard held the setup' : 'the user window did not take front and key')}};
   const {userWindow} = setup;
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
@@ -275,23 +278,36 @@ async function composingAttempt(ctx, field, user, attempt) {
   return {record, problem, retry: !postProblem && missed !== null, composed, userWindow};
 }
 
-// The user window's field emptied through the engine under test (emptyField with its steps), read by the harness's
-// own no-text reader just before and just after the cell: only a read (its observe) stands between the first read and
-// its setValue(""), and the record names the click when the cell also made one, so the read after is the setValue's
-// alone unless `prepared` says both. The cell is the one cell it was, so the engine's calls are unchanged.
+// The user window's field emptied on a neutral path (ruling 1229(b)): the harness's own Accessibility write
+// (./matrix-device.mjs field-empty, ./panel-ax.swift empty: the field's AXValue written "" and read back), the same on
+// both lanes and never the engine under test, whose setValue("") the failed vendor attempts of 46052931439 had followed.
+// Then the engine's emptyField with its steps, the one cell it was: it finds the field empty and only gives it the
+// focus; where the harness's write did not read back empty (a web view refusing it, or off a hosted runner), it empties
+// the field itself, as before 1229(b), for that attempt. `emptiedBy` names the last write before the probe's key: the
+// engine when its cell made a setValue, else the harness. The harness's own no-text reader reads just before the write
+// and just after the cell, so the read after is the emptying's alone unless `prepared` names the cell's click too.
 // The prepared field is the element read after a cell that answered ready (emptyField found its field focused): each
 // side's `samePrepared` is its element's identity against it (sameAs), null when the cell was not ready or a frame was
-// not read. -> the cell's answer; `at` holds {prepared, markedAtEmpty: {before, after}, field: the prepared field's read
-// or null}.
+// not read. -> the cell's answer; `at` holds {prepared, emptiedBy, harnessEmpty, markedAtEmpty: {before, after}, field:
+// the prepared field's read or null}.
 async function emptyFieldAt(ctx, user, at) {
   const before = focusedTextOf(ctx, user);
+  const harnessEmpty = harnessEmptyOf(ctx, user);
   const out = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user, {steps: true}));
   const after = focusedTextOf(ctx, user);
   const did = out.ok ? out.value?.did : null;
   const field = out.ok && out.value?.ready === true && after.frame ? after : null;
   Object.assign(at, {prepared: !did ? null : did.setValue && did.click ? 'both' : did.setValue ? 'emptied' : did.click ? 'clicked' : 'neither',
+    emptiedBy: harnessEmpty.emptied === true && did?.setValue !== true ? 'harness' : 'engine', harnessEmpty,
     markedAtEmpty: {before: markedSide(before, field), after: markedSide(after, field)}, field});
   return out;
+}
+// The harness's write, a command that threw recorded and never the run's stop. -> its answer | {emptied: false, reason}.
+function harnessEmptyOf(ctx, scene) {
+  try { return device(ctx, ['field-empty', '--scene', scene]) ?? {emptied: false, reason: 'no answer'}; } catch (error) {
+    if (error instanceof Stop) throw error;
+    return {emptied: false, reason: String(error?.message ?? error).slice(0, 160)};
+  }
 }
 // One read around emptyField: its marked range and its element's identity against the prepared field, a failed read's
 // reason (a read that failed whole) or the reads it names failed with their AXErrors kept.

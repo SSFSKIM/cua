@@ -13,7 +13,8 @@
         "sentence": "Google Chrome for Testing's web page does not accept a background click"
       },
       "capability": "made the selection",
-      "decision": "Decision Log, 2026-11-05, #282 (shared mode, item 6): a drag into a background Chromium web area is never posted, refused as backgroundClickRefused; the background-drag study, #591 (ruling 1228)"
+      "decision": "Decision Log, 2026-11-05, #282 (shared mode, item 6): a drag into a background Chromium web area is never posted, refused as backgroundClickRefused; the background-drag study, #591 (ruling 1228)",
+      "ruling": "1228"
     }
   ]
 }

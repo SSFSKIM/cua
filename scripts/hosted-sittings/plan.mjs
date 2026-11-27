@@ -120,7 +120,7 @@ function splitJudge(ctx) {
   return [
     {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228); the base matches its digests (H1)', kind: 'verdict', check: 'exit',
       argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base, '--base-run-id', baseRunId] : []), '--out', `${ctx.out}/jobs.json`]},
-    ...(base ? [{id: 'rejudge-base', label: 'the base re-judged by this judge against its own commit\'s: only the declared drag cell may differ (ruling 1230)', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
+    ...(base ? [{id: 'rejudge-base', label: 'the base re-judged by this judge against its own commit\'s: only a difference this commit\'s declarations explain may differ, a departure now declared or a ticketed not-judged rule\'s row now not judged, each citing its ruling (rulings 1230, 1234)', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
       argv: ['node', 'scripts/hosted-sittings.mjs', 'rejudge-base', '--base', base, '--out', `${ctx.out}/base-rejudge.json`]}] : []),
     // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F). Its
     // verdict is NO VERDICT when a rerun could not be combined; the judges still run, each such problem their missing proof.

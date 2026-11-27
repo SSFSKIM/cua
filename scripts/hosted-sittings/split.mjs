@@ -6,6 +6,9 @@
 // variance shows. A job is re-run only after a recorded infrastructure or harness stop, never for its verdict: every
 // attempt the judge is handed is listed.
 
+import {readDepartures} from '../native-matrix/departures.mjs';
+import {NOT_JUDGED_RULES, notJudgedRuleOf} from '../native-matrix/not-judged.mjs';
+
 // The save-sheet cell's id in a filter: its steps run only when it is listed (a filtered run job, ./plan.mjs).
 export const SAVE_SHEET_CELL = 'textedit/intervention.saveSheet';
 
@@ -119,16 +122,41 @@ export function baseCheck(io, {runId}) {
 }
 
 // R1 (ruling 1230): the base's stored rows judged by the new judge against its own judgment at its commit (`was`: the
-// judge of that commit on the same records), cell by cell. Only the declared drag cell may differ; any other difference
-// refuses the judging, naming each cell. -> {differences: [{cell, was, now, expected}], refused: [why]}.
-export const BASE_EXPECTED_DIFFERENCES = Object.freeze(['method chrome/background/drag.select@textedit']);
-export function baseRejudge(was, now, expected = BASE_EXPECTED_DIFFERENCES) {
-  const key = c => `${c.section} ${c.id}`, before = new Map(was.map(c => [key(c), c.verdict])), after = new Map(now.map(c => [key(c), c.verdict]));
-  const differences = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k))
-    .map(cell => ({cell, was: before.get(cell) ?? 'not judged', now: after.get(cell) ?? 'not judged', expected: expected.includes(cell) && before.has(cell) && after.has(cell)}));
+// judge of that commit on the same records), cell by cell. A difference is expected only where this commit's own
+// declarations explain it (ruling 1234), never by a list kept beside them:
+// - a declared departure (../native-matrix/expected/departures.json) whose row stays judged on both sides and now reads
+//   declared;
+// - a not-judged rule with a ticket (../native-matrix/not-judged.mjs) whose row leaves the judgment (any verdict, now not
+//   judged) and which the rule matches.
+// The declaration counts only when it cites its ruling (`ruling`) or already declared the row at the base's commit
+// (`declaredAtBase(cell)`): a new entry with no ruling explains nothing. Any other difference refuses the judging, naming
+// each cell. -> {differences: [{cell, was, now, expected, by?: {kind, declaration, ticket, ruling, atBase}}], refused: [why]}.
+const rowKey = c => `${c.section} ${c.id}`;
+const cites = d => typeof d?.ruling === 'string' && /^\d+$/.test(d.ruling);
+function explanationOf({cell, was, now}, {departures, rules, declaredAtBase}) {
+  const section = cell.slice(0, cell.indexOf(' ')), id = cell.slice(cell.indexOf(' ') + 1);
+  const counts = d => cites(d) || declaredAtBase(cell);
+  const departure = departures.find(e => rowKey(e) === cell);
+  if (departure && was !== 'not judged' && now === 'declared' && counts(departure)) {
+    return {kind: 'departure', declaration: departure.decision ?? null, ticket: departure.ticket ?? /#\d+/.exec(departure.decision ?? '')?.[0] ?? null, ruling: departure.ruling ?? null, atBase: !cites(departure)};
+  }
+  const rule = notJudgedRuleOf({section, id}, rules);
+  if (rule && was !== 'not judged' && now === 'not judged' && typeof rule.ticket === 'string' && rule.ticket && counts(rule)) {
+    return {kind: 'not judged', declaration: rule.condition, ticket: rule.ticket, ruling: rule.ruling ?? null, atBase: !cites(rule)};
+  }
+  return null;
+}
+export function baseRejudge(was, now, {departures = readDepartures(), rules = NOT_JUDGED_RULES, declaredAtBase = () => false} = {}) {
+  const before = new Map(was.map(c => [rowKey(c), c.verdict])), after = new Map(now.map(c => [rowKey(c), c.verdict]));
+  const differences = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(cell => {
+    const d = {cell, was: before.get(cell) ?? 'not judged', now: after.get(cell) ?? 'not judged'};
+    const by = explanationOf(d, {departures, rules, declaredAtBase});
+    return {...d, expected: by !== null, ...(by ? {by} : {})};
+  });
   const unexpected = differences.filter(d => !d.expected);
   return {differences, refused: unexpected.length ? [`the new judge reads the base differently from its own judgment at its commit: ${unexpected.map(d => `${d.cell} ${d.was}, now ${d.now}`).join('; ')}`] : []};
 }
-export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records.`, '',
-  ...(r.differences.length ? r.differences.map(d => `- ${d.cell}: ${d.was}, now ${d.now}${d.expected ? ' (the declared departure, expected)' : ''}`) : ['- no cell reads differently']), '',
+const byText = by => `expected: ${by.kind === 'departure' ? 'the declared departure' : `the not-judged rule ${by.declaration}`}, ticket ${by.ticket ?? 'none'}, ${by.atBase ? 'declared at the base\'s commit' : `ruling ${by.ruling}`}${by.kind === 'departure' && by.declaration ? `: ${by.declaration}` : ''}`;
+export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records. A difference is expected only where a declaration of this commit explains it and cites its ruling, or declared the row at the base's commit (ruling 1234).`, '',
+  ...(r.differences.length ? r.differences.map(d => `- ${d.cell}: ${d.was}, now ${d.now}${d.by ? ` (${byText(d.by)})` : d.expected ? ' (expected)' : ''}`) : ['- no cell reads differently']), '',
   ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : [])] : []);

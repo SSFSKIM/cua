@@ -69,7 +69,7 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, reportFactsOf, reportMoves, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
 import {filteredPlan, scenesOf} from './native-matrix/run.mjs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -178,15 +178,19 @@ function judgingCommitOf(layer) {
 }
 // The cells of `root`'s judge over the base: its records as they are, or for a layered base the combine of `root` over
 // the layers' records first, its problems the judge's missing proof as the matrix CLI's judges take them. -> [cell].
+// One tree's judgment of the base: its cells, and its report-level facts (ruling 1248 C) read with that tree's own
+// composing-retries renderer. -> {cells, facts}.
 async function judgedBase(root, records, layered) {
   const {judge: judgeOf, readResults: readOf} = await import(pathToFileURL(join(root, 'scripts', 'native-matrix', 'summary.mjs')).href);
-  if (!layered) { const read = readOf(records); return judgeOf(read.results, read.problems).cells; }
+  const {renderComposingRetries} = await import(pathToFileURL(join(root, 'scripts', 'native-matrix', 'composing-retries.mjs')).href);
+  const judged = j => ({cells: j.cells, facts: reportFactsOf(j, {renderComposingRetries})});
+  if (!layered) { const read = readOf(records); return judged(judgeOf(read.results, read.problems)); }
   const out = mkdtempSync(join(tmpdir(), 'cua-base-combined-'));
   try {
     const combined = spawnSync(process.execPath, ['scripts/native-matrix.mjs', 'combine', ...records, '--out', out], {cwd: root, encoding: 'utf8'});
     if (![0, 4].includes(combined.status)) throw new Error(`combine at ${root} failed (exit ${combined.status}): ${(combined.stderr || combined.stdout).trim().slice(-300)}`);
     const read = readOf([out]), account = JSON.parse(readFileSync(join(out, 'combined.json'), 'utf8'));
-    return judgeOf(read.results, [...read.problems, ...(account.problems ?? []).map(p => `combine: ${p}`)]).cells;
+    return judged(judgeOf(read.results, [...read.problems, ...(account.problems ?? []).map(p => `combine: ${p}`)]));
   } finally { rmSync(out, {recursive: true, force: true}); }
 }
 async function rejudgeBase(roots, outFile) {
@@ -204,7 +208,8 @@ async function rejudgeBase(roots, outFile) {
       if (extracted.status !== 0) throw new Error(`tar failed: ${extracted.stderr.trim()}`);
       rmSync(tar);
       if (existsSync(join(REPO, 'node_modules'))) symlinkSync(join(REPO, 'node_modules'), join(tree, 'node_modules'));
-      report = {at: commits[0], ...(layered ? {layers: names} : {}), ...baseRejudge(await judgedBase(tree, records, layered), await judgedBase(REPO, records, layered))};
+      const was = await judgedBase(tree, records, layered), now = await judgedBase(REPO, records, layered);
+      report = {at: commits[0], ...(layered ? {layers: names} : {}), ...baseRejudge(was.cells, now.cells), reportMoves: reportMoves(was.facts, now.facts)};
     } finally { rmSync(tree, {recursive: true, force: true}); }
   }
   writeJson(outFile, report);

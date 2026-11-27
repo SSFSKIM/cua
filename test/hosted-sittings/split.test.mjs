@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {createHash} from 'node:crypto';
-import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, readJudgeFixes, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, readJudgeFixes, renderBaseRejudge, reportFactsOf, reportMoves, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 import {parseCommand} from '../../scripts/native-matrix.mjs';
 
@@ -122,6 +122,36 @@ test('the committed fix-declaration names ad285cedf under ruling 1239 with the t
   const [fix, ...rest] = readJudgeFixes();
   assert.deepEqual([fix.commit, fix.ruling, fix.ids, rest],
     ['ad285cedf', '1239', ['method openPanel/background/getAXState.panel@finder', 'method openPanel/background/click.cancel@finder'], []]);
+});
+
+// Ruling 1248 C: the report-level moves between the base's rebuild and its own judgment, printed as information and
+// never judged: the cells that do not qualify, the owner's lines, the composing-retries section, not interfering.
+const judged = ({unqualified = 0, cells = 3, owner = [], retries = {lines: ['r']}, cua = [2, 2], vendor = [2, 2]} = {}) => ({
+  cells: Array.from({length: cells}, (_, i) => ({qualifies: i >= unqualified})), owner, composingRetries: retries,
+  interference: {cua: {ok: cua[0], rows: cua[1]}, vendor: {ok: vendor[0], rows: vendor[1]}}});
+const renderRetries = c => c.lines;
+test('ruling 1248 C: the report-level facts of a judgment, and the moves between two, each with its before and after', () => {
+  assert.deepEqual(reportFactsOf(judged({unqualified: 1, owner: ['o1'], cua: [3, 4]}), {renderComposingRetries: renderRetries}),
+    {unqualified: '1 of 3', owner: ['o1'], composingRetries: ['r'], notInterfering: 'cua 3/4, vendor 2/2'});
+  const was = reportFactsOf(judged({unqualified: 2, cells: 4, owner: ['o1', 'o2', 'o3'], retries: {lines: ['old']}, cua: [3, 4]}), {renderComposingRetries: renderRetries});
+  const now = reportFactsOf(judged({unqualified: 1, owner: ['o1', 'o4'], retries: {lines: ['new']}, cua: [4, 4]}), {renderComposingRetries: renderRetries});
+  assert.deepEqual(reportMoves(was, now), [
+    {field: 'cells that do not qualify', was: '2 of 4', now: '1 of 3'},
+    {field: 'owner lines', left: ['o2', 'o3'], arrived: ['o4']},
+    {field: 'the composing-retries section', was: ['old'], now: ['new']},
+    {field: 'not interfering', was: 'cua 3/4, vendor 2/2', now: 'cua 4/4, vendor 2/2'},
+  ]);
+  assert.deepEqual(reportMoves(was, was), []);
+  const lines = renderBaseRejudge({at: 'c0', differences: [], refused: [], reportMoves: reportMoves(was, now)}).join('\n');
+  assert.match(lines, /^### Report-level changes \(informational, never judged; ruling 1248\)$/m);
+  assert.match(lines, /^- cells that do not qualify: 2 of 4, now 1 of 3$/m);
+  assert.match(lines, /^- owner line left: o2$/m);
+  assert.match(lines, /^- owner line arrived: o4$/m);
+  assert.match(lines, /^- not interfering: cua 3\/4, vendor 2\/2, now cua 4\/4, vendor 2\/2$/m);
+  assert.match(lines, /^- the composing-retries section: was$/m);
+  assert.doesNotMatch(renderBaseRejudge({at: 'c0', differences: [], refused: [], reportMoves: []}).join('\n'), /Report-level/);
+  // Never judged: moves alone refuse nothing.
+  assert.deepEqual(baseRejudge(baseCells({}), baseCells({})).refused, []);
 });
 
 // A job's record as the judge reads it: its results (each with the runner, commit and lanes) and its hardware.
@@ -432,6 +462,16 @@ test('rejudge-base over the committed layers: the rebuild\'s differences from th
     ]);
     assert.deepEqual(report.refused, []);
     assert.equal(r.status, 0, r.stdout + r.stderr);
+    // Ruling 1248 C: the report-level moves, printed with their before and after, never judged.
+    const moves = Object.fromEntries(report.reportMoves.map(m => [m.field, m]));
+    assert.deepEqual(Object.keys(moves), ['cells that do not qualify', 'owner lines', 'the composing-retries section', 'not interfering']);
+    assert.deepEqual([moves['cells that do not qualify'].was, moves['cells that do not qualify'].now], ['4 of 418', '1 of 417']);
+    assert.deepEqual([moves['owner lines'].left.map(l => /^speed: ([\w/.]+) /.exec(l)?.[1]), moves['owner lines'].arrived],
+      [['electron/method.paste.replace', 'textedit/method.paste.replace', 'textedit/method.typeText.replace'], []]);
+    assert.ok(moves['the composing-retries section'].was.some(l => /vendor 0 retries in 0 group\(s\), 2 never composed/.test(l)));
+    assert.ok(moves['the composing-retries section'].now.some(l => /vendor 3 retries in 2 group\(s\), 0 never composed/.test(l)));
+    assert.deepEqual([moves['not interfering'].was, moves['not interfering'].now], ['cua 379/382, vendor 379/382', 'cua 381/384, vendor 381/384']);
+    assert.match(r.stdout, /^### Report-level changes \(informational, never judged; ruling 1248\)$/m);
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 

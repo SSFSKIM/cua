@@ -190,7 +190,36 @@ const byText = by => (by.kind === 'fix' ? `expected: the judge's fix ${by.declar
   : `expected: ${by.kind === 'departure' ? 'the declared departure' : by.kind === 'accepted miss' ? 'the accepted miss' : `the not-judged rule ${by.declaration}`}, ticket ${by.ticket ?? 'none'}, ruling ${by.ruling}${by.kind === 'departure' && by.declaration ? `: ${by.declaration}` : ''}`);
 export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)', '', `The base's records judged by this commit's judge against the judge of ${r.at ?? 'its commit'} on the same records${r.layers?.length > 1 ? `, its layers combined from their raw records by each commit's own combine (ruling 1239): ${r.layers.join(', then ')}` : ''}. A difference is expected only where a declaration of this commit that cites its ruling explains it (ruling 1234).`, '',
   ...(r.differences.length ? r.differences.map(d => `- ${d.cell}: ${d.was}, now ${d.now}${d.by ? ` (${byText(d.by)})` : d.expected ? ' (expected)' : ''}`) : ['- no cell reads differently']), '',
-  ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : [])] : []);
+  ...(r.refused.length ? [`Refused to judge: ${r.refused.join('; ')}.`, ''] : []), ...renderReportMoves(r.reportMoves ?? [])] : []);
+
+// Ruling 1248 C: the report-level facts of one judgment (its judge's object; `renderComposingRetries` the renderer of
+// the same commit, so each judgment's section reads as its own report printed it). -> {unqualified, owner,
+// composingRetries, notInterfering}.
+export function reportFactsOf(j, {renderComposingRetries}) {
+  const share = engine => `${j.interference[engine].ok}/${j.interference[engine].rows}`;
+  return {unqualified: `${j.cells.filter(c => !c.qualifies).length} of ${j.cells.length}`, owner: [...j.owner], composingRetries: renderComposingRetries(j.composingRetries),
+    notInterfering: `cua ${share('cua')}, vendor ${share('vendor')}`};
+}
+// What moved between two judgments' facts (`was` the base's own commit's, `now` this one's), each with its before and
+// after; information for the reader, never a check: nothing here refuses (ruling 1248 C). -> [{field, was, now} |
+// {field: 'owner lines', left, arrived}].
+const sameLines = (a, b) => a.length === b.length && a.every((l, i) => l === b[i]);
+export function reportMoves(was, now) {
+  const moves = [];
+  if (was.unqualified !== now.unqualified) moves.push({field: 'cells that do not qualify', was: was.unqualified, now: now.unqualified});
+  const left = was.owner.filter(l => !now.owner.includes(l)), arrived = now.owner.filter(l => !was.owner.includes(l));
+  if (left.length || arrived.length) moves.push({field: 'owner lines', left, arrived});
+  if (!sameLines(was.composingRetries, now.composingRetries)) moves.push({field: 'the composing-retries section', was: was.composingRetries, now: now.composingRetries});
+  if (was.notInterfering !== now.notInterfering) moves.push({field: 'not interfering', was: was.notInterfering, now: now.notInterfering});
+  return moves;
+}
+const quoted = lines => lines.map(l => `    > ${l}`);
+function renderReportMoves(moves) {
+  if (!moves.length) return [];
+  return ['### Report-level changes (informational, never judged; ruling 1248)', '', 'What the report itself prints differently between the two judgments, each with its before and after. Nothing here is compared or refuses.', '',
+    ...moves.flatMap(m => (m.field === 'owner lines' ? [...m.left.map(l => `- owner line left: ${l}`), ...m.arrived.map(l => `- owner line arrived: ${l}`)]
+      : Array.isArray(m.was) ? [`- ${m.field}: was`, ...quoted(m.was), '  now', ...quoted(m.now)] : [`- ${m.field}: ${m.was}, now ${m.now}`])), ''];
+}
 
 // Ruling 1234: a judge-only dispatch (the workflow's jobs_run_id) judges the run jobs of an earlier run of this
 // workflow without re-running them. Before anything is judged: that run is this workflow's in this repo (`pin.repo`),

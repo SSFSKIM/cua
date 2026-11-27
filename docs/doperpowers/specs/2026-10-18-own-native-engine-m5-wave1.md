@@ -311,6 +311,51 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-27, rulings 1227–1229 (the design session, after C's first full form, 45468052791 at bfa8cf486). The run:
+  all six matrix runs were complete, every put-back held, and the job took 335 of 360 min (C-7's fast lanes had made
+  the 240-min projection wrong). Key-route was skipped for time.
+  - **The split (1227).** C runs as one job per run number (C-1 to C-3), plus a judge job that also runs key-route.
+    - Each run job holds its whole vendor/cua pair, so cua is only ever compared with a vendor on the same VM. Lane
+      order alternates by job: vendor, cua, vendor.
+    - The judge refuses when the jobs differ in harness commit or in either engine's version. It records each job's
+      image, VM and hardware.
+    - A job is re-run only after a recorded infrastructure or harness stop, and every attempt is kept and listed.
+    - The projection uses per-kind priors (vendor lane 60, cua 50, save-sheet 6, key-route 27, setup 5 min). It
+      used to project an unmeasured step at the mean of every measured step, which gave 703 min.
+  - **What counts (1228).** 45468052791's 474 judged ids count as recorded. A filtered rerun (`run --only`, `combine`)
+    replaces only its listed cells' rows of run n, in both lanes. Each replaced row names its job. A cell that failed
+    on its own verdict in the full run and passes only in a rerun is flagged to the owner, never silently replaced.
+  - **chrome/background/drag.select@textedit (1228).** Declared a departure. cua refuses with backgroundClickRefused
+    and posts nothing, by #282's design (item 6, which names the drag). The vendor made the selection cleanly in 3 of 3
+    runs, with TextEdit front and key throughout. The flip report lists it as a known capability difference, citing
+    #591, the study of the vendor's route.
+  - **Save-sheet intervention (1228).** cua's set_value is a single AX write that nothing can stop part-way, so cua
+    could never satisfy "probe during the act", and every row was NO VERDICT. The probe is now armed 150 ms before the
+    act, the same on both lanes, and every row records the interval and the engine's receipt time.
+    - cua passes by refusing before it acts.
+    - A cua row that acted fails only if the witness tap shows the probe's key reached TextEdit before the engine's
+      receipt; otherwise it is invalid.
+    - The vendor is judged on nothing saved.
+    - effectsNamed is asked only of a stop part-way.
+  - **Harness fixes (1228).**
+    - savePanel typeText.name's prepare no longer clicks a field whose whole value is selected. The vendor's click had
+      been closing the sheet.
+    - electron click.point starts the caret at the value's start and aims from the field's frame. With the caret at
+      the end the field had scrolled, and both engines' clicks landed a line low.
+  - **Composing (1229).** In each failing composing group the whole group failed at its one composition check. The
+    source, the field and the probe's post were all in order, yet the key reached neither the field nor the input
+    method. Vendor lanes failed 7 of 18 such probes across the pilots and the full run; cua lanes failed 1 of 15.
+    - Instrumented: whether marked text was open in the field before and after the engine's emptying setValue
+      (presence only), how emptyField prepared, the probe's answer, and the source and the focused element's
+      role, counts and ranges after the key.
+    - A group without a composition retries its setup, 3 attempts in all, each recorded. The first failure is kept,
+      naming the lane's engine. Retries are summarised per lane and group, and a lopsided pattern is flagged to the
+      owner.
+    - emptyField stays on the engine under test until the readings show the cause. If the engine's write is the
+      cause, cua's lane gets a product ticket and the vendor's goes into the parity record.
+  - **Speed.** The three missed beats (electron paste.replace, textedit paste.replace, textedit typeText.replace) all
+    miss the median bar, not the p95. They are with the owner. An optional step of 10 extra samples each
+    (`speed_extra`) waits, off, on the owner choosing to measure more.
 - 2026-11-24, ruling 1226 (the design session, after pilot C-7, 45446649714). C-7 is accepted: both lanes complete in
   82 of 360 min, and blocking holds only #587's three typeSelect cells.
   - **What C-7 proved on hosted.**

@@ -147,8 +147,7 @@ const PERMISSIONS = new Set(['accessibility', 'screenRecording']);
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328;
 // a keyed type_text into a password field confirmed by its length alone, #414; keys whose remote-view panel check was
 // cut off at its time budget, on press_key, type_text and paste, #582; a literal type_text into a focused element that
-// is not a text field, or where a finished search found no focused field, whose text could not be read back, #587), and
-// its bound.
+// is not a text field, whose text could not be read back, #587), and its bound.
 const NOTED_METHODS = new Set(['paste', 'type_text', 'press_key', 'click', 'scroll']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's

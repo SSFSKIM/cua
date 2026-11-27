@@ -124,7 +124,8 @@ struct ReadbackMarkerReads<Element> {
   var same: (Element, Element) -> Bool
 }
 
-/// The field the marker route finds in `window`, or nil for no claim (the walk then runs). Its web area is the first
+/// The field the marker route finds in `window`, `.noField` when the element its marker names lies outside any field
+/// (its climb reaches the web area: #587, ruling 1242), or nil for no claim it can vouch for (the walk then runs). Its web area is the first
 /// one the walk's reads find among the app's own elements (`readbackWebArea`, which checks each, the web area too), and
 /// its marker is read only once it classifies open as an AXWebArea; else no claim, since the web area is not the field.
 /// From the element its marker names, each element is checked to be the app's, then classified: closed ends the lookup,
@@ -146,7 +147,7 @@ func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Eleme
     case .open(let role) where typeReadbackTextRoles.contains(role):
       guard case .value(true) = marker.isFocused(element), readbackUnder(element, webArea, marker) else { return nil }
       return .field(element, by: .marker)
-    case .open(let role) where role == "AXWebArea": return nil
+    case .open(let role) where role == "AXWebArea": return .noField  // the selection is page content outside any field
     case .open:
       guard hops < typeReadbackMarkerFieldHops, case .value(let parent) = marker.parent(element) else { return nil }
       hops += 1

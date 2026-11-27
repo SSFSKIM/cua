@@ -21,12 +21,16 @@ import Foundation
 //   meta. Anything else is `typeUnconfirmed`, never retried; only a mismatch on a field that stayed readable carries
 //   values, a bounded excerpt around the first difference (`readbackExcerpt`) and both lengths.
 // - A read that fails (#590, ruling 1225), in the snapshot or a poll, is read again a bounded number of times within
-//   the phase's time before its reason is answered (`ReadbackRetry`, TypeReadbackSettle.swift); a failure that stays
-//   names its read in the record (`readFailure`), never its value. A read that answered and disagreed is answered as
-//   before.
-// - No field to read back (#587, ruling 1219): a focused element that is not a text field, or no focused element, is
-//   typed into and answered as the vendor answers it, success, with a note that the text is not confirmed
-//   (`readbackUnreadNote`); its record says `confirmed: false` and why.
+//   the phase's time before its reason is answered (`ReadbackRetry`, TypeReadbackSettle.swift), never reading more than
+//   its first try could: the field is classified again before every further value or range read, and a password
+//   field's role or another role ends it (ruling 1244). A failure that stays names its read in the record
+//   (`readFailure`), never its value. A read that answered and disagreed is answered as before.
+// - No field to read back (#587, rulings 1219 and 1242): a focused element that is not a text field, or a search that
+//   finished and found no focused field (`ReadbackFound.noField`), is typed into and answered as the vendor answers
+//   it, success, with a note that the text is not confirmed (`readbackUnreadNote`); its record says `confirmed: false`,
+//   why, and `noField`. A search that could not finish stays `typeUnconfirmed`. A concealed request is never a success
+//   there and is never advised to observe the app (`readbackConcealedNoFieldRemedy`); under select_text's range nothing
+//   is typed (`selectionChanged`).
 // - Equality proves nothing when the expected value is the snapshot's own (the selection already held the typed text:
 //   the review of 9020bb18..dad56362, P1, #354's race itself, since a late select-all could still rewrite the field). Then
 //   the selected range must also read the caret past the insertion, {location + typed length, 0}, which differs from the
@@ -234,10 +238,14 @@ enum ReadbackLookup: Equatable {
 /// What the lookup before the first event found: the field and how, and whether the lookup already took it for a
 /// password field (#414: the marker route's classification, or the walk's claim by the role AXSecureTextField), which
 /// the snapshot then holds it to; or (the marker route's) an element classified closed, refused unread with main's
-/// reason for it.
+/// reason for it; or (#587, ruling 1242) a search that finished and found no field: the walk of the primary window read
+/// every element it had to and none of a text-entry role reads AXFocused true, and the marker route, when it ran, named
+/// page content outside any field. A lookup that answers nil found nothing it can vouch for (a failed read, a bound, a
+/// claim it could not check): indeterminate.
 enum ReadbackFound<Element> {
   case field(Element, by: ReadbackLookup, password: Bool = false)
   case closed(TypeReadbackReason)
+  case noField
 }
 
 /// The reads the read-back makes, live or faked.
@@ -388,14 +396,37 @@ func readbackWalkRead<Value>(_ raw: CFTypeRef?, _ error: AXError, _ convert: (CF
 /// windows' focus attributes unsupported (-25205), the web area's AXFocusedUIElement no value; a walk of the window for
 /// the element that reads AXFocused true found the text field 10 of 10, on a page within its bounds. Only AX attributes
 /// are read; nothing is activated.
+///
+/// #587 (ruling 1242): no field (`.noField`) only once a search finished: the walk finished and found none, and the marker
+/// route, when it ran, found none either. The application's own answer of no focused element is never enough, since
+/// background Safari answers so over a focused field (run 43752829833), nor is a window that cannot be read.
 func readbackFocusedField<Element>(application: Element, focused: (Element) -> ReadbackWalkRead<Element>, primaryWindow: (Element) -> Element?,
                                    walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>? = nil) -> ReadbackFound<Element>? {
   let answer = focused(application)
   if case .value(let field) = answer { return .field(field, by: .focus) }
   guard let window = primaryWindow(application) else { return nil }
-  if case .absent = answer, let marker, let found = readbackMarkedField(window: window, walk: walk, marker: marker) { return found }
+  var markerFoundNone = true  // the route did not run, or found no field
+  if case .absent = answer, let marker {
+    switch readbackMarkedField(window: window, walk: walk, marker: marker) {
+    case .noField?: break
+    case let found?: return found
+    case nil: markerFoundNone = false
+    }
+  }
+  switch readbackFocusedByWalk(window, walk) {
   // The walk read the role it claimed by, and no subrole: a password field to it is one by its role (#414).
-  return readbackFocusedByWalk(window, walk).map { .field($0.element, by: .walk, password: readbackPasswordField(role: $0.role, subrole: .absent)) }
+  case .found(let element, let role): return .field(element, by: .walk, password: readbackPasswordField(role: role, subrole: .absent))
+  case .noneFocused: return markerFoundNone ? .noField : nil
+  case .unfinished: return nil
+  }
+}
+
+/// What the walk found (`readbackFocusedByWalk`): the one focused field, none in a walk that finished, or nothing it can
+/// vouch for (unfinished: a failed read, a bound reached, several focused fields).
+enum ReadbackWalkOutcome<Element> {
+  case found(element: Element, role: String)
+  case noneFocused
+  case unfinished
 }
 
 /// The window walked breadth first, each element's role read: an element with a role the walk claims
@@ -407,22 +438,22 @@ func readbackFocusedField<Element>(application: Element, focused: (Element) -> R
 /// bound, a failed read, or an element at `typeReadbackFocusWalkDepth` (the window is depth 0) that has children (that
 /// review's P1) leave it unfinished, and an unfinished walk, like one that found several, claims nothing, since what
 /// it did not read could be another. The claim carries the role the field was claimed by.
-func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> (element: Element, role: String)? {
+func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk<Element>) -> ReadbackWalkOutcome<Element> {
   let started = walk.now()
   var queue: [(element: Element, depth: Int)] = [(window, 0)]
   var index = 0
   var found: (element: Element, role: String)?
   while index < queue.count {
-    if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return nil }
+    if index >= typeReadbackFocusWalkNodes || walk.now() - started > typeReadbackFocusWalkMs { return .unfinished }
     let (element, depth) = queue[index]
     index += 1
     switch walk.role(element) {
-    case .failed: return nil
+    case .failed: return .unfinished
     case .value(let role) where typeReadbackFocusWalkRoles.contains(role):
       switch walk.isFocused(element) {
-      case .failed: return nil
+      case .failed: return .unfinished
       case .value(true):
-        if found != nil { return nil }
+        if found != nil { return .unfinished }
         found = (element, role)
       case .value(false), .absent: break
       }
@@ -430,15 +461,15 @@ func readbackFocusedByWalk<Element>(_ window: Element, _ walk: ReadbackFocusWalk
     case .value, .absent: break
     }
     switch walk.children(element) {
-    case .failed: return nil
+    case .failed: return .unfinished
     case .absent: break
     case .value(let children):
       if children.isEmpty { break }
-      if depth >= typeReadbackFocusWalkDepth { return nil }
+      if depth >= typeReadbackFocusWalkDepth { return .unfinished }
       queue += children.map { ($0, depth + 1) }
     }
   }
-  return found
+  return found.map { .found(element: $0.element, role: $0.role) } ?? .noneFocused
 }
 
 /// AXValue copied straight from its CFString into a buffer the caller owns and zeroes (no Swift String is made of it).
@@ -465,6 +496,9 @@ func readbackSubrole(_ raw: CFTypeRef?, _ error: AXError) -> ReadbackSubrole {
 /// The snapshot before the first event: the field and what may be expected of it, or why nothing can be.
 enum ReadbackPlan<Element> {
   case refused(TypeReadbackReason)
+  /// #587 (rulings 1219, 1242): a search that finished found no field to read back (`notTextField`, `noFocusedElement`):
+  /// a literal request is typed and answered success with `readbackUnreadNote`.
+  case unread(TypeReadbackReason)
   case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool, found: ReadbackLookup)
   /// #414: a password field, confirmed by its length from `basis`, which holds its count and range and nothing else
   /// holds them (TypeReadbackLength.swift).
@@ -472,14 +506,16 @@ enum ReadbackPlan<Element> {
 
   /// Whether something is expected of the field, by its value or its length.
   var expects: Bool {
-    if case .refused = self { return false }
-    return true
+    switch self {
+    case .refused, .unread: return false
+    case .expect, .expectLength: return true
+    }
   }
 
   /// Whether the field takes a Return as text (`readbackReturnIsText`).
   var returnIsText: Bool {
     switch self {
-    case .refused: return false
+    case .refused, .unread: return false
     case .expect(_, _, _, _, let returnIsText, _), .expectLength(_, _, _, let returnIsText, _): return returnIsText
     }
   }
@@ -513,8 +549,14 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
                                waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>? = nil) -> ReadbackPlan<Element> {
   let retry = retry ?? ReadbackRetry(reads: reads, retries: 0)
   let field: Element, found: ReadbackLookup, classified: Bool
+  // #587 (P2-6): a search that found no field under select_text's range types nothing, as a range gone does.
+  let unread = { (reason: TypeReadbackReason) -> ReadbackPlan<Element> in
+    if case .selection? = baseline { return .refused(.selectionChanged) }
+    return .unread(reason)
+  }
   switch reads.focused() {
-  case nil: return .refused(.noFocusedElement)
+  case nil: return .refused(.noFocusedElement)  // indeterminate (ruling 1242): typed, and unconfirmed as before
+  case .noField?: return unread(.noFocusedElement)
   case .closed(let reason)?: return .refused(reason)  // the marker route's classification: nothing more is read
   case .field(let element, let by, let password)?: (field, found, classified) = (element, by, password)
   }
@@ -522,7 +564,8 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     secure = true
     if case .selection? = baseline { return .refused(.selectionChanged) }
   }
-  guard let role = retry.read(.role, { reads.role(field) }) else { return .refused(.roleUnreadable) }
+  // A field the lookup took for a password field is classified by one read, never retried (P2-5).
+  guard case .value(let role) = retry.read(.role, once: classified, { reads.role(field) }) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
   retry.saw(subrole: subrole)
   if classified, !readbackPasswordField(role: role, subrole: subrole) { return .refused(.noLongerSecure) }
@@ -533,7 +576,7 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     return readbackLengthSnapshot(field: field, role: role, returnIsText: readbackReturnIsText(role: role, subrole: subrole), found: found,
                                   reads: reads, settle: &settle, baseline: baseline, waited: &waited)
   }
-  guard typeReadbackTextRoles.contains(role) else { return .refused(.notTextField) }
+  guard typeReadbackTextRoles.contains(role) else { return unread(.notTextField) }
   if let baseline {
     var closed: TypeReadbackReason?
     let goal: RangeGoal<NSRange>
@@ -549,9 +592,21 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     if let closed { return .refused(closed) }
     if case .selection = baseline, !wait.met { return .refused(.selectionChanged) }
   }
-  guard var before = retry.read(.value, { reads.value(field) }) else { return .refused(.valueUnreadable) }
+  // A value or range read tried again only once the field still classifies as this one (P1-3).
+  let recheck = { retry.fieldClosed(field, role: role, retrying: false) }
+  var before: String, range: NSRange
+  switch retry.read(.value, recheck: recheck, { reads.value(field) }) {
+  case .value(let read): before = read
+  case .failed: return .refused(.valueUnreadable)
+  case .closed(let why): return .refused(why)
+  }
   if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
-  guard var range = retry.read(.range, { reads.range(field) }), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
+  switch retry.read(.range, recheck: recheck, { reads.range(field) }) {
+  case .value(let read): range = read
+  case .failed: return .refused(.rangeUnreadable)
+  case .closed(let why): return .refused(why)
+  }
+  guard readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
   if var settled = settle {
     defer { settle = settled }
     if let closed = readbackSettle(field, role: role, reads: reads, before: &before, range: &range, record: &settled, retry: retry) {
@@ -704,10 +759,13 @@ struct TypeReadbackRecord: Equatable {
   var readFailure: ReadbackReadFailure?
   /// #590: reads that failed and then answered, a plain request's on a plain field.
   var readsRetried = 0
+  /// #587: the search finished and found no field to read back (`ReadbackPlan.unread`), on either reason.
+  var noField = false
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["confirmed": confirmed, "snapshotMs": (snapshotMs * 10).rounded() / 10]
     if let reason { wire["reason"] = reason.rawValue }
+    if noField { wire["noField"] = true }
     if secure {
       wire["secure"] = true
       if confirmed, lengthConfirmed { wire["confirmation"] = "length" }
@@ -785,7 +843,13 @@ final class TypeReadback<Element> {
     record.baselineWait = waited
     record.settleReads = settled?.reads ?? 0
     record.settleCapped = settled?.capped ?? false
-    if case .refused(let reason) = plan { record.reason = reason }
+    switch plan {
+    case .refused(let reason): record.reason = reason
+    case .unread(let reason):
+      record.reason = reason
+      record.noField = true
+    case .expect, .expectLength: break
+    }
     keepRetries()
   }
 
@@ -833,9 +897,10 @@ final class TypeReadback<Element> {
   func finish(postedAt: Double? = nil) throws {
     let cutoff = min((postedAt ?? reads.now()) + typeReadbackBudgetMs, reads.now() + max(0, remainingMs()))
     guard plan.expects else {
-      // #587: no field to read, as the vendor answers it: success with `readbackUnreadNote`, unconfirmed.
-      if let reason = record.reason, readbackUnreadNote(reason) != nil { return }
-      throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure)
+      // #587: a search that found no field, as the vendor answers it: a literal request's success with
+      // `readbackUnreadNote`, unconfirmed. A concealed request is never told to observe the app (invariant 2).
+      if case .unread = plan, !concealed { return }
+      throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure, concealed: concealed)
     }
     // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
     if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff) }
@@ -849,7 +914,7 @@ final class TypeReadback<Element> {
   /// alone confirm none), or why there was no field to read back (#587).
   var note: String? {
     if record.secure, record.lengthConfirmed { return readbackLengthNote }
-    if !record.confirmed, let reason = record.reason { return readbackUnreadNote(reason) }
+    if case .unread(let reason) = plan, !concealed { return readbackUnreadNote(reason) }
     return nil
   }
 
@@ -1110,14 +1175,14 @@ final class TypeReadback<Element> {
 /// `baseline` is #359's wait before the snapshot (`readbackSnapshot`); one that finds select_text's range gone posts
 /// nothing and answers `typeUnconfirmed` (`selectionChanged`).
 func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Bool = false, baseline: BaselineWait? = nil,
-                              reads: ReadbackReads<Element>,
+                              reads: ReadbackReads<Element>, remainingMs: @escaping () -> Double = { .infinity },
                               checkSource: (_ entered: Int, _ total: Int) throws -> Void, checkIntervention: () throws -> Void,
                               post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   guard !units.isEmpty else {
     return try keyText(units, concealed: concealed, checkSource: checkSource, checkIntervention: checkIntervention, post: post,
                        pause: pause, meta: &meta)
   }
-  let readback = TypeReadback(units: units, concealed: concealed, settle: settle, baseline: baseline, reads: reads)
+  let readback = TypeReadback(units: units, concealed: concealed, settle: settle, baseline: baseline, reads: reads, remainingMs: remainingMs)
   defer { meta.typeReadback = readback.record }
   // #359: select_text's range gone, nothing is typed, so no text lands where the caret moved to.
   if readback.refusesTyping {
@@ -1158,6 +1223,10 @@ func readbackUnreadNote(_ reason: TypeReadbackReason) -> String? {
   return "The text was typed, but \(why). Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again."
 }
 
+/// #587 (invariant 2): a concealed request's remedy when no field was found to read back, whatever the search found: it
+/// may have gone in where it can be seen, so nothing that would show it is advised.
+let readbackConcealedNoFieldRemedy = "Because it is a secret and may have gone in where it can be seen, do not take a screenshot or call getAXState() to check, and do not type it again; ask the person to check where it went."
+
 /// #590: the reasons a failed read gives, whose record names that read (`TypeReadbackRecord.readFailure`).
 let typeReadbackFailedReadReasons: Set<TypeReadbackReason> = [.roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable]
 
@@ -1183,7 +1252,8 @@ func readbackQuoted(_ text: String) -> String {
 /// is a password field's record: one that could not be classified (`fieldUnreadable`, or `roleUnreadable` at its
 /// snapshot) may have stopped being one, so it takes `noLongerSecure`'s remedy (the reviews of 4a005a8c..a1939d2f, P1-4,
 /// and a1939d2f..e8e2702e, 4); a plain field's keeps its own.
-func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = nil, beforeKey: Bool = false, secure: Bool = false) -> EngineError {
+func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = nil, beforeKey: Bool = false, secure: Bool = false,
+                     concealed: Bool = false) -> EngineError {
   if reason == .selectionChanged {  // #359: answered before anything is typed
     return EngineError(name: "typeUnconfirmed",
       "Nothing was typed: the field's selection is no longer the one selectText made (a click sent just before can land after it and move the caret), so the text would have gone elsewhere. Observe the app (take a screenshot or call getAXState()) first, then select the text again before typing.")
@@ -1216,7 +1286,10 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   // A password field's (#414): an observation shows only that it is one, its text never. One that stopped being a
   // password field (a show-password toggle) may now show its text to either observation.
   let remedy: String
-  if reason == .noLongerSecure || (secure && (reason == .fieldUnreadable || reason == .roleUnreadable)) {
+  if concealed, [.notTextField, .noFocusedElement].contains(reason) {
+    // #587 (invariant 2): a secret that went in where no field was found may show wherever it went; never observe.
+    remedy = readbackConcealedNoFieldRemedy
+  } else if reason == .noLongerSecure || (secure && (reason == .fieldUnreadable || reason == .roleUnreadable)) {
     remedy = "The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again."
   } else if [.lengthUnreadable, .selectionUnreadable, .lengthMismatch, .caretMismatch].contains(reason) {
     remedy = "Observe the field before going on (a screenshot shows its masked characters; getAXState() shows only that it is a password field), then use setValue to put it right; do not type the text again."

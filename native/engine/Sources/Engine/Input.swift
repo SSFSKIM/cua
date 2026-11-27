@@ -958,6 +958,7 @@ extension Engine {
                           baseline: baselineWait(selection: selection, pointerPending: clickOrdering.pointerPending(pids: [pid, target])),
                           reads: .live(pid: pid, markerRoute: readbackMarkerRoute(
                             bundleIdentifier: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)),
+                          remainingMs: { Double(context.deadline - unixMilliseconds()) },  // as the paste route's (P2-7)
                           checkSource: { entered, total in
                             if !posted { try refuseLateKeys(deadline: context.deadline) }  // before the first event, not late
                             try self.checkInputSource(initialSource, entered: entered, total: total)

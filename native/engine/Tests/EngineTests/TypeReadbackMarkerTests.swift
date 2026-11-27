@@ -637,9 +637,9 @@ final class TypeReadbackMarkerTests: XCTestCase {
       let safari = StubSafari()
       setUp(safari)
       let (error, meta, _) = type("xyz", into: safari)
-      XCTAssertNil(error, "\(name): #587, typed with the note")
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(reason(meta), "noFocusedElement", name)
-      XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement), name)
+      XCTAssertNil(meta.note, "\(name): ruling 1242, a search that did not finish earns no note")
       XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.valueReads)")
       XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }
@@ -647,6 +647,27 @@ final class TypeReadbackMarkerTests: XCTestCase {
     let small = StubSafari(filler: 3)
     small.markerRangeError = .noValue
     XCTAssertNil(type("xyz", into: small).error)
+  }
+
+  /// Ruling 1242 (P1-2) on the route: no field only when the route itself finished with none (its marker names page
+  /// content, the climb reaching the web area) and the walk finished with none too; a route that claimed nothing it
+  /// could vouch for leaves the answer indeterminate, whatever the walk found.
+  func testTheRouteSaysNoFieldOnlyWhenItFinished() {
+    let content = StubSafari(filler: 3)
+    content.focused = []
+    content.named = { _ in (content.el(StubSafari.web), .success) }
+    let (error, meta, _) = type("xyz", into: content)
+    XCTAssertNil(error)
+    XCTAssertEqual(reason(meta), "noFocusedElement")
+    XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement))
+
+    let unnamed = StubSafari(filler: 3)
+    unnamed.focused = []
+    unnamed.named = { _ in (nil, .noValue) }
+    let (unnamedError, unnamedMeta, _) = type("xyz", into: unnamed)
+    XCTAssertEqual(unnamedError?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(reason(unnamedMeta), "noFocusedElement")
+    XCTAssertNil(unnamedMeta.note)
   }
 
   /// The marker names an element more than `typeReadbackMarkerFieldHops` below its field: no claim; at the cap, the

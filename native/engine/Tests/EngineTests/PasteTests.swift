@@ -1537,9 +1537,10 @@ final class PasteOperationTests: XCTestCase {
 /// settle or pending click.
 @discardableResult
 private func typeByPaste(_ engine: Engine, _ text: String, _ target: PasteTarget, _ context: ExecutionContext,
-                         field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), meta: inout InputMeta) throws -> String? {
-  try engine.typeTextByPaste(text, target, context, selection: nil, settle: { false }, pointerPending: { false }, reads: FakeApp(field).reads,
-                             meta: &meta)
+                         field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), selection: NSRange? = nil,
+                         meta: inout InputMeta) throws -> String? {
+  try engine.typeTextByPaste(text, target, context, selection: selection, settle: { false }, pointerPending: { false },
+                             reads: FakeApp(field).reads, meta: &meta)
 }
 
 final class PasteActivationTests: XCTestCase {
@@ -1738,7 +1739,7 @@ extension PasteActivationTests {
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
-                             field given: FakeField? = nil, thrown: ((Error) -> Void)? = nil,
+                             field given: FakeField? = nil, selection: NSRange? = nil, thrown: ((Error) -> Void)? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     let field = given ?? FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
@@ -1767,7 +1768,7 @@ extension PasteActivationTests {
     var meta = InputMeta(context)
     var entered = 0
     if typed, let thrown {
-      do { try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta) } catch { thrown(error) }
+      do { try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, meta: &meta) } catch { thrown(error) }
     } else if typed {
       try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
       if given == nil { XCTAssertEqual(meta.typeReadback?.confirmed, true, "read back") }
@@ -1791,6 +1792,25 @@ extension PasteActivationTests {
     XCTAssertEqual(meta.typeReadback?.reason, .notTextField)
     XCTAssertEqual(meta.typeReadback?.confirmed, false)
     XCTAssertEqual(meta.entered, 9)
+  }
+
+  /// P2-6 on the paste route: a focused element that is not a text field under select_text's range pastes nothing
+  /// (`selectionChanged`), the pasteboard untouched.
+  func testTypeTextsPasteRouteIntoANonTextFieldUnderSelectTextsRangePastesNothing() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let row = FakeField(value: nil, range: nil)
+    row.role = "AXOutline"
+    var error: Error?
+    var keys = 0
+    let meta = try pasteToItsEnd("Documents", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 onKeyDown: { _ in keys += 1 }, field: row, selection: NSRange(location: 0, length: 3), thrown: { error = $0 })
+    XCTAssertTrue((error as? EngineError)?.message.hasPrefix("Nothing was typed") ?? false, "\(String(describing: error))")
+    XCTAssertEqual(keys, 0, "no ⌘V")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    XCTAssertEqual(meta.typeReadback?.reason, .selectionChanged)
   }
 
   /// #590 on the paste route: a read after the ⌘V that keeps failing is timed from that ⌘V, the paste's last key.

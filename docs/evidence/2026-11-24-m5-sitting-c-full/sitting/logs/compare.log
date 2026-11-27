@@ -1,0 +1,18 @@
+wrote /Users/runner/work/_temp/m5-out/sitting/comparison.md
+VERDICT: FAIL
+  blocking: method: chrome/background/drag.select@textedit is worse on cua
+  blocking: method: finder/background/typeText.typeSelect@electron is worse on cua (known defect #587)
+  blocking: method: finder/background/typeText.typeSelect@textedit is worse on cua (known defect #587)
+  blocking: method: finder/frontmost/typeText.typeSelect is worse on cua (known defect #587)
+  missing: method: savePanel/frontmost/typeText.name has no cua sample with a valid vendor sample of its run (ruling 1116)
+  missing: concurrent use: textedit/concurrent.sheet@electron has no valid cua sample
+  missing: 61 cell(s) do not qualify: fewer than 3 complete run pairs (NO VERDICT by cell)
+  missing: speed: textedit/method.panel.typeText.search has no measure on one engine
+  missing: speed: textedit/method.savePanel.typeText.name has no measure on one engine
+  owner: speed: electron/method.paste.replace missed the 10% beat (cua 112.7 ms against 121.9 ms, p95 118.8 against 123.2)
+  owner: speed: textedit/method.paste.replace missed the 10% beat (cua 48.6 ms against 39 ms, p95 71.9 against 121.8)
+  owner: speed: textedit/method.typeText.replace missed the 10% beat (cua 289.3 ms against 300.8 ms, p95 304.6 against 319.5)
+  owner: finding elements: parity on the resolved sum (the owner decides)
+  not judged: perContext (54 rows): ticket #577
+  not judged: openPanelSearch (1 row): ticket #588
+  not judged: electron/background/launch@finder (sharedVenue): evidence cua run 1 sample 1 interference.windowOrder.after; vendor run 1 sample 1 interference.windowOrder.after; cua run 2 sample 2 interference.windowOrder.after; vendor run 2 sample 2 interference.windowOrder.after; cua run 3 sample 3 interference.windowOrder.after; vendor run 3 sample 3 interference.windowOrder.after

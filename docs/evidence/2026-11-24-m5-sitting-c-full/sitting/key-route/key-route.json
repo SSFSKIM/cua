@@ -1,0 +1,24 @@
+{
+  "ruling": 1198,
+  "approvedRuntime": "/Users/runner/Library/Application Support/cua",
+  "approvedEngine": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+  "sitting": "hosted-45468052791-1-c",
+  "started": "2026-11-25T00:55:58.426Z",
+  "clock": {
+    "jobStartedMs": 1795548029000,
+    "deadlineMs": 1795568729000
+  },
+  "tap": null,
+  "inventory": null,
+  "tcc": {
+    "engines": null
+  },
+  "engines": {},
+  "leftovers": null,
+  "cleanup": {
+    "ok": true,
+    "failures": []
+  },
+  "skipped": "the job's time left (570 s before C must publish) does not fit the set-up and the cleanup (1620 s)",
+  "finished": "2026-11-25T00:55:58.428Z"
+}

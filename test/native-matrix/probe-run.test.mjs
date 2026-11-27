@@ -7,7 +7,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
-import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTROLS, SAVE_SHEET_PROBE_BEFORE_MS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
+import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, SAVE_NAME, SAVE_PANEL_CONTROLS, SAVE_SHEET_PROBE_BEFORE_MS, SHEET_EXPECTED, SHEET_FOLLOW_MS, SHEET_PROBE_BEFORE_MS, STILL_INTERACTING,
+  USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {sceneKeyWindow} from '../../scripts/native-matrix/matrix-device.mjs';
 import {sampleCause} from '../../scripts/native-matrix/front-key.mjs';
@@ -154,63 +155,136 @@ test('a focus probe that did not name the document leaves the precondition inval
   assert.deepEqual(row.focus.unnamed, unnamed);
 });
 
-// The sheet variant's two acts, each its own call with its own meta: super+w at `at` (its interval `[from, to]` relative
-// to `at`), then the follow-up click on the sheet at `followAt` (received `receipt` ms after it).
-const opening = (c, {interval = [50, 150], route = "2'", over = {}} = {}) => ({...acted(c, {interval}), actMs: 120, endAt: atOf(c) + 200,
-  _meta: {...acted(c, {interval})._meta, 'cua/inputRoute': route}, ...over});
+// The sheet variant's two acts, each its own call with its own meta: super+w at `at` (its interval `[from, to]` and its
+// receipt relative to `at`), then the follow-up click on the sheet at `followAt` (received `receipt` ms after it).
+const opening = (c, {interval = [50, 150], receipt = 40, route = "2'", over = {}} = {}) => ({...acted(c, {interval}), actMs: 120, endAt: atOf(c) + 200,
+  _meta: {...acted(c, {interval})._meta, 'cua/receivedAt': atOf(c) + receipt, 'cua/inputRoute': route}, ...over});
 const followUp = (c, {receipt = 10, route = "2'", over = {}} = {}) => ({opened: true, clicked: true, clickAt: followOf(c), endAt: followOf(c) + 50, threw: false, errorName: null, message: null,
   _meta: {'cua/receivedAt': followOf(c) + receipt, 'cua/inputRoute': route}, ...over});
 const sheetCells = ({open = opening, follow = followUp} = {}) => c => (tagOf(c) === 'sheet.open' ? open(c) : tagOf(c) === 'sheet.follow' ? follow(c) : null);
 const SHEET = 'textedit/concurrent.sheet@electron';
+const refusing = sentence => ({threw: true, errorName: 'Error', message: `${REFUSED}${sentence}/x'.`});
+// Ruling 1238 (b): a hosted sheet run whose witness tap on the Electron fixture's pid saw the probe's key at
+// `keyAt(receipt, act)` (none when null), `receipt` the opening's (cua's own clock; the vendor's cell call time) and `act`
+// the opening's {at, end}, and the control. -> the run, its row, the tap's start, the fixture's pid.
+async function sheetWitnessed({engine = 'cua', cell = sheetCells(), keyAt = receipt => receipt - 300, ops: given = {}, calls = []} = {}) {
+  let electron = null, probe = null, control = null, receipt = null, act = null;
+  const ops = {
+    ...given,
+    scenes: (base, a) => { const out = base(a); if (a[0] === 'up' && a[1] === 'electron') electron = out.pid; return out; },
+    matrix: (base, a) => { const out = given.matrix ? given.matrix(base, a) : base(a); if (a[0] === 'probe' && a[1] === 'keystroke') probe = out.answer.pid; return out; },
+    keyRoute: (base, a) => {
+      const out = base(a);
+      if (a[0] === 'control') control = out.answer;
+      if (a[0] === 'tap' && a[1] === 'stop') out.answer.events = [...(keyAt && receipt !== null ? [{tapPid: electron, kind: 'keyDown', target: electron, source: probe, at: keyAt(receipt, act)}] : []),
+        {tapPid: electron, kind: 'flagsChanged', target: electron, source: control.pid, at: control.at}];
+      return out;
+    },
+  };
+  const run = await runWith({engine, plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', env: SHEET_HOSTED, ops, calls,
+    cell: c => {
+      const out = cell(c);
+      if (tagOf(c) === 'sheet.open' && out) {
+        act = {at: atOf(c), end: out.endAt};
+        receipt = engine === 'cua' ? out._meta?.['cua/receivedAt'] ?? null : out.callAt;
+      }
+      return out;
+    }});
+  return {...run, row: rowOf(run.result, SHEET), electron};
+}
+const SHEET_HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
 
-test('the sheet variant: super+w on TextEdit\'s dirty untitled document as its own action, the keystroke into the Electron field inside its interval, the follow-up not refused, the oracle judging the row', async () => {
+test('the sheet variant\'s declaration (ruling 1238): both engines expected to act, the person typing in another app; the probe armed a fixed lead before the opening, the follow-up its fixed gap after', () => {
+  assert.deepEqual(SHEET_EXPECTED, {cua: 'act', vendor: 'act'});
+  assert.ok(Object.isFrozen(SHEET_EXPECTED));
+  // Past the probe's worst measured lateness in C (248 ms), and short enough that the follow-up's receipt stays inside
+  // the 5 s debounce from the post (C's slowest follow-up came about 4.1 s after its opening).
+  assert.ok(SHEET_PROBE_BEFORE_MS > 248 && SHEET_PROBE_BEFORE_MS + 4_100 < 5_000, String(SHEET_PROBE_BEFORE_MS));
+  assert.equal(SHEET_FOLLOW_MS, 400, 'the opening-to-follow-up gap the cell always had (100 + 300 ms)');
+});
+
+test('the sheet variant (ruling 1238): super+w on TextEdit\'s dirty untitled document a fixed lead after the probe\'s time, the follow-up its gap after; the tap on the Electron fixture\'s pid proves the key before the receipt, cua acts, the oracle judges the row', async () => {
   const calls = [];
-  const {result, steps} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: sheetCells()});
-  const row = rowOf(result, SHEET);
-  assert.deepEqual([row.ok, row.invalid, row.attempts, row.outcome.sheetOpened, row.outcome.followUpRefused, row.outcome.userLanded], [true, undefined, 1, true, false, true]);
-  assert.deepEqual([row.outcome.intervalSource, row.outcome.postOffsetMs], ['engine', 100 - 50]);
+  const {row, result, steps, electron} = await sheetWitnessed({calls});
+  assert.deepEqual(validateCellResult(result), []);
+  assert.deepEqual([row.ok, row.invalid, row.attempts, row.outcome.sheetOpened, row.outcome.followUpRefused, row.outcome.userLanded], [true, undefined, 1, true, false, true], JSON.stringify(row.outcome));
   assert.equal(row.interference.ok, true, 'the oracle judged the row');
   assert.deepEqual(row.inputRoutes, {opening: "2'", followUp: "2'"});
+  const o = row.outcome;
+  assert.deepEqual([o.expected, o.answer, o.probeBeforeMs], ['act', 'act', SHEET_PROBE_BEFORE_MS]);
+  assert.equal(o.callAt, o.postedAt + SHEET_PROBE_BEFORE_MS, 'the opening called the lead after the probe\'s time');
+  assert.equal(o.receivedAt, o.callAt + 40, 'the opening\'s receipt kept');
+  assert.deepEqual([o.intervalSource, o.intervalMs, o.actEnd], ['engine', 100, o.callAt + 150]);
+  assert.deepEqual(o.witness, {gaps: [], keyAt: o.receivedAt - 300, beforeReceipt: true, window: [o.callAt - SHEET_PROBE_BEFORE_MS, o.callAt + 150]});
+  assert.equal(result.verdict, 'pass');
+  // The tap watched the pid the scene's record names for the Electron fixture: the user window the probe typed into.
+  assert.equal(result.meta.witness.targets.find(t => t.scene === 'electron')?.pid, electron, JSON.stringify(result.meta.witness));
   const open = calls.find(c => tagOf(c.code) === 'sheet.open'), follow = calls.find(c => tagOf(c.code) === 'sheet.follow');
   assert.match(open.code, /__app\.pressKey\("super\+w"\)/);
   assert.doesNotMatch(open.code, /click/, 'the opening call holds only the opening action, so its meta is its own');
+  assert.equal(followOf(follow.code), atOf(open.code) + SHEET_FOLLOW_MS);
   assert.ok(follow.at[0] >= open.at[1], 'the follow-up is its own call, after');
   assert.ok(matrixSteps(steps, 'probe')[0].includes('keystroke'));
-  // A refused follow-up fails the row, and the untitled document's cleanup closes the sheet before the run goes on.
-  const refusedCalls = [];
-  const refused = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: refusedCalls,
-    cell: c => (tagOf(c) === 'sheet.follow' ? followUp(c, {over: {threw: true, errorName: 'Error', message: `${REFUSED}${STILL_INTERACTING}/x'.`}})
-      : tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : sheetCells()(c))});
-  const failed = rowOf(refused.result, SHEET);
-  assert.deepEqual([failed.ok, failed.outcome.followUpRefused], [false, true]);
-  assert.ok(refusedCalls.some(c => tagOf(c.code) === 'sheet.cleanup'));
 });
 
-test('the sheet variant: a post outside the opening action\'s own interval is retried at its middle; none measured is no verdict; a follow-up received past the debounce is invalid', async () => {
-  // super+w posted 0..50 ms after its time, the post at 100: outside, then aimed at 25.
-  const narrow = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({open: c => opening(c, {interval: [0, 50]})})});
-  const row = rowOf(narrow.result, SHEET);
-  assert.deepEqual([row.attempts, row.ok, row.invalid], [2, true, undefined]);
-  assert.match(row.outcome.retries[0], /after the action's interval/);
-  const none = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({open: c => opening(c, {interval: null})})});
-  const invalid = rowOf(none.result, SHEET);
-  assert.equal(invalid.attempts, PROBE_ATTEMPTS);
-  assert.match(invalid.invalid, /reported no interval/);
-  assert.equal(none.result.verdict, 'no-verdict');
-  const late = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {receipt: 6_000})})});
-  assert.match(rowOf(late.result, SHEET).invalid, /past the 5000 ms debounce/);
-  // The opening refused as the user's intervention, inside its interval: no sheet, nothing to follow up, the dirty
-  // untitled document still TextEdit's front window. The row fails, and the untitled document's own cleanup closes it.
-  const firedCalls = [];
-  const fired = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: firedCalls,
-    cell: c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
-      : sheetCells({open: c2 => opening(c2, {over: {threw: true, errorName: 'Error', message: `${REFUSED}${USER_CHANGED}/x'.`}}),
-        follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c))});
-  assert.equal(fired.result.rows.length, 1, JSON.stringify(fired.result.problems));
-  const refusedOpening = rowOf(fired.result, SHEET);
-  assert.deepEqual([refusedOpening.ok, refusedOpening.invalid, refusedOpening.outcome.openingThrew, refusedOpening.outcome.sheetOpened], [false, undefined, true, false]);
-  assert.ok(firedCalls.some(c => tagOf(c.code) === 'sheet.cleanup'), 'the untitled document closed by its own cleanup');
-  assert.equal(fired.result.complete, true, JSON.stringify(fired.result.problems));
+test('the sheet variant (ruling 1238): cua refusing, the follow-up or the opening, fails only on the tap\'s proof of the key before the receipt; without it the row is invalid', async () => {
+  const followRefused = sheetCells({follow: c => followUp(c, {over: refusing(STILL_INTERACTING)})});
+  const refusedCheck = cell => c => (tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : cell(c));
+  const calls = [];
+  const proved = await sheetWitnessed({cell: refusedCheck(followRefused), calls});
+  assert.deepEqual([proved.row.ok, proved.row.invalid, proved.row.outcome.followUpRefused, proved.row.outcome.answer], [false, undefined, true, 'refuse'], JSON.stringify(proved.row.outcome));
+  assert.ok(proved.row.outcome.findings.includes('cua refused though the probe\'s key reached the Electron fixture, another app, 300 ms before the engine received the opening (expected: act)'), proved.row.outcome.findings?.join('; '));
+  assert.equal(proved.result.verdict, 'fail');
+  assert.ok(calls.some(c => tagOf(c.code) === 'sheet.cleanup'), 'the untitled document\'s cleanup closed the sheet');
+  // The opening refused: no sheet, nothing to follow up, the dirty untitled document closed by its own cleanup.
+  const openRefused = c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
+    : sheetCells({open: c2 => opening(c2, {over: refusing(USER_CHANGED)}), follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c));
+  const opened = await sheetWitnessed({cell: openRefused});
+  assert.deepEqual([opened.row.ok, opened.row.invalid, opened.row.outcome.openingThrew, opened.row.outcome.sheetOpened, opened.row.outcome.answer], [false, undefined, true, false, 'refuse']);
+  assert.equal(opened.result.complete, true, JSON.stringify(opened.result.problems));
+  // The key after the receipt, or none seen: the refusal is not proved the forbidden one.
+  const late = await sheetWitnessed({cell: refusedCheck(followRefused), keyAt: receipt => receipt + 10});
+  assert.deepEqual([late.row.ok, late.result.verdict], [false, 'no-verdict']);
+  assert.match(late.row.invalid, /^the witness does not show the probe's key reaching the Electron fixture before the engine received the opening \(its first key 10 ms after the receipt\)$/);
+  const unseen = await sheetWitnessed({cell: refusedCheck(followRefused), keyAt: null});
+  assert.match(unseen.row.invalid, /\(the probe's key was not seen on the Electron fixture's pid\)$/);
+});
+
+test('the sheet variant (ruling 1238): cua acting is judged only with the tap\'s proof; a key outside [act − lead, act end], or no witness off a hosted runner, leaves it invalid', async () => {
+  const late = await sheetWitnessed({keyAt: receipt => receipt + 5});
+  assert.match(late.row.invalid, /^the witness does not show the probe's key reaching the Electron fixture before the engine received the opening/);
+  assert.equal(late.row.interference, undefined, 'nothing judged it');
+  const early = await sheetWitnessed({keyAt: (receipt, act) => act.at - SHEET_PROBE_BEFORE_MS - 1});
+  assert.match(early.row.invalid, /\(its first key 1 ms before the act's window \[act − lead, act end\]\)$/);
+  const off = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells()});
+  assert.match(rowOf(off.result, SHEET).invalid, /witness tap.*off a GitHub-hosted runner/);
+  assert.equal(off.result.verdict, 'no-verdict');
+});
+
+test('the sheet variant (ruling 1238): the vendor is judged by its own declared answer, against its opening\'s call time', async () => {
+  const vendorOpening = c => ({...opening(c), _meta: {'cua/inputRoute': "2'"}});
+  const vendorFollow = c => ({...followUp(c), _meta: {}});
+  const acts = await sheetWitnessed({engine: 'vendor', cell: sheetCells({open: vendorOpening, follow: vendorFollow})});
+  assert.deepEqual([acts.row.engine, acts.row.ok, acts.row.invalid, acts.row.outcome.answer, acts.row.outcome.receivedAt], ['vendor', true, undefined, 'act', null], JSON.stringify(acts.row.outcome));
+  assert.equal(acts.row.outcome.witness.keyAt, acts.row.outcome.callAt - 300);
+  const refuses = await sheetWitnessed({engine: 'vendor', cell: c => (tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false}
+    : sheetCells({open: vendorOpening, follow: c2 => ({...followUp(c2, {over: refusing(STILL_INTERACTING)}), _meta: {}})})(c))});
+  assert.deepEqual([refuses.row.ok, refuses.row.invalid, refuses.row.outcome.answer], [false, undefined, 'refuse']);
+  assert.ok(refuses.row.outcome.findings.some(f => /^the vendor refused though the probe's key reached the Electron fixture, another app, \d+ ms before its opening was called \(expected: act\)$/.test(f)), refuses.row.outcome.findings?.join('; '));
+});
+
+test('the sheet variant (ruling 1238): a probe that printed its post after the opening\'s receipt is retried at the same lead; a follow-up received past the debounce is invalid', async () => {
+  const calls = [];
+  let n = 0;
+  // The first opening's receipt before the probe's time: its printed post came after it.
+  const run = await sheetWitnessed({calls, cell: sheetCells({open: c => opening(c, {receipt: ++n === 1 ? -SHEET_PROBE_BEFORE_MS - 5 : 40})})});
+  assert.deepEqual([run.row.attempts, run.row.ok, run.row.invalid], [2, true, undefined], JSON.stringify(run.row.outcome));
+  assert.match(run.row.outcome.retries[0], /^the probe posted 5 ms after the engine received the opening$/);
+  const opens = calls.filter(c => tagOf(c.code) === 'sheet.open').map(c => atOf(c.code));
+  assert.equal(opens.length, 2);
+  assert.equal(run.row.outcome.callAt - run.row.outcome.postedAt, SHEET_PROBE_BEFORE_MS, 'the retry kept the lead, never re-aimed');
+  const late = await sheetWitnessed({cell: sheetCells({follow: c => followUp(c, {receipt: 6_000})})});
+  assert.match(late.row.invalid, /past the 5000 ms debounce/);
 });
 
 // TextEdit's untitled document placed above the user window once `from` (a cell tag) is sent, until TextEdit is
@@ -258,14 +332,12 @@ test('the sheet variant\'s cleanup after the probe ran waits the debounce out fi
 
 test('the sheet variant\'s oracle: a transient focus steal during the opening action, or an unaccepted route 4 on either action, fails its interference', async () => {
   const calls = [];
-  const stolen = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: sheetCells(),
+  const stolen = await sheetWitnessed({calls,
     ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true, at: calls.find(c => tagOf(c.code) === 'sheet.open').at[0] + 1}]}))});
-  const row = rowOf(stolen.result, SHEET);
-  assert.deepEqual([row.ok, row.interference.ok, row.interference.activations], [true, false, 1]);
-  const route4 = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {route: 4})})});
-  const r4 = rowOf(route4.result, SHEET);
-  assert.deepEqual([r4.interference.ok, r4.interference.route4], [false, true]);
-  assert.deepEqual(r4.inputRoutes, {opening: "2'", followUp: 4});
+  assert.deepEqual([stolen.row.ok, stolen.row.interference.ok, stolen.row.interference.activations], [true, false, 1]);
+  const route4 = await sheetWitnessed({cell: sheetCells({follow: c => followUp(c, {route: 4})})});
+  assert.deepEqual([route4.row.interference.ok, route4.row.interference.route4], [false, true]);
+  assert.deepEqual(route4.row.inputRoutes, {opening: "2'", followUp: 4});
 });
 
 test('without the Latin source read back, the probe cells are invalid and nothing is posted; the source is restored all the same', async () => {

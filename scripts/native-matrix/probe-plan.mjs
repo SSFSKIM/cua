@@ -36,8 +36,24 @@ export const CONCURRENT_TYPING = Object.freeze({chrome: LONG_TEXT, finder: FINDE
 export const PRE_MS = Object.freeze({chrome: 400, finder: 120, textedit: 400});
 // The pre-action refusal's call, this long after the post's time: well inside the debounce, after the post.
 export const PRE_ACTION_DELAY_MS = 150;
-// The sheet variant: super+w this long before the post, its follow-up click no earlier than this long after it.
-export const SHEET_PRE_MS = 100, SHEET_FOLLOW_MS = 300;
+// The sheet variant (ruling 1238 (b)): the probe's keystroke this long BEFORE super+w is called, on both lanes alike
+// and never re-aimed, as #212's save sheet arms it (ruling 1228). C's records set it: the probe posts 39–248 ms after its
+// time (the save sheet's, both lanes, 45468052791 and 46052931439) and super+w's own interval is 2–90 ms, so a post
+// inside it was a race no lead won (6 of 6 samples invalid); 400 ms puts the key before the opening's receipt with
+// 150 ms to spare, while C's slowest follow-up (about 4.1 s after its opening) still comes inside the 5 s debounce
+// (Intervention.swift interventionDebounceMs) from the post, where a refusal would show.
+export const SHEET_PROBE_BEFORE_MS = 400;
+// Its follow-up click no earlier than this long after super+w's time: the gap the cell always had (100 + 300 ms).
+export const SHEET_FOLLOW_MS = 400;
+// The sheet variant's declared answers (ruling 1238), fixed before any run so the judge never learns them from a
+// result: both engines act. The person types into the Electron fixture while the engine drives TextEdit. cua attributes
+// each event to the app whose window is under it, else its target pid (Intervention.swift attributedPid), and its guard
+// reads only the driven app's processes (interventionGuard: ledger.lastEvent(among: interventionProcesses[app.key])); its
+// design says the user typing or clicking in their own window never counts, and names this variant the case the rule
+// must not fire on (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, User intervention and part 5). The
+// vendor's tap attributes per app the same way (R/F-helper-logic.md §9.3), and C's records show it acting on every
+// attempt. The concurrent@textedit cells expect the same: the driven typing lands with the person's.
+export const SHEET_EXPECTED = Object.freeze({cua: 'act', vendor: 'act'});
 // The engine's userIntervened sentences (native/engine/Sources/Engine/Intervention.swift), the app string elided. An
 // engine error reaches a cell as a plain Error (the REPL's boundary, src/repl-host/trusted-worker.mjs), its name
 // 'Error', so a refusal is told by its message alone: the vendor's envelope with userIntervened's code (−10016), then
@@ -68,6 +84,18 @@ export function postValidity(postedAt, interval) {
   if (!interval) return 'the action reported no interval (nothing was posted, or the engine reported none)';
   if (postedAt < interval.from) return `the probe posted ${interval.from - postedAt} ms before the action's interval`;
   if (postedAt > interval.to) return `the probe posted ${postedAt - interval.to} ms after the action's interval`;
+  return null;
+}
+
+// The sheet variant's validity from the probe's own answer, before R3's witness decides (ruling 1238): a post time, the
+// opening's interval, and the post before the opening's receipt (cua's own clock; the vendor reports none, so its cell's
+// call time, which comes before the vendor can receive it). -> null or why not.
+export function preArmValidity({engine, postedAt, interval, receivedAt = null, callAt = null}) {
+  if (!Number.isFinite(postedAt)) return 'the probe printed no post time';
+  if (!interval) return 'the action reported no interval (nothing was posted, or the engine reported none)';
+  const at = engine === 'cua' ? receivedAt : callAt;
+  if (!Number.isFinite(at)) return engine === 'cua' ? 'the opening carried no cua/receivedAt' : 'the cell recorded no call time';
+  if (postedAt >= at) return `the probe posted ${postedAt - at} ms after ${engine === 'cua' ? 'the engine received the opening' : 'the opening was called'}`;
   return null;
 }
 

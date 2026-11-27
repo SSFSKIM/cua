@@ -205,7 +205,7 @@ function c4TextEdit(calls, {frontmost = false, aux = false, holdAfter = null, sh
 const acted = c => {
   const at = Number(/const __at = (\d+)/.exec(c)?.[1]);
   return {actMs: 120, callAt: at, endAt: at + 200, late: 0, threw: false, errorName: null, message: null,
-    _meta: {'cua/inputRoute': "2'", 'cua/actionInterval': {startedAt: at + 50, endedAt: at + 150}}};
+    _meta: {'cua/inputRoute': "2'", 'cua/receivedAt': at + 40, 'cua/actionInterval': {startedAt: at + 50, endedAt: at + 150}}};
 };
 // The follow-up click refused by the engine, so the sheet stays up for the cleanup and the reset (C-4's order).
 const refusedFollow = c => {

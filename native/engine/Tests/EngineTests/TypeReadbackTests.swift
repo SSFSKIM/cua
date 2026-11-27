@@ -53,6 +53,23 @@ final class FakeField {
   private var shown: String?
   private var lagLeft = 0
   private var valueReads = 0
+  /// #590: reads that fail (answer nothing, `failError` their AXError), by attribute ("role", "subrole", "value",
+  /// "range"): the next this many before anything is typed, and the next this many once typed into; `Int.max` for ever.
+  var failing: [String: Int] = [:]
+  var failingAfterTyping: [String: Int] = [:]
+  var failError: Int32 = AXError.cannotComplete.rawValue
+  private(set) var lastError: Int32?
+
+  /// Whether this read of `name` fails, counting it off.
+  func fails(_ name: String) -> Bool {
+    let left = delivered ? failingAfterTyping[name, default: 0] : failing[name, default: 0]
+    guard left > 0 else { return false }
+    if left != .max {
+      if delivered { failingAfterTyping[name] = left - 1 } else { failing[name] = left - 1 }
+    }
+    lastError = failError
+    return true
+  }
 
   init(value: String?, range: NSRange?) {
     self.value = value
@@ -77,6 +94,7 @@ final class FakeField {
 
   func readValue() -> String? {
     calls.append("value")
+    if fails("value") { return nil }
     valueReads += 1
     if !delivered, !statesBeforeTyping.isEmpty { (value, range) = statesBeforeTyping.removeFirst(); shown = value }
     defer { if valueReads == changeAfterReads { change(self) } }
@@ -87,6 +105,7 @@ final class FakeField {
 
   func readRange() -> NSRange? {
     calls.append("range")
+    if fails("range") { return nil }
     rangeReads += 1
     if !delivered, !rangesBeforeTyping.isEmpty { range = rangesBeforeTyping.removeFirst() }
     defer { if rangeReads == changeAfterRangeReads { changeAtRange(self) } }
@@ -144,12 +163,13 @@ final class FakeApp {
     ReadbackReads(focused: { self.focused?.calls.append("focused"); return self.focused.map { .field($0, by: .focus) } },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  role: { $0.calls.append("role"); return $0.role },
-                  subrole: { $0.calls.append("subrole"); return $0.subrole },
+                  role: { $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
+                  subrole: { $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.readRange() },
                   batch: { field, _ in field.readLength() },
+                  lastError: { self.focused?.lastError },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
   }
@@ -315,8 +335,9 @@ final class TypeReadbackTests: XCTestCase {
     group.role = "AXGroup"
     group.subrole = .failed
     let (groupError, groupMeta) = type("pass", into: FakeApp(group))
-    XCTAssertEqual(groupError?.errorName, "typeUnconfirmed")
+    XCTAssertNil(groupError, "#587: no text field, typed with the note")
     XCTAssertEqual(record(groupMeta)["reason"] as? String, "notTextField")
+    XCTAssertEqual(groupMeta.note, readbackUnreadNote(.notTextField))
     XCTAssertEqual(group.calls, ["focused", "role", "subrole"], "a group: nothing read")
     // A plain field's success carries no note and no strength: the exact read-back.
     let plain = FakeField(value: "user", range: NSRange(location: 4, length: 0))
@@ -794,15 +815,18 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertNil(record(meta)["expectedLength"])
   }
 
-  func testANonTextRoleWithAStringValueIsUnconfirmed() {
+  /// #587: a non-text role is never read for its value, even with a string one (Chrome's canvas): typed, success with
+  /// the note, unconfirmed.
+  func testANonTextRoleWithAStringValueIsNeverRead() {
     for role in ["AXImage", "AXGroup", "AXOutline", "AXWebArea"] {
       let canvas = FakeField(value: "", range: NSRange(location: 0, length: 0))  // Chrome's canvas: an empty string value
       canvas.role = role
       let (error, meta) = type("abc", into: FakeApp(canvas))
-      XCTAssertEqual(error?.errorName, "typeUnconfirmed", role)
+      XCTAssertNil(error, role)
       XCTAssertEqual(record(meta)["reason"] as? String, "notTextField", role)
+      XCTAssertEqual(record(meta)["confirmed"] as? Bool, false, role)
       XCTAssertFalse(canvas.calls.contains("value"), "\(role): \(canvas.calls)")
-      XCTAssertTrue(error?.message.contains("the focused element is not a text field") ?? false, role)
+      XCTAssertEqual(meta.note, readbackUnreadNote(.notTextField), role)
     }
     for role in ["AXTextField", "AXTextArea", "AXComboBox"] {
       let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
@@ -811,8 +835,7 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  func testNoFocusAnUnreadableRoleValueOrRangeAreUnconfirmed() {
-    XCTAssertEqual(record(type("abc", into: FakeApp(nil)).1)["reason"] as? String, "noFocusedElement")
+  func testAnUnreadableRoleValueOrRangeAreUnconfirmed() {
     let roleless = FakeField(value: "x", range: NSRange(location: 0, length: 0))
     roleless.role = nil
     XCTAssertEqual(record(type("abc", into: FakeApp(roleless)).1)["reason"] as? String, "roleUnreadable")
@@ -827,6 +850,185 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["reason"] as? String, "rangeUnreadable")
     XCTAssertNil(record(meta)["stoppedBeforeKey"])
     XCTAssertEqual(meta.entered, 3, "every unit sent")
+  }
+
+  // MARK: No field to read back (#587)
+
+  /// The note's exact text, which the model reads in the tool result.
+  func testTheNotesText() {
+    XCTAssertEqual(readbackUnreadNote(.notTextField),
+                   "The text was typed, but the focused element is not a text field, so the text could not be read back to confirm it. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again.")
+    XCTAssertEqual(readbackUnreadNote(.noFocusedElement),
+                   "The text was typed, but no focused element could be found to read it back, so it is not confirmed. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again.")
+    for reason in [TypeReadbackReason.secure, .becameSecure, .noLongerSecure, .selectionChanged, .valueMismatch, .unchanged,
+                   .fieldChanged, .roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable] {
+      XCTAssertNil(readbackUnreadNote(reason), reason.rawValue)
+    }
+  }
+
+  /// Finder's type-select: a list, outline or table, or a row of one, holds focus. Every key is sent, the answer is a
+  /// success with the note, which reaches the result the service puts in the tool result's text, after the cut-off
+  /// notice and within its 500 characters; the record says it is unconfirmed and why, and nothing of the element is read
+  /// past its role. A Return or Tab in the text is sent with the rest, with no checkpoint.
+  func testANonTextFieldAnswersSuccessWithTheNote() {
+    for role in ["AXOutline", "AXList", "AXTable", "AXRow"] {
+      let row = FakeField(value: nil, range: nil)
+      row.role = role
+      var posted = 0
+      var meta = meta()
+      XCTAssertNoThrow(try keyTextReadBack(units("Docu\tments"), concealed: false, reads: FakeApp(row).reads, checkSource: { _, _ in },
+                                           checkIntervention: {}, post: { if $0.kind == .down { posted += 1 }; return true }, pause: {}, meta: &meta),
+                       role)
+      XCTAssertEqual(posted, 10, "\(role): every key sent")
+      XCTAssertEqual(meta.entered, 10, role)
+      XCTAssertEqual(meta.note, readbackUnreadNote(.notTextField), role)
+      XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": false, "reason": "notTextField", "snapshotMs": 0.0, "pollMs": 0.0, "reads": 0] as NSDictionary, role)
+      XCTAssertEqual(row.calls, ["focused", "role", "subrole"], role)
+      meta.keyTargetCutOff = 4242
+      let result = keyInputResult(meta, note: meta.note, appPid: 4242, appName: "Finder")
+      let note = result["note"] as? String ?? ""
+      XCTAssertEqual(note, keyTargetCutOffNotice(destination: "Finder") + " " + readbackUnreadNote(.notTextField)!, role)
+      XCTAssertLessThanOrEqual(note.count, 500, "the service's limit cuts nothing")
+    }
+    // A secret typed into one: the same success, nothing read.
+    let row = FakeField(value: nil, range: nil)
+    row.role = "AXOutline"
+    let (error, meta) = type("s3cret", into: FakeApp(row), concealed: true)
+    XCTAssertNil(error)
+    XCTAssertEqual(meta.note, readbackUnreadNote(.notTextField))
+    XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": false, "reason": "notTextField", "snapshotMs": 0.0, "concealed": true] as NSDictionary)
+  }
+
+  /// No focused element (the vendor posts to the app, and so does cua): typed, success with its note.
+  func testNoFocusedElementAnswersSuccessWithItsNote() {
+    for concealed in [false, true] {
+      let (error, meta) = type("abc", into: FakeApp(nil), concealed: concealed)
+      XCTAssertNil(error, "concealed \(concealed)")
+      XCTAssertEqual(record(meta)["reason"] as? String, "noFocusedElement")
+      XCTAssertEqual(record(meta)["confirmed"] as? Bool, false)
+      XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement))
+    }
+  }
+
+  /// What stays `typeUnconfirmed`, with no note: a text field that reads otherwise, and a password field's reasons.
+  func testATextFieldsMismatchAndAPasswordFieldsReasonsStillThrow() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.transform = { $0.uppercased() }
+    let (mismatch, mismatchMeta) = type("abc", into: FakeApp(field))
+    XCTAssertEqual(mismatch?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(mismatchMeta)["reason"] as? String, "valueMismatch")
+    XCTAssertNil(mismatchMeta.note)
+
+    let secure = FakeField(value: "x", range: NSRange(location: 1, length: 0))
+    secure.role = "AXStaticText"
+    secure.subrole = .value("AXSecureTextField")
+    let turning = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    turning.lagReads = 5
+    turning.changeAfterReads = 2
+    turning.change = { $0.subrole = .value("AXSecureTextField") }
+    // A field the lookup took for a password field whose own role and subrole read as none.
+    let shown = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    shown.role = "AXTextField"
+    var claimed = FakeApp(shown).reads
+    claimed.focused = { .field(shown, by: .walk, password: true) }
+    for (name, reads, reason) in [("secure", FakeApp(secure).reads, "secure"), ("becameSecure", FakeApp(turning).reads, "becameSecure"),
+                                  ("noLongerSecure", claimed, "noLongerSecure")] {
+      var meta = meta()
+      XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+                                               post: { _ in true }, pause: {}, meta: &meta), name) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "typeUnconfirmed", name)
+      }
+      XCTAssertEqual(record(meta)["reason"] as? String, reason, name)
+      XCTAssertNil(meta.note, name)
+    }
+  }
+
+  // MARK: A read that failed (#590)
+
+  /// A read that fails once and then answers is read again and confirms, in the snapshot (role, value, range) and in
+  /// the poll after the keys (role, subrole, value); the record counts it, and carries no failure.
+  func testAReadThatFailsOnceIsReadAgainAndConfirms() {
+    for (phase, name) in [("snapshot", "role"), ("snapshot", "value"), ("snapshot", "range"),
+                          ("poll", "role"), ("poll", "subrole"), ("poll", "value")] {
+      let label = "\(phase) \(name)"
+      let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+      if phase == "snapshot" { field.failing[name] = 1 } else { field.failingAfterTyping[name] = 1 }
+      let app = FakeApp(field)
+      let (error, meta) = type("c", into: app)
+      XCTAssertNil(error, label)
+      XCTAssertEqual(field.value, "abc", label)
+      XCTAssertEqual(record(meta)["confirmed"] as? Bool, true, label)
+      XCTAssertEqual(record(meta)["readsRetried"] as? Int, 1, label)
+      XCTAssertNil(record(meta)["readFailure"], label)
+      // The poll's value read is read again at the poll's own interval, as before; the others after the retry's.
+      XCTAssertEqual(app.clock, phase == "poll" && name == "value" ? typeReadbackPollIntervalMs : typeReadbackRetryIntervalMs, label)
+    }
+  }
+
+  /// A read that keeps failing is `typeUnconfirmed` once its retries are spent, as before, and its record says which:
+  /// its phase, attribute, AXError, retries, the time after the last key (a poll's), and the role and subrole as read.
+  func testAReadThatKeepsFailingIsUnconfirmedWithItsRecord() {
+    let cases: [(phase: String, name: String, reason: String, expect: [String: Any])] = [
+      ("snapshot", "role", "roleUnreadable", ["phase": "snapshot", "read": "role", "axError": -25204, "retries": 2]),
+      ("snapshot", "value", "valueUnreadable", ["phase": "snapshot", "read": "value", "axError": -25204, "retries": 2, "role": "AXTextArea"]),
+      ("snapshot", "range", "rangeUnreadable", ["phase": "snapshot", "read": "range", "axError": -25204, "retries": 2, "role": "AXTextArea"]),
+      ("poll", "role", "fieldUnreadable", ["phase": "poll", "read": "role", "axError": -25204, "retries": 2, "msSinceLastKey": 30.0]),
+      ("poll", "subrole", "fieldUnreadable", ["phase": "poll", "read": "subrole", "axError": -25204, "retries": 2, "msSinceLastKey": 30.0,
+                                              "role": "AXTextArea", "subroleFailed": true]),
+      ("poll", "value", "valueUnreadable", ["phase": "poll", "read": "value", "axError": -25204, "retries": 200, "msSinceLastKey": 1_000.0,
+                                            "role": "AXTextArea"]),
+    ]
+    for (phase, name, reason, expect) in cases {
+      let label = "\(phase) \(name)"
+      let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+      field.subrole = .value("AXContentList")
+      if phase == "snapshot" { field.failing[name] = .max } else { field.failingAfterTyping[name] = .max }
+      let (error, meta) = type("c", into: FakeApp(field))
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
+      XCTAssertTrue(error?.message.contains("the field's text could not be read back") ?? false, label)
+      XCTAssertEqual(record(meta)["reason"] as? String, reason, label)
+      var wanted = expect
+      if name != "subrole", wanted["role"] != nil { wanted["subrole"] = "AXContentList" }
+      XCTAssertEqual(record(meta)["readFailure"] as? NSDictionary, wanted as NSDictionary, label)
+      XCTAssertEqual(meta.entered, 1, "\(label): the text was sent")
+    }
+    // A concealed request's record names the read, never its retries or time.
+    let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    field.failingAfterTyping["role"] = .max
+    field.failError = AXError.failure.rawValue
+    let (error, meta) = type("secret", into: FakeApp(field), concealed: true)
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["readFailure"] as? NSDictionary, ["phase": "poll", "read": "role", "axError": -25200] as NSDictionary)
+    XCTAssertNil(record(meta)["readsRetried"])
+  }
+
+  /// Only a read that failed is read again: one that answered and disagreed is answered as before, a transient failure
+  /// beside it included, so a mismatch never becomes a success.
+  func testAMismatchAfterAFailedReadStillThrows() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.transform = { $0.uppercased() }
+    field.failing["value"] = 1
+    field.failingAfterTyping["role"] = 1
+    let (error, meta) = type("abc", into: FakeApp(field))
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "valueMismatch")
+    XCTAssertNil(record(meta)["readFailure"], "no read failed for good")
+    XCTAssertEqual(record(meta)["readsRetried"] as? Int, 2)
+  }
+
+  /// The snapshot's retries fit the request's time: with less left than a retry's interval and one messaging timeout,
+  /// a failed read is answered at once, as before.
+  func testTheSnapshotsRetryFitsTheRequestsTimeLeft() {
+    for (left, retries) in [(Double.infinity, 2), (typeReadbackRetryIntervalMs + typeReadbackMessagingTimeoutMs, 1),
+                            (typeReadbackRetryIntervalMs + typeReadbackMessagingTimeoutMs - 1, 0)] {
+      let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+      field.failing["value"] = .max
+      let app = FakeApp(field)
+      let readback = TypeReadback(units: units("c"), concealed: false, settle: false, reads: app.reads, remainingMs: { left })
+      XCTAssertEqual(readback.record.reason, .valueUnreadable, "\(left)")
+      XCTAssertEqual(readback.record.readFailure?.retries, retries, "\(left)")
+      XCTAssertEqual(app.clock, Double(retries) * typeReadbackRetryIntervalMs, "\(left)")
+    }
   }
 
   // MARK: Truncation

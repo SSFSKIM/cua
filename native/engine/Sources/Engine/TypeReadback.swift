@@ -20,6 +20,13 @@ import Foundation
 //   route found, #395, still reading AXFocused true itself: `readbackStillFocused`): success, `confirmed` in the
 //   meta. Anything else is `typeUnconfirmed`, never retried; only a mismatch on a field that stayed readable carries
 //   values, a bounded excerpt around the first difference (`readbackExcerpt`) and both lengths.
+// - A read that fails (#590, ruling 1225), in the snapshot or a poll, is read again a bounded number of times within
+//   the phase's time before its reason is answered (`ReadbackRetry`, TypeReadbackSettle.swift); a failure that stays
+//   names its read in the record (`readFailure`), never its value. A read that answered and disagreed is answered as
+//   before.
+// - No field to read back (#587, ruling 1219): a focused element that is not a text field, or no focused element, is
+//   typed into and answered as the vendor answers it, success, with a note that the text is not confirmed
+//   (`readbackUnreadNote`); its record says `confirmed: false` and why.
 // - Equality proves nothing when the expected value is the snapshot's own (the selection already held the typed text:
 //   the review of 9020bb18..dad56362, P1, #354's race itself, since a late select-all could still rewrite the field). Then
 //   the selected range must also read the caret past the insertion, {location + typed length, 0}, which differs from the
@@ -252,6 +259,10 @@ struct ReadbackReads<Element> {
   /// #414: one batched request of `names`, a password field's only read after its role and subrole
   /// (`readbackLengthAttributes`); nil when the request failed.
   var batch: (Element, [String]) -> AttributeRead? = { _, _ in nil }
+  /// #590: the AXError of the latest role, subrole, value or range read that answered nothing (its raw code; 0 for a
+  /// read that succeeded with a value of the wrong type), read straight after that read. Nil when not known (a fake
+  /// that does not say).
+  var lastError: () -> Int32? = { nil }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
 }
@@ -263,6 +274,8 @@ extension ReadbackReads where Element == AXUIElement {
     // Every read runs under its element's standard messaging timeout, `typeReadbackMessagingTimeout` (wave 8: no
     // timeout is shrunk, since a timed-out request keeps the app busy and the next one waits behind it).
     let ax = base
+    // #590: the error of the latest read of the field's role, subrole, value or range that answered nothing.
+    let failed = ReadbackErrorBox()
     func timed(_ element: AXUIElement) -> AXUIElement {
       AXUIElementSetMessagingTimeout(element, typeReadbackMessagingTimeout)
       return element
@@ -274,7 +287,8 @@ extension ReadbackReads where Element == AXUIElement {
     func asElement(_ raw: CFTypeRef) -> AXUIElement? { CFGetTypeID(raw) == AXUIElementGetTypeID() ? timed(raw as! AXUIElement) : nil }
     func element(_ of: AXUIElement, _ name: String) -> AXUIElement? { ax.copy(of, name).value.flatMap(asElement) }
     func string(_ of: AXUIElement, _ name: String) -> String? {
-      guard let raw = ax.copy(of, name).value, CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
+      let (raw, error) = ax.copy(of, name)
+      guard let raw, CFGetTypeID(raw) == CFStringGetTypeID() else { failed.last = error.rawValue; return nil }
       return (raw as! String)
     }
     let walk = ReadbackFocusWalk<AXUIElement>(children: { node in
@@ -305,12 +319,21 @@ extension ReadbackReads where Element == AXUIElement {
       }, isFocused: walk.isFocused, same: { CFEqual($0, $1) })
     }, role: { string($0, kAXRoleAttribute) }, subrole: { field in
       let (raw, error) = ax.copy(field, kAXSubroleAttribute)
-      return readbackSubrole(raw, error)
-    }, value: { string($0, kAXValueAttribute) }, valueUnits: { readbackValueUnits(ax.copy($0, kAXValueAttribute).value) }, range: { element in
-      guard let range = rangeWire(ax.copy(element, kAXSelectedTextRangeAttribute).value), let location = range["location"],
-            let length = range["length"] else { return nil }
+      let subrole = readbackSubrole(raw, error)
+      if subrole == .failed { failed.last = error.rawValue }
+      return subrole
+    }, value: { string($0, kAXValueAttribute) }, valueUnits: { field in
+      let (raw, error) = ax.copy(field, kAXValueAttribute)
+      guard let units = readbackValueUnits(raw) else { failed.last = error.rawValue; return nil }
+      return units
+    }, range: { element in
+      let (raw, error) = ax.copy(element, kAXSelectedTextRangeAttribute)
+      guard let range = rangeWire(raw), let location = range["location"], let length = range["length"] else {
+        failed.last = error.rawValue
+        return nil
+      }
       return NSRange(location: location, length: length)
-    }, batch: { ax.batch($0, $1) })
+    }, batch: { ax.batch($0, $1) }, lastError: { failed.last })
   }
 }
 
@@ -483,8 +506,12 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
 /// included, so nothing is typed (`readbackLengthSnapshot` says why); one whose own role and subrole now read as none (a
 /// page's show-password toggle in between) is refused `noLongerSecure`, as the poll refuses it, and nothing more is
 /// read: it may now show its text.
+///
+/// #590: `retry`, when given, reads again a role, value or range read that failed (`ReadbackRetry`), in the settle and the
+/// wait as well; the subrole read classifies the field and is read once, as before.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
-                               waited: inout RangeWait?, secure: inout Bool) -> ReadbackPlan<Element> {
+                               waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>? = nil) -> ReadbackPlan<Element> {
+  let retry = retry ?? ReadbackRetry(reads: reads, retries: 0)
   let field: Element, found: ReadbackLookup, classified: Bool
   switch reads.focused() {
   case nil: return .refused(.noFocusedElement)
@@ -495,8 +522,9 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     secure = true
     if case .selection? = baseline { return .refused(.selectionChanged) }
   }
-  guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
+  guard let role = retry.read(.role, { reads.role(field) }) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
+  retry.saw(subrole: subrole)
   if classified, !readbackPasswordField(role: role, subrole: subrole) { return .refused(.noLongerSecure) }
   if readbackSecure(role: role, subrole: subrole) {
     // #414: a password field is confirmed by its length; any other element closed is refused unread, as before.
@@ -514,19 +542,21 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     case .selection(let written): goal = .equals(written)
     }
     let wait = awaitRange(goal, read: {
-      if let why = readbackFieldClosed(field, role: role, reads: reads) { closed = why; return .closed }
+      if let why = retry.fieldClosed(field, role: role) { closed = why; return .closed }
       return reads.range(field).map { .sample($0) } ?? .unread
     }, now: reads.now, sleep: reads.sleep)
     waited = wait
     if let closed { return .refused(closed) }
     if case .selection = baseline, !wait.met { return .refused(.selectionChanged) }
   }
-  guard var before = reads.value(field) else { return .refused(.valueUnreadable) }
+  guard var before = retry.read(.value, { reads.value(field) }) else { return .refused(.valueUnreadable) }
   if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
-  guard var range = reads.range(field), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
+  guard var range = retry.read(.range, { reads.range(field) }), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
   if var settled = settle {
     defer { settle = settled }
-    if let closed = readbackSettle(field, role: role, reads: reads, before: &before, range: &range, record: &settled) { return .refused(closed) }
+    if let closed = readbackSettle(field, role: role, reads: reads, before: &before, range: &range, record: &settled, retry: retry) {
+      return .refused(closed)
+    }
     if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
     guard readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
   }
@@ -537,10 +567,9 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
                  found: found)
 }
 
-/// Why a snapshotted field is read no further, its role and subrole read again: unreadable, secure, or another role.
-func readbackFieldClosed<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> TypeReadbackReason? {
-  guard let seenRole = reads.role(field) else { return .fieldUnreadable }
-  let subrole = reads.subrole(field)
+/// Why a snapshotted field is read no further, its role and subrole read again (`ReadbackRetry.fieldClosed`, which reads
+/// them, and `fieldUnreadable` when either cannot be read): its subrole unreadable, secure, or another role.
+func readbackFieldClosed(role: String, seenRole: String, subrole: ReadbackSubrole) -> TypeReadbackReason? {
   if case .failed = subrole { return .fieldUnreadable }
   if readbackSecure(role: seenRole, subrole: subrole) { return .becameSecure }
   if seenRole != role { return .fieldChanged }
@@ -575,18 +604,34 @@ struct ReadbackPoll: Equatable {
   var closed: TypeReadbackReason?
 }
 
+/// #590: `retry`, when given, reads again a role or subrole read that failed within the poll's budget
+/// (`ReadbackRetry.fieldClosed`), and keeps the record of a poll that ended on a value read that failed, which the poll
+/// itself reads again every interval, as before.
 func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, budgetMs: Double = typeReadbackBudgetMs,
-                           compare: (Element) -> ReadbackRead) -> ReadbackPoll {
+                           retry: ReadbackRetry<Element>? = nil, compare: (Element) -> ReadbackRead) -> ReadbackPoll {
+  let retry = retry ?? ReadbackRetry(reads: reads, retries: 0)
   var poll = ReadbackPoll()
   let started = reads.now()
+  retry.phase = .poll
+  retry.retryBy = started + budgetMs
+  var unreadable = 0  // the value reads in a row that failed, and the error of the last
+  var unreadError: Int32?
   repeat {
-    if let closed = readbackFieldClosed(field, role: role, reads: reads) { return ReadbackPoll(reads: poll.reads, closed: closed) }
+    if let closed = retry.fieldClosed(field, role: role) { return ReadbackPoll(reads: poll.reads, closed: closed) }
     poll.reads += 1
     poll.last = compare(field)
+    if poll.last == .unreadable {
+      unreadable += 1
+      unreadError = reads.lastError()
+    } else if unreadable > 0 {
+      retry.answeredAfterFailing()
+      unreadable = 0
+    }
     if poll.last == .equal { poll.matched = true; break }
     if reads.now() - started >= budgetMs { break }
     reads.sleep(typeReadbackPollIntervalMs)
   } while true
+  if unreadable > 0 { retry.failed(.value, error: unreadError, retries: unreadable - 1) }
   return poll
 }
 
@@ -654,6 +699,11 @@ struct TypeReadbackRecord: Equatable {
   /// request of keys alone (a Tab, a Return in a single-line field) makes none: it is confirmed as a plain field's
   /// keys-only request is, its keys unconfirmed. Never on the wire itself.
   var lengthConfirmed = false
+  /// #590: the read whose failure the reason answers (`ReadbackReadFailure`), on a reason a failed read gives
+  /// (`typeReadbackFailedReadReasons`); a concealed request's and a password field's without its retries and time.
+  var readFailure: ReadbackReadFailure?
+  /// #590: reads that failed and then answered, a plain request's on a plain field.
+  var readsRetried = 0
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["confirmed": confirmed, "snapshotMs": (snapshotMs * 10).rounded() / 10]
@@ -665,12 +715,14 @@ struct TypeReadbackRecord: Equatable {
       if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = concealed ? true as Any : keysUnconfirmed as Any }
       if !concealed, checkpoints > 0 { wire["checkpoints"] = checkpoints }
       if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
+      if let readFailure { wire["readFailure"] = readFailure.wire(timed: false) }
       return wire
     }
     if concealed {
       wire["concealed"] = true
       if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = true }
       if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
+      if let readFailure { wire["readFailure"] = readFailure.wire(timed: false) }
       return wire
     }
     wire["pollMs"] = (pollMs * 10).rounded() / 10
@@ -689,6 +741,8 @@ struct TypeReadbackRecord: Equatable {
       wait["for"] = baseline == .stable ? "stable" : "selection"
       wire["baselineWait"] = wait
     }
+    if let readFailure { wire["readFailure"] = readFailure.wire(timed: true) }
+    if readsRetried > 0 { wire["readsRetried"] = readsRetried }
     return wire
   }
 }
@@ -705,6 +759,8 @@ final class TypeReadback<Element> {
   /// The request's time left, in ms (#361: the paste route's; the keyed route's is unbounded): every poll's budget is
   /// the lesser of `typeReadbackBudgetMs` and this, read when the poll starts.
   private let remainingMs: () -> Double
+  /// #590: the retries of failed reads, the snapshot's and every poll's, and what they found.
+  private let retry: ReadbackRetry<Element>
   private(set) var record = TypeReadbackRecord()
 
   init(units: [TypedUnit], concealed: Bool, settle: Bool, baseline: BaselineWait? = nil, reads: ReadbackReads<Element>,
@@ -715,10 +771,14 @@ final class TypeReadback<Element> {
     self.remainingMs = remainingMs
     record.concealed = concealed
     let started = reads.now()
+    let retry = ReadbackRetry(reads: reads)
+    // The snapshot's retries leave a messaging timeout of the request's time for the keys (#590).
+    retry.retryBy = started + max(0, remainingMs()) - typeReadbackMessagingTimeoutMs
+    self.retry = retry
     var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
     var waited: RangeWait?
     var secure = false
-    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited, secure: &secure)
+    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited, secure: &secure, retry: retry)
     record.secure = secure
     record.snapshotMs = reads.now() - started
     record.baseline = baseline
@@ -726,7 +786,17 @@ final class TypeReadback<Element> {
     record.settleReads = settled?.reads ?? 0
     record.settleCapped = settled?.capped ?? false
     if case .refused(let reason) = plan { record.reason = reason }
+    keepRetries()
   }
+
+  /// #590: the retries' record: the failure a failed read's reason answers, and the reads that answered again.
+  private func keepRetries() {
+    record.readFailure = record.reason.map(typeReadbackFailedReadReasons.contains) == true ? retry.failure : nil
+    record.readsRetried = record.secure || concealed ? 0 : retry.recovered
+  }
+
+  /// When a key event of the text was posted, on the reads' clock: a failed read after it says how long after (#590).
+  func keyPosted(at time: Double) { retry.lastKeyAt = time }
 
   /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back. Never inside a
   /// `{{secret:…}}` substitution (the design session's ruling 1ea561bc:593, on the review of af1860ef..a8e55870, P2):
@@ -762,12 +832,25 @@ final class TypeReadback<Element> {
   /// this, #354's path.
   func finish(postedAt: Double? = nil) throws {
     let cutoff = min((postedAt ?? reads.now()) + typeReadbackBudgetMs, reads.now() + max(0, remainingMs()))
-    guard plan.expects else { throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure) }
+    guard plan.expects else {
+      // #587: no field to read, as the vendor answers it: success with `readbackUnreadNote`, unconfirmed.
+      if let reason = record.reason, readbackUnreadNote(reason) != nil { return }
+      throw typeUnconfirmed(record.reason ?? .valueUnreadable, secure: record.secure)
+    }
     // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
     if unchecked || concealed { try confirm(through: units.count, beforeKey: false, cutoff: cutoff) }
     record.keysUnconfirmed = units.filter(leaves).count
     record.confirmed = true
     record.reason = nil
+    keepRetries()
+  }
+
+  /// A success's note, once `finish` answered: a password field's that a length confirmed (#414, ruling 833; keys
+  /// alone confirm none), or why there was no field to read back (#587).
+  var note: String? {
+    if record.secure, record.lengthConfirmed { return readbackLengthNote }
+    if !record.confirmed, let reason = record.reason { return readbackUnreadNote(reason) }
+    return nil
   }
 
   /// Whether a unit's key can leave the field or submit it: any keyed control character but a Return in a field that
@@ -951,7 +1034,7 @@ final class TypeReadback<Element> {
       // and waits do not tell whether a secret matches a selection the caller chose.
       let inserted = expected.count - (value.count - range.length)
       let valueUnits = reads.valueUnits
-      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs()) { element in
+      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs(), retry: retry) { element in
         let seenWith = caretSeenWith
         caretSeenWith = nil
         guard var read = valueUnits(element) else { return .unreadable }
@@ -982,7 +1065,7 @@ final class TypeReadback<Element> {
         record.placeholderCaretUnread = caret == nil
         return .equalUnconsumed
       }
-      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs()) { element in
+      poll = readbackPoll(field, role: role, reads: reads, budgetMs: budgetMs(), retry: retry) { element in
         let seenWith = caretSeenWith
         caretSeenWith = nil
         guard let read = value(element) else { return .unreadable }
@@ -1017,6 +1100,7 @@ final class TypeReadback<Element> {
   private func unconfirmed(_ reason: TypeReadbackReason, _ beforeKey: Bool, excerpt: ReadbackExcerpt? = nil) -> EngineError {
     record.reason = reason
     record.stoppedBeforeKey = beforeKey
+    keepRetries()
     return typeUnconfirmed(reason, excerpt: excerpt, beforeKey: beforeKey, secure: record.secure)
   }
 }
@@ -1047,14 +1131,35 @@ func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Boo
   try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,
               checkIntervention: checkIntervention, post: { event in
                 guard post(event) else { return false }
-                lastPost = reads.now()
+                let now = reads.now()
+                lastPost = now
+                readback.keyPosted(at: now)
                 return true
               }, pause: pause, meta: &meta)
   try readback.finish(postedAt: lastPost)
   // #414, ruling 833: a password field's success says what its length proves and what it cannot, once a length check
-  // confirmed; keys alone confirm none.
-  if readback.record.secure, readback.record.lengthConfirmed { meta.note = readbackLengthNote }
+  // confirmed; keys alone confirm none. #587: a success with no field to read back says so.
+  if let note = readback.note { meta.note = note }
 }
+
+/// #587 (ruling 1219): the reasons a type_text answers success with no read-back, as the vendor's engine answers every
+/// type_text once its keys are posted, and the note that success carries; nil for every other reason, which stays
+/// `typeUnconfirmed`. A focused element that is not a text field (Finder's type-select in a list, an outline or a
+/// canvas) has no text to read; with no focused element the vendor posts to the app (F §5.7: `targetForKeyboardEvent`
+/// answers the app's pid when `focusedUIElement` is nil, and `performKeyboardAction` posts without reading the element),
+/// and cua's keys go there too. A password field's reasons and `selectionChanged` (nothing typed) are never these.
+func readbackUnreadNote(_ reason: TypeReadbackReason) -> String? {
+  let why: String
+  switch reason {
+  case .notTextField: why = "the focused element is not a text field, so the text could not be read back to confirm it"
+  case .noFocusedElement: why = "no focused element could be found to read it back, so it is not confirmed"
+  default: return nil
+  }
+  return "The text was typed, but \(why). Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again."
+}
+
+/// #590: the reasons a failed read gives, whose record names that read (`TypeReadbackRecord.readFailure`).
+let typeReadbackFailedReadReasons: Set<TypeReadbackReason> = [.roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable]
 
 /// The text the excerpt shows the model: quoted, with its newlines, tabs, quotes and other control characters escaped.
 func readbackQuoted(_ text: String) -> String {

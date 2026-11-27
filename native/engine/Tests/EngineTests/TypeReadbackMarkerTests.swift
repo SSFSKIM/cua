@@ -637,8 +637,9 @@ final class TypeReadbackMarkerTests: XCTestCase {
       let safari = StubSafari()
       setUp(safari)
       let (error, meta, _) = type("xyz", into: safari)
-      XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
+      XCTAssertNil(error, "\(name): #587, typed with the note")
       XCTAssertEqual(reason(meta), "noFocusedElement", name)
+      XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement), name)
       XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.valueReads)")
       XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }

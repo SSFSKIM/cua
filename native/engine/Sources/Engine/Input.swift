@@ -26,7 +26,8 @@ import Foundation
 // first mouse answers clickUnconfirmed after its events.
 // A type_text, keyed or pasted (#361, Paste.swift), reads the focused field back and answers `typeUnconfirmed` unless
 // it holds the text (#354, TypeReadback.swift, meta `typeReadback`), a password field by its length, its success with a
-// note (#414, TypeReadbackLength.swift); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
+// note (#414, TypeReadbackLength.swift); a focused element that is not a text field, or none, answers success with a
+// note that the text is not confirmed (#587); press_key answers once posted, its meta `keyEffect: "unconfirmed"`.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of

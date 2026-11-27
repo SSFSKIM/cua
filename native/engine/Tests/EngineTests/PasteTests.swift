@@ -1738,8 +1738,9 @@ extension PasteActivationTests {
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
+                             field given: FakeField? = nil, thrown: ((Error) -> Void)? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
-    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    let field = given ?? FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
     let post = system.post
     system.post = { event, pid in
@@ -1765,13 +1766,48 @@ extension PasteActivationTests {
     try before(engine, system)
     var meta = InputMeta(context)
     var entered = 0
-    if typed {
+    if typed, let thrown {
+      do { try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta) } catch { thrown(error) }
+    } else if typed {
       try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
-      XCTAssertEqual(meta.typeReadback?.confirmed, true, "read back")
+      if given == nil { XCTAssertEqual(meta.typeReadback?.confirmed, true, "read back") }
     } else {
       try engine.pasteOperation([.content(plain(text), units: text.utf16.count)], pasteTarget, context, entered: &entered, meta: &meta)
     }
     return meta
+  }
+
+  /// #587 on the paste route (a background app's, whose source is not known): a focused element that is not a text field
+  /// is pasted into and answered as the keyed route answers it, success with the note, unconfirmed.
+  func testTypeTextsPasteRouteIntoANonTextFieldAnswersSuccessWithTheNote() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let pasteboard = TestPasteboard()
+    let row = FakeField(value: nil, range: nil)
+    row.role = "AXOutline"
+    let meta = try pasteToItsEnd("Documents", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 field: row)
+    XCTAssertEqual(meta.note, readbackUnreadNote(.notTextField))
+    XCTAssertEqual(meta.typeReadback?.reason, .notTextField)
+    XCTAssertEqual(meta.typeReadback?.confirmed, false)
+    XCTAssertEqual(meta.entered, 9)
+  }
+
+  /// #590 on the paste route: a read after the ⌘V that keeps failing is timed from that ⌘V, the paste's last key.
+  func testTypeTextsPasteRouteTimesAFailedReadFromItsLastKey() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.failingAfterTyping["role"] = .max
+    var error: Error?
+    let meta = try pasteToItsEnd("ab", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: TestPasteboard(),
+                                 field: field, thrown: { error = $0 })
+    XCTAssertEqual((error as? EngineError)?.errorName, "typeUnconfirmed")
+    let failure = try XCTUnwrap(meta.typeReadback?.readFailure)
+    XCTAssertEqual(failure.phase, .poll)
+    XCTAssertEqual(failure.read, .role)
+    XCTAssertEqual(failure.retries, typeReadbackReadRetries)
+    XCTAssertEqual(failure.msSinceLastKey, Double(typeReadbackReadRetries) * typeReadbackRetryIntervalMs, "timed from the ⌘V")
   }
 
   /// The paste's first ⌘V goes out through the delivery guard, inside the screen-update hold its activation left open:

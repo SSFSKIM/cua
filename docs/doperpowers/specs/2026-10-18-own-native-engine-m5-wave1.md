@@ -311,6 +311,27 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-27, ruling 1240: the owner's speed decision, accept. It settles the three ops that missed the 10% beat in the
+  base and were re-measured under 1232.
+  - electron/method.paste.replace and textedit/method.paste.replace pass on re-measurement, and count as passing.
+    - electron paste.replace: cua 77.5 against the vendor's 96.3 ms median, p95 133 against 238 (n = 30 a side).
+    - textedit paste.replace: cua 46.3 against 63 ms, p95 135.9 against 166.4.
+  - textedit/method.typeText.replace is an accepted miss, #593 (P3, parent #117, relates to #590).
+    - At n = 3 (the base): cua 289.3 against the vendor's 300.8 ms median, p95 304.6 against 319.5.
+    - At n = 30 (the re-measurement): cua 300.7 against 304.9 ms, p95 442 against 406.
+    - The flip report lists it as accepted and not blocking. A declaration citing 1240 and #593, the same plain kind as
+      the others, keeps it out of the speed verdict. rejudge-base reads the resulting change (owner-pending → accepted)
+      as explained by that citation, and it is part of 1239's approved difference list.
+  - The controls stay in the report: on 3 samples a side, margins moved by up to about 15 points between the base and
+    the re-measurement (electron pressKey.tab: −51.1% in the base, −34.5% on re-measurement).
+- 2026-11-27, ruling 1239: the base of a later filtered C run is rebuilt from the raw committed records with the current
+  combine, never from an already combined result.
+  - The layers, in order: 45468052791's records, then 46052931439's run jobs, then the new run jobs.
+  - rejudge-base compares the two-layer rebuild with the judgment recorded at c0b2ce8f1. It does so under one
+    fix-declaration naming ad285cedf and citing 1239, with the exact cells and report fields that may move. Any
+    difference outside that list stops the run.
+  - The list is computed locally on the committed records, and design approves it.
+  - The declaration is one plain entry, and its only check is that the differences are a subset of the list.
 - 2026-11-27, rulings 1234–1238 (the design session, after the first split dispatch).
   - **What happened.** Split run 46052931439 (at 313fbf534) ran its three run jobs to success. Its judge then refused
     at rejudge-base, because 1231's #592 rule moved the savePanel name timing row from no verdict to not judged, and

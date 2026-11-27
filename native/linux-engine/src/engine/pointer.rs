@@ -396,17 +396,49 @@ pub(super) fn unconfirmed_at_gate(
 /// What confirms a drag's drop at its release (`handle::confirming`: its drop window `confirm`, whether the window
 /// manager takes the activation request, the cursor an Electron source showed), after the hold's extension, and with
 /// `unconfirmed` ([`unconfirmed_at_gate`]) an activation-only drop becomes `Confirming::Outlasted`, answered unconfirmed
-/// with option (c)'s notice.
+/// with option (c)'s notice. Beside it, the cause that made it so, for the drop's `release_sync.unconfirmed`: None when
+/// the confirmation was not Chrome's activation request alone, which `unconfirmed` leaves as it was (#580).
 pub(super) fn drop_confirming(
     confirm: Option<Window>,
     supported: bool,
     cursor: Option<Option<bool>>,
     extended_take: bool,
     unconfirmed: Option<crate::release_sync::Unconfirm>,
-) -> super::handle::Confirming {
-    super::handle::confirming(confirm, supported, cursor)
-        .after_hold(extended_take)
-        .after_outlasted(unconfirmed.is_some())
+) -> (super::handle::Confirming, Option<crate::release_sync::Unconfirm>) {
+    let judged = super::handle::confirming(confirm, supported, cursor).after_hold(extended_take);
+    let applied = unconfirmed.filter(|_| matches!(judged, super::handle::Confirming::Activation(_)));
+    (judged.after_outlasted(applied.is_some()), applied)
+}
+
+/// The `release_sync` record (`--stats`) of a drop whose take was seen: how the gate decided (`read`), the step it ran
+/// (`synced`, past the path's end when it opened or the path overran, inside the floor otherwise), and where the path
+/// ended. Its `unconfirm_outlasted` is option (c)'s own word, as 0.4.4 recorded it: the gate open and option (c)'s
+/// switch (`unconfirm_outlasted`) on, whatever the tail dropped. Its `unconfirmed` is null here; it is named once the
+/// drop's confirmation is decided, and only on a drop that cause turned into `Confirming::Outlasted`
+/// ([`drop_confirming`], #580).
+pub(super) fn gate_record(
+    read: GateRead,
+    synced: Option<&crate::release_sync::Synced>,
+    (form, when): (crate::release_sync::Form, crate::release_sync::When),
+    unconfirm_outlasted: bool,
+) -> Value {
+    let mut record = match synced {
+        Some(synced) => synced.record(when),
+        None => json!({ "form": form.name(), "when": when.name() }),
+    };
+    record["open"] = json!(read.open);
+    record["keepalives"] = json!(read.keepalives);
+    record["last_step_spaced"] = json!(read.last_spaced);
+    if !read.open {
+        record["skipped_for"] = json!({ "keepalives": read.keepalives, "last_step_spaced": read.last_spaced });
+    }
+    // the tail's schedule as it ran (`release_sync::Schedule`): inside the floor, or after the path
+    record["in_floor"] = json!(synced.is_some_and(|s| matches!(s.schedule, crate::release_sync::Schedule::InFloor(_))));
+    record["unconfirm_outlasted"] = json!(read.open && unconfirm_outlasted);
+    record["unconfirmed"] = Value::Null;
+    record["overran"] = json!(read.overran);
+    record["last_step_after_take_ms"] = json!(read.last_step_after_take_ms);
+    record
 }
 
 /// Where a drop's path ended against its take and floor_until (`release_sync::overran`, #512, ruling 1142 (1)).
@@ -414,6 +446,28 @@ pub(super) fn drop_confirming(
 pub(super) struct PathEnd {
     pub(super) overran: bool,
     pub(super) last_step_after_take_ms: Option<f64>,
+}
+
+impl PathEnd {
+    /// Where a drop's path ended: when the server acknowledged its last step (`last_sent`) against the take (`taken`),
+    /// and whether that step overran floor_until, the take plus the floor's steps (`floor`: the steps' share of the
+    /// floor, None when no floor ran, as with `--drag-dnd-after-take-ms 0`). A drop with no floor overran none: its
+    /// tail runs after the path for want of a floor (`release_sync::Schedule::of`), and its record says so (#580).
+    pub(super) fn of(taken: Option<Instant>, last_sent: Option<Instant>, floor: Option<Duration>) -> PathEnd {
+        match (taken, last_sent) {
+            (Some(at), Some(sent)) => PathEnd {
+                overran: floor.is_some_and(|floor| crate::release_sync::overran(at, floor, sent)),
+                last_step_after_take_ms: Some(match sent.checked_duration_since(at) {
+                    Some(after) => after.as_secs_f64() * 1000.0,
+                    None => -(at - sent).as_secs_f64() * 1000.0,
+                }),
+            },
+            _ => PathEnd {
+                overran: false,
+                last_step_after_take_ms: None,
+            },
+        }
+    }
 }
 
 impl ReleaseSync<'_> {
@@ -910,19 +964,11 @@ fn drag_along(
         {
             let floor_end = taken.map(|(at, _)| at + after_take).filter(|_| !after_take.is_zero());
             // the path's last step against floor_until, the take plus the floor's steps (#512, ruling 1142 (1))
-            let path_end = match (taken, last_sent) {
-                (Some((at, _)), Some(sent)) => PathEnd {
-                    overran: crate::release_sync::overran(at, steps_floor, sent),
-                    last_step_after_take_ms: Some(match sent.checked_duration_since(at) {
-                        Some(after) => after.as_secs_f64() * 1000.0,
-                        None => -(at - sent).as_secs_f64() * 1000.0,
-                    }),
-                },
-                _ => PathEnd {
-                    overran: false,
-                    last_step_after_take_ms: None,
-                },
-            };
+            let path_end = PathEnd::of(
+                taken.map(|(at, _)| at),
+                last_sent,
+                (!after_take.is_zero()).then_some(steps_floor),
+            );
             sync.at_release(
                 x,
                 route,
@@ -1561,34 +1607,17 @@ impl Engine {
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
         }
-        // the outlasted gate's word on a drop whose take was seen (`--stats` `release_sync`): how it decided, the step it
-        // ran (past the path's end when it opened, inside the floor when it stayed shut), and whether option (c) answers
-        // the drop's activation unconfirmed
-        // and whether the drop is answered unconfirmed with option (c)'s notice: its tail dropped a visit (#512, ruling
-        // 1142 (2)), or option (c) is on and the gate opened
+        // whether the drop is answered unconfirmed with option (c)'s notice when Chrome's activation request is its only
+        // confirmation: its tail dropped a visit (#512, ruling 1142 (2)), or option (c) is on and the gate opened
         let unconfirmed = unconfirmed_at_gate(gate_read, self.cfg.dnd_unconfirm_outlasted, synced.as_ref());
-        let outlasted = unconfirmed.is_some();
+        // the outlasted gate's word on a drop whose take was seen (`--stats` `release_sync`)
         if let Some(read) = gate_read {
-            let mut record = match &synced {
-                Some(synced) => synced.record(sync_when),
-                None => json!({ "form": sync_form.name(), "when": sync_when.name() }),
-            };
-            record["open"] = json!(read.open);
-            record["keepalives"] = json!(read.keepalives);
-            record["last_step_spaced"] = json!(read.last_spaced);
-            if !read.open {
-                record["skipped_for"] = json!({ "keepalives": read.keepalives, "last_step_spaced": read.last_spaced });
-            }
-            // the tail's schedule as it ran (`release_sync::Schedule`): inside the floor, or after the path
-            record["in_floor"] = json!(
-                synced
-                    .as_ref()
-                    .is_some_and(|s| matches!(s.schedule, crate::release_sync::Schedule::InFloor(_)))
+            let record = gate_record(
+                read,
+                synced.as_ref(),
+                (sync_form, sync_when),
+                self.cfg.dnd_unconfirm_outlasted,
             );
-            record["unconfirm_outlasted"] = json!(outlasted);
-            record["unconfirmed"] = json!(unconfirmed.map(crate::release_sync::Unconfirm::name));
-            record["overran"] = json!(read.overran);
-            record["last_step_after_take_ms"] = json!(read.last_step_after_take_ms);
             self.extra.insert("release_sync".into(), record);
         }
         if let Some((press, release)) = wall {
@@ -1685,7 +1714,11 @@ impl Engine {
                     over_aware = Some(over);
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
-                let confirming = drop_confirming(confirm, supported, cursor, extended_take, unconfirmed);
+                let (confirming, unconfirmed) = drop_confirming(confirm, supported, cursor, extended_take, unconfirmed);
+                // the cause, on the record of a drop it answered unconfirmed (`gate_record`, #580)
+                if let (Some(cause), Some(record)) = (unconfirmed, self.extra.get_mut("release_sync")) {
+                    record["unconfirmed"] = json!(cause.name());
+                }
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
                 let settle_failed_activation = super::handle::activation_over_failed_settle(
                     confirming,
@@ -2318,7 +2351,7 @@ mod tests {
         let chrome = Some(18_874_370);
         let decide = |synced: &Synced| {
             let unconfirmed = unconfirmed_at_gate(Some(shut), false, Some(synced));
-            drop_confirming(chrome, true, None, false, unconfirmed)
+            drop_confirming(chrome, true, None, false, unconfirmed).0
         };
         let dropped = decide(&tail(1));
         assert_eq!(dropped, Confirming::Outlasted);
@@ -2343,9 +2376,116 @@ mod tests {
                 None,
                 false,
                 unconfirmed_at_gate(None, false, Some(&tail(1)))
-            ),
+            )
+            .0,
             Confirming::Activation(18_874_370)
         );
+    }
+
+    /// #580: a drop's record names a dropped visit's cause only where it turned the drop's confirmation into option
+    /// (c)'s unconfirmed answer, and `unconfirm_outlasted` is option (c)'s own gate and switch again. On a window manager
+    /// without `_NET_ACTIVE_WINDOW` a Chrome drop stays unjudged whatever its tail dropped, so no cause is named; with
+    /// option (c) off a dropped visit still answers an activation-only drop unconfirmed, and `unconfirm_outlasted`
+    /// stays false, the gate open or shut.
+    #[test]
+    fn a_dropped_visit_is_recorded_unconfirmed_only_where_it_turned_the_answer() {
+        use super::super::handle::Confirming;
+        use crate::release_sync::{Form, Schedule, Synced, Unconfirm, When};
+        let gate = |open: bool| GateRead {
+            open,
+            keepalives: 0,
+            last_spaced: !open,
+            overran: false,
+            last_step_after_take_ms: Some(320.0),
+        };
+        let tail = |visits_dropped| Synced {
+            form: Form::Tail,
+            schedule: Schedule::InFloor(Instant::now()),
+            motions: 4 - 2 * visits_dropped,
+            visits_dropped,
+            added: Duration::from_millis(24),
+            past_floor: Some(Duration::ZERO),
+        };
+        let chrome = Some(18_874_370);
+        // what the release decides of a Chrome drop over `chrome`, and what its record says of option (c) before the
+        // cause is named
+        let decide = |open: bool, option_c: bool, supported: bool, dropped: u32| {
+            let (read, synced) = (gate(open), tail(dropped));
+            let unconfirmed = unconfirmed_at_gate(Some(read), option_c, Some(&synced));
+            let record = gate_record(read, Some(&synced), (Form::Tail, When::Outlasted), option_c);
+            assert_eq!(record["unconfirmed"], Value::Null, "{record}");
+            let (confirming, cause) = drop_confirming(chrome, supported, None, false, unconfirmed);
+            (confirming, cause, record["unconfirm_outlasted"].clone())
+        };
+        let off = json!(false);
+        // a window manager without `_NET_ACTIVE_WINDOW`: unjudged, no cause, whatever the gate and option (c) say
+        for open in [false, true] {
+            assert_eq!(
+                decide(open, false, false, 1),
+                (Confirming::Unjudged, None, off.clone()),
+                "gate open {open}"
+            );
+        }
+        assert_eq!(
+            decide(true, true, false, 1),
+            (Confirming::Unjudged, None, json!(true)),
+            "option (c)'s own word, though it answered nothing"
+        );
+        // option (c) off with a dropped visit: the activation-only drop is answered unconfirmed for the visit, and
+        // option (c) did not answer it, the gate open or shut
+        for open in [false, true] {
+            assert_eq!(
+                decide(open, false, true, 1),
+                (Confirming::Outlasted, Some(Unconfirm::VisitDropped), off.clone()),
+                "gate open {open}"
+            );
+        }
+        // option (c) on and the gate open: its own answer, and its own cause when no visit dropped
+        assert_eq!(
+            decide(true, true, true, 0),
+            (Confirming::Outlasted, Some(Unconfirm::Outlasted), json!(true))
+        );
+        // nothing dropped and option (c) off: the activation confirms it, as in 0.4.4
+        assert_eq!(
+            decide(false, false, true, 0),
+            (Confirming::Activation(18_874_370), None, off)
+        );
+        // an Electron source's accept over a window that is not Chrome's confirms its drop: a dropped visit names no
+        // cause
+        let unconfirmed = unconfirmed_at_gate(Some(gate(false)), false, Some(&tail(1)));
+        assert_eq!(unconfirmed, Some(Unconfirm::VisitDropped));
+        assert_eq!(
+            drop_confirming(None, true, Some(Some(true)), false, unconfirmed),
+            (Confirming::Cursor(true), None)
+        );
+    }
+
+    /// #580: a floorless drag (`--drag-dnd-after-take-ms 0`, `cua:floor0`) overran no floor: its tail runs after the path
+    /// for want of one, and its last step is still recorded against the take. With a floor, the same step past
+    /// floor_until overran it, and one by it did not (#512).
+    #[test]
+    fn a_floorless_drag_overran_no_floor_and_still_records_its_last_step() {
+        use crate::release_sync::Schedule;
+        let ms = Duration::from_millis;
+        let taken = Instant::now();
+        let after = |end: PathEnd| end.last_step_after_take_ms.expect("a step after the press");
+        let floorless = PathEnd::of(Some(taken), Some(taken + ms(40)), None);
+        assert!(!floorless.overran, "{floorless:?}");
+        assert!((after(floorless) - 40.0).abs() < 1e-6, "{floorless:?}");
+        assert_eq!(Schedule::of(false, floorless.overran, None), Schedule::AfterPath);
+        // a last step before the take: before it, still recorded
+        let early = PathEnd::of(Some(taken + ms(15)), Some(taken), None);
+        assert!(!early.overran && (after(early) + 15.0).abs() < 1e-6, "{early:?}");
+        // a floor: past floor_until by any margin overran it, at it did not
+        assert!(PathEnd::of(Some(taken), Some(taken + ms(40)), Some(ms(39))).overran);
+        assert!(!PathEnd::of(Some(taken), Some(taken + ms(40)), Some(ms(40))).overran);
+        // no take, or no step: nothing to say
+        let none = PathEnd {
+            overran: false,
+            last_step_after_take_ms: None,
+        };
+        assert_eq!(PathEnd::of(None, Some(taken), Some(ms(40))), none);
+        assert_eq!(PathEnd::of(Some(taken), None, None), none);
     }
 
     #[test]

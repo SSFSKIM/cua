@@ -29,7 +29,7 @@ The hosted run was dispatched on `feat/171-m6b` with `commit` set to H and `olde
 | E0 | `cua install` at H in an empty home, under the fetch log and the trace | PASS | PASS | PASS |
 | E1 | the item 1 smoke and the item 6 witness, plain and traced | PASS | PASS | PASS |
 | E2 | the browser-only session, plain and traced, and the profile map's loader | PASS | PASS | PASS |
-| E3 | the vendor selected by the variable, by `engine.json` and by both, and a 0.4.4 override: each open, doctor and install refused | PASS | PASS | PASS |
+| E3 | the vendor selected by the variable, by `engine.json` and by both, and a 0.4.4 override: under each of the four, the open and doctor refused. Under `CUA_NATIVE_ENGINE=vendor`, a browser-only session passes and `cua install` places every part, then exits `engine_retired`; with the variable unset, a session opens | PASS | PASS | PASS |
 | U0 | the upgraded home before any install: the item 1 smoke traced, then the vendor selection | PASS | PASS | PASS |
 | U1 | doctor, plain and traced: E0's rows plus `runtime.retired`, `skip` | PASS | PASS | PASS |
 | U2 | `cua install` with two entries added to `runtimes/` | PASS | PASS | PASS |
@@ -111,11 +111,18 @@ checked that part's home: the pin's x64 bytes `ef714179…119a`, the attestation
 | fallback | the five homes, `SELECTION=default` | **PASS, 5 of 5.** Each was refused by doctor and by an open, for its own reason, ending with ``: run `node <H's checkout>/bin/cua.mjs install --engine` ``: none was `engine_not_installed`; previous (0.4.3), released (0.4.0) and older (0.3.0) were `engine_outdated`; unrecorded was `engine_unrecorded` | [fallback/](x64/regression/fallback/none.json) |
 | FB | below, on the fixture alone | **PASS** | below |
 
-The part logs are in [x64/regression/logs/](x64/regression/logs/r1.log), and the chain's own log is
-[x64/chain.log](x64/chain.log). The chain's first pass at 19:17 failed every regression and fixture phase at its start:
-`xprobe`, the harness's X client, had not been built in this new worktree. That was my setup, and it ran nothing (the
-logs are kept on the VM at `~/.local/share/cua-171/t173/setup-fail-1-logs/`). The client was built (`cargo build
---release`), and every phase then ran from 19:19.
+The part logs are in [x64/regression/logs/](x64/regression/logs/r1.log.txt). R1's log ends with `cleanup exit 0`. The
+chain's own log is [x64/chain.log.txt](x64/chain.log.txt). The logs end in `.log.txt` because the repository ignores
+`*.log`.
+
+The chain's first pass at 19:17 failed every regression and fixture phase at its start. `xprobe`, the harness's X
+client, had not been built in this new worktree. That was my setup, and it ran nothing: each phase stopped at its own
+precondition. Its logs are [x64/setup-fail-1/](x64/setup-fail-1/r1.log.txt):
+- `private-desktop` refused to start its watchdog;
+- the gate refused "the harness's X client is not built".
+
+`chain.log.txt` marks the end of that pass and the rerun after it. The client was built (`cargo build --release`), and
+every phase then ran from 19:19. Every counted result here is from that rerun.
 
 **#558's and #565's first counted runs** (§5.3) are these:
 
@@ -160,8 +167,8 @@ E1's speed verdict is reported here and not judged (§5.2). It passed in both ru
 
 | Run | Selection | Gates that ran | Result |
 |---|---|---|---|
-| `ci-gate 3722f2826…` | its own, by the changed files | harness-dbus, plugin, sandbox-live, engine-swift, parity-browser, **test-1**, **test-2**, sandbox-denials: all PASS | **GREEN**, [run 46052942014](https://github.com/SSFSKIM/cua/actions/runs/46052942014) ([log](ci-gate-default.log)) |
-| `ci-gate 3722f2826… --gates engine-linux` | by name (N8) | engine-linux: PASS in 10m45s | **GREEN**, [run 46056294731](https://github.com/SSFSKIM/cua/actions/runs/46056294731) ([log](ci-gate-engine-linux.log)) |
+| `ci-gate 3722f2826…` | its own, by the changed files | harness-dbus, plugin, sandbox-live, engine-swift, parity-browser, **test-1**, **test-2**, sandbox-denials: all PASS | **GREEN**, [run 46052942014](https://github.com/SSFSKIM/cua/actions/runs/46052942014) ([log](ci-gate-default.log.txt)) |
+| `ci-gate 3722f2826… --gates engine-linux` | by name (N8) | engine-linux: PASS in 10m45s | **GREEN**, [run 46056294731](https://github.com/SSFSKIM/cua/actions/runs/46056294731) ([log](ci-gate-engine-linux.log.txt)) |
 
 `engine-linux` ran by name and passed, so N8's fallback (citing #585's pass) is not needed. [credit.txt](credit.txt)
 §5 still records that `git diff 854103aa5..H` over the gate's three paths prints nothing.
@@ -244,9 +251,18 @@ and the tree stayed clean.
 ## Where the rest is
 
 - **Scripts.** [x64/scripts/](x64/scripts/t8.sh) holds every phase: `t8.sh` and `chain.sh`. It holds the evidence
-  collectors too: `credit.sh`, `credit-files.sh`, `witness.mjs`, `fx-witness.sh`, `collect.sh` and `prov-append.sh`.
-  It also holds `cites.mjs` and its output `cites.txt`: every path this README cites exists at H or in this commit,
-  but for task 165's directory, which exists at f18235d8e, and two case ids that are not paths.
+  collectors too: `credit.sh`, `credit-files.sh`, `witness.mjs`, `fx-witness.sh`, `collect.sh`, `prov-append.sh` and
+  `fw1-logs.sh`.
+- **`chain.sh`, as fixed in fix wave 1.** It now builds `xprobe` in its default sequence. It does not run the
+  regression or fixture phases without that build, and it exits nonzero when any phase fails or is skipped. The
+  counted run used the earlier version, with `xprobe` named in `STEPS` for the rerun.
+- **The citation check.** `cites.mjs` and its output `cites.txt` cover every path this README cites. The check reads
+  the README from a commit and looks for each path in that commit's tree, never in a working tree. `cites.txt` names
+  the commit it checked, and that commit is the one before the file's own.
+  - Two targets are not in that tree: task 165's directory, which exists at f18235d8e, and two case ids, which are not
+    paths.
+  - `cites-c9eb8cf79.txt` is its negative control. The first evidence commit misses four links, the logs that
+    `.gitignore`'s `*.log` kept out of it.
 - **Raw streams.** These stay on dc-linux171-1e68 under `~/.local/share/cua-171/t173/run/`: the strace files, the
   fetch logs, each fixture's own report, and E1's `results.jsonl` and `settle-counts.json`.
 - **The default home.** This VM's default home still holds its vendor tree (1216). No step here read it: every traced

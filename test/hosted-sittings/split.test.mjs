@@ -11,8 +11,9 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {createHash} from 'node:crypto';
-import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
+import {baseCheck, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
+import {parseCommand} from '../../scripts/native-matrix.mjs';
 
 const CTX = {commit: 'c'.repeat(40), out: '/w/out', approvedRuntime: '/Users/runner/Library/Application Support/cua',
   approvedEngine: '/Users/runner/Library/Application Support/cua/engine/cua Engine.app', runId: '9-1', olderNode: null, scratch: '/t', flipped: false, pilot: false};
@@ -65,6 +66,13 @@ test('the judge job checks the jobs, combines their records (a full run beneath)
     'a combine problem is the judges\' missing proof, never a skip; a base read differently stops them');
   const full = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null});
   assert.deepEqual(full.steps.map(s => s.id), ['jobs-check', 'combine', 'summary', 'compare', 'save-sheet', 'key-route']);
+  // The matrix CLI takes the judge's own summary and compare steps as the plan writes them: each over the one combined dir.
+  for (const id of ['summary', 'compare']) {
+    const argv = full.steps.find(s => s.id === id).argv;
+    assert.deepEqual(argv.slice(0, 2), ['node', 'scripts/native-matrix.mjs']);
+    const parsed = parseCommand(argv.slice(2));
+    assert.deepEqual([parsed.command, parsed.dirs], [id, [full.steps.find(s => s.id === 'combine').argv.at(-1)]], id);
+  }
   const sheet = full.steps.find(s => s.id === 'save-sheet');
   assert.deepEqual([sheet.argv.slice(2), sheet.check, sheet.needs], [['save-sheet-verdicts', '--jobs-file', '/w/out/jobs.json', '--runs', '1,2,3'], 'verdict', ['jobs-check']], 'every run asked, both lanes');
   assert.deepEqual(full.split, {judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null}, 'the plan carries its split, so the run command knows a run job from the judge');
@@ -231,7 +239,7 @@ function source({runs = [1, 2, 3], attempts = {}, over = {}} = {}) {
     jobs: runs.map(n => ({name: `split_run (${n})`, run_attempt: at(n), conclusion: 'success'})),
     artifacts: runs.map(n => ({name: `m5-sitting-c-run-${n}-${at(n)}`, expired: false, workflow_run: {id: Number(RUN_ID), head_sha: SHA}})),
     picked, pin: {runId: RUN_ID, attempt: '1', commit: SHA, repo: 'SSFSKIM/cua'},
-    inputs: {runs: [1, 2, 3], only: [SAVE_SHEET_CELL, ...PICKED_FILTER], speedExtra: true}, resolveFilter, diff: {clean: true, paths: ['native', 'src', 'package.json']}, judging: JUDGING, ...over,
+    inputs: {runs: [1, 2, 3], only: [SAVE_SHEET_CELL, ...PICKED_FILTER], speedExtra: true}, resolveFilter, diff: {clean: true}, judging: JUDGING, ...over,
   };
 }
 test('a judge-only dispatch: the source run, its artifacts, jobs and records checked against the pin and the dispatch\'s inputs', () => {
@@ -251,7 +259,9 @@ test('a judge-only dispatch: the source run, its artifacts, jobs and records che
   refused({run: {...base.run, status: 'in_progress'}}, /is in_progress, not completed/);
   refused({run: {...base.run, run_attempt: 2}}, /is at attempt 2, not the pinned 1/);
   refused({run: {...base.run, head_sha: 'b'.repeat(40)}}, /ran b{40}, not the pinned drawing commit/);
-  refused({diff: {clean: false, paths: ['native', 'src', 'package.json']}}, /the drawing commit and the judging commit differ under native, src or package\.json/);
+  // The harness the jobs ran: the engine and server sources and the package's own manifest and lock.
+  assert.deepEqual(HARNESS_PATHS, ['native', 'src', 'package.json', 'package-lock.json']);
+  refused({diff: {clean: false}}, /the drawing commit and the judging commit differ under native, src, package\.json or package-lock\.json/);
   refused({artifacts: base.artifacts.slice(1)}, /m5-sitting-c-run-1-1 is not among run 46052931439's artifacts/);
   refused({artifacts: base.artifacts.map((a, i) => (i ? a : {...a, workflow_run: {id: 1, head_sha: SHA}}))}, /m5-sitting-c-run-1-1 is run 1's artifact, not run 46052931439's/);
   refused({artifacts: base.artifacts.map((a, i) => (i ? a : {...a, workflow_run: {id: Number(RUN_ID), head_sha: 'c'.repeat(40)}}))}, /m5-sitting-c-run-1-1 was made at c{40}, not the pinned drawing commit/);

@@ -59,7 +59,7 @@ import {writeCellResult} from './native-matrix/cell-result.mjs';
 const SCRIPT = fileURLToPath(import.meta.url);
 export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
        native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] | cell --list
-       native-matrix.mjs compare <vendor-dir> <cua-dir> [--out <file>]
+       native-matrix.mjs compare <dir>... [--out <file>]   (<vendor-dir> <cua-dir>, or a combined dir)
        native-matrix.mjs summary <dir>... [--out <file>]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
@@ -103,8 +103,10 @@ export function parseCommand(argv) {
       if (!values.device) fail('--device is required');
       if (!values.out && !dryRun) fail('--out is required');
       return {command, name: rest[0], ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run'), scene: values.scene ?? null, user: values.user ?? null};
+    // The lanes' dirs (<vendor-dir> <cua-dir>), or one dir holding them, as combine writes it (its speed-extra records
+    // and combined.json beside the lanes): every result under them is judged, as summary judges them.
     case 'compare':
-      if (rest.length !== 2) fail('compare needs <vendor-dir> <cua-dir>');
+      if (!rest.length) fail('compare needs at least one directory (<vendor-dir> <cua-dir>, or a combined dir)');
       return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : null};
     case 'combine':
       if (!rest.length) fail('combine needs at least one directory');

@@ -64,7 +64,7 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
+import {baseCheck, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
 import {filteredPlan, scenesOf} from './native-matrix/run.mjs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -338,7 +338,7 @@ async function main(argv) {
       }
       const read = file => JSON.parse(readFileSync(join(resolve(values.source), file), 'utf8'));
       const pages = (file, key) => [read(file)].flat().flatMap(page => page[key] ?? []);
-      const diffed = spawnSync('git', ['diff', '--quiet', values.commit, 'HEAD', '--', 'native', 'src', 'package.json'], {cwd: REPO, encoding: 'utf8'});
+      const diffed = spawnSync('git', ['diff', '--quiet', values.commit, 'HEAD', '--', ...HARNESS_PATHS], {cwd: REPO, encoding: 'utf8'});
       const diff = {clean: diffed.status === 0, ...(diffed.status !== 0 && diffed.status !== 1 ? {error: (diffed.stderr || diffed.error?.message || 'git diff failed').trim()} : {})};
       const picked = values.jobs.split(',').filter(Boolean).map(d => ({name: basename(dirname(resolve(d))), results: jobDir(resolve(d)).results}));
       const check = sourceRunCheck({run: read('run.json'), jobs: pages('jobs.json', 'jobs'), artifacts: pages('artifacts.json', 'artifacts'), picked,

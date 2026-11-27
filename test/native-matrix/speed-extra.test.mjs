@@ -84,6 +84,22 @@ test('ruling 1232: the three missed ops are judged on the re-measurement alone, 
   assert.match(text, /^- \*\*Speed\*\*: \d+ of \d+ measured ops beat the vendor by at least 10% with p95 not worse; 3 pass on re-measurement \(the owner's, ruling 1232\); /m);
 });
 
+// The split judge's compare reads its one combined dir (../hosted-sittings/plan.mjs: `compare <out>/combined`): the
+// speed-extra records under it among the rest, as summary reads them.
+test('compare over one combined dir reads the speed-extra records beneath it: the three ops judged on their re-measurement', async () => {
+  const {main} = await import('../../scripts/native-matrix.mjs');
+  const dir = fs.mkdtempSync(join(tmpdir(), 'speed-extra-compare-'));
+  try {
+    for (let n = 1; n <= 3; n++) for (const engine of ['vendor', 'cua']) writeCellResult(join(dir, engine, `run-${n}`), full(engine, n, 40));
+    everyRun(100, 40).forEach(r => writeCellResult(join(dir, 'speed-extra', r.lanes[0].engine, `run-${r.meta.run}`), r));
+    const lines = [], out = join(dir, 'comparison.md');
+    await main(['compare', dir, '--out', out], {log: line => lines.push(line)});
+    assert.ok(lines.some(l => /^VERDICT: /.test(l)), lines.join('\n'));
+    for (const id of IDS) assert.ok(lines.some(l => l.startsWith(`  owner: speed: ${id} passes on re-measurement (`)), `${id}\n${lines.join('\n')}`);
+    assert.match(fs.readFileSync(out, 'utf8'), /passes on re-measurement/);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
 test('ruling 1232: a re-measured op is the owner\'s whatever its numbers', () => {
   const passed = judgedWith(everyRun(100, 40));
   for (const id of IDS) assert.ok(passed.owner.some(o => o.startsWith(`speed: ${id} passes on re-measurement (cua 40 ms against 100 ms, p95 40 against 100, n = 30 a side; the base's n = 3: cua 40 ms against 40 ms): the owner's whatever the numbers (ruling 1232)`)), `${id}\n${passed.owner.join('\n')}`);

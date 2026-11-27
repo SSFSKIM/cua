@@ -167,11 +167,14 @@ export const renderBaseRejudge = r => (r ? ['## The base re-judged (ruling 1230)
 // success, and its records name that run, that attempt and the drawing commit; the runs, filter and speed_extra this
 // dispatch gives are what the records ran (their meta.run, the matrix records' meta.filter as `resolveFilter` resolves
 // the dispatch's filter, the save-sheet and speed-extra records being there); and nothing under native/, src/ or
-// package.json differs between the drawing and the judging commit (`diff`, the caller's git diff). jobs-check still
+// package.json or package-lock.json differs between the drawing and the judging commit (`diff`, the caller's git diff
+// over HARNESS_PATHS). jobs-check still
 // applies as before. `run`, `jobs`, `artifacts`: the API's run, its jobs of every attempt, its artifacts; `picked`:
 // [{name, results}] the artifacts the judge took, by artifact name. -> {runId, attempt, workflow, drawing, judging,
 // picked: [{run, name, attempt}], compared, refused: [why]}.
 export const SOURCE_WORKFLOW = '.github/workflows/m5-sittings.yml';
+// The harness the run jobs ran, which a judge-only dispatch's judging commit must not change (the caller's git diff).
+export const HARNESS_PATHS = Object.freeze(['native', 'src', 'package.json', 'package-lock.json']);
 const RUN_ARTIFACT = /^m5-sitting-c-run-(\d+)-(\d+)$/;
 export function sourceRunCheck({run, jobs = [], artifacts = [], picked = [], pin, inputs, resolveFilter, diff, judging}) {
   const id = String(pin.runId), attempt = Number(pin.attempt), refused = [];
@@ -181,7 +184,7 @@ export function sourceRunCheck({run, jobs = [], artifacts = [], picked = [], pin
   if (run?.status !== 'completed') refused.push(`run ${id} is ${run?.status ?? 'unread'}, not completed`);
   if (Number(run?.run_attempt) !== attempt) refused.push(`run ${id} is at attempt ${run?.run_attempt ?? 'unread'}, not the pinned ${attempt}: an attempt other than the pinned one is not judged`);
   if (run?.head_sha !== pin.commit) refused.push(`run ${id} ran ${run?.head_sha ?? 'no commit'}, not the pinned drawing commit ${pin.commit}`);
-  if (!diff?.clean) refused.push(`the drawing commit and the judging commit differ under native, src or package.json${diff?.error ? ` (${diff.error})` : ''}: the jobs ran another harness than this judge reads`);
+  if (!diff?.clean) refused.push(`the drawing commit and the judging commit differ under ${HARNESS_PATHS.slice(0, -1).join(', ')} or ${HARNESS_PATHS.at(-1)}${diff?.error ? ` (${diff.error})` : ''}: the jobs ran another harness than this judge reads`);
   let want = null;
   const cells = inputs.only.filter(c => c !== SAVE_SHEET_CELL), wantSheet = !inputs.only.length || inputs.only.includes(SAVE_SHEET_CELL);
   if (cells.length) { try { want = [...resolveFilter(cells)].sort(); } catch (error) { refused.push(`this dispatch's filter does not resolve: ${error.message}`); } }

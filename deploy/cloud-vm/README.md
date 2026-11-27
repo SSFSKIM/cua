@@ -12,21 +12,24 @@ by hand (the README's "Linux" section; `docs/evidence/2026-10-06-linux-acceptanc
 |---|---|
 | `cloud-init.yaml` | The user-data template: writes the parameters and the provisioning script, runs it |
 | `render.sh` | Prints the user data with the parameters filled in, for any provider |
-| `cua-provision.sh` | Runs on the VM as root (`/usr/local/sbin/cua-provision.sh`); every step is idempotent, so running it again repairs or upgrades |
+| `cua-provision.sh` | Runs on the VM as root (`/usr/local/sbin/cua-provision.sh`); every step is idempotent, so running it again repairs the VM at its commit. It provisions only the commit whose own provisioner it is |
+| `update.sh` | Run from your checkout: upgrades a VM to one commit, binding the VM's provisioner, its `CUA_REF` and its checkout to it (see "Re-running and upgrading") |
 | `create-hetzner.sh` | The reference provider script: creates the server on Hetzner Cloud, waits, prints the doctor summary and the owner's checklist |
 
 ## Create one on Hetzner
 
 ```sh
-deploy/cloud-vm/create-hetzner.sh --name cua-vm                         # cx23 (x64) in nbg1; no deb needed
+deploy/cloud-vm/create-hetzner.sh --name cua-vm                         # cx23 (x64) in nbg1
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --arch arm64            # cax11
-deploy/cloud-vm/create-hetzner.sh --name cua-vm --deb pin               # also require OpenAI's deb, for the vendor engine
-deploy/cloud-vm/create-hetzner.sh --name cua-vm --deb ~/cua-mirror/chatgpt_26.928.40906_amd64.deb   # the same, from your copy
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --relay wss://<relay>/ws # also enrol it and run the agent
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --extension store        # cua's extension from the Chrome Web Store
 git bundle create /tmp/cua.bundle my-branch                              # an unpushed branch: upload it as a bundle
 deploy/cloud-vm/create-hetzner.sh --name cua-vm --ref my-branch --repo /tmp/cua.bundle
 ```
+
+Run the script from a checkout of the `--ref` the VM will provision: the VM's provisioner runs only as the provisioner
+of the commit it checks out (see "Re-running and upgrading"). There is no `--deb`: since cua 0.30.0 the VM installs no
+OpenAI package, and both scripts refuse the flag with one sentence.
 
 Other flags: `--type`, `--location` (Hetzner sometimes has no capacity for a type in a location: pick another, such as
 `fsn1`), `--ssh-key` (default `macbook`), `--user` (default `cua`), `--ref` (default `main`), `--repo` (default
@@ -40,8 +43,8 @@ URL installs from there but takes later versions from the packer's URL. Pack wit
 once and shared). The script refuses a name that already exists, and prints the delete command when it is done. A
 server costs money for every hour it exists: `hcloud server delete <name>`.
 
-On another provider, `deploy/cloud-vm/render.sh [--user …] [--ref …] [--repo …] [--deb …] [--relay …] [--extension …]
-[--extension-url …] > user-data.yaml` and pass
+On another provider, `deploy/cloud-vm/render.sh [--user …] [--ref …] [--repo …] [--relay …] [--extension …]
+[--extension-url …] > user-data.yaml` from a checkout of the `--ref`, and pass
 that file as the server's user data (about 10 KB: the script is embedded gzipped, so it fits AWS EC2's 16 KiB as well
 as Hetzner's 32 KiB).
 
@@ -53,7 +56,7 @@ as Hetzner's 32 KiB).
   screen on, puts AT-SPI's bus up, sets `org.a11y.Status` `IsEnabled` to true before any application starts (Qt 6
   applications put their accessibility tree on the bus only then; doctor's `accessibility.enabled` row checks it) and
   starts Chrome.
-- **Packages.** The ones cua and its doctor need (`binutils xz-utils x11-utils dbus-x11 bubblewrap at-spi2-core`), the
+- **Packages.** The ones cua and its doctor need (`x11-utils dbus-x11 bubblewrap at-spi2-core`), the
   desktop (`xorg openbox lightdm dbus-user-session`), `gedit`, `zenity`, `jq` and `x11vnc`.
 - **Chrome.** `google-chrome-stable` from Google's apt repository (a deb; a Flatpak or snap Chrome cannot start a native
   host). cua's extension (id `jkejaaijdfpohkdhankllbekkhmnippb`) is force-installed by policy
@@ -79,18 +82,12 @@ as Hetzner's 32 KiB).
   a window forward for an application that ignores background input instead of refusing it. A mode already set there
   is kept. The extension starts cua's host as soon as the registration is there,
   so the bind needs no one; if it fails (Chrome not up yet), the checklist keeps it.
-- **The deb.** OpenAI's Linux package is needed only for `CUA_NATIVE_ENGINE=vendor`. With `--deb none`, the default,
-  the VM fetches and waits for nothing: its `cua install` still tries the pin's official URL for the vendor's tree
-  (about 450 MB), and a failure there leaves a working device. The other values ask for the vendor's tree, and the VM
-  first installs and registers cua's own runtime as under `none` (`cua install`, `cua chrome register`, the profile).
-  Only then does it get the deb: `--deb pin` from the pin's official URL (not again when that first `cua install`
-  already placed the tree from there), `--deb <https URL>` from a mirror, and `--deb <file>` from your copy, which
-  `create-hetzner.sh` copies to the VM's `/var/cache/cua/upload.deb` while cloud-init runs, and the VM waits for it
-  (with `render.sh` alone, copy it there yourself; a failed copy is marked `upload.deb.failed`, which ends the wait).
-  The bytes are checked against the VM checkout's pin before `cua install --archive` checks them again, where the
-  tree is then required; the file stays in `/var/cache/cua` under the pin's name. A deb the VM cannot get, or an
-  install with it that fails, stops the provisioning there with the device working (exit 0), the checklist saying
-  why.
+- **No OpenAI package.** cua 0.30.0 retired the vendor's engine on Linux, so the VM's `cua install` fetches, waits for
+  and unpacks no ChatGPT deb, and `--deb` and `CUA_DEB` are gone: `render.sh` and `create-hetzner.sh` refuse `--deb`
+  with one sentence, and a conf from an earlier template that still sets `CUA_DEB` gets one log line saying it is no
+  longer used. A VM that an earlier template made may still hold the package's tree in `~/.local/share/cua/runtimes/`;
+  cua reports it (`cua install`, and doctor's informational `runtime.retired` row) and never deletes it (the main README,
+  "Updating on Linux").
 - **Remote control** (with `--relay`): `cua remote enroll --relay … --json` into `/root/cua-enrollment.json` (0600, the
   only place the client credential is written), then `cua agent install` (the systemd user unit). A re-run with
   another relay URL moves the enrolment without rotating it.
@@ -123,9 +120,8 @@ a relay it is empty when the bind succeeded; with one:
    then the `devicesAddCommand`, both in `/root/cua-enrollment.json`).
 
 Doctor reads `ok: true` with `secrets.store` blocked (no secret has been stored on the VM; cua's file store works on
-Linux, `cua secrets set KEY` at the VM's terminal). Every other row passes, `chrome.hosts.live` included, but
-`runtime.vendor` reads `skip` where OpenAI's package was not placed, and the `agent.*` rows read `skip` without a relay
-or `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
+Linux, `cua secrets set KEY` at the VM's terminal). Every other row passes, `chrome.hosts.live` included, but the
+`agent.*` rows read `skip` without a relay or `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
 -passwd <one-time password>`, then open `vnc://localhost:5901` (or use the provider's web console).
 
 ## Re-running and upgrading
@@ -149,7 +145,11 @@ replaces a stale uploaded bundle with one of yours), installs that commit's `cua
 rendered from the ref it provisions: the provisioner stops before `npm ci` and `cua install` unless it is byte for
 byte the checked-out commit's own `deploy/cloud-vm/cua-provision.sh`, and it provisions cua 0.30.0 or later only.
 
-A VM provisioned before cua's own Linux runtime (#171 M6a) needs this re-run once its `CUA_REF` reaches that release:
-until the checkout's `cua install` has run, every session there is refused (`runtime_not_installed`; the main README,
-"Updating on Linux"). Its `/usr/local/sbin/cua-provision.sh` is still the earlier script, which takes the deb from
-`/var/cache/cua` first, as it always did, then runs the same install.
+A VM provisioned before cua 0.30.0 keeps the provisioner it was created with, because a re-run moves the checkout and
+never that script. Run against a 0.30.0 checkout, an earlier provisioner asks it for a Linux deb pin, which no longer
+exists, or passes `cua install --archive`, which Linux no longer takes. The checkout answers both with a sentence naming
+`update.sh`, in `/var/log/cua-provision.log`. Before cua's own Linux runtime (#171 M6a) the script stops there, before
+any install, and until `update.sh` has run every session is refused (`runtime_not_installed`; the main README, "Updating
+on Linux"); M6a's script with `CUA_DEB=none`, the default, runs to the end, and with a pin, a mirror or an upload it
+installs and registers, then stops at the deb step with exit 0, skipping the relay move and the agent restart. `update.sh`
+repairs each of them: it replaces the script, then runs it.

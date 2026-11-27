@@ -1,0 +1,105 @@
+{
+  "label": "acceptance on the pinned release",
+  "step": "FB",
+  "pilot": false,
+  "what": "the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)",
+  "display": "private",
+  "load": "idle",
+  "minutes": 5,
+  "run_name": null,
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/",
+    "commit": "3722f2826ca8a8ff3c7a6e28e00ba765d10b077b",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/t173/run/src/cua/engine/linux/cua-engine",
+    "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a",
+    "record": {
+      "gate": "pinned",
+      "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a",
+      "target": "x86_64-unknown-linux-musl",
+      "linkage": "static-pie",
+      "version": "cua-engine 0.4.5 (77ed101d43ea)",
+      "commit": "3722f2826ca8a8ff3c7a6e28e00ba765d10b077b",
+      "clean": true,
+      "attestation": {
+        "verified": true,
+        "signer_workflow": "SSFSKIM/cua/.github/workflows/linux-engine.yml",
+        "attestations": [
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.5-linux-x64",
+                "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a"
+              },
+              {
+                "name": "cua-engine-0.4.5-linux-arm64",
+                "sha256": "f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "77ed101d43ea9b071bd9783dd9bb3387733f9f6d",
+            "source_ref": "refs/heads/engine-045",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/engine-045",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/45335176072/attempts/1",
+            "runner": "github-hosted"
+          }
+        ]
+      },
+      "pin": {
+        "arch": "x64",
+        "version": "0.4.5",
+        "release": "linux-engine-v0.4.5",
+        "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a"
+      },
+      "installed": {
+        "path": "/Users/new/.local/share/cua-171/t173/run/src/cua/engine/linux/install.json",
+        "build": "pinned",
+        "release": "linux-engine-v0.4.5",
+        "version": "0.4.5",
+        "installedAt": "2026-11-27T19:17:10.999Z"
+      },
+      "engine_tree": {
+        "path": "native/linux-engine",
+        "commit": "77ed101d43ea9b071bd9783dd9bb3387733f9f6d",
+        "equal": true
+      }
+    }
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/t173/run/src/cua",
+  "command": "/Users/new/.local/share/cua-171/t173/run/src/home/.local/share/cua-171/locked.sh m5-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/scripts/linux-engine-gate/gate.mjs run FB --pinned /Users/new/.local/share/cua-171/t173/run/src/cua --out /Users/new/.local/share/cua-171/t173/run/fixture-trace/out --vendor-fixture /Users/new/.local/share/cua-171/vendor-x64-pinned --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+  "vendor_fixture": {
+    "dir": "/Users/new/.local/share/cua-171/vendor-x64-pinned",
+    "arch": "x64",
+    "tar_sha256": "2e6209866473328aa832fcb7b0e1f19b2a435fe803512c2bf578706f83505914",
+    "tree_list_sha256": "7886c5dc6c39e7985043ba0718fd4bbb60c6f7efef7962f88a1c2492da7bb54f",
+    "vendor": "/Users/new/.local/share/cua-171/vendor-x64-pinned/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "vendor_sha256": "7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd",
+    "vendor_js": "/Users/new/.local/share/cua-171/vendor-x64-pinned/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky",
+    "service_sha256": "5b2fa2f0e19c8401a9be8c71be17008d88049ab107972c1e4a5cb615f4ef5993"
+  },
+  "argv": [
+    "scripts/linux-engine-diff/services.mjs",
+    "--vendor-js",
+    "/Users/new/.local/share/cua-171/vendor-x64-pinned/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky",
+    "--engine",
+    "/Users/new/.local/share/cua-171/t173/run/src/cua/engine/linux/cua-engine",
+    "--scenes",
+    "over-budget",
+    "--out",
+    "/Users/new/.local/share/cua-171/t173/run/fixture-trace/out/FB.pinned-release/run"
+  ],
+  "started": "2026-11-27T19:46:36.337Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-27T19:47:01.350Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "unclean": []
+}

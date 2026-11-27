@@ -1450,6 +1450,22 @@ test('ruling 1231: textedit/method.savePanel.typeText.name\'s speed row is not j
   assert.ok(none.notJudged.some(n => n.id === TIMING && n.recorded === false));
 });
 
+// Ruling 1235: the Open panel search case's own timing follows its method row out of the judged matrix (#588): neither
+// engine does the op, so its timing has nothing to compare. The method row's rule (ruling 1222) stands as it was.
+test('ruling 1235: textedit/method.panel.typeText.search\'s speed row is not judged, naming #588 and ruling 1235, and absent from missing', () => {
+  const TIMING = 'textedit/method.panel.typeText.search';
+  const undone = rows => rows.map(r => (r.section === 'speed' && r.id === TIMING ? {...r, ok: false, inCellMs: undefined} : r));
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: undone}, cua: {axMs: 40, tweak: undone}});
+  assert.ok(!j.speed.some(s => s.id === TIMING));
+  assert.ok(!j.missing.some(m => m.includes(TIMING)), j.missing.join('\n'));
+  assert.ok(!j.cells.some(c => c.section === 'speed' && c.id === TIMING), 'out of the manifest\'s judged cells');
+  const entry = j.notJudged.find(n => n.section === 'speed' && n.id === TIMING);
+  assert.deepEqual([entry.condition, entry.ticket], ['openPanelSearchTiming', '#588']);
+  assert.match(entry.cause, /^out of M5's judged matrix \(ruling 1235\): .*#588.*neither engine does the op/);
+  assert.ok(j.notJudged.some(n => n.section === 'method' && n.id === 'openPanel/frontmost/typeText.search' && n.condition === 'openPanelSearch'), 'the method row\'s rule stands');
+  assert.match(renderSummary(j), /^### openPanelSearchTiming$/m);
+});
+
 // Fix wave M4, ruling 1219: the Korean pressKey row judges each engine against 가 on its own. A cua sample that read it
 // passes with no valid vendor pair (not NO VERDICT unpaired); one that read ㄱ fails even when its vendor pair read ㄱ
 // too (not a shared limit). The Latin row keeps ruling 1119's pairing.

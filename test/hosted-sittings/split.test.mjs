@@ -396,6 +396,14 @@ test('the base re-judged: the declared departure and #592\'s not-judged row diff
   assert.doesNotMatch(text, /^Refused to judge/m);
 });
 
+test('the base re-judged: the Open panel search case\'s timing leaves the judgment under #588, citing ruling 1235', () => {
+  const SEARCH_TIMING = {section: 'speed', id: 'textedit/method.panel.typeText.search', verdict: 'no-verdict'};
+  const r = baseRejudge([...baseCells({}), SEARCH_TIMING], baseCells({}));
+  assert.deepEqual(r.refused, []);
+  assert.deepEqual(r.differences.map(d => [d.cell, d.was, d.now, d.by.declaration, d.by.ticket, d.by.ruling]),
+    [['speed textedit/method.panel.typeText.search', 'no-verdict', 'not judged', 'openPanelSearchTiming', '#588', '1235']]);
+});
+
 test('the base re-judged: what no declaration explains refuses, a row leaving the judgment with no rule and a declared row changing verdict while judged among them', () => {
   const refusedOn = (over, options) => baseRejudge(baseCells({}), baseCells(over), options).refused;
   assert.deepEqual(refusedOn({'method textedit/frontmost/click.control': {verdict: 'worse'}}), ['the new judge reads the base differently from its own judgment at its commit: method textedit/frontmost/click.control equal, now worse']);

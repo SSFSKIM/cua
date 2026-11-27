@@ -127,7 +127,7 @@ export function rowProblems(row, at = 'row') {
   if (typeof row.ok !== 'boolean') out.push(`${at}.ok is not a boolean`);
   if (row.invalid !== undefined && !isString(row.invalid)) out.push(`${at}.invalid is not a reason`);
   if (row.excluded !== undefined && !isString(row.excluded)) out.push(`${at}.excluded is not a reason`);
-  else if (row.excluded !== undefined && !exclusionOf(row)) out.push(`${at}.excluded marks a row no ruling puts out of the judged matrix (only a not-judged rule's rows are, ./not-judged.mjs: the per-context rows, the Open panel's search row and the Save sheet name's timing)`);
+  else if (row.excluded !== undefined && !exclusionOf(row)) out.push(`${at}.excluded marks a row no ruling puts out of the judged matrix (only a not-judged rule's rows are, ./not-judged.mjs: the per-context rows, the Open panel's search row and its timing, and the Save sheet name's timing)`);
   if (row.regime !== undefined && !REGIMES.includes(row.regime)) out.push(`${at}.regime is not frontmost or background`);
   for (const key of ['inCellMs', 'wallMs']) if (row[key] !== undefined && !Number.isFinite(row[key])) out.push(`${at}.${key} is not a number`);
   if (row.inputRoute !== undefined && row.inputRoute !== null && !INPUT_ROUTES.includes(row.inputRoute)) out.push(`${at}.inputRoute is not one of 1, "2'", 2, 3, 4, "paste" or null`);

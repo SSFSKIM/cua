@@ -4,6 +4,7 @@
 // row's section and id decide; a row's own `excluded` mark is the run's record of that decision, never a source of it.
 // Ruling 1222: every not-judged entry carries its reason and a ticket or a recorded evidence reference (row and field);
 // the judge refuses one with neither into missing proof (notJudgedRefusal).
+import {methodTimingId} from './plan.mjs';
 
 // The Unicode conditions out of every verdict, each with its cause.
 export const NOT_JUDGED = Object.freeze({
@@ -16,12 +17,16 @@ export const unicodeConditionOf = id => (typeof id === 'string' ? id.split('/')[
 // Every rule that puts rows out of the judged matrix: its section, the ids it covers, its condition (the report's group),
 // its reason and its ticket.
 export const OPEN_PANEL_SEARCH = 'openPanel/frontmost/typeText.search';
+// The same case's own timing (./plan.mjs methodTimingId): textedit/method.panel.typeText.search.
+export const OPEN_PANEL_SEARCH_TIMING = methodTimingId('openPanel', {method: 'typeText', case: 'search'});
 // The Save sheet name case's own timing (./plan.mjs methodTimingId).
 export const SAVE_PANEL_NAME_TIMING = 'textedit/method.savePanel.typeText.name';
 export const NOT_JUDGED_RULES = Object.freeze([
   Object.freeze({section: 'unicode', condition: 'perContext', matches: id => unicodeConditionOf(id) === 'perContext', cause: NOT_JUDGED.perContext, ticket: '#577'}),
   Object.freeze({section: 'method', condition: 'openPanelSearch', matches: id => id === OPEN_PANEL_SEARCH,
     cause: 'out of M5\'s judged matrix (ruling 1222): typeText into the Open panel\'s search field is a known product defect, #588, run and reported until it is fixed', ticket: '#588'}),
+  Object.freeze({section: 'speed', condition: 'openPanelSearchTiming', matches: id => id === OPEN_PANEL_SEARCH_TIMING,
+    cause: 'out of M5\'s judged matrix (ruling 1235): typeText into the Open panel\'s search field is #588\'s known defect; neither engine does the op, so its timing has nothing to compare', ticket: '#588', ruling: '1235'}),
   Object.freeze({section: 'speed', condition: 'savePanelNameTiming', matches: id => id === SAVE_PANEL_NAME_TIMING,
     cause: 'out of M5\'s judged matrix (ruling 1231): the Save sheet name case\'s timing stays unmeasured: filtered reruns record no timing; the vendor\'s prepare failed in the base', ticket: '#592', ruling: '1231'}),
 ]);

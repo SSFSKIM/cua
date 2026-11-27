@@ -10,12 +10,66 @@
 // run as the judge reads it (../native-matrix/summary.mjs runVerdict: worse than the vendor, or interfering) from a
 // failing verdict to another, or its rows failing on their own (ok false with no `invalid`: not a missing proof) and
 // passing in the rerun. Reruns are applied in the order given, so a later attempt's rows replace an earlier one's.
+// The run-level meta the judge reads per cell follows the rows: a replaced composing group's readings (its attempts and
+// the readings around them, ../native-matrix/composing-retries.mjs) and a replaced panel opening's placement
+// (../hosted-sittings/venue.mjs panelFrameSplits) come from the rerun's job, each naming it (`evidence`); the full run's
+// stay for every cell the rerun did not replace (carriedMeta).
 import {frameAsymmetry} from '../hosted-sittings/venue.mjs';
+import {FULL_PLAN} from './run.mjs';
 import {runVerdict, unmeasuredSide} from './summary.mjs';
+import {unicodeRowsOf} from './unicode-plan.mjs';
 
 const keyOf = r => `${r.section} ${r.id}`;
 const jobOf = result => ({runId: result.meta?.runner?.run?.id ?? null, attempt: result.meta?.runner?.run?.attempt ?? null});
 const engineOf = result => result.lanes?.[0]?.engine ?? null;
+
+// A composing cell's group (`<field>/composing@<user>/…` -> `<field>@<user>`, ./unicode-run.mjs's record), or null.
+const COMPOSING = /^composing@([^:\s]+)/;
+const groupOfCell = id => { const [field, condition] = String(id).split('/'); return condition?.startsWith('composing@') ? `${field}@${condition.slice('composing@'.length)}` : null; };
+let planGroups = null;
+const groupsOfUser = user => (planGroups ??= [...new Set(unicodeRowsOf(FULL_PLAN.unicode).map(r => groupOfCell(r.id)).filter(Boolean))]).filter(g => g.endsWith(`@${user}`));
+const isAttempt = r => 'composed' in r || 'setup' in r;
+// Each reading with the composing groups it belongs to: an attempt's record its own group; a reading around an attempt
+// (its :end, its refocus reads) the next attempt's of its user window; one recorded before ruling 1229 (no group) every
+// group of its user window. -> [[reading, groups | null]].
+function attributed(readings) {
+  const list = readings ?? [];
+  return list.map((r, i) => {
+    const user = COMPOSING.exec(r?.when ?? '')?.[1];
+    if (!user) return [r, null];
+    if (typeof r.group === 'string') return [r, [r.group]];
+    if (isAttempt(r)) return [r, groupsOfUser(user)];
+    const next = list.slice(i + 1).find(x => COMPOSING.exec(x?.when ?? '')?.[1] === user && isAttempt(x));
+    return [r, typeof next?.group === 'string' ? [next.group] : groupsOfUser(user)];
+  });
+}
+// The full run's meta with the replaced cells' share of it taken from the rerun's (`rerun`, its meta) job: the composing
+// readings of every group a replaced cell belongs to, and the placement of every panel opening a replaced row (`fresh`)
+// names. A full run's readings that name no group, of a user window only some of whose groups were replaced, cannot be
+// told apart: kept, and a problem. -> {meta, problems}.
+function carriedMeta(meta, rerun, cells, fresh, job, name) {
+  const out = {...meta}, problems = [];
+  const groups = new Set(cells.filter(c => c.startsWith('unicode ')).map(c => groupOfCell(c.slice('unicode '.length))).filter(Boolean));
+  if (groups.size) {
+    const all = gs => gs.every(g => groups.has(g)), some = gs => gs.some(g => groups.has(g));
+    const kept = [];
+    for (const [r, gs] of attributed(meta.unicode?.readings)) {
+      if (!gs || !some(gs)) kept.push(r);
+      else if (!all(gs)) {
+        problems.push(`${name}: ${COMPOSING.exec(r.when)[0]}'s readings in the full run name no group, and the rerun replaced only some of its groups (${gs.filter(g => groups.has(g)).join(', ')}): they cannot be told apart, kept`);
+        kept.push(r);
+      }
+    }
+    const taken = attributed(rerun.unicode?.readings).filter(([, gs]) => gs && all(gs)).map(([r]) => ({...r, evidence: job}));
+    out.unicode = {...meta.unicode, readings: [...kept, ...taken]};
+  }
+  const openings = new Set(fresh.map(r => r.opening).filter(o => typeof o === 'string'));
+  if (openings.size) {
+    const mine = meta.placement?.panel ?? [], theirs = rerun.placement?.panel ?? [];
+    out.placement = {...(meta.placement ?? {scenes: {}}), panel: [...mine.filter(p => !openings.has(p?.opening)), ...theirs.filter(p => openings.has(p?.opening)).map(p => ({...p, evidence: job}))]};
+  }
+  return {meta: out, problems: [...new Set(problems)]};
+}
 
 // Why a rerun's pair is not taken as the judge would take a full run's, or null.
 function pairUnfit(lanes) {
@@ -77,12 +131,16 @@ export function combineReruns(full, reruns) {
       if (change?.vendorOnly) vendorOnly.push({run, cell, full: jobOf(under.vendor.result), rerun: job});
     }
     for (const engine of ['vendor', 'cua']) {
-      const base = under[engine].result, rerun = lanes[engine];
+      const base = under[engine].result, rerun = lanes[engine], replaced = [], freshRows = [];
       for (const cell of cells) {
         const fresh = rerun.rows.filter(r => keyOf(r) === cell);
         if (!fresh.length) { problems.push(`${name} recorded no row of ${cell} on ${engine}: the full run's kept`); continue; }
         base.rows = [...base.rows.filter(r => keyOf(r) !== cell), ...fresh.map(r => ({...r, evidence: job}))];
+        replaced.push(cell); freshRows.push(...fresh);
       }
+      const carried = carriedMeta(base.meta, rerun.meta ?? {}, replaced, freshRows, job, `${name} on ${engine}`);
+      base.meta = carried.meta;
+      problems.push(...carried.problems);
       base.meta.reruns = [...(base.meta.reruns ?? []), {...job, commit: rerun.meta.commit ?? null, filter: cells, build: rerun.lanes?.[0]?.build ?? null}];
     }
     combined.push({run, ...job, cells});

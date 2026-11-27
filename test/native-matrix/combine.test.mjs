@@ -10,6 +10,8 @@ import {spawnSync} from 'node:child_process';
 import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {combineReruns} from '../../scripts/native-matrix/combine.mjs';
 import {main, parseCommand} from '../../scripts/native-matrix.mjs';
+import {composingRetriesOf} from '../../scripts/native-matrix/composing-retries.mjs';
+import {judge, splitPanelRuns} from '../../scripts/native-matrix/summary.mjs';
 
 const A = 'method electron/frontmost/click.point', B = 'method savePanel/frontmost/typeText.name', C = 'method textedit/frontmost/click.element';
 const idOf = key => key.slice(key.indexOf(' ') + 1);
@@ -171,3 +173,62 @@ test('the real combine CLI exits an integer, NO VERDICT on a problem, and summar
     assert.match(fs.readFileSync(join(root, 'summary.md'), 'utf8'), /combine: run 2's filtered rerun \(job 9, attempt 1\) has no cua lane: not combined/, summary.stderr);
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
+
+// The run-level meta the judge reads per cell follows the rows combine replaces: a replaced composing group's readings
+// (its attempts and the readings around them) and a replaced panel opening's placement come from the rerun's job, each
+// naming it; the full run's stay for every cell the rerun did not replace.
+test('a rerun\'s composing readings and panel placements replace the full run\'s for the cells it replaced, each naming its job', () => {
+  const GROUP_CELLS = ['unicode textedit/composing@electron/typeText.latin', 'unicode electron/composing@textedit/typeText.latin', 'unicode chrome/composing@textedit/typeText.latin'];
+  const PANEL = 'method openPanel/background/getAXState.panel@finder', KEPT_PANEL = 'method openPanel/frontmost/getAXState.panel';
+  const frame = x => ({x, y: 80, width: 880, height: 448});
+  // The full run: old-format readings (no group, no attempt), its panel at -60 on the vendor and -58 on cua.
+  const oldReadings = [{when: 'composing@electron:end'}, {when: 'composing@electron', composed: true}, {when: 'composing@textedit', composed: false}, {when: 'composing@textedit', composed: false}, {when: 'latin:textedit'}];
+  const fullOf = (engine, run) => result(engine, run, [...GROUP_CELLS, PANEL, KEPT_PANEL, C].map(k => row(k, engine, k.includes('openPanel') ? {opening: idOf(k).includes('background') ? 'openPanel/background@finder' : idOf(k)} : {})),
+    {unicode: {readings: oldReadings}, placement: {scenes: {}, panel: [{opening: 'openPanel/frontmost/getAXState.panel', readBack: frame(-58)}, {opening: 'openPanel/background@finder', readBack: frame(engine === 'vendor' ? -60 : -58)}]}});
+  // The rerun: new-format readings, the vendor retrying in two groups, cua in none; both panels at -58.
+  const attempt = (user, group, n, composed) => [{when: `composing@${user}:end`}, {when: `composing@${user} pre-refocus`}, {when: `composing@${user} post-refocus`}, {when: `composing@${user}`, group, attempt: n, composed}];
+  const newReadings = engine => [{when: 'latin:textedit'}, ...attempt('electron', 'textedit@electron', 1, true),
+    ...(engine === 'vendor' ? [...attempt('textedit', 'electron@textedit', 1, false), ...attempt('textedit', 'electron@textedit', 2, false), ...attempt('textedit', 'electron@textedit', 3, true),
+      ...attempt('textedit', 'chrome@textedit', 1, false), ...attempt('textedit', 'chrome@textedit', 2, true)]
+      : [...attempt('textedit', 'electron@textedit', 1, true), ...attempt('textedit', 'chrome@textedit', 1, true)])];
+  const rerunOf = engine => rerun(2, engine, [...GROUP_CELLS, PANEL].map(k => row(k, engine, k === PANEL ? {opening: 'openPanel/background@finder'} : {})),
+    {filter: [...GROUP_CELLS, PANEL], unicode: {readings: newReadings(engine)}, placement: {scenes: {}, panel: [{opening: 'openPanel/background@finder', readBack: frame(-58)}]}});
+  const before = ['vendor', 'cua'].map(e => fullOf(e, 2));
+  assert.equal(splitPanelRuns(before).get(2)?.has('openPanel/background@finder'), true, 'the full run alone splits the opening');
+  const out = combineReruns(before, ['vendor', 'cua'].map(rerunOf));
+  assert.deepEqual(out.problems, []);
+  const lane = engine => out.results.find(r => r.result.lanes[0].engine === engine).result;
+  for (const engine of ['vendor', 'cua']) {
+    const {readings} = lane(engine).meta.unicode, panel = lane(engine).meta.placement.panel;
+    // The full run's composing readings are gone, its other readings kept; the rerun's carry the job.
+    assert.ok(!readings.some(r => r.when.startsWith('composing@') && r.evidence === undefined), engine);
+    assert.ok(readings.some(r => r.when === 'latin:textedit' && r.evidence === undefined), 'a reading of no replaced cell is the full run\'s');
+    assert.ok(readings.filter(r => r.when.startsWith('composing@')).every(r => r.evidence?.runId === '777'));
+    assert.equal(readings.filter(r => r.when === 'latin:textedit').length, 1, 'the rerun\'s readings of no replaced group are not taken');
+    assert.deepEqual(panel.map(p => [p.opening, p.readBack.x, p.evidence?.runId ?? null]), [['openPanel/frontmost/getAXState.panel', -58, null], ['openPanel/background@finder', -58, '777']]);
+  }
+  assert.equal(splitPanelRuns(out.results).size, 0, 'the replaced opening stands on the rerun\'s frames');
+  const retries = composingRetriesOf(out.results);
+  assert.deepEqual([retries.lanes.vendor.retries, retries.lanes.vendor.groups, retries.lanes.cua.retries], [3, 2, 0]);
+  assert.match(retries.findings[0], /^composing retries are lopsided: the vendor lane needed a retry in 2 groups/);
+  // A full run whose old-format readings name a user window some of whose groups the rerun did not replace cannot be
+  // told apart: a problem, never a silent mix.
+  const partial = combineReruns(['vendor', 'cua'].map(e => fullOf(e, 2)), ['vendor', 'cua'].map(e => ({...rerunOf(e), result: {...rerunOf(e).result,
+    rows: rerunOf(e).result.rows.filter(r => !r.id.startsWith('chrome/')), meta: {...rerunOf(e).result.meta, filter: [GROUP_CELLS[0], GROUP_CELLS[1], PANEL]}}})));
+  assert.ok(partial.problems.some(p => /composing@textedit's readings in the full run name no group, and the rerun replaced only some of its groups \(electron@textedit\)/.test(p)), partial.problems.join('\n'));
+});
+
+// A whole-run frame split in the full run is the full run's: the rows a rerun replaced stand on the rerun's frames, which
+// combine checked (its lanes on one frame).
+test('a replaced row is judged on its rerun\'s frames, not the full run\'s whole-run split', () => {
+  const venue = x => ({venue: {frames: {textedit: {x, y: 0, width: 800, height: 600}}}});
+  const before = ['vendor', 'cua'].map(engine => result(engine, 2, [row(A, engine, {ok: false}), row(C, engine)], venue(engine === 'vendor' ? 0 : 4)));
+  const reruns = ['vendor', 'cua'].map(engine => rerun(2, engine, [row(A, engine)], {filter: [A], ...venue(0)}));
+  const out = combineReruns(before, reruns);
+  assert.deepEqual(out.problems, []);
+  const j = judge(out.results, [], {departures: []});
+  const rowsOf = key => j.methods.find(m => `method ${m.id}` === key);
+  assert.equal(rowsOf(A).account.cua.noVerdict.venue ?? 0, 0, 'the rerun\'s row is not the full run\'s venue');
+  assert.ok((rowsOf(C).account.cua.noVerdict.venue ?? 0) > 0, 'the full run\'s own row keeps its split');
+});
+

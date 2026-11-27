@@ -367,8 +367,10 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // frames when it did (`frameSplit`, ruling 1169; ./front-key.mjs): the whole run's, or a panel opening's alone for the
   // rows that opening wrote (`opening`, ./panels.mjs tagOpening).
   const split = splitFrameRuns(full), panelSplit = splitPanelRuns(full);
+  // A row a filtered rerun replaced (./combine.mjs, `evidence`) stood on its rerun's frames, which combine checked: the
+  // full run's whole-run split is not its.
   const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true,
-    ...(split.has(result.meta?.run) ? {frameSplit: split.get(result.meta.run)}
+    ...(split.has(result.meta?.run) && !row.evidence ? {frameSplit: split.get(result.meta.run)}
       : panelSplit.get(result.meta?.run)?.has(row.opening) ? {frameSplit: `the panel opening ${row.opening}: ${panelSplit.get(result.meta.run).get(row.opening)}`} : {})})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
   const rows = all.filter(r => !exclusionOf(r, notJudgedRules));

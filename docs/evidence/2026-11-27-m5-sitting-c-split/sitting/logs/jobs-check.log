@@ -1,0 +1,220 @@
+{
+  "refused": [],
+  "jobs": [
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-1-1/sitting",
+      "runs": [
+        1
+      ],
+      "runId": "46052931439",
+      "attempt": "1",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "6597a89a-77dc-4ead-8357-c522f317cb54",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "313fbf534c6dcfe8495318fb8441b67a35d87ccd"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.0 build 2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-vendor-1",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-1 sample 1 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-cua-1",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-1 sample 1 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-2-1/sitting",
+      "runs": [
+        2
+      ],
+      "runId": "46052931439",
+      "attempt": "1",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "4010b877-b157-4751-9637-f2dc8c33abfa",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "313fbf534c6dcfe8495318fb8441b67a35d87ccd"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.0 build 2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-cua-2",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-2 sample 2 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-vendor-2",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-2 sample 2 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-3-1/sitting",
+      "runs": [
+        3
+      ],
+      "runId": "46052931439",
+      "attempt": "1",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "e0f57452-2b8f-4ecf-9778-7be4a8237325",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "313fbf534c6dcfe8495318fb8441b67a35d87ccd"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.0 build 2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-vendor-3",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-3 sample 3 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-cua-3",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-3 sample 3 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    }
+  ],
+  "base": {
+    "dir": "/Users/runner/work/cua/cua/docs/evidence/2026-11-24-m5-sitting-c-full/sitting",
+    "runs": [
+      1,
+      2,
+      3
+    ],
+    "runId": "45468052791",
+    "attempt": "1",
+    "planIds": [
+      "full"
+    ],
+    "image": "macos27 20261104.0337.1",
+    "vm": "0f747395-2f3e-45fa-89c4-bdb0d487edce",
+    "hardware": null,
+    "commit": [
+      "bfa8cf48652da12eb3bfb70eaaad7bbf5abc61d3"
+    ],
+    "vendor": [
+      "26.924.1001281"
+    ],
+    "cua": [
+      "0.3.0 build 2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e"
+    ],
+    "scenes": [
+      "textedit",
+      "finder",
+      "chrome",
+      "electron"
+    ],
+    "saveSheet": [
+      {
+        "id": "save-sheet-vendor-1",
+        "status": "PASS",
+        "reason": "1 sample over 1 run: vendor run-1 sample 1 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 612 min of its 360 (past the 300-min warning line)"
+      },
+      {
+        "id": "save-sheet-cua-1",
+        "status": "NO VERDICT",
+        "reason": "1 sample over 1 run: cua run-1 sample 1 NO VERDICT (set_value returned before the probe's event was seen); the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 450 min of its 360 (past the 300-min warning line)"
+      },
+      {
+        "id": "save-sheet-cua-2",
+        "status": "NO VERDICT",
+        "reason": "1 sample over 1 run: cua run-2 sample 2 NO VERDICT (set_value returned before the probe's event was seen); the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 333 min of its 360 (past the 300-min warning line)"
+      },
+      {
+        "id": "save-sheet-vendor-2",
+        "status": "PASS",
+        "reason": "1 sample over 1 run: vendor run-2 sample 2 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 333 min of its 360 (past the 300-min warning line)"
+      },
+      {
+        "id": "save-sheet-vendor-3",
+        "status": "PASS",
+        "reason": "1 sample over 1 run: vendor run-3 sample 3 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 334 min of its 360 (past the 300-min warning line)"
+      },
+      {
+        "id": "save-sheet-cua-3",
+        "status": "NO VERDICT",
+        "reason": "1 sample over 1 run: cua run-3 sample 3 NO VERDICT (set_value returned before the probe's event was seen); the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x); projected before it ran to finish the job's run steps at 335 min of its 360 (past the 300-min warning line)"
+      }
+    ]
+  },
+  "commits": {
+    "jobs": [
+      "313fbf534c6dcfe8495318fb8441b67a35d87ccd"
+    ],
+    "base": [
+      "bfa8cf48652da12eb3bfb70eaaad7bbf5abc61d3"
+    ]
+  }
+}

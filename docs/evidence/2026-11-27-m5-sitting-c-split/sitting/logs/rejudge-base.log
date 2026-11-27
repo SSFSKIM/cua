@@ -1,0 +1,6 @@
+## The base re-judged (ruling 1230)
+
+The base's records judged by this commit's judge against the judge of bfa8cf48652da12eb3bfb70eaaad7bbf5abc61d3 on the same records. A difference is expected only where a declaration of this commit that cites its ruling explains it (ruling 1234).
+
+- method chrome/background/drag.select@textedit: worse, now declared (expected: the declared departure, ticket #282, ruling 1228: Decision Log, 2026-11-05, #282 (shared mode, item 6): a drag into a background Chromium web area is never posted, refused as backgroundClickRefused; the background-drag study, #591 (ruling 1228))
+- speed textedit/method.savePanel.typeText.name: no-verdict, now not judged (expected: the not-judged rule savePanelNameTiming, ticket #592, ruling 1231)

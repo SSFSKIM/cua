@@ -1,0 +1,8 @@
+{
+  "model": "VirtualMac2,1",
+  "cpu": "Apple M1 (Virtual)",
+  "cpus": 3,
+  "memoryGB": 7,
+  "macOS": "27.0.1",
+  "image": "macos27 20261123.0387.2"
+}

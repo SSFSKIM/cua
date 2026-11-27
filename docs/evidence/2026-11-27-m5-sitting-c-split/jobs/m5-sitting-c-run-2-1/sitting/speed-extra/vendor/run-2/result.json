@@ -1,0 +1,2435 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "speed-extra",
+  "device": "hosted-macos",
+  "started": "2026-11-27T20:34:20.912Z",
+  "finished": "2026-11-27T20:42:40.971Z",
+  "lanes": [
+    {
+      "host": "vendor",
+      "engine": "vendor",
+      "build": "26.928.40906-darwin-arm64",
+      "version": "26.924.1001281"
+    }
+  ],
+  "complete": true,
+  "verdict": "pass",
+  "judgesInterference": true,
+  "problems": [],
+  "rows": [
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 120.36700000000201,
+      "wallMs": 163.0132500000036,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 320.4070419999989,
+      "wallMs": 384.53683399999863,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 128.6891660000001,
+      "wallMs": 159.58862500000396,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 135.16283300000214,
+      "wallMs": 169.31883299999754,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 376.24262499999895,
+      "wallMs": 442.5445000000036,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 75.35666599999968,
+      "wallMs": 161.25733299998683,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 146.2504159999953,
+      "wallMs": 190.1023750000022,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 282.0455409999995,
+      "wallMs": 363.5940409999894,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 75.43174999998882,
+      "wallMs": 145.06350000000384,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 142.5260830000043,
+      "wallMs": 176.9915420000034,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 313.684500000003,
+      "wallMs": 344.33837500000664,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 82.28199999999197,
+      "wallMs": 144.67454199999338,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 134.47950000000128,
+      "wallMs": 160.92279199999757,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 255.15687499998603,
+      "wallMs": 279.4329579999903,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 63.20754200000374,
+      "wallMs": 111.21616700000595,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 138.9435000000085,
+      "wallMs": 186.64420800001244,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 307.6314580000035,
+      "wallMs": 336.8509159999958,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 57.70637500000885,
+      "wallMs": 147.2046660000051,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 118.63158299998031,
+      "wallMs": 148.55549999998766,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 284.6897909999825,
+      "wallMs": 345.0714999999909,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 55.29800000000978,
+      "wallMs": 99.86929199998849,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 156.68841699999757,
+      "wallMs": 204.41654199999175,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 308.70462500001304,
+      "wallMs": 368.7547499999928,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 44.171624999988126,
+      "wallMs": 90.23883300001035,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 100.08133300000918,
+      "wallMs": 147.60158300001058,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 383.5397080000257,
+      "wallMs": 456.78208299999824,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 79.74708299999475,
+      "wallMs": 139.82870899999398,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 117.34004199999617,
+      "wallMs": 164.3877499999944,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 360.14166700001806,
+      "wallMs": 407.36625000002095,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 80.90912500000559,
+      "wallMs": 135.52045899999212,
+      "frontKey": {
+        "apps": [
+          "com.apple.TextEdit"
+        ],
+        "activate": {
+          "app": "com.apple.TextEdit",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        },
+        "after": {
+          "front": "com.apple.TextEdit",
+          "key": "com.apple.TextEdit"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 359.74279200000456,
+      "wallMs": 416.2538749999949,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 188.2457090000098,
+      "wallMs": 266.43545900000026,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 139.34641700002248,
+      "wallMs": 193.01141699997243,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 84.47262500002398,
+      "wallMs": 147.2977499999688,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 81.6982920000155,
+      "wallMs": 128.82545800000662,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 63.25287500000559,
+      "wallMs": 83.7603329999838,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 172.64650000003166,
+      "wallMs": 295.83775000000605,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 73.24524999997811,
+      "wallMs": 86.81741700001294,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 104.58766600000672,
+      "wallMs": 145.59020800003782,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 118.01887500000885,
+      "wallMs": 292.40600000001723,
+      "frontKey": {
+        "apps": [
+          "com.google.chrome.for.testing"
+        ],
+        "activate": {
+          "app": "com.google.chrome.for.testing",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        },
+        "after": {
+          "front": "com.google.chrome.for.testing",
+          "key": "com.google.chrome.for.testing"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 19.007749999989755,
+      "wallMs": 67.06408300000476,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 356.89870800002245,
+      "wallMs": 454.633582999988,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 12.443832999968436,
+      "wallMs": 42.74154199997429,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "inCellMs": 99.03787499997998,
+      "wallMs": 140.4488329999731,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 17.382458000036422,
+      "wallMs": 45.46612499997718,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 102.68029200000456,
+      "wallMs": 156.220083000022,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 25.76774999999907,
+      "wallMs": 67.70204199996078,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "inCellMs": 104.91995800001314,
+      "wallMs": 297.5305839999928,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 18.16266699996777,
+      "wallMs": 66.73362499999348,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "inCellMs": 97.1532920000027,
+      "wallMs": 139.5281660000328,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 24.74700000003213,
+      "wallMs": 87.71850000001723,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "inCellMs": 97.45704100001603,
+      "wallMs": 140.7672920000041,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 9.884000000020023,
+      "wallMs": 31.4828330000164,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "inCellMs": 96.68854200001806,
+      "wallMs": 159.69449999998324,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 16.480666999996174,
+      "wallMs": 54.85487500001909,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "inCellMs": 80.30587500002002,
+      "wallMs": 123.7693750000326,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 13.18604099994991,
+      "wallMs": 45.494166999997105,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "inCellMs": 73.61462499998743,
+      "wallMs": 148.68487499997718,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 14.47104199999012,
+      "wallMs": 31.570375000010245,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.paste.replace",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "inCellMs": 79.99016700003995,
+      "wallMs": 140.4694170000148,
+      "frontKey": {
+        "apps": [
+          "io.github.ssfskim.cua.fixture.electron"
+        ],
+        "activate": {
+          "app": "io.github.ssfskim.cua.fixture.electron",
+          "front": true,
+          "key": true
+        },
+        "before": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        },
+        "after": {
+          "front": "io.github.ssfskim.cua.fixture.electron",
+          "key": "io.github.ssfskim.cua.fixture.electron"
+        }
+      }
+    }
+  ],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": false
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.UserNotificationCenter",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 2,
+    "host": "vendor",
+    "engine": "vendor",
+    "samples": 10,
+    "sitting": "hosted-46052931439-1-c",
+    "planId": "speed-extra",
+    "plan": {
+      "frontmost": [
+        "textedit",
+        "chrome",
+        "electron"
+      ],
+      "background": [],
+      "launch": [],
+      "speed": true,
+      "finding": false,
+      "concurrent": [],
+      "sheet": false,
+      "intervention": [],
+      "unicode": null
+    },
+    "elicitations": [
+      {
+        "t": "2026-11-27T20:35:01.862Z",
+        "app": "com.apple.TextEdit",
+        "action": "accept"
+      },
+      {
+        "t": "2026-11-27T20:35:06.887Z",
+        "app": "com.google.chrome.for.testing",
+        "action": "accept"
+      },
+      {
+        "t": "2026-11-27T20:35:11.599Z",
+        "app": "io.github.ssfskim.cua.fixture.electron",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "hosted": true,
+    "desktopMode": "shared",
+    "laneOrder": {
+      "first": "cua",
+      "position": 2
+    },
+    "filter": [
+      "speed textedit/method.getAXState.tree",
+      "speed textedit/method.typeText.replace",
+      "speed textedit/method.paste.replace",
+      "speed chrome/method.paste.replace",
+      "speed electron/method.pressKey.tab",
+      "speed electron/method.paste.replace"
+    ],
+    "controller": {
+      "commit": "313fbf534c6dcfe8495318fb8441b67a35d87ccd",
+      "dirty": false
+    },
+    "runDir": "/Users/runner/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          4.94,
+          4.28,
+          4.13
+        ],
+        "uptimeS": 4468,
+        "cpus": 3
+      },
+      "after": {
+        "loadavg": [
+          3.26,
+          3.73,
+          3.96
+        ],
+        "uptimeS": 4963,
+        "cpus": 3
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.UserNotificationCenter",
+      "now": "com.apple.UserNotificationCenter",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "vendor",
+      "approved": {
+        "bundlePath": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.3.0",
+        "build": "2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e",
+        "signature": {
+          "kind": "adhoc",
+          "identityMatches": null
+        }
+      },
+      "checkoutBuild": "2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e",
+      "attested": [
+        {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "313fbf534c6dcfe8495318fb8441b67a35d87ccd",
+    "hardware": {
+      "model": "VirtualMac2,1",
+      "chip": "Apple M1 (Virtual)",
+      "memoryBytes": 7516192768
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0.1",
+      "build": "26A434"
+    },
+    "display": null,
+    "runner": {
+      "kind": "github-hosted",
+      "image": {
+        "name": "macos27",
+        "version": "20261123.0387.2"
+      },
+      "run": {
+        "id": "46052931439",
+        "attempt": "1"
+      },
+      "vm": {
+        "id": "4010b877-b157-4751-9637-f2dc8c33abfa",
+        "platformUuid": "C5A3496E-6140-5911-9168-E007A05F9861",
+        "bootedAt": "2026-11-27T19:19:57.000Z"
+      },
+      "install": {
+        "home": "/Users/runner/Library/Application Support/cua",
+        "release": "26.928.40906-darwin-arm64"
+      },
+      "engine": {
+        "bundle": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+        "build": "2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e",
+        "engineVersion": "0.3.0"
+      },
+      "writtenAt": "2026-11-27T19:25:10.828Z"
+    },
+    "venue": {
+      "alerts": [
+        {
+          "number": 61,
+          "bounds": {
+            "height": 364,
+            "width": 260,
+            "x": 893,
+            "y": 244
+          }
+        },
+        {
+          "number": 35,
+          "bounds": {
+            "height": 348,
+            "width": 260,
+            "x": 830,
+            "y": 188
+          }
+        }
+      ],
+      "display": {
+        "height": 1080,
+        "width": 1920,
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "chrome": {
+          "x": 22,
+          "y": 60,
+          "width": 800,
+          "height": 760
+        },
+        "electron": {
+          "x": 102,
+          "y": 100,
+          "width": 720,
+          "height": 560
+        },
+        "finder": {
+          "x": 22,
+          "y": 80,
+          "width": 800,
+          "height": 520
+        },
+        "openPanel": {
+          "x": 80,
+          "y": 80,
+          "width": 720,
+          "height": 440
+        }
+      },
+      "textEdit": {
+        "domain": "com.apple.TextEdit",
+        "container": "/Users/runner/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit",
+        "writes": [
+          {
+            "key": "WidthInChars",
+            "value": "60",
+            "written": true,
+            "readBack": "60",
+            "container": {
+              "readBack": "60",
+              "readBackBefore": null,
+              "written": true
+            },
+            "matched": true
+          },
+          {
+            "key": "NSRequiresOpenUntitledWindowAtLaunch",
+            "value": "NO",
+            "readsAs": "0",
+            "written": true,
+            "readBack": "0",
+            "container": {
+              "readBack": "0"
+            },
+            "matched": true
+          },
+          {
+            "key": "ApplePersistenceIgnoreState",
+            "value": "YES",
+            "readsAs": "1",
+            "written": true,
+            "readBack": "1",
+            "container": {
+              "readBack": "1"
+            },
+            "matched": true
+          },
+          {
+            "key": "NSWindow Frame NSNavPanelAutosaveName",
+            "value": "80 560 720 440 0 0 1920 1055 ",
+            "written": true,
+            "readBack": "80 560 720 440 0 0 1920 1055",
+            "container": {
+              "readBack": "80 560 720 440 0 0 1920 1055"
+            },
+            "matched": true
+          },
+          {
+            "key": "NSNavPanelExpandedSizeForOpenMode",
+            "value": "{720, 440}",
+            "written": true,
+            "readBack": "{720, 440}",
+            "container": {
+              "readBack": "{720, 440}"
+            },
+            "matched": true
+          }
+        ],
+        "ok": true,
+        "savedState": [
+          {
+            "path": "/Users/runner/Library/Saved Application State/com.apple.TextEdit.savedState",
+            "existed": false,
+            "removed": false
+          }
+        ]
+      },
+      "textEditDocument": {
+        "document": "cua-scene.rtf",
+        "view": {
+          "width": 480,
+          "height": 792
+        },
+        "controlWords": "\\vieww9600\\viewh15840",
+        "sha256": {
+          "default": {
+            "mini": "e3703ac3a303696332910efb44330a6604f403849695ca011bfacf2a23ad4a76",
+            "hosted": "dff8383ef0c0a5142279fd1d536a562bff45a4f06be68bbd5d603e270e988ffd"
+          },
+          "wide-page": {
+            "mini": "e228c76974983f74cbd27e31eefca527584ceb5eac25771eecab205446a391a3",
+            "hosted": "f32e9d20e9a2c43fe0f76ebb08e70a0b7e14dbc3b2629e7c913a8af9248e08ef"
+          }
+        }
+      },
+      "differences": [
+        {
+          "scene": "chrome",
+          "mini": {
+            "x": 80,
+            "y": 60,
+            "width": 1000,
+            "height": 760
+          },
+          "hosted": {
+            "x": 22,
+            "y": 60,
+            "width": 800,
+            "height": 760
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 61 (893,244 260x364), alert 35 (830,188 260x348); the mini's 80,60 1000x760 would overlap them; Chrome is 800x760 on a hosted runner (ruling 1169); the frame 22,60 800x760",
+          "grounding": "window points grounded on the notes field's frame as read in the run's window, toolbar and infobars whatever they are (../native-matrix/plan.mjs chromeDragFromField, ruling 1226); a frame not read leaves the drag invalid",
+          "cells": [
+            "chrome/frontmost/drag.select",
+            "chrome/background/drag.select@textedit",
+            "native-mac chrome (its tree: the page in the window, both lanes alike)"
+          ]
+        },
+        {
+          "scene": "electron",
+          "mini": {
+            "x": 140,
+            "y": 100,
+            "width": 720,
+            "height": 560
+          },
+          "hosted": {
+            "x": 102,
+            "y": 100,
+            "width": 720,
+            "height": 560
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 61 (893,244 260x364), alert 35 (830,188 260x348); the mini's 140,100 720x560 would overlap them; the frame 102,100 720x560",
+          "grounding": "window points on the fixture's size, unchanged at 720x560: its drag's layout (ELECTRON_FIELD_LAYOUT) holds as it is; #259's point is grounded on the field's frame as read (../native-matrix/plan.mjs electronPointFromField, ruling 1228); only the origin moved",
+          "cells": [
+            "electron/frontmost/drag.select",
+            "electron/frontmost/click.point",
+            "electron/background/drag.select@finder",
+            "native-mac electron (its tree)"
+          ]
+        },
+        {
+          "scene": "finder",
+          "mini": {
+            "x": 80,
+            "y": 80,
+            "width": 920,
+            "height": 520
+          },
+          "hosted": {
+            "x": 22,
+            "y": 80,
+            "width": 800,
+            "height": 520
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 61 (893,244 260x364), alert 35 (830,188 260x348); the mini's 80,80 920x520 would overlap them; the frame 22,80 800x520",
+          "grounding": "element-addressed rows; the height is the mini's, so the same rows are visible",
+          "cells": [
+            "finder/frontmost/click.row",
+            "finder/frontmost/pressKey.down",
+            "finder/frontmost/typeText.typeSelect",
+            "finder/frontmost/scroll.down",
+            "finder/frontmost/performSecondaryAction.down",
+            "finder/background/click.row@textedit",
+            "finder/background/pressKey.down@textedit",
+            "finder/background/typeText.typeSelect@textedit",
+            "finder/background/scroll.down@textedit",
+            "finder/background/performSecondaryAction.down@textedit",
+            "finder/background/click.row@electron",
+            "finder/background/pressKey.down@electron",
+            "finder/background/typeText.typeSelect@electron",
+            "finder/background/scroll.down@electron",
+            "finder/background/performSecondaryAction.down@electron",
+            "native-mac finder (its tree: the rows its height shows; the diff pairs equal frames only)"
+          ]
+        },
+        {
+          "scene": "textedit",
+          "mini": {
+            "WidthInChars": 75,
+            "NSRequiresOpenUntitledWindowAtLaunch": "YES (AppKit's default)",
+            "ApplePersistenceIgnoreState": "NO (AppKit's default: windows restored)"
+          },
+          "hosted": {
+            "WidthInChars": 60,
+            "NSRequiresOpenUntitledWindowAtLaunch": "NO",
+            "ApplePersistenceIgnoreState": "YES",
+            "saved application state": "to be removed after the warm-ups, outside the container (venue.textEdit.savedState says what was)"
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 61 (893,244 260x364), alert 35 (830,188 260x348); at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session); vv-1's launch window again stood at 241,87 586x488 with that key in force and its new document took 603x505, the default width, though the domain read WidthInChars 60 back (pilot A's re-run, run 45277221729): a window the warm-ups' saved state restored, and a domain write the sandboxed TextEdit does not read, so restoration is turned off, removing the saved state outside the container is attempted (venue.textEdit.savedState records the outcome) and every key is read back from TextEdit's container",
+          "grounding": "fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare's clicks proving each end",
+          "cells": [
+            "textedit/frontmost/drag.select",
+            "textedit/background/drag.select@finder",
+            "textedit/background/drag.select@chrome",
+            "native-mac textedit (its tree)"
+          ]
+        },
+        {
+          "scene": "textedit document",
+          "mini": {
+            "view size": "none: TextEdit takes the paper's width",
+            "sha256 default": "e3703ac3a303696332910efb44330a6604f403849695ca011bfacf2a23ad4a76",
+            "sha256 wide-page": "e228c76974983f74cbd27e31eefca527584ceb5eac25771eecab205446a391a3"
+          },
+          "hosted": {
+            "view size": "480x792 (\\vieww9600\\viewh15840)",
+            "sha256 default": "dff8383ef0c0a5142279fd1d536a562bff45a4f06be68bbd5d603e270e988ffd",
+            "sha256 wide-page": "f32e9d20e9a2c43fe0f76ebb08e70a0b7e14dbc3b2629e7c913a8af9248e08ef"
+          },
+          "reason": "the scene's cua-scene.rtf, opened as a file with no view size, stood at 213,78 627x877 on both sides (pilot B, run 45274556933): the paper's width, which WidthInChars does not change, its right edge 840 over alert 31; a view 480 wide ends left of the strip's 822 from the cascade origins read so far, one step more; its origin is AppKit's cascade, read back by each run",
+          "grounding": "the window's size only: the file is the mini's with the view size inserted, so its text and attribute runs are the mini's (textutil's text and HTML of both files are equal, test/repl-parity/scenes-mac.test.mjs); the cells' fractions and rows hold as for TextEdit's preferences; the wide page stays wider than the window (its 200% zoom)",
+          "cells": [
+            "textedit/frontmost/drag.select",
+            "textedit/background/drag.select@finder",
+            "textedit/background/drag.select@chrome",
+            "native-mac textedit (its tree)",
+            "hscroll/textedit-wide-page/right (the wide-page layout: its page wider than the window)"
+          ]
+        },
+        {
+          "scene": "openPanel",
+          "mini": "AppKit's: centred on the screen",
+          "hosted": {
+            "x": 80,
+            "y": 80,
+            "width": 720,
+            "height": 440
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 61 (893,244 260x364), alert 35 (830,188 260x348); the mini leaves the panel centred, where the alerts are; the frame 80,80 720x440",
+          "grounding": "element-addressed (its Cancel, its search field, the Save sheet's name field, A's New Document): the frame decides only whether the guard refuses them; on a hosted runner the matrix moves each opening into the strip by Accessibility (ruling 1195), and a read-back outside it is NO VERDICT venue",
+          "cells": [
+            "openPanel/frontmost/getAXState.panel",
+            "openPanel/frontmost/typeText.search",
+            "openPanel/frontmost/pressKey.escape",
+            "openPanel/frontmost/click.cancel",
+            "openPanel/background/getAXState.panel@finder",
+            "openPanel/background/click.cancel@finder",
+            "savePanel/frontmost/pressKey.escape",
+            "savePanel/frontmost/typeText.name",
+            "savePanel/frontmost/setValue.name",
+            "native-baseline setup.newDocument (the panel at TextEdit's launch, where one shows: the mini's)"
+          ]
+        }
+      ],
+      "inputSources": {
+        "via": "TISEnableInputSource (./input-sources.swift)",
+        "restored": "nothing: the VM is thrown away (ruling 1189)",
+        "sources": [
+          {
+            "id": "com.apple.keylayout.ABC",
+            "selects": true,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardLayout",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": true
+            },
+            "preference": true,
+            "held": true
+          },
+          {
+            "id": "com.apple.inputmethod.Korean",
+            "selects": false,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardInputMethodModeEnabled",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": false
+            },
+            "preference": true,
+            "held": true
+          },
+          {
+            "id": "com.apple.inputmethod.Korean.2SetKorean",
+            "selects": true,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardInputMode",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": true
+            },
+            "preference": true,
+            "held": true
+          }
+        ],
+        "preference": [
+          {
+            "InputSourceKind": "Keyboard Layout",
+            "KeyboardLayout ID": 0,
+            "KeyboardLayout Name": "U.S."
+          },
+          {
+            "Bundle ID": "com.apple.CharacterPaletteIM",
+            "InputSourceKind": "Non Keyboard Input Method"
+          },
+          {
+            "InputSourceKind": "Keyboard Layout",
+            "KeyboardLayout ID": 252,
+            "KeyboardLayout Name": "ABC"
+          },
+          {
+            "Bundle ID": "com.apple.inputmethod.Korean",
+            "InputSourceKind": "Keyboard Input Method"
+          },
+          {
+            "Bundle ID": "com.apple.inputmethod.Korean",
+            "Input Mode": "com.apple.inputmethod.Korean.2SetKorean",
+            "InputSourceKind": "Input Mode"
+          }
+        ],
+        "missing": [],
+        "reads": 1
+      },
+      "keyWindowTrust": {
+        "trusted": true,
+        "via": "loopback ssh"
+      }
+    },
+    "fixtures": {
+      "chrome": {
+        "appPath": "/Users/runner/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+        "version": "155.0.8059.84",
+        "reused": true
+      },
+      "electron": {
+        "appPath": "/Users/runner/Library/Caches/cua-harness/electron-fixture/44.9.0-1357256d7cf8/cua Electron Fixture.app",
+        "bundleId": "io.github.ssfskim.cua.fixture.electron",
+        "electronVersion": "44.9.0",
+        "sourceHash": "1357256d7cf8",
+        "reused": true
+      }
+    },
+    "placement": {
+      "alerts": [
+        {
+          "height": 364,
+          "width": 260,
+          "x": 893,
+          "y": 244
+        },
+        {
+          "height": 348,
+          "width": 260,
+          "x": 830,
+          "y": 188
+        }
+      ],
+      "scenes": {
+        "textedit": {
+          "from": {
+            "height": 877,
+            "width": 507,
+            "x": 213,
+            "y": 78
+          },
+          "moved": false
+        },
+        "chrome": {
+          "from": {
+            "height": 760,
+            "width": 800,
+            "x": 22,
+            "y": 60
+          },
+          "moved": false
+        },
+        "electron": {
+          "from": {
+            "height": 560,
+            "width": 720,
+            "x": 102,
+            "y": 100
+          },
+          "moved": false
+        }
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": false
+    },
+    "hostAttestation": {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 582,
+        "cua/errorName": null,
+        "cua/serviceMs": 209.434,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "213f8529-335a-467d-8df6-445feac9d4d2",
+        "cua/nativeExecution": {
+          "path": "/Users/runner/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "keyWindowRead": {
+      "row:1": 2,
+      "row:2": 2,
+      "row:4": 2,
+      "row:5": 2,
+      "row:7": 2,
+      "row:8": 2,
+      "row:10": 2,
+      "row:11": 2,
+      "row:13": 2,
+      "row:14": 2,
+      "row:16": 2,
+      "row:17": 2,
+      "row:19": 2,
+      "row:20": 2,
+      "row:22": 2,
+      "row:23": 2,
+      "row:25": 2,
+      "row:26": 2,
+      "row:28": 2,
+      "row:29": 2,
+      "row:30": 2,
+      "row:31": 2,
+      "row:32": 2,
+      "row:33": 2,
+      "row:34": 2,
+      "row:35": 2,
+      "row:36": 2,
+      "row:37": 2,
+      "row:38": 2,
+      "row:39": 2,
+      "row:40": 2,
+      "row:41": 2,
+      "row:42": 2,
+      "row:43": 2,
+      "row:44": 2,
+      "row:45": 2,
+      "row:46": 2,
+      "row:47": 2,
+      "row:48": 2,
+      "row:49": 2,
+      "row:50": 2,
+      "row:51": 2,
+      "row:52": 2,
+      "row:53": 2,
+      "row:54": 2,
+      "row:55": 2,
+      "row:56": 2,
+      "row:57": 2,
+      "row:58": 2,
+      "row:59": 2
+    },
+    "alertsHeld": [
+      {
+        "when": "before textedit/frontmost/typeText.replace",
+        "count": 2,
+        "windows": [
+          {
+            "bundleId": "com.apple.UserNotificationCenter",
+            "layer": 8,
+            "titled": false,
+            "size": [
+              260,
+              364
+            ]
+          },
+          {
+            "bundleId": "com.apple.UserNotificationCenter",
+            "layer": 8,
+            "titled": false,
+            "size": [
+              260,
+              348
+            ]
+          }
+        ],
+        "checks": 80
+      }
+    ],
+    "activations": {
+      "accounted": [
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1795811698864
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1795811703286
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1795811708106
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1795811712869
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1795811919669
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1795812001950
+        }
+      ],
+      "unaccounted": []
+    },
+    "electronMode": {
+      "file": "electron-accessibility.jsonl",
+      "records": 102
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [
+        "state",
+        "run"
+      ],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+          "kind": "vendor",
+          "origin": "pinned runtime",
+          "ageSeconds": 12,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-11-27T20:42:40.970Z"
+  }
+}

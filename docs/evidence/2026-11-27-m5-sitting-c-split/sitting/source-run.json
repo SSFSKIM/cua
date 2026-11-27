@@ -1,0 +1,27 @@
+{
+  "runId": "46052931439",
+  "attempt": 1,
+  "workflow": ".github/workflows/m5-sittings.yml",
+  "status": "completed",
+  "drawing": "313fbf534c6dcfe8495318fb8441b67a35d87ccd",
+  "judging": "c0b2ce8f1b01a2fda19f3d384f40557feb96fa7b",
+  "picked": [
+    {
+      "run": 1,
+      "name": "m5-sitting-c-run-1-1",
+      "attempt": 1
+    },
+    {
+      "run": 2,
+      "name": "m5-sitting-c-run-2-1",
+      "attempt": 1
+    },
+    {
+      "run": 3,
+      "name": "m5-sitting-c-run-3-1",
+      "attempt": 1
+    }
+  ],
+  "compared": "the runs, filter and speed_extra against the run jobs' own records (meta.run, the matrix records' meta.filter, the save-sheet and speed-extra records)",
+  "refused": []
+}

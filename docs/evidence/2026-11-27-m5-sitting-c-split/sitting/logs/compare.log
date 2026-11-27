@@ -1,0 +1,16 @@
+wrote /Users/runner/work/_temp/m5-out/sitting/comparison.md
+VERDICT: FAIL
+  blocking: method: finder/background/typeText.typeSelect@electron is worse on cua (known defect #587)
+  blocking: method: finder/background/typeText.typeSelect@textedit is worse on cua (known defect #587)
+  blocking: method: finder/frontmost/typeText.typeSelect is worse on cua (known defect #587)
+  missing: concurrent use: textedit/concurrent.sheet@electron has no valid cua sample
+  missing: 4 cell(s) do not qualify: fewer than 3 complete run pairs (NO VERDICT by cell)
+  missing: speed: textedit/method.panel.typeText.search has no measure on one engine
+  owner: speed: electron/method.paste.replace passes on re-measurement (cua 77.5 ms against 96.3 ms, p95 133 against 238, n = 30 a side; the base's n = 3: cua 112.7 ms against 121.9 ms): the owner's whatever the numbers (ruling 1232)
+  owner: speed: textedit/method.paste.replace passes on re-measurement (cua 46.3 ms against 63 ms, p95 135.9 against 166.4, n = 30 a side; the base's n = 3: cua 48.6 ms against 39 ms): the owner's whatever the numbers (ruling 1232)
+  owner: speed: textedit/method.typeText.replace missed the 10% beat on re-measurement (cua 300.7 ms against 304.9 ms, p95 442 against 406, n = 30 a side; the base's n = 3: cua 289.3 ms against 300.8 ms): the owner's whatever the numbers (ruling 1232)
+  owner: finding elements: parity on the resolved sum (the owner decides)
+  not judged: perContext (54 rows): ticket #577
+  not judged: openPanelSearch (1 row): ticket #588
+  not judged: savePanelNameTiming (1 row): ticket #592
+  not judged: electron/background/launch@finder (sharedVenue): evidence cua run 1 sample 1 interference.windowOrder.after; vendor run 1 sample 1 interference.windowOrder.after; cua run 2 sample 2 interference.windowOrder.after; vendor run 2 sample 2 interference.windowOrder.after; cua run 3 sample 3 interference.windowOrder.after; vendor run 3 sample 3 interference.windowOrder.after

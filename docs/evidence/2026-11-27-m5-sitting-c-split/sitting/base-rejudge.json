@@ -1,0 +1,30 @@
+{
+  "at": "bfa8cf48652da12eb3bfb70eaaad7bbf5abc61d3",
+  "differences": [
+    {
+      "cell": "method chrome/background/drag.select@textedit",
+      "was": "worse",
+      "now": "declared",
+      "expected": true,
+      "by": {
+        "kind": "departure",
+        "declaration": "Decision Log, 2026-11-05, #282 (shared mode, item 6): a drag into a background Chromium web area is never posted, refused as backgroundClickRefused; the background-drag study, #591 (ruling 1228)",
+        "ticket": "#282",
+        "ruling": "1228"
+      }
+    },
+    {
+      "cell": "speed textedit/method.savePanel.typeText.name",
+      "was": "no-verdict",
+      "now": "not judged",
+      "expected": true,
+      "by": {
+        "kind": "not judged",
+        "declaration": "savePanelNameTiming",
+        "ticket": "#592",
+        "ruling": "1231"
+      }
+    }
+  ],
+  "refused": []
+}

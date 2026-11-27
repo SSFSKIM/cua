@@ -32,6 +32,12 @@ All files are copied byte for byte from the runs' artifacts (`gh run download`, 
 - `jobs/m5-sitting-c-run-{1,2,3}-1/`: the three run-job artifacts of run 46052931439. Each holds both lanes of its run,
   the save-sheet cell, the speed-extra cell and the witness tap's record.
 
+**`sitting/combined/` is superseded as a base (ruling 1239).**
+- A later filtered C run's judge rebuilds the combined C result from raw records with the current combine, in layers:
+  45468052791's records, then this directory's `jobs/`, then the new jobs. It never reads `sitting/combined/`.
+- Combined over the same raw layers, c0b2ce8f1's own combine reproduces `sitting/combined/` byte for byte.
+- It stays here as part of the pass's record. It is no longer maintained.
+
 ## Digests
 
 `digests.sha256` lists sha256 digests of every `result.json` under this directory: 32 files, checked against the

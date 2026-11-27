@@ -232,3 +232,19 @@ test('a replaced row is judged on its rerun\'s frames, not the full run\'s whole
   assert.ok((rowsOf(C).account.cua.noVerdict.venue ?? 0) > 0, 'the full run\'s own row keeps its split');
 });
 
+// Review of ad285cedf (Minor): only a row combine replaced stands apart from the whole-run split, told by its `evidence`
+// matching one of its run's recorded replacements (meta.reruns); an `evidence` no replacement backs keeps the split.
+test('a row carrying an evidence no meta.reruns entry backs keeps the full run\'s whole-run split', () => {
+  const venue = x => ({venue: {frames: {textedit: {x, y: 0, width: 800, height: 600}}}});
+  const stray = {runId: '999', attempt: '1'};
+  const before = ['vendor', 'cua'].map(engine => result(engine, 2, [row(A, engine, {evidence: stray}), row(C, engine)], venue(engine === 'vendor' ? 0 : 4)));
+  const j = judge(before, [], {departures: []});
+  assert.ok((j.methods.find(m => `method ${m.id}` === A).account.cua.noVerdict.venue ?? 0) > 0, 'no replacement recorded: the split is the row\'s');
+  // Backed by a replacement of another job: still the full run's.
+  const other = before.map(r => ({...r, result: {...r.result, meta: {...r.result.meta, reruns: [{runId: '777', attempt: '2', commit: 'c2', filter: [A], build: 'b'}]}}}));
+  assert.ok((judge(other, [], {departures: []}).methods.find(m => `method ${m.id}` === A).account.cua.noVerdict.venue ?? 0) > 0);
+  // Backed by its own run's replacement: the rerun's frames.
+  const backed = before.map(r => ({...r, result: {...r.result, meta: {...r.result.meta, reruns: [{runId: '999', attempt: '1', commit: 'c2', filter: [A], build: 'b'}]}}}));
+  assert.equal(judge(backed, [], {departures: []}).methods.find(m => `method ${m.id}` === A).account.cua.noVerdict.venue ?? 0, 0);
+});
+

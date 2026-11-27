@@ -53,6 +53,8 @@ import {dryConnect, dryOps, matrixOps} from './native-matrix/lane.mjs';
 import {listCells, resolveCell, runExternal} from './native-matrix/registry.mjs';
 import {cleanupMatrix, filteredPlan, planOf, runMatrix} from './native-matrix/run.mjs';
 import {judge, notJudgedLines, readResults, renderSummary} from './native-matrix/summary.mjs';
+import {combineReruns} from './native-matrix/combine.mjs';
+import {writeCellResult} from './native-matrix/cell-result.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
@@ -104,6 +106,10 @@ export function parseCommand(argv) {
     case 'compare':
       if (rest.length !== 2) fail('compare needs <vendor-dir> <cua-dir>');
       return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : null};
+    case 'combine':
+      if (!rest.length) fail('combine needs at least one directory');
+      if (!values.out) fail('combine needs --out <dir>');
+      return {command, dirs: rest.map(d => resolve(d)), out: resolve(values.out)};
     case 'summary':
       if (!rest.length) fail('summary needs at least one directory');
       return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : join(resolve(rest[0]), 'summary.md')};
@@ -113,6 +119,25 @@ export function parseCommand(argv) {
       return {command, device: values.device, run: absolute(values.run, 'run'), preparation: absolute(values.preparation, 'preparation'), dryRun};
     default: return fail(`unknown command ${command ?? '(none)'}`);
   }
+}
+
+// Ruling 1228 (E): the full runs under `dirs` combined with the filtered reruns there (./native-matrix/combine.mjs),
+// written per lane to <out>/<engine>/run-<n>/ (the rerun flags on each combined run's meta.rerunFlags) and the account
+// to <out>/combined.json; `summary` and `compare` then read <out>/vendor and <out>/cua. -> the account.
+function combineDirs({dirs, out}, io, log) {
+  const {results, problems: unread} = io.readResults(dirs);
+  const own = ({result}) => result.cell === 'matrix';
+  const full = results.filter(r => own(r) && r.result.meta?.planId === 'full'), reruns = results.filter(r => own(r) && r.result.meta?.planId === 'filtered');
+  const account = combineReruns(full, reruns);
+  for (const {result} of account.results) {
+    const flags = account.flags.filter(f => f.run === result.meta.run);
+    io.writeResult(join(out, result.lanes[0].engine, `run-${result.meta.run}`), flags.length ? {...result, meta: {...result.meta, rerunFlags: flags}} : result);
+  }
+  for (const c of account.combined) log(`combined run ${c.run} from job ${c.runId} attempt ${c.attempt}: ${c.cells.length} cell(s)`);
+  for (const f of account.flags) log(`FLAG: ${f.cell} on ${f.engine}, run ${f.run}: failed in the full run, passes only in the filtered rerun`);
+  for (const p of [...unread, ...account.problems]) log(`problem: ${p}`);
+  io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, problems: [...unread, ...account.problems]});
+  return account;
 }
 
 // The judgment of results under `dirs`. -> {judged, text}.
@@ -127,6 +152,7 @@ const VERDICT_CODE = {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4};
 
 export async function main(argv = process.argv.slice(2), {log = console.log, io: given = null} = {}) {
   const options = parseCommand(argv);
+  if (options.command === 'combine') return combineDirs(options, given?.combine ?? {readResults, writeResult: writeCellResult, writeJson: (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)}, log);
   if (options.command === 'compare' || options.command === 'summary') {
     const {judged, text} = judgeDirs(options.dirs);
     if (options.out) { fs.writeFileSync(options.out, text); log(`wrote ${options.out}`); }

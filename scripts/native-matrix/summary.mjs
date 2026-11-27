@@ -472,11 +472,13 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const refusedNotJudged = [...notJudgedRows, ...sharedEntries].map(entry => [entry, notJudgedRefusal(entry)]).filter(([, why]) => why);
   const notJudged = [...notJudgedRows, ...sharedEntries].filter(entry => !refusedNotJudged.some(([e]) => e === entry));
   const speedMisses = speed.filter(s => s.beat === false);
+  const evidence = evidenceOf(full);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
     ...unneeded.map(e => `departures: the file declares ${e.section} ${e.id}, which no sample of the full runs needed: remove it`),
+    ...evidence.flags.map(f => `rerun: ${f.cell} on ${f.engine}, run ${f.run}: failed on its own verdict in the full run (job ${f.full.runId}, attempt ${f.full.attempt}) and passes only in the filtered rerun (job ${f.rerun.runId}, attempt ${f.rerun.attempt})`),
   ];
   const blocking = [
     ...departureFailures,
@@ -519,7 +521,34 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
-    firstLane: firstLaneSplitOf(full), verdict};
+    firstLane: firstLaneSplitOf(full), evidence, verdict};
+}
+
+// Ruling 1228 (E): the jobs each run's evidence came from, the full runs combined with filtered reruns (./combine.mjs):
+// per run number its full run's job and every rerun's job with the cells it proved, and the rerun flags combine recorded
+// (a cell that failed on its own verdict in the full run and passes only in the rerun), which go to the owner. Nothing
+// when no full run names a job. -> {jobs: [{run, full, reruns: [{runId, attempt, commit, cells}]}], flags}.
+export function evidenceOf(full) {
+  const jobs = new Map(), flags = [];
+  for (const {result} of full) {
+    const run = result.meta?.run, job = result.meta?.runner?.run;
+    if (!job || jobs.has(run)) continue;
+    jobs.set(run, {run, full: {runId: job.id ?? null, attempt: job.attempt ?? null}, reruns: (result.meta.reruns ?? []).map(r => ({runId: r.runId, attempt: r.attempt, commit: r.commit, cells: r.filter}))});
+  }
+  const seen = new Set();
+  for (const {result} of full) for (const f of result.meta?.rerunFlags ?? []) {
+    const key = `${f.run} ${f.engine} ${f.cell}`;
+    if (!seen.has(key)) { seen.add(key); flags.push(f); }
+  }
+  return {jobs: [...jobs.values()].sort((a, b) => a.run - b.run), flags};
+}
+// The evidence as a report section, nothing when no run named its job. -> [line].
+export function renderEvidence(evidence) {
+  if (!evidence?.jobs.length) return [];
+  const job = j => `job ${j.runId} attempt ${j.attempt}`;
+  return ['## Evidence by job (ruling 1228)', '', 'Each run\'s cells come from its full run\'s job, but those a filtered rerun replaced, both lanes together (./combine.mjs).', '',
+    ...evidence.jobs.map(e => `- run ${e.run}: ${job(e.full)}${e.reruns.map(r => `, but ${r.cells.length} cell${r.cells.length === 1 ? '' : 's'} from ${job(r)} (commit ${r.commit}): ${r.cells.join(', ')}`).join('')}`),
+    ...evidence.flags.map(f => `- FLAG: ${f.cell} on ${f.engine}, run ${f.run}: failed on its own verdict in the full run, passes only in the filtered rerun (the owner's)`), ''];
 }
 
 // A declared departure's known capability difference as the runs measured it (ruling 1228): of the vendor's runs of
@@ -768,6 +797,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   }
 
   out.push(...renderFirstLaneSplit(j.firstLane));
+  out.push(...renderEvidence(j.evidence));
   out.push('## Speed (in-cell ms)', '');
   for (const scene of SCENE_IDS) {
     const list = j.speed.filter(s => s.scene === scene);

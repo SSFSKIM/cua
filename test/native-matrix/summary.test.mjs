@@ -1492,3 +1492,21 @@ test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declar
     cua: {axMs: 40, tweak: dragAsRecorded('cua')}, departures: readDepartures()});
   assert.match(renderSummary(lost), /the vendor made the selection cleanly in 3 of 3 runs, TextEdit NOT front and key throughout/);
 });
+
+// Ruling 1228 (E): combined records name, per run, the job each cell's evidence came from, and a cell that failed in the
+// full run on its own verdict and passes only in a filtered rerun goes to the owner, never silently replaced.
+test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a rerun flag is the owner\'s', () => {
+  const POINT = 'electron/frontmost/click.point';
+  const rerunMeta = run => ({runner: {run: {id: '45468052791', attempt: '1'}}, ...(run === 2 ? {reruns: [{runId: '777', attempt: '2', commit: 'c2', filter: [`method ${POINT}`], build: 'b'}],
+    rerunFlags: [{run: 2, engine: 'cua', cell: `method ${POINT}`, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
+  const evidenced = (rows, run) => (run === 2 ? rows.map(r => (r.id === POINT ? {...r, evidence: {runId: '777', attempt: '2'}} : r)) : rows);
+  const j = judged({vendor: {resolved: 9, axMs: 50, meta: rerunMeta, tweak: evidenced}, cua: {axMs: 40, meta: rerunMeta, tweak: evidenced}});
+  assert.deepEqual(j.evidence.jobs, [{run: 1, full: {runId: '45468052791', attempt: '1'}, reruns: []}, {run: 2, full: {runId: '45468052791', attempt: '1'}, reruns: [{runId: '777', attempt: '2', commit: 'c2', cells: [`method ${POINT}`]}]},
+    {run: 3, full: {runId: '45468052791', attempt: '1'}, reruns: []}]);
+  assert.ok(j.owner.some(o => o === `rerun: method ${POINT} on cua, run 2: failed on its own verdict in the full run (job 45468052791, attempt 1) and passes only in the filtered rerun (job 777, attempt 2)`), j.owner.join('\n'));
+  assert.equal(j.verdict, 'OWNER');
+  const text = renderSummary(j);
+  assert.match(text, /^## Evidence by job \(ruling 1228\)$/m);
+  assert.match(text, new RegExp(`^- run 2: job 45468052791 attempt 1, but 1 cell from job 777 attempt 2 \\(commit c2\\): method ${POINT.replace(/[./]/g, c => `\\${c}`)}$`, 'm'));
+  assert.doesNotMatch(renderSummary(judged()), /Evidence by job/);
+});

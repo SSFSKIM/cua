@@ -40,7 +40,8 @@
 // steps and here for the facade and suite steps, and labelled "acceptance on the pinned release". What runs is that
 // installed file itself, never the check's copy, and every child gets CUA_HOME the run home (a `cua serve` the harness
 // starts, a HOME of the run's too: pinned-home.mjs; the design session's ruling 708). The vendor builds follow the
-// architecture, from that home's runtime. The facade suites run the one runner (suites.sh) with ENGINE=installed: it
+// architecture; since #171 M6b they come from the comparator fixture alone (below), never from a cua home. The facade
+// suites run the one runner (suites.sh) with ENGINE=installed: it
 // passes no engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`,
 // else this architecture's VM); on a `--candidate`, ENGINE=candidate names it, as M4's facade.sh did. `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
 // home's engine unchecked, as a development run; `--pinned <home> --pilot <n>` (no `--dev`) is a development run on the
@@ -53,6 +54,14 @@
 // `<step>.development-run[.pilot]`, its README.md and step.json open with the label, its logs' first line is the label,
 // the private display's session rows carry it, and the harness's own rows and summary carry it (experiments.mjs,
 // report.mjs).
+//
+// M6b (#171 M6b, its pre-flight §4.4, F7): **the comparator fixture**. No cua home holds the vendor's Linux release for
+// the gate any more, so the pinned vendor build and the vendor's client come from a hash-checked fixture directory
+// outside any cua home (../linux-engine-diff/vendor-fixture.mjs): `--vendor-fixture <dir>`, else this architecture's
+// `~/.local/share/cua-171/vendor-<arch>-pinned`. Before a step that runs either one starts (`run`, and `print` for a `:0`
+// step), the fixture is checked against scripts/linux-engine-gate/vendor-fixture.json and every extracted file against
+// its list; a mismatch refuses the step, never a skip and never a fetch, and the step's record names what was checked.
+// `--newest` still names the newest vendor build by its own path.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -68,25 +77,22 @@ import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs
 import '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { scratchRoot } from '../linux-engine-diff/scratch-root.mjs';
+import { VendorFixtureRefused, defaultFixtureDir, fixturePaths, verifyVendorFixture } from '../linux-engine-diff/vendor-fixture.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, startsEnginesThroughHarness, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
 const HOME = homedir();
-/** The pinned vendor release, whose runtime holds the pinned vendor build and the vendor's client. */
-const VENDOR_RELEASE = '26.928.40906';
 /** #171's VMs as scripts/repl-parity/devices.mjs declares them, by architecture: the suites' device by default. */
 export const DEVICES_BY_ARCH = { x64: 'cua-171', arm64: 'cua-171-arm64' };
 /**
- * The paths of the sittings (task 73's env.sh, the spec's Concrete Steps) on a machine of `arch`: the pinned vendor build
- * and the vendor's client from the runtime of the cua home `cuaHome` (the pinned run home, else the default home, as M4
- * ran), the newest vendor build where the run extracted it, and the run's tools.
+ * The paths of the sittings (task 73's env.sh, the spec's Concrete Steps) on a machine of `arch`: the comparator fixture
+ * that holds the pinned vendor build and the vendor's client (M6b: no cua home is asked for them), the newest vendor
+ * build where the run extracted it, and the run's tools.
  */
-export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/share/cua')) {
-  const sky = join(cuaHome, 'runtimes', `${VENDOR_RELEASE}-linux-${arch}`, 'cua_node/lib/node_modules/@oai/sky');
+export function defaultsFor(arch = process.arch) {
   return {
-    vendor: join(sky, 'bin/linux', `sky_linux_${arch}`),
+    vendorFixture: defaultFixtureDir(arch, HOME),
     newest: join(HOME, '.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux', `sky_linux_${arch}`),
-    vendorJs: sky,
     // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
     firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
     locked: join(HOME, '.local/share/cua-171/locked.sh'),
@@ -204,6 +210,8 @@ export function resolvedAsRun71(dir) {
 
 /** The :0 sitting's outer launcher, relative to the checkout. */
 const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
+/** The comparator fixture's check a :0 step's launch path runs first, under the host lock (fixture-check.mjs). */
+const FIXTURE_CHECK = 'scripts/linux-engine-gate/fixture-check.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
 const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
@@ -222,17 +230,19 @@ const USAGE = `usage:
   gate.mjs check --pinned <home>
   gate.mjs leftovers [--remove <dir> [--confirm]]
   gate.mjs summary --out <dir>
-  options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
-  --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
+  options: [--vendor-fixture <dir>] [--newest <bin>] [--holder <name>]
+  --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)
+  --vendor-fixture <dir>: the comparator fixture that holds the pinned vendor build and the vendor's client (default ~/.local/share/cua-171/vendor-<arch>-pinned)`;
 
 /**
- * The runner's arguments. `arch` and `env` are the machine's: the vendor paths follow `arch` (from the pinned home's
- * runtime when `--pinned` names one), and the suites' device is `env.DEVICE`, else `arch`'s VM. A flag still wins.
+ * The runner's arguments. `arch` and `env` are the machine's: the vendor paths follow `arch`, inside the comparator
+ * fixture (`--vendor-fixture`, else this architecture's), never a cua home's, and the suites' device is `env.DEVICE`,
+ * else `arch`'s VM. A flag still wins.
  */
 export function parseGateArgs(argv, { arch = process.arch, env = process.env } = {}) {
   const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null, remove: null, confirm: false };
   const given = {};
-  const flags = { '--candidate': 'candidate', '--pinned': 'pinned', '--out': 'out', '--vendor': 'vendor', '--newest': 'newest', '--vendor-js': 'vendorJs', '--holder': 'holder' };
+  const flags = { '--candidate': 'candidate', '--pinned': 'pinned', '--out': 'out', '--vendor-fixture': 'vendorFixture', '--newest': 'newest', '--holder': 'holder' };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = () => {
@@ -269,7 +279,10 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
     return { ...a, out: given.out };
   }
   if (given.pinned && given.candidate) throw new GateRefused('give --pinned or --candidate, not both: acceptance takes the engine a run home\'s cua install placed');
-  Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
+  Object.assign(a, defaultsFor(arch), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given, { arch });
+  // the pinned build and the client are the fixture's, by path; they are checked before a step that runs them starts
+  const { vendor, vendorJs } = fixturePaths(a.vendorFixture, arch);
+  Object.assign(a, { vendor, vendorJs });
   if (a.pinned) {
     a.candidate = linuxEnginePath(a.pinned);
     // a pilot on the pinned rule is a development run on the pinned release, never counted (task 87's finding 1)
@@ -328,11 +341,18 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot, engineStats: a.engineStats });
     const dir = a.out ? stepDir(step, a) : '<out>/<step>';
     // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
-    // and the all-clear however the sitting ends (review finding 3, ruling 730)
-    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
+    // and the all-clear however the sitting ends (review finding 3, ruling 730). Before it, under the lock, the comparator
+    // fixture the step names is checked in the launch path itself (fixture-check.mjs; M6b T3 fix wave 1, finding 1):
+    // neither the sitting launcher nor run71.sh reads it, and a check made only when the command was printed would leave
+    // the bytes between then and the launch unchecked
+    const fixture = usesVendorBuilds(step) ? [process.execPath, join(root, FIXTURE_CHECK), '--vendor-fixture', a.vendorFixture, '--arch', a.arch ?? process.arch, '--'] : [];
+    return line([...lock, ...fixture, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
-  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : []), ...(a.engineStats ? ['--engine-stats'] : [])]);
+  // a fixture or newest build named by flag is spelled out, so the command reruns the same step; the defaults are not
+  const defaults = defaultsFor(a.arch ?? process.arch);
+  const named = [...(a.vendorFixture && a.vendorFixture !== defaults.vendorFixture ? ['--vendor-fixture', a.vendorFixture] : []), ...(a.newest && a.newest !== defaults.newest ? ['--newest', a.newest] : [])];
+  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : []), ...(a.engineStats ? ['--engine-stats'] : []), ...named]);
 }
 
 /** `--list`: every step's minutes, display, load and what it covers, its command, and the totals. */
@@ -349,6 +369,33 @@ export function listText(a, root = REPO_ROOT) {
   return out.join('\n');
 }
 
+/** Whether a step runs the pinned vendor build or the vendor's client, the comparator fixture's (its `{vendor}`). */
+export function usesVendorBuilds(step) {
+  if (['verdict', 'canary', 'facade'].includes(step.kind)) return true;
+  return step.kind === 'experiment' && step.args.includes('{vendor}');
+}
+
+/** The fixture check a step's start makes: vendor-fixture.mjs `verifyVendorFixture` on the fixture `a` names. */
+const checkFixture = ({ dir, arch }) => verifyVendorFixture({ dir, arch });
+
+/**
+ * For a step that runs a vendor build, the comparator fixture checked (`check`, `checkFixture`'s seam) before anything of
+ * the step is written -> what the step's record names of it; null for a step that runs none. A fixture that does not
+ * check refuses the step.
+ */
+function checkedFixture(step, a, check) {
+  if (!usesVendorBuilds(step)) return null;
+  let fixture;
+  try {
+    fixture = check({ dir: a.vendorFixture, arch: a.arch });
+  } catch (error) {
+    if (error instanceof VendorFixtureRefused) throw new GateRefused(`${step.name} runs the pinned vendor build, and its comparator fixture does not check: ${error.message}`);
+    throw error;
+  }
+  if (fixture.vendor !== a.vendor || fixture.vendorJs !== a.vendorJs) throw new GateRefused(`${step.name}: the checked fixture's paths (${fixture.vendor}, ${fixture.vendorJs}) are not the ones the step names (${a.vendor}, ${a.vendorJs})`);
+  return { dir: a.vendorFixture, arch: a.arch, tar_sha256: fixture.entry?.tar?.sha256 ?? null, tree_list_sha256: fixture.entry?.treeList?.sha256 ?? null, vendor: fixture.vendor, vendor_sha256: fixture.binarySha256 ?? null, vendor_js: fixture.vendorJs, service_sha256: fixture.serviceSha256 ?? null };
+}
+
 /** The step's README and step.json, labelled; rewritten with the outcome at its end. */
 function writeRecord(dir, record) {
   writeFileSync(join(dir, 'step.json'), `${JSON.stringify(record, null, 2)}\n`);
@@ -363,10 +410,10 @@ function writeRecord(dir, record) {
     `- run: ${r.run_name ? `\`${r.run_name}\`` : 'a facade instrument or suite (no run name)'}; the harness's output in \`run/\``,
     `- checkout: ${r.checkout.root} at ${r.checkout.commit ?? 'an unread commit'}${r.checkout.clean ? ', clean' : r.checkout.clean === false ? ', **not clean**' : ''}`,
     `- candidate: ${r.candidate.path} (sha256 ${r.candidate.sha256} as given)${r.candidate.record ? `; ${candidateLine(r.candidate.record)}` : ''}`,
+    ...(r.vendor_fixture ? [`- comparator fixture: ${r.vendor_fixture.dir} (tar sha256 ${r.vendor_fixture.tar_sha256}); the pinned build ${r.vendor_fixture.vendor} (sha256 ${r.vendor_fixture.vendor_sha256}), the client ${r.vendor_fixture.vendor_js} (service.js sha256 ${r.vendor_fixture.service_sha256})`] : []),
     `- command: \`${r.command}\``,
     ...(r.started ? [`- started ${r.started}`] : []),
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
-    ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
     ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
     ...(r.end_check ? endCheckText(r.end_check) : []),
     ...(r.unclean ? (r.unclean.length ? [`- unclean end (the run's own side, not a verdict failure): ${r.unclean.length}`, ...r.unclean.map((l) => `  - ${l}`)] : ["- end: clean (nothing left on the run's own side)"]) : []),
@@ -388,7 +435,7 @@ function stepRecord(step, a, { root, checkout, command }) {
 }
 
 /** `print`: the step's labelled directory and README, and its command. */
-export function printStep(a, { root = REPO_ROOT, git } = {}) {
+export function printStep(a, { root = REPO_ROOT, git, vendorFixture = checkFixture } = {}) {
   const step = stepNamed(a.step);
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
@@ -397,9 +444,11 @@ export function printStep(a, { root = REPO_ROOT, git } = {}) {
     const problems = zeroStepProblems({ run: runName(step, a), dir: resolvedAsRun71(dir) });
     if (problems.length) throw new GateRefused(`${step.name} on :0 would not run whole under its guard: ${problems.join('; ')}`);
   }
+  // the fixture a printed command names is checked before it is printed: a :0 step is launched from this line alone
+  const fixture = checkedFixture(step, a, vendorFixture);
   mkdirSync(dir, { recursive: true });
   const command = launchCommand(step, a, root);
-  writeRecord(dir, stepRecord(step, a, { root, checkout, command }));
+  writeRecord(dir, { ...stepRecord(step, a, { root, checkout, command }), ...(fixture ? { vendor_fixture: fixture } : {}) });
   return command;
 }
 
@@ -414,7 +463,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = defaultScope(), start: check = startCheck } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = defaultScope(), start: check = startCheck, vendorFixture = checkFixture } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
@@ -429,9 +478,12 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   // evidence; nothing is removed (`leftovers --remove` is the explicit command)
   const start = check({ ...leftovers });
   if (start.refused.length) throw new GateRefused(startRefusalText(start.refused));
+  // the comparator fixture, checked before the step writes anything (M6b, F7): a mismatch refuses the step
+  const fixture = checkedFixture(step, a, vendorFixture);
   mkdirSync(dir, { recursive: true });
   const { label } = stepLabel(a);
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
+  if (fixture) record.vendor_fixture = fixture;
   // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
   mkdirSync(join(dir, 'run'), { recursive: true });
   // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
@@ -527,11 +579,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const canaryFailed = record.canary_check?.pass === false;
   const exit = result.code === 0 && result.clean && !canaryFailed ? 0 : result.code === 2 ? 2 : 1;
   Object.assign(record, { finished: new Date().toISOString(), exit, child_exit: result.code ?? result.signal, ...(step.display === 'private' ? { display_watchdog: result.clean ? 'clean' : result.reason } : {}) });
-  // a series the comparison reports unproved under a declared gap (R2, F8a) is the step's record, never inferred from
-  // its exit status: the suites runner writes them, and the step's README and step.json list them
-  const unproved = join(dir, 'run', 'baseline', 'unproved.txt');
-  if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
-  // what a pilot left unjudged (ruling 722), never a pass: the harness's end or summary row, or R2's list
+  // what a pilot left unjudged (ruling 722), never a pass: the harness's end or summary row
   if (a.pilot) record.unjudged = pilotUnjudged(dir);
   // the step's unclean end (ruling 730, part (a)): what its run recorded on its own side, and what the step left
   record.unclean = stepUnclean(dir, record.end_check);
@@ -597,11 +645,9 @@ export function gateSummary(out) {
 
 /**
  * What a pilot step left unjudged, as its run wrote it: the harness's last `end` (a verdict run) or `experiment-summary`
- * row's `unjudged` in `run/results.jsonl`, or the suites runner's `run/baseline/unjudged.txt` (R2).
+ * row's `unjudged` in `run/results.jsonl`. (R2's `run/baseline/unjudged.txt` went with R2, #171 M6b.)
  */
 function pilotUnjudged(dir) {
-  const listed = join(dir, 'run', 'baseline', 'unjudged.txt');
-  if (existsSync(listed)) return readFileSync(listed, 'utf8').split('\n').filter(Boolean);
   const results = join(dir, 'run', 'results.jsonl');
   if (!existsSync(results)) return [];
   const rows = readFileSync(results, 'utf8').split('\n').filter(Boolean).flatMap((l) => {

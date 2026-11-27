@@ -56,7 +56,7 @@ test('sanitize replaces the scratch home and user home with placeholders, deeply
 // reads skip; the process tree is read from /proc (ps's comm is truncated there); the deb's desktop runtime is flagged.
 test('the native-socket holder step applies on macOS only and reads skip on Linux', () => {
   assert.equal(nativeSocketStep('darwin'), null);
-  assert.deepEqual(nativeSocketStep('linux'), {status: 'skip', reason: 'linux: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder'});
+  assert.deepEqual(nativeSocketStep('linux'), {status: 'skip', reason: 'linux: the computer-use engine (cua-engine) is a child process of the runtime over stdio, not a native socket holder'});
 });
 
 test('a Linux process table pairs each pid and parent with its /proc executable; an unreadable one stays, marked', () => {

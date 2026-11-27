@@ -1,0 +1,32 @@
+{
+  "pass": true,
+  "problems": [],
+  "cases": 34,
+  "covered": 34,
+  "text": {
+    "native/app/typetext": true,
+    "native/app/paste": true
+  },
+  "engines": [
+    "/Users/new/.cp/cua-m5-cap-hLqQAk/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-YSxQz1/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-cX5ONC/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-Hxw97o/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-XT4pVj/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-wev53s/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-EyPUx0/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-t3e2qY/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-X3Q1Uh/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-vtm4Vu/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-9m0OWV/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-mQhWAW/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-RQmNu1/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-VmMQ8q/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-BZ7gcY/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-Cxd2pF/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-h7NYnc/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-dO09Zq/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-MJC0T4/engine/linux/cua-engine",
+    "/Users/new/.cp/cua-m5-cap-SW5NBo/engine/linux/cua-engine"
+  ]
+}

@@ -162,9 +162,10 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
     const environment = Object.fromEntries(['PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'USER', 'LOGNAME'].filter(k => ambient[k] !== undefined).map(k => [k, ambient[k]]));
     Object.assign(environment, xSession, {HOME: userHome, CUA_HOME: home, XDG_CONFIG_HOME: join(userHome, '.config'), CUA_SHIM_SECRETS: 'off'});
     // A harness never builds an engine: macOS cua lanes serve the approved engine in place. Only this install step is
-    // pinned to the vendor's, so `cua install` cannot build an unapproved copy under the scratch HOME (#117 M4), even
-    // once the default is cua's.
-    run(process.execPath, ['bin/cua.mjs', 'install'], {encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024, env: {...environment, CUA_NATIVE_ENGINE: 'vendor'}});
+    // pinned to the vendor's on macOS, so `cua install` cannot build an unapproved copy under the scratch HOME (#117 M4),
+    // even once the default is cua's. On Linux it names no engine: cua 0.30.0 refuses the vendor's there (#171 M6b).
+    run(process.execPath, ['bin/cua.mjs', 'install'], {encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024,
+      env: declaration.platform === 'linux' ? environment : {...environment, CUA_NATIVE_ENGINE: 'vendor'}});
     const facts = inspect({source: home, ambient: nodeEnvironment(environment, node)});
     if (!node) assertManagedNode(facts);
     else if (!facts.ownNode?.version || facts.ownNode.path !== node) throw new Error('Diagnostic Node override did not resolve');

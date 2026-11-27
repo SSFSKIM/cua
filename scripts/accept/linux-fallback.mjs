@@ -4,7 +4,8 @@
 // 0.4.3; `released`, 0.4.0; `older`, 0.3.0), or its install.json does not match its file (`unrecorded`: a newer record
 // beside an older engine). M5's default kept the vendor's engine in such a home; since M6a it refuses every computer
 // session there, for the home's own reason, naming this cua's own installer with --engine by its absolute path
-// (manifest.mjs ownInstaller, ruling 1110). With nothing selecting an engine (the default mode's inputs: no
+// (manifest.mjs ownInstaller, ruling 1110) as the one remedy, offering no vendor engine, local build or second command
+// (ruling 1212, #171 M6b). With nothing selecting an engine (the default mode's inputs: no
 // CUA_NATIVE_ENGINE, no "engine" in engine.json), the probe requires
 //   - cua doctor --json to say the default prefers cua's engine and refuses it for that reason, its engine row a failure
 //     naming the reason and the installer (./linux-selection.mjs refusedSelectionProblem);

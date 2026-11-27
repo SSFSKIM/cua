@@ -50,19 +50,23 @@
 // (src/sandbox/linux.mjs) present at $CUA_HOME/sandbox/<tag>/ with the pinned SHA-256; `fail` names a missing or
 // tampered helper, which every confined launch refuses (sandbox_unavailable).
 // On Linux the runtime rows describe cua's own runtime, which every Linux session resolves (#171 M6a;
-// src/runtime/doctor-linux-runtime.mjs: platform, runtime.installed, runtime.modules, runtime.node), and the vendor's
-// tree is one row beside them, runtime.vendor, trusted by its archive hash (no codesign runs) and kept for
-// CUA_NATIVE_ENGINE=vendor; the darwin helper.live and helper.permissions rows give way to display, accessibility.bus
+// src/runtime/doctor-linux-runtime.mjs: platform, runtime.installed, runtime.modules, runtime.node); no row checks a
+// vendor runtime, whose engine cua 0.30.0 retired there (M6b); the darwin helper.live and helper.permissions rows give
+// way to display, accessibility.bus
 // and sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted). The sandbox
 // row protects cua's module trees ($CUA_HOME/modules) there, which are no trusted code.
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
 // `runtime.leftovers` (src/runtime/codex-leftovers.mjs, #115 M4) names what the Codex CLI left in the runtime's
-// CODEX_HOME and the unused CLI component in installed release trees, by name and path only, with the command that
-// removes them (`cua install --prune-leftovers`, once every cua using the home is updated): `warn` while any is there
-// (and, for a release's CLI, which sessions the sweep left that hold it back), else `pass`. They are dead weight to
-// this cua, never a health failure.
+// CODEX_HOME and, on macOS, the unused CLI component in installed release trees, by name and path only, with the
+// command that removes them (`cua install --prune-leftovers`, once every cua using the home is updated): `warn` while
+// any is there (and, for a release's CLI, which sessions the sweep left that hold it back), else `pass`. They are dead
+// weight to this cua, never a health failure. On Linux it looks inside no release (#171 M6b, N4).
+// `runtime.retired` (Linux, #171 M6b; src/runtime/retired-tree.mjs) is there only when the home holds a vendor's release
+// whose install record says an older cua's install placed it: `skip`, informational, its detail the sentence install
+// prints (the path, the size, the checks before deleting it by hand). It never fails and never warns, and nothing there
+// is changed. The report's `retired` lists what it names, on Linux.
 // The `agent.*` rows describe remote control (src/remote): the launchd job (`agent.installed`, `agent.running`), the
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
 // the state in which remote js does nothing and is refused as console_locked). On a Mac never enrolled, with no job
@@ -79,17 +83,20 @@ import {CuaError} from './errors.mjs';
 import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from './engine.mjs';
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, assertRunOutsideVendorTree, linuxDenyList, linuxHomeRoots, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, installedLinuxHelper, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
-import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint, vendorPinsOf} from './manifest.mjs';
+import {loadPins, selectPin, locateRuntime, ownInstaller, recoveryHint} from './manifest.mjs';
 import {linuxRuntimeChecks} from './doctor-linux-runtime.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
+import {storeDir} from '../secrets/store.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {leftoversCheck, sessionsInUse} from './codex-leftovers.mjs';
+import {retiredTrees} from './retired-tree.mjs';
+import {outsideVendorTree} from './vendor-tree.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, mawsHostCheck} from '../profiles/checks.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
@@ -129,26 +136,21 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = installedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = installedLinuxHelper, linuxRuntime, loadPins: loadVendorPins = loadPins, retired: findRetired = retiredTrees}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
-  // On Linux the vendor's pins describe only the vendor's tree: pins this checkout cannot parse or read (manifest.mjs
-  // vendorPinsOf) fail that row alone (runtime.vendor), and a vendor selection with that error; the leftovers scan goes
-  // on without the release trees they name.
-  let pinsError = null;
-  if (pins === undefined) {
-    if (host.platform !== 'linux') pins = loadVendorPins();
-    else try { pins = vendorPinsOf(loadVendorPins); } catch (error) { if (!(error instanceof CuaError)) throw error; pinsError = error; pins = []; }
-  }
+  // On Linux no vendor pin is read (#171 M6b): no session there uses the vendor's tree, and no row looks inside it.
+  if (host.platform === 'linux') pins = undefined;
+  else pins ??= loadVendorPins();
   const checks = [];
   let pin, runtime;
   // The own host's Node, resolved once as a connection resolves it (launch.mjs ownHostNode), for the runtime rows and
   // repl.host alike. CUA_NODE's form is repl.host's to check first; an invalid one is that row's failure.
   const resolveNode = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home, platform: host.platform, arch: host.arch})));
   if (host.platform === 'linux') {
-    // cua's own runtime and the vendor's tree beside it (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
+    // cua's own runtime (#171 M6a; src/runtime/doctor-linux-runtime.mjs).
     let sandboxMode = null;
     try { sandboxMode = sandboxModeFrom(env); } catch (error) { if (!(error instanceof CuaError)) throw error; }
-    const own = linuxRuntimeChecks({home, env, host, pins, pinsError, resolveNode, linuxHelper, sandbox: sandboxMode, ...(linuxRuntime ? {linuxRuntime} : {})});
+    const own = linuxRuntimeChecks({home, env, host, resolveNode, linuxHelper, sandbox: sandboxMode, ...(linuxRuntime ? {linuxRuntime} : {})});
     checks.push(...own.rows);
     if (own.stop) return {ok: false, checks};
     runtime = own.runtime;
@@ -173,21 +175,17 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   if (runtime && host.platform !== 'linux') {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root, manifest.platform)}`));
+    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
-    if (manifest.signing) {
-      const signatures = await verifySignatures(root, manifest);
-      const bad = signatures.filter(s => !s.valid);
-      const signed = !bad.length && signatures.length === manifest.signing.components.length;
-      checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
-        ? `${signatures.length} components signed by team ${manifest.signing.team}`
-        : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
-    } else {
-      checks.push(result('runtime.signatures', 'pass', `archive hash is the trust root on ${manifest.platform}: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed`));
-    }
+    const signatures = await verifySignatures(root, manifest);
+    const bad = signatures.filter(s => !s.valid);
+    const signed = !bad.length && signatures.length === manifest.signing.components.length;
+    checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
+      ? `${signatures.length} components signed by team ${manifest.signing.team}`
+      : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
   }
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
@@ -197,6 +195,8 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const swept = runSweepCheck(home, sweep);
   checks.push(swept.row);
   checks.push(leftoversCheck({home, pins, inUse: sessionsInUse(home, () => { if (swept.error) throw swept.error; return swept.found; })}));
+  const retired = host.platform === 'linux' ? findRetired({home}) : null;
+  if (retired?.lines.length) checks.push(result('runtime.retired', 'skip', retired.lines.join('; ')));
 
   if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {sandbox}) : row)));
   if (!linuxRows) {
@@ -211,7 +211,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  const engineInputs = host.platform === 'linux' ? {...(pinsError ? {vendor: () => { throw pinsError; }} : {}), ...engine} : sharedEngineInputs(engine, env);
+  const engineInputs = host.platform === 'linux' ? engine : sharedEngineInputs(engine, env);
   const replHost = replHostCheck(home, env, host, resolveNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,
@@ -224,6 +224,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   // On Linux also the record's parts (linuxRuntimeChecks shapes it).
   if (runtime) report.runtime = host.platform === 'linux' ? runtime : {release: runtime.release, root: runtime.root, paths: runtime.paths};
   if (engineRow.report) report.engine = engineRow.report;
+  if (retired) report.retired = retired.trees;
   return report;
 }
 
@@ -336,11 +337,31 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   // deny list its kernel would get: a layout whose deny targets overlap, or whose store cannot be listed, is refused in
   // scoped and default alike.
   const session = join(owned.run, 'session');
+  // On Linux every path of the home this row resolves by its real path is kept out of the vendor's tree before it is
+  // normalized, each where the check that resolves it runs. The run directory and the deny list's state/, remote/,
+  // chrome/ and run/ are resolved here, in scoped and default alike, by the launch's own guarded resolution
+  // (launch.mjs assertRunOutsideVendorTree and linuxDenyList), so the row refuses exactly what a launch refuses, in its
+  // words (#589). The scoped check's protected directories and state/codex are walked just before that check, which
+  // default mode never makes. One that leads there is named, and nothing there is resolved (#171 M6b).
+  const intoTree = (roots, said) => {
+    if (!linux) return null;
+    for (const root of roots) {
+      const at = outsideVendorTree(root, owned.home);
+      if (at.lead) return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${root} leads to ${at.lead}, under the vendor's tree, which is no part of cua's: ${said(root)}: `
+        + `move ${at.links[0] ?? root} aside, then run \`${ownInstaller().command}\``);
+    }
+    return null;
+  };
+  const unchecked = () => 'the sandbox\'s check takes it by its real path, which is not resolved there, so the sandbox is not checked';
   let deny;
   try {
+    if (linux) assertRunOutsideVendorTree(owned.home, 'session');
+    // the home's roots first: building the list discovers the store's tiers on the filesystem (launch.mjs linuxHomeRoots)
+    const roots = linux ? linuxHomeRoots(owned.home, 'session', join(session, 'tmp'), [storeDir(env)]) : null;
     const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
-    assertDenyListShape(list);
-    deny = list.deny;
+    const resolved = linux ? linuxDenyList(list, owned.home, roots) : list;
+    assertDenyListShape(resolved);
+    deny = resolved.deny;
   } catch (error) {
     if (!error.code) throw error;
     return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${error.message}. cua serve and the profile listing refuse to start like this (${error.code})${error.hint ? `: ${error.hint}` : ''}`);
@@ -351,6 +372,12 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const workerNetwork = ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)';
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read and write nowhere, so profile labels, screenshots and other features that need scratch space fail; '
     + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
+  // The five a launch's preflight refuses in scoped mode (sandbox.mjs assertHomeRootsOutsideVendorTree), said as it says
+  // them, and state/codex.
+  const preflight = [owned.node, owned.staging, owned.sandbox, owned.engine, owned.modules];
+  const guarded = intoTree([...preflight, owned.codexHome], root => (preflight.includes(root)
+    ? 'the scoped sandbox protects it by its real path, which is not resolved there, so cua serve refuses to start like this (sandbox_conflict)' : unchecked()));
+  if (guarded) return guarded;
   // On Linux the module tree is not trusted code (nothing trusted imports from it) but cua's module trees are protected
   // all the same, as a launch protects them (#171 M6a).
   const conflicts = sandboxConflicts({

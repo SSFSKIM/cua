@@ -19,24 +19,24 @@ test('changed browser route attestation invalidates a prepared run',()=>{
 });
 
 // #171 M6a: on Linux the runtime a run resolves is cua's own, which has no Node of its own tree: the runtime's Node is the
-// managed Node cua installed in the home (its recorded bytes), and the run records apart the vendor release its checkout
-// pins, which the vendor engine lane runs from. Elsewhere the runtime's Node is the release's bundled one, as before.
-test('the runtime facts: the managed Node and the vendor release on Linux, the bundled Node elsewhere',async t=>{
+// managed Node cua installed in the home (its recorded bytes). Since #171 M6b, which removed the vendor's engine from
+// Linux, a run records no vendor release. Elsewhere the runtime's Node is the release's bundled one, as before.
+test('the runtime facts: the managed Node and no vendor release on Linux, the bundled Node elsewhere',async t=>{
  const {runtimeFacts}=await import('../../scripts/repl-parity/provenance.mjs');
  const {mkdtempSync,realpathSync,rmSync,writeFileSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
- const {fakeManagedNode}=await import('../fixtures/own-linux-runtime.mjs');const {loadPins,selectPin}=await import('../../src/runtime/manifest.mjs');
+ const {fakeManagedNode}=await import('../fixtures/own-linux-runtime.mjs');
  const home=realpathSync(mkdtempSync(join(tmpdir(),'cua-parity-facts-')));t.after(()=>rmSync(home,{recursive:true,force:true}));
  const host={platform:'linux',arch:'x64'},ran=[];
  const run=path=>{ran.push(path);return `${path===join(home,'bundled','node')?'v24.21.0':'v24.22.0'}\n`;};
  const own={release:'cua-linux-x64-e0.4.4-n24.22.0-s0.163.0-m0123456789ab',home,root:join(home,'modules','x'),paths:{moduleDir:join(home,'modules','x','node_modules')},manifest:{platform:'linux',arch:'x64'}};
- assert.deepEqual(runtimeFacts(own,{run}),{release:own.release,runtimeNode:null,vendorRelease:selectPin(loadPins(),host).release},'no managed Node: none, never another');
+ assert.deepEqual(runtimeFacts(own,{run}),{release:own.release,runtimeNode:null},'no managed Node: none, never another');
  assert.deepEqual(ran,[]);
  const node=fakeManagedNode(home,host,{version:'24.22.0'});
- assert.deepEqual(runtimeFacts(own,{run}),{release:own.release,runtimeNode:'v24.22.0',vendorRelease:'26.928.40906-linux-x64'});
+ assert.deepEqual(runtimeFacts(own,{run}),{release:own.release,runtimeNode:'v24.22.0'});
  assert.deepEqual(ran,[node],'the managed Node is the one asked');
  writeFileSync(node,'#!/bin/sh\necho v24.99.0\n');
  assert.equal(runtimeFacts(own,{run}).runtimeNode,null,'bytes that are not its record\'s are no managed Node');
- assert.equal(runtimeFacts({...own,manifest:{platform:'linux',arch:'arm64'}},{run}).vendorRelease,'26.928.40906-linux-arm64');
+ assert.equal('vendorRelease' in runtimeFacts({...own,manifest:{platform:'linux',arch:'arm64'}},{run}),false);
  const vendor={release:'26.928.40906-darwin-arm64',home,root:join(home,'runtimes','r'),paths:{node:join(home,'bundled','node')},manifest:{platform:'darwin',arch:'arm64'}};
  assert.deepEqual(runtimeFacts(vendor,{run}),{release:vendor.release,runtimeNode:'v24.21.0'});
 });

@@ -5,18 +5,18 @@
 # /usr/local/sbin/cua-provision.sh on it instead).
 #
 #   deploy/cloud-vm/create-hetzner.sh [--name cua-vm] [--arch x64|arm64] [--type <server type>] [--location nbg1]
-#       [--ssh-key macbook] [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<local file>]
-#       [--relay wss://<relay>/ws] [--extension hosted|store] [--extension-url <https URL>]
+#       [--ssh-key macbook] [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--relay wss://<relay>/ws]
+#       [--extension hosted|store] [--extension-url <https URL>]
 #
-# --arch picks the type: cx23 (x64) or cax11 (arm64). --deb <local file> copies that deb (checked here against this
-# checkout's pin for --arch, as a quick precheck; the VM checks it against its own) to the server's
-# /var/cache/cua/upload.deb while cloud-init runs, instead of the server downloading it. --repo <git bundle> copies the
-# bundle (it must hold --ref) to /var/cache/cua/cua.bundle the same way, for a ref that is not pushed. --extension and
-# --extension-url: render.sh. The hcloud context is $HCLOUD_CONTEXT, cua when unset; never devbox.
+# --arch picks the type: cx23 (x64) or cax11 (arm64). --repo <git bundle> copies the bundle (it must hold --ref) to the
+# server's /var/cache/cua/cua.bundle while cloud-init runs, for a ref that is not pushed. --extension and
+# --extension-url: render.sh, which also says why the template is rendered from the ref it provisions. --deb is refused
+# (#171 M6b: the VM's cua installs no ChatGPT package). The hcloud context is $HCLOUD_CONTEXT, cua when unset; never
+# devbox.
 set -euo pipefail
 
-name=cua-vm arch=x64 type='' location=nbg1 ssh_key=macbook render_args=() deb='' repo=''
-usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb none|pin|<https URL>|<file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
+name=cua-vm arch=x64 type='' location=nbg1 ssh_key=macbook render_args=() repo=''
+usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
 while (($#)); do
   (($# >= 2)) || usage
   case "$1" in
@@ -25,7 +25,7 @@ while (($#)); do
     --type) type="$2" ;;
     --location) location="$2" ;;
     --ssh-key) ssh_key="$2" ;;
-    --deb) deb="$2"; render_args+=("$1" "$2") ;;
+    --deb) echo "create-hetzner.sh takes no --deb: the VM's cua (0.30.0 or later) installs its own runtime and no ChatGPT package" >&2; exit 2 ;;
     --repo) repo="$2"; render_args+=("$1" "$2") ;;
     --user|--ref|--relay|--extension|--extension-url) render_args+=("$1" "$2") ;;
     *) usage ;;
@@ -33,7 +33,7 @@ while (($#)); do
   shift 2
 done
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "not a plain server name: $name" >&2; exit 2; }
-case "$arch" in x64) type="${type:-cx23}" deb_arch=amd64 ;; arm64) type="${type:-cax11}" deb_arch=arm64 ;; *) usage ;; esac
+case "$arch" in x64) type="${type:-cx23}" ;; arm64) type="${type:-cax11}" ;; *) usage ;; esac
 export HCLOUD_CONTEXT="${HCLOUD_CONTEXT:-cua}"
 [[ "$HCLOUD_CONTEXT" != devbox ]] || { echo "refusing hcloud context devbox: cua servers live in context cua" >&2; exit 2; }
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -48,18 +48,6 @@ if [[ -n "$repo" && "$repo" != https://* ]]; then
   for ((i = 0; i < ${#render_args[@]}; i += 2)); do [[ "${render_args[i]}" == --ref ]] && ref="${render_args[i + 1]}"; done
   git bundle list-heads "$repo" | grep -q " refs/heads/$ref\$" || { echo "$repo holds no branch $ref (git bundle create <file> $ref)" >&2; exit 1; }
   upload_src+=("$repo") upload_name+=(cua.bundle)
-fi
-# A local deb must be the pinned one for this architecture: check it here rather than after a 10-minute upload.
-if [[ -n "$deb" && "$deb" != none && "$deb" != pin && "$deb" != https://* ]]; then
-  read -r file want < <(node -e '
-    const fs = require("fs"), dir = process.argv[1];
-    const pins = fs.readdirSync(dir).filter(f => f.endsWith("-linux-" + process.argv[2] + ".json")).sort();
-    const a = JSON.parse(fs.readFileSync(dir + "/" + pins.at(-1), "utf8")).archive;
-    console.log(a.url.split("/").pop(), a.sha256);' "$here/../../runtime/releases" "$arch")
-  [[ "$file" == *_"$deb_arch".deb ]] || { echo "the $arch pin does not name an $deb_arch deb ($file)" >&2; exit 1; }
-  echo "checking $deb against the $arch pin ($file)"
-  [[ "$(shasum -a 256 "$deb" | cut -d' ' -f1)" == "$want" ]] || { echo "$deb does not match the pin's sha256 ($want)" >&2; exit 1; }
-  upload_src+=("$deb") upload_name+=(upload.deb)
 fi
 
 if hcloud server describe "$name" >/dev/null 2>&1; then
@@ -101,9 +89,8 @@ for try in $(seq 60); do
 done
 echo "ssh up ($(elapsed))"
 
-# The uploads run beside cloud-init, in order (the bundle first: the checkout comes before the deb), each to a fixed
-# name the VM watches (/var/cache/cua/cua.bundle, upload.deb); the VM checks the deb against its own checkout's pin. A
-# failed copy leaves <name>.failed there, which ends the VM's wait at once.
+# The upload runs beside cloud-init, to the fixed name the VM watches (/var/cache/cua/cua.bundle). A failed copy leaves
+# <name>.failed there, which ends the VM's wait at once.
 if ((${#upload_src[@]})); then
   ( for i in "${!upload_src[@]}"; do
       src="${upload_src[i]}" there="${upload_name[i]}"

@@ -10,10 +10,12 @@ import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, 
 import {dirname, join} from 'node:path';
 import {CODEX_HOME_LEFTOVERS, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from '../src/runtime/codex-leftovers.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
-import {loadPins, parsePin} from '../src/runtime/manifest.mjs';
+import {parsePin} from '../src/runtime/manifest.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
 import {main, usageFor} from '../src/cli.mjs';
 import {fixturePin, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {plantRetiredRelease} from './fixtures/retired-release.mjs';
+import {recorded, within} from './helpers/vendor-tree-recorder.mjs';
 
 // A value no output may carry: every leftover file holds it, and only names may be logged.
 const SENTINEL = 'CODEX-LEFTOVER-CONTENT-7f3a';
@@ -192,16 +194,28 @@ test('CodexCLI.app is left while any session may run from this home: a live owne
   assert.equal(existsSync(join(run, 's1')), false);
 });
 
-test('on Linux the release\'s `codex` file goes under the same conditions; a directory by that name is not it', t => {
+// #171 M6b (N4): on Linux the vendor's release is reported whole and left as it is (src/runtime/retired-tree.mjs), so the
+// scan and the prune look at state/codex alone: nothing under runtimes/ is listed, read or removed, a `codex` file or a
+// prune's tombstone in a recorded release included.
+test('on Linux the scan and the prune look inside no release: state/codex alone, nothing under runtimes/ touched', t => {
   const {home} = scratchHome(t);
-  const pin = loadPins().find(p => p.platform === 'linux');
-  assert.equal(Object.hasOwn(pin.components, 'codex'), false, 'the Linux pins list no codex since #115 M3');
-  const root = installedTree(home, pin, {cli: 'none'});
+  const {root} = plantRetiredRelease(home);
   put(join(root, 'codex'));
-  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}).trees, [{release: pin.release, name: 'codex', path: join(root, 'codex')}]);
-  assert.deepEqual(removeCodexLeftovers({home, pins: [pin], sweep: noSessions}).removed, [join(root, 'codex')]);
-  mkdirSync(join(root, 'codex'));
-  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}).trees, []);
+  put(join(root, '.codex.pruning-0a1b2c3d'));
+  put(join(codexHomeOf(home), 'auth.json'));
+  const runtimes = join(home, 'runtimes');
+  const listing = readdirSync(runtimes, {recursive: true}).sort();
+  let found, removed;
+  const seen = recorded(() => {
+    found = findCodexLeftovers({home});
+    removed = removeCodexLeftovers({home, sweep: noSessions});
+  });
+  assert.deepEqual(found.trees, []);
+  assert.deepEqual(found.files, ['auth.json']);
+  assert.deepEqual(removed.removed, [join(codexHomeOf(home), 'auth.json')]);
+  assert.deepEqual(seen.filter(({path, reached}) => within(path, runtimes) || within(reached, runtimes)), [], 'nothing under runtimes/');
+  assert.deepEqual(readdirSync(runtimes, {recursive: true}).sort(), listing);
+  assert.equal(readFileSync(join(root, 'codex'), 'utf8'), SENTINEL);
 });
 
 // ---- doctor and the CLI ----
@@ -219,7 +233,9 @@ test('doctor reports both kinds of leftover by name, with the command that remov
   put(join(codexHomeOf(home), 'cache', 'x'));
   put(join(codexHomeOf(home), 'config.toml'));
   const env = {HOME: home};
-  const before = leftoverRow(await inspectRuntime({home, env, pins: [pin], ...passive}));
+  const report = await inspectRuntime({home, env, pins: [pin], ...passive, retired: () => assert.fail('the vendor tree\'s report is Linux\'s (#171 M6b)')});
+  assert.equal(report.retired, undefined, 'macOS reports no retired tree');
+  const before = leftoverRow(report);
   assert.equal(before.status, 'warn');
   assert.ok(before.detail.includes(`${codexHomeOf(home)}: auth.json, cache`), before.detail);
   assert.ok(before.detail.includes(join(root, 'CodexCLI.app')), before.detail);

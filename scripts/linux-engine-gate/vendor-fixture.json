@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "about": "The comparator fixtures (#171 M6b, its pre-flight §4.4): hashes only, each entry written by vendor-fixture-pin.mjs after the fixture's tree equalled its pinned deb's payload. The fixtures themselves are never in this repository (ruling 1217, N7).",
+  "fixtures": {
+    "arm64": {
+      "release": "26.928.40906-linux-arm64",
+      "tar": {
+        "name": "26.928.40906-linux-arm64.tar",
+        "sha256": "fab959715d4087d7bc72805ecd8ab165a8b909609ea1ac272d3987a8497e0d69",
+        "length": 208496640
+      },
+      "treeList": {
+        "sha256": "24340a6e732d56d54f88717efe21ccc522278ca143939f612e50cb5482cfaf45",
+        "files": 2345
+      },
+      "binary": {
+        "path": "cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "sha256": "a2ee3b612a2a65a9e1cb429b69954f9cfddf26072568aeb882f42e0545da2193"
+      },
+      "deb": {
+        "release": "26.928.40906-linux-arm64",
+        "sha256": "ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd",
+        "length": 453477698
+      }
+    },
+    "x64": {
+      "release": "26.928.40906-linux-x64",
+      "tar": {
+        "name": "26.928.40906-linux-x64.tar",
+        "sha256": "2e6209866473328aa832fcb7b0e1f19b2a435fe803512c2bf578706f83505914",
+        "length": 214425600
+      },
+      "treeList": {
+        "sha256": "7886c5dc6c39e7985043ba0718fd4bbb60c6f7efef7962f88a1c2492da7bb54f",
+        "files": 2345
+      },
+      "binary": {
+        "path": "cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+        "sha256": "7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd"
+      },
+      "deb": {
+        "release": "26.928.40906-linux-x64",
+        "sha256": "8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30",
+        "length": 474898954
+      }
+    }
+  }
+}

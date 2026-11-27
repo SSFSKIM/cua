@@ -14,12 +14,12 @@ import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
 import {REPO, scratch, userHomeBeside} from './fixtures/runtime-fixture.mjs';
-import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
+import {fakeInstalledHome, fakeUpstreamLaunch, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
 import {browserKeysStamp} from '../src/mcp/connection.mjs';
-import {loadPins, resolveRuntime, selectPin, vendorLinuxRuntime} from '../src/runtime/manifest.mjs';
+import {loadPins, resolveRuntime, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {createFakeMawsExtension} from './helpers/fake-maws-peer.mjs';
@@ -487,13 +487,13 @@ test('an idle restart reuses a leftover working directory, fixes its mode and re
 });
 
 // #171 M6a (the pre-flight's §3.2, §3.3): a Linux connection resolves its engine once, at the open, and every launch of
-// it (the first, lazy one, and the one after an idle stop) builds from that selection. The vendor's tree is looked
-// for once, there. cua's engine is bound by its pathname, not its bytes: an install that replaces the file between the
-// open and a launch, or while the runtime is stopped, changes what the next launch runs, and nothing selects again
-// (the service checks the version of whatever it starts: test/services-engine-linux/client.test.mjs).
+// it (the first, lazy one, and the one after an idle stop) builds from that selection. cua's engine is bound by its
+// pathname, not its bytes: an install that replaces the file between the open and a launch, or while the runtime is
+// stopped, changes what the next launch runs, and nothing selects again (the service checks the version of whatever it
+// starts: test/services-engine-linux/client.test.mjs). The fake upstream stands in for cua's own host.
 const LINUX = {platform: 'linux', arch: 'x64'};
 async function linuxConnection(t, home, {env = {}, engine} = {}) {
-  const upstream = vendorLinuxRuntime({home, host: LINUX}).paths;  // the fake release's upstream, in the vendor tree
+  const upstream = fakeUpstreamLaunch(home);
   const input = new PassThrough(), output = new PassThrough();
   const frames = [], launches = [], diagnostics = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
@@ -502,7 +502,7 @@ async function linuxConnection(t, home, {env = {}, engine} = {}) {
   t.after(user.cleanup);
   const connection = await openConnection({home, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: line => diagnostics.push(line), idleTimer: clock.timer, engine,
     env: {PATH: process.env.PATH, HOME: user.dir, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000', ...env},
-    prepareLaunch: launch => { launches.push(launch); return {...launch, command: upstream.node, args: [upstream.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}}; },
+    prepareLaunch: launch => { launches.push(launch); return upstream(launch); },
     resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'})});
   let id = 0;
   const request = async (method, params = {}) => {
@@ -545,22 +545,16 @@ test('a Linux connection binds cua\'s engine by its path at the open: a replacem
   assert.equal((await c.close()).code, 0, c.diagnostics.join('\n'));
 });
 
-test('a Linux connection on the vendor\'s engine looks for its tree once, at the open; every launch, the relaunch too, takes it from that selection', async t => {
+// #171 M6b: a vendor selection is refused at the open, cua's engine installed or not, and nothing is launched.
+test('a Linux connection on the vendor\'s engine is refused at the open (engine_retired), nothing launched', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
-  const tree = vendorLinuxRuntime({home, host: LINUX});
-  let looked = 0;
-  const vendor = args => { looked++; return vendorLinuxRuntime(args); };
-  const c = await linuxConnection(t, home, {env: {CUA_NATIVE_ENGINE: 'vendor'}, engine: {vendor}});
-  await c.js('first');
-  await c.idleStop();
-  await c.js('again');
-  assert.ok(c.launches.length >= 2);
-  for (const launch of c.launches) {
-    assert.equal(launch.env.OAI_SKY_LINUX_BIN, tree.paths.skyLinuxBin);
-    assert.equal(launch.env.CUA_SKY_SERVICE, tree.paths.skyVendorService);
-  }
-  assert.equal(looked, 1, 'the open looked once; no launch looked again');
-  assert.equal((await c.close()).code, 0, c.diagnostics.join('\n'));
+  fakeInstalledEngine(home, MIN_ENGINE_VERSION);
+  const launches = [];
+  await assert.rejects(openConnection({home, host: LINUX, sessionId: randomUUID(), input: new PassThrough(), output: new PassThrough(), diagnostics: () => {},
+    env: {PATH: process.env.PATH, HOME: home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0', CUA_NATIVE_ENGINE: 'vendor'},
+    prepareLaunch: launch => { launches.push(launch); return launch; }, resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'})}),
+  {code: 'engine_retired'});
+  assert.deepEqual(launches, []);
 });
 
 test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds', {skip: !supported}, async t => {

@@ -1,0 +1,53 @@
+{
+ "home": "/tmp/c173-fallback-4zgG2b/fallback/home/cua",
+ "kind": "none",
+ "reason": "engine_not_installed",
+ "remedy": "node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/bin/cua.mjs install --engine",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "home": "none"
+   }
+  },
+  {
+   "name": "the default mode: nothing selects an engine (no CUA_NATIVE_ENGINE, no \"engine\" in engine.json)",
+   "status": "PASS"
+  },
+  {
+   "name": "the default refuses cua's engine for engine_not_installed, its engine row a failure naming the reason and node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/bin/cua.mjs install --engine (cua doctor --json)",
+   "status": "PASS",
+   "detail": {
+    "mode": "default",
+    "selected": null,
+    "reason": "engine_not_installed",
+    "row": "fail",
+    "doctorExit": 1
+   }
+  },
+  {
+   "name": "cua serve refuses the open for engine_not_installed: it exits 1 unanswered, naming the reason and node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/bin/cua.mjs install --engine, with no engine below it",
+   "status": "PASS",
+   "detail": {
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "answered": false,
+    "samples": 4,
+    "observed": [],
+    "uninspectable": [],
+    "stderr": "cua: the default engine (cua) selects cua's own engine, and none is installed in this cua home (/tmp/c173-fallback-4zgG2b/fallback/home/cua/engine/linux/cua-engine): run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/bin/cua.mjs install --engine` [engine_not_installed]\n  a `cua` from another checkout installs that checkout's engine, not this one's\n"
+   }
+  }
+ ],
+ "selection": {
+  "mode": "default",
+  "selected": null,
+  "reason": "engine_not_installed",
+  "row": "fail"
+ },
+ "status": "PASS"
+}

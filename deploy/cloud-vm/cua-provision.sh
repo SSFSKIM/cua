@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
 # Turn a fresh Ubuntu 24.04 VM into a cua device (deploy/cloud-vm/README.md). cloud-init installs this script as
 # /usr/local/sbin/cua-provision.sh with its parameters in /etc/cua-provision.conf and runs it once as root; running it
-# again repeats every step, and each step changes only what is missing or different, so a re-run repairs or upgrades
-# (a new CUA_REF in the conf moves the checkout). The parameters (render.sh writes them):
+# again repeats every step, and each step changes only what is missing or different, so a re-run repairs. The
+# parameters (render.sh writes them):
 #   CUA_USER     the desktop user the agent works as (autologin on :0, owns the checkout and cua's home)
-#   CUA_REF      the git ref of CUA_REPO checked out at /opt/cua
+#   CUA_REF      what of CUA_REPO is checked out at /opt/cua: a full commit ID (update.sh writes one), exactly, or a
+#                name (a branch or a tag, as a template is first rendered with), whose commit the log names
 #   CUA_REPO     the repository (https://github.com/SSFSKIM/cua), or `upload`: a git bundle holding CUA_REF that the
 #                operator copies to /var/cache/cua/cua.bundle (the script waits up to CUA_DEB_WAIT seconds for it)
-#   CUA_DEB      the vendor's ChatGPT deb, which only CUA_NATIVE_ENGINE=vendor needs (#171 M6a): `none` (the default:
-#                nothing is fetched or waited for; cua install still tries the pin's URL, and a device works without
-#                it), or, once cua's own runtime is installed and registered, `pin` (the pin's own URL), an https URL (a
-#                mirror; the bytes must still match the pin) or `upload` (the operator copies it to
-#                /var/cache/cua/upload.deb; the script waits up to CUA_DEB_WAIT seconds for it), then stops at that
-#                step where the deb cannot be had. A CUA_REF older than M6a runs from the deb, so for it the deb comes
-#                first and the provisioning fails without it
 #   CUA_RELAY    optional wss:// relay URL: enrol the device there and install the agent as a systemd user unit
 #   CUA_EXTENSION      where Chrome force-installs cua's extension from: `hosted` (default), the self-hosted CRX named
 #                      by CUA_EXTENSION_URL's update manifest, or `store` (the Chrome Web Store listing)
@@ -21,36 +15,33 @@
 # Results: /var/log/cua-provision.json is `cua doctor --json` at the end, /var/lib/cua-provision/checklist.txt the
 # owner's remaining steps (also printed), /var/log/cua-provision.log this script's output. Nothing it prints or logs is
 # a credential: a relay enrolment's client credential goes only to /root/cua-enrollment.json (0600).
+#
+# It provisions cua 0.30.0 or later (#171 M6b), which installs no ChatGPT package: a conf from an earlier template that
+# still sets CUA_DEB gets one log line and nothing else. And it runs only as the provisioner of the commit it checks
+# out: before npm ci or cua install it stops unless it is byte for byte that commit's deploy/cloud-vm/cua-provision.sh,
+# which it compares and never runs. So an upgrade is deploy/cloud-vm/update.sh, from the operator's checkout: it installs
+# the provisioner of the commit it provisions, sets CUA_REF to that commit's ID and runs it (deploy/cloud-vm/README.md).
 set -euo pipefail
 
 # ---- cua and its registration (steps 8 and 9 below run these). test/deploy-cloud-vm.test.mjs sources this file, which
-# returns before step 1, and runs them with stub cua, curl, as_user, log and stop_early. ----
-checkout=/opt/cua cache=/var/cache/cua
+# returns before step 1, and runs them with stub cua, as_user, log, checklist and doctor; it also runs the whole of it
+# on a fake VM (test/fixtures/cloud-vm/vm.mjs). ----
+checkout=/opt/cua
 EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTENSION_ID, src/chrome/extension.mjs)
 
-# Provisioning stops at a step: the checklist (saying why) and doctor's report are written and printed. A vendor deb that
-# cannot be had once cua's own runtime is installed and registered leaves a working device (stop_early, exit 0); a
-# failed install of cua's own runtime does not (stop_failed, exit 1, which cloud-init reports).
-stop_early() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 0; }
+# A failed install of cua's own runtime stops the provisioning there: the checklist (saying why) and doctor's report
+# are written and printed, and it exits 1, which cloud-init reports.
 stop_failed() { log "$1"; checklist "$1"; doctor; cat "$state/checklist.txt"; exit 1; }
-# How the deb's own steps stop, and what they say is already in place: for a checkout older than M6a, whose runtime is
-# the deb, they fail the provisioning (provision_cua sets them).
-deb_stop=stop_early deb_state="cua's own runtime is installed and registered; "
 
-# cua install, then its one-line summary. Plain, it installs cua's own runtime (its module tree, sandbox helper and
-# Node) and cua's engine, and tries the vendor's tree from the pin's URL, which a working device does not need (#171
-# M6a); its failure fails the provisioning, with the install's error and its remedy. With --archive it is the vendor's
-# deb, after registration: its failure stops there, the device working. `vendor_placed` says whether that tree is in
-# place.
+# cua install, then its one-line summary: cua's own runtime (its module tree, sandbox helper and Node) and cua's engine.
+# Its failure fails the provisioning, with the install's error and its remedy.
 install_cua() {
   local out code=0 why
-  log "cua install${1:+ $*}"
-  out="$(as_user cua install "$@" --json)" || code=$?
+  log "cua install"
+  out="$(as_user cua install --json)" || code=$?
   jq -c '{ok, release, changed, sessions}' <<<"$out" || printf '%s\n' "$out"
-  vendor_placed="$(jq -r 'if .vendor.release then 1 else 0 end' <<<"$out" 2>/dev/null || echo 0)"
   ((code == 0)) && return 0
   why="$(jq -r '[.error.message, .error.hint] | map(select(. != null)) | join("; ") | if . == "" then "see its output above" else . end' <<<"$out" 2>/dev/null || echo 'see its output above')"
-  if (($#)); then "$deb_stop" "cua install${1:+ $*} failed (exit $code): $why; then run cua-provision.sh again"; fi
   stop_failed "cua install failed (exit $code): $why; then run cua-provision.sh again"
 }
 
@@ -79,68 +70,10 @@ register_cua() {
   if as_user cua profiles bind me; then bound=1; fi
 }
 
-# "release url sha256" of the vendor's pin for this host (cua's own selection).
-pin_of_host() {
-  as_user node --input-type=module -e "
-    import {loadPins, selectPin} from '$checkout/src/runtime/manifest.mjs';
-    const p = selectPin(loadPins());
-    console.log([p.release, p.archive.url, p.archive.sha256].join(' '));"
-}
-
-# The pinned deb (`deb`): in $cache under the pin's file name, its SHA-256 checked against the pin before it is kept, from
-# where CUA_DEB says. Where it cannot be had, provisioning stops here, with cua's own runtime already working.
-fetch_deb() {
-  local release pin_url pin_sha up url
-  read -r release pin_url pin_sha <<<"$(pin_of_host)"
-  deb="$cache/${pin_url##*/}"
-  if [[ -f "$deb" ]] && ! echo "$pin_sha  $deb" | sha256sum -c --status; then
-    log "$deb does not match the pin's sha256; removing it"
-    rm -f "$deb"
-  fi
-  if [[ ! -f "$deb" ]]; then
-    case "$CUA_DEB" in
-      upload)
-        # The operator copies the deb to $cache/upload.deb (create-hetzner.sh --deb does, and touches upload.deb.failed
-        # when its copy fails); it becomes $deb once it matches this checkout's pin.
-        up="$cache/upload.deb"
-        log "waiting up to ${CUA_DEB_WAIT}s for $up (copied there by the operator)"
-        for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$up" || -e "$up.failed" ]] && break; sleep 5; done
-        if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; "$deb_stop" "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
-        [[ -f "$up" ]] || "$deb_stop" "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
-        echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; "$deb_stop" "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
-        mv "$up" "$deb"
-        ;;
-      *)
-        url="$CUA_DEB"; [[ "$url" == pin ]] && url="$pin_url"
-        log "download $url"
-        curl -fL --retry 3 --silent --show-error -o "$deb.part" "$url" || { rm -f "$deb.part"; "$deb_stop" "could not download $url: ${deb_state}copy the pinned deb to the VM's $cache/upload.deb and set CUA_DEB=upload, or run cua-provision.sh again"; }
-        echo "$pin_sha  $deb.part" | sha256sum -c --status || { rm -f "$deb.part"; "$deb_stop" "$url does not match the pin's sha256 for $release (removed)"; }
-        mv "$deb.part" "$deb"
-        ;;
-    esac
-  fi
-  chmod 0644 "$deb"
-}
-
-# Steps 8 and 9: cua's own runtime and its registration, as under CUA_DEB=none; then, where CUA_DEB asks for the vendor's
-# tree (for CUA_NATIVE_ENGINE=vendor), the deb and the install that requires it. Only a `pin` request that cua install
-# already met from the pin's own URL is skipped: a mirror or an upload is the operator's source, fetched and checked.
-# A checkout older than M6a (CUA_REF before it: no runtime/linux-runtime.json) has no runtime of its own; its install
-# is the deb's, so a supplied deb is had and installed first, as that checkout's provisioner did, and under none its
-# plain install fetches the pin's URL itself.
+# Steps 8 and 9: cua's own runtime and its registration.
 provision_cua() {
-  if [[ ! -f "$checkout/runtime/linux-runtime.json" ]]; then
-    deb_stop=stop_failed deb_state=''
-    if [[ "$CUA_DEB" != none ]]; then fetch_deb; install_cua --archive "$deb"; else install_cua; fi
-    register_cua
-    return 0
-  fi
   install_cua
   register_cua
-  [[ "$CUA_DEB" != none ]] || return 0
-  if [[ "$CUA_DEB" == pin ]] && ((vendor_placed)); then log "the vendor's tree is in place (cua install fetched it from the pin's URL)"; return 0; fi
-  fetch_deb
-  install_cua --archive "$deb"
 }
 
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
@@ -150,7 +83,7 @@ conf=/etc/cua-provision.conf
 # shellcheck source=/dev/null
 . "$conf"
 : "${CUA_USER:?} ${CUA_REF:?} ${CUA_REPO:?}"
-CUA_DEB="${CUA_DEB:-none}" CUA_RELAY="${CUA_RELAY:-}" CUA_DEB_WAIT="${CUA_DEB_WAIT:-3600}"
+CUA_RELAY="${CUA_RELAY:-}" CUA_DEB_WAIT="${CUA_DEB_WAIT:-3600}"
 CUA_EXTENSION="${CUA_EXTENSION:-hosted}" CUA_EXTENSION_URL="${CUA_EXTENSION_URL:-https://178-104-102-73.sslip.io/ext/update.xml}"
 
 state=/var/lib/cua-provision
@@ -158,7 +91,11 @@ mkdir -p "$state" /var/cache/cua
 exec > >(tee -a /var/log/cua-provision.log) 2>&1
 started=$SECONDS
 log() { printf '[cua-provision +%ss] %s\n' "$((SECONDS - started))" "$*"; }
-log "start $(date -u +%FT%TZ): user $CUA_USER, ref $CUA_REF, deb $CUA_DEB, relay ${CUA_RELAY:-none}, extension $CUA_EXTENSION"
+log "start $(date -u +%FT%TZ): user $CUA_USER, ref $CUA_REF, relay ${CUA_RELAY:-none}, extension $CUA_EXTENSION"
+# A conf from an earlier template (#171 M6a and before) may set CUA_DEB, the vendor's deb.
+if [[ -n "${CUA_DEB:-}" ]]; then
+  log "CUA_DEB=$CUA_DEB in $conf is no longer used: cua 0.30.0 installs no ChatGPT package, so nothing is fetched or waited for"
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 arch="$(dpkg --print-architecture)"   # amd64 or arm64
@@ -171,14 +108,14 @@ esac
 # apt waits for the first boot's unattended-upgrades instead of failing on its lock (NodeSource's script included).
 echo 'DPkg::Lock::Timeout "900";' >/etc/apt/apt.conf.d/90cua-provision-lock
 
-# 1. Packages. What cua and its doctor probe (binutils, xz-utils: the deb; x11-utils: xdpyinfo; dbus-x11: dbus-send;
-# bubblewrap: the sandbox), the desktop (Xorg with a dummy driver for machines without a GPU, lightdm for the autologin,
-# openbox, AT-SPI, dbus-user-session so the X session, Chrome and cua share the systemd user bus), gedit (the native
-# acceptance's editor), zenity, jq, dconf-cli (the AT-SPI default) and x11vnc (the owner's view of the screen).
+# 1. Packages. What cua and its doctor probe (x11-utils: xdpyinfo; dbus-x11: dbus-send; bubblewrap: the sandbox), the
+# desktop (Xorg with a dummy driver for machines without a GPU, lightdm for the autologin, openbox, AT-SPI,
+# dbus-user-session so the X session, Chrome and cua share the systemd user bus), gedit (the native acceptance's
+# editor), zenity, jq, dconf-cli (the AT-SPI default) and x11vnc (the owner's view of the screen).
 log "packages"
 apt-get update -q
 apt-get install -y -q --no-install-recommends \
-  binutils xz-utils x11-utils x11-xserver-utils dbus-x11 dbus-user-session bubblewrap at-spi2-core \
+  x11-utils x11-xserver-utils dbus-x11 dbus-user-session bubblewrap at-spi2-core \
   xorg xserver-xorg-video-dummy lightdm lightdm-gtk-greeter openbox gedit zenity jq dconf-cli x11vnc \
   git curl ca-certificates gpg
 
@@ -333,6 +270,8 @@ elif ((changed)); then
 fi
 
 # 7. The cua checkout at /opt/cua, owned by the user, at CUA_REF from CUA_REPO (origin follows the conf); `cua` on PATH.
+# It ends exactly at one commit, with that commit's tracked files; the commit must be cua 0.30.0 or later and its
+# provisioner must be this script.
 repo="$CUA_REPO"
 if [[ "$CUA_REPO" == upload ]]; then
   # The operator copies the bundle to /var/cache/cua/cua.bundle (create-hetzner.sh --repo does, and touches
@@ -351,13 +290,53 @@ if [[ ! -d /opt/cua/.git ]]; then
   as_user git clone -q "$repo" /opt/cua
 fi
 as_user git -C /opt/cua remote set-url origin "$repo"
-as_user git -C /opt/cua fetch -q origin "$CUA_REF"
-if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$(as_user git -C /opt/cua rev-parse FETCH_HEAD)" ]]; then
-  as_user git -C /opt/cua checkout -q --detach FETCH_HEAD
+if [[ "$CUA_REF" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+  # A commit ID, as update.sh writes it: fetched by its ID, or with origin's branches and tags where origin refuses a
+  # fetch by ID, then required to be here. A branch that has moved since changes nothing.
+  as_user git -C /opt/cua fetch -q origin "$CUA_REF" 2>/dev/null \
+    || as_user git -C /opt/cua fetch -q origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+  as_user git -C /opt/cua cat-file -e "$CUA_REF^{commit}" 2>/dev/null \
+    || { echo "origin $repo does not give commit $CUA_REF: push it there, or set CUA_REF to a commit it has" >&2; exit 1; }
+  commit="$CUA_REF"
+else
+  # A name, as a template is first rendered with: the log says which commit it was. FETCH_HEAD is peeled, since for an
+  # annotated tag it names the tag object, not its commit.
+  as_user git -C /opt/cua fetch -q origin "$CUA_REF"
+  commit="$(as_user git -C /opt/cua rev-parse 'FETCH_HEAD^{commit}')"
+  log "ref $CUA_REF is commit $commit"
+fi
+# The index and the tracked files must be HEAD's before the checkout moves: the desktop user owns /opt/cua, a checkout
+# carries an edit to a file both commits share, and none runs when HEAD is already the commit. So a clean checkout of
+# the commit is exactly its files, and what npm ci and cua install then run is the commit's. An untracked file is not
+# a commit's code (npm ci replaces node_modules) and does not count. Nothing is discarded: the owner sets edits aside.
+edits="$(as_user git -C /opt/cua status --porcelain --untracked-files=no)"
+if [[ -n "$edits" ]]; then
+  {
+    echo "the checkout at /opt/cua has changes to tracked files that its commit $(as_user git -C /opt/cua rev-parse HEAD) does not have, and cua-provision.sh runs only a commit's own files: see them as $CUA_USER with git -C /opt/cua status and git -C /opt/cua diff HEAD, set them aside with git -C /opt/cua stash push (or commit them on a branch of their own), then run cua-provision.sh again"
+    sed 's/^/  /' <<<"$edits"
+  } >&2
+  exit 1
+fi
+if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$commit" ]]; then
+  as_user git -C /opt/cua checkout -q --detach "$commit"
   log "checkout $(as_user git -C /opt/cua log --oneline -1)"
 fi
-# npm ci for the checked-out commit, once it has succeeded (a failed one is retried by the next run).
 head="$(as_user git -C /opt/cua rev-parse HEAD)"
+[[ "$head" == "$commit" ]] || { echo "the checkout at /opt/cua is at $head, not $commit: run cua-provision.sh again" >&2; exit 1; }
+# This template provisions cua 0.30.0 or later (#171 M6b). An older checkout's install wants the vendor's deb, which
+# this script no longer gets; it holds a Linux deb pin, or no runtime/linux-runtime.json.
+# shellcheck disable=SC2016  # $1 expands in the user's shell
+if as_user sh -c 'ls "$1"/runtime/releases/*-linux-*.json' sh "$checkout" >/dev/null 2>&1 || ! as_user test -f "$checkout/runtime/linux-runtime.json"; then
+  echo "this template provisions cua 0.30.0 or later; CUA_REF $CUA_REF is older: use that ref's own deploy/cloud-vm" >&2
+  exit 1
+fi
+# It runs only as the checkout's own provisioner, so that no later change of the template meets an older script: the
+# checkout's copy is compared, as the user, and never run (update.sh installs it, from the operator's checkout).
+if ! as_user cmp -s - "$checkout/deploy/cloud-vm/cua-provision.sh" <"${BASH_SOURCE[0]}"; then
+  echo "${BASH_SOURCE[0]} is not this checkout's deploy/cloud-vm/cua-provision.sh (CUA_REF $CUA_REF, commit $head): it provisions only the commit whose own provisioner it is, so this VM is upgraded from the operator's checkout with deploy/cloud-vm/update.sh root@<this VM> --ref $CUA_REF" >&2
+  exit 1
+fi
+# npm ci for the checked-out commit, once it has succeeded (a failed one is retried by the next run).
 if [[ "$(cat "$state/npm-ci.head" 2>/dev/null)" != "$head" ]]; then
   log "npm ci"
   AS_CWD=/opt/cua as_user npm ci --no-audit --no-fund --loglevel=error
@@ -406,8 +385,7 @@ doctor() {
   log "doctor (exit $code):"
   jq -r '.checks[] | "  \(.status)\t\(.name)"' /var/log/cua-provision.json
 }
-# 8 and 9. cua: its own runtime (cua install), its Chrome host and the profile `me`; then, where CUA_DEB asks for it,
-# the vendor's deb and `cua install --archive` (provision_cua, above).
+# 8 and 9. cua: its own runtime (cua install), its Chrome host and the profile `me` (provision_cua, above).
 provision_cua
 
 # 10. Optional remote control: enrol with the relay once (the client credential to a root-only file, never printed),

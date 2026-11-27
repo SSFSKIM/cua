@@ -32,10 +32,12 @@ import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {backendDir} from '../../src/chrome/extension.mjs';
 
 // The installer and executable-facts boundaries are synchronous and injectable; local doubles never run install. The
-// install acquires only: pinned to the vendor engine, so it never builds an engine under the scratch HOME (#117 M4).
-function installRuntime({env,run,archives}) {
+// install acquires only: on macOS pinned to the vendor engine, so it never builds an engine under the scratch HOME (#117
+// M4); on Linux, where cua 0.30.0 refuses that selection (#171 M6b), it names no engine, an ambient one included.
+function installRuntime({env,run,archives,platform = process.platform}) {
+  const {CUA_NATIVE_ENGINE: _selected, ...unselected} = env;
   run(process.execPath, ['bin/cua.mjs', ...installArgs(archives)], {
-    cwd: fileURLToPath(new URL('../../', import.meta.url)), env: {...env, CUA_NATIVE_ENGINE: 'vendor'},
+    cwd: fileURLToPath(new URL('../../', import.meta.url)), env: platform === 'linux' ? unselected : {...env, CUA_NATIVE_ENGINE: 'vendor'},
     stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000, maxBuffer: 1024 * 1024,
   });
 }
@@ -95,7 +97,7 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
       const env = nodeEnvironment({...ambient, CUA_HOME: dir, HOME: userHome});
       // A pinned Linux engine from the cache, in place before the install, whose engine step then finds it (#171).
       if (cache.engine) placeEngine(dir, cache.engine);
-      try { install({home: dir, env, run, archives: cache}); }
+      try { install({home: dir, env, run, archives: cache, platform}); }
       catch (error) {
         if (!/\[archive_[a-z_]+\]/.test(error.message)) throw error;
         throw new Error(`${error.message}\nThe prepared archive cache was refused; managed fixtures never download: run cleanup-prepared, then prepare again`, {cause: error});

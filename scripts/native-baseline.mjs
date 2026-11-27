@@ -35,12 +35,13 @@
 //     cell that fails because the engine did not launch is recorded as that (meta.engineLaunch), never as a timing.
 //     TextEdit is brought to the front after the bind (setup.activate, not judged), and every key cell runs only while
 //     the run's TextEdit process is frontmost (#162, by pid).
-//     --engine vendor|cua [--engine-bin <path>] (required for a Linux computer run, #171;
+//     --engine cua [--engine-bin <path>] (required for a Linux computer run, #171;
 //     docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites): the native engine on cua's own
-//     host, the only one Linux serves (CUA_NATIVE_ENGINE), and on the cua lane the cua-engine on the device to run in
+//     host, the only one Linux serves (CUA_NATIVE_ENGINE), and the cua-engine on the device to run in
 //     place of the one installed in the run's home (CUA_LINUX_ENGINE_BIN; before the first release, the local build).
-//     No approved engine: that is macOS's. The run is complete only when the requested engine, at the executable the
-//     lane names, was the only engine below the run's serves (read by /proc/<pid>/exe, ./native-baseline/linux.mjs).
+//     No approved engine: that is macOS's. --engine vendor is refused on Linux since #171 M6b (cua 0.30.0 removed
+//     the vendor's engine there), naming where the last vendor lanes are stored; compare --engines still judges them.
+//     The run is complete only when the requested engine, at the executable the lane names, was the only engine below the run's serves (read by /proc/<pid>/exe, ./native-baseline/linux.mjs).
 //     --pinned-check (the cua lane on its installed engine, #171 M5): after the preparation and before any session,
 //     the run's own home is checked by the pinned rule on the device (scripts/linux-engine-gate/gate.mjs check); a home
 //     it refuses ends the run, and the rule's record is the run's `pinnedEngine` (meta.json).
@@ -491,7 +492,7 @@ export async function main(argv = process.argv.slice(2)) {
     if ((upB.length || upC.length) && (lanes !== 'engines' || upB.length !== 1 || upC.length !== 1)) throw new Error('compare --engines takes one top-up at most: --top-up-baseline and --top-up-candidate, one directory each (the gate\'s R2)');
     return compareDirs(dir, other, {out: values.out, sameHost: values['same-host'], lanes, ...(upB.length ? {topUp: {baseline: upB[0], candidate: upC[0]}} : {})});
   }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--host cua --engine vendor|cua [--engine-bin <cua-engine on the device>], Linux computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>] | compare --engines <cv-dir> <cc-dir> --top-up-baseline <cv-dir> --top-up-candidate <cc-dir> [--out <file>], Linux');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--host cua --engine cua [--engine-bin <cua-engine on the device>], Linux computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>] | compare --engines <cv-dir> <cc-dir> --top-up-baseline <cv-dir> --top-up-candidate <cc-dir> [--out <file>], Linux');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');

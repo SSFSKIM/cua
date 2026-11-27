@@ -66,9 +66,13 @@ test('Node provenance resolves against the answering home rather than ambient so
 test('selection provisioning invokes a fresh install without an inherited override',()=>{
  let command;
  const ambient={HOME:'/owned/home/home',CUA_HOME:'/owned/home',CUA_NODE:'/old/override',CUA_NATIVE_ENGINE:'cua'};
- const result=installSelectionRuntime('/owned/home',ambient,{run:(...args)=>{command=args;},inspect:({source,ambient})=>{assert.equal(source,'/owned/home');assert.equal(ambient.CUA_NODE,undefined);assert.equal(ambient.CUA_NATIVE_ENGINE,'cua','the rows keep their selection');return {home:source,ownNode:{path:source+'/node/24.x/bin/node',version:'v24.18.0'}};}});
+ const inspect=({source,ambient})=>{assert.equal(source,'/owned/home');assert.equal(ambient.CUA_NODE,undefined);assert.equal(ambient.CUA_NATIVE_ENGINE,'cua','the rows keep their selection');return {home:source,ownNode:{path:source+'/node/24.x/bin/node',version:'v24.18.0'}};};
+ const result=installSelectionRuntime('/owned/home',ambient,{run:(...args)=>{command=args;},inspect,platform:'darwin'});
  assert.deepEqual(command[1],['bin/cua.mjs','install']);assert.equal(command[2].env.CUA_HOME,'/owned/home');assert.equal(command[2].env.CUA_NODE,undefined);assert.equal(result.home,'/owned/home');
  assert.equal(command[2].env.CUA_NATIVE_ENGINE,'vendor','the acquisition never builds an engine (#117 M4)');
+ // #171 M6b: on Linux the install names no engine (cua 0.30.0 refuses the vendor's there), the rows keep theirs
+ installSelectionRuntime('/owned/home',ambient,{run:(...args)=>{command=args;},inspect,platform:'linux'});
+ assert.equal('CUA_NATIVE_ENGINE' in command[2].env,false,'a Linux install names no engine, an ambient one included');
 });
 test('unmanaged negative rows hide only their own Node tree and restore it after errors',async()=>{
  const home=mkdtempSync(join(tmpdir(),'cua-node-absence-test-'));mkdirSync(join(home,'node'));

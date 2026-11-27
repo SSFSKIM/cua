@@ -1,0 +1,7 @@
+== r4 at 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b 2026-11-27T19:17:12Z dirty=no
+free on /:   34G
+2026-11-27T19:17:12Z == device head 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b label counted device cua-171 engine installed selection default dirty=no
+private-desktop: the run's watchdog did not start (spawn /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/scripts/linux-engine-diff/xprobe/target/release/xprobe ENOENT), so nothing is run on :1
+private-desktop: (no display) session; command exit none; watchdog none
+2026-11-27T19:17:12Z == device exit 2
+r4 (device) exit 2

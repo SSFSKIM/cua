@@ -27,7 +27,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-11-14T21:00Z) M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release (`linux-engine-v0.4.0`). Loop tasks 28 to 80, every code change reviewed clean: the task reviews; the whole-branch review by `doperpowers:reviewer-high` in five slices, after six fix waves; and the gate's re-judge scripts and audit-leak-fix by `doperpowers:reviewer-medium`, after one fix wave. The release gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`), and the published x64 asset is the same bytes (Outcomes & Retrospective, M4).
 - [x] (2026-11-23T06:22Z) M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch. Accepted at H8 = 048140a2 on linux-engine 0.4.3 on both arches (ruling 1090); three engine releases in M5 (0.4.1, 0.4.2, 0.4.3, #459); the owner's yes to the flip (1093), merged as T10 (a15d0618, plugin 0.29.0); the whole-branch review's harness fixes (task 139) moved no stored verdict; #487 and #488 to 0.4.4.
 - [x] (2026-11-24T01:39Z) M6a — A vendor-free Linux runtime: a Linux session, computer or browser-only, resolves and launches from cua's own parts (the ModuleTree, the managed Node, the sandbox helper, `cua-engine` with cua's service) with no vendor tree read. It was built to the ruled pre-flight (`2026-10-28-own-linux-engine-m6a-preflight.md`, ruling 1110) in nine loop tasks (143–155), each reviewed clean. Acceptance 12 was counted at H = f41546d08 on x64 and on hosted arm64, 12 of 12 cells each, with the x64 regression (R1, R3, R4, the fallback part) and F10's credit (task 155; evidence `docs/evidence/2026-10-28-own-linux-engine/m6a/`). The branch was reviewed by `doperpowers:reviewer-high`, in one fix round of two waves (task 156; rulings 1180 and 1187), and an x64 re-pilot after it matched H in every cell path, doctor row and traced `runtimes/` count (Outcomes, M6a).
-- [ ] M6b — Retirement of the vendor's Linux package (after the soak).
+- [x] (2026-11-27T20:13Z) M6b — Retirement of the vendor's Linux package. On Linux, nothing of the vendor's package is fetched, pinned or selectable. Its deb records are pin-time provenance, a home's vendor tree is reported and never deleted (1216), every vendor selection is refused as `engine_retired` with one install command, and a cloud VM upgrades with `deploy/cloud-vm/update.sh`. It was built to the ruled pre-flight (`2026-10-28-own-linux-engine-m6b-preflight.md`, ruling 1218) in seven loop tasks (166–172), each reviewed clean, with cua 0.30.0. Acceptance 13 was counted at H = 3722f2826 on x64, on hosted arm64 and on the hosted x64 control (run 46052854181), every cell passing, with the x64 regression (R1, R3, R4, the fallback part), E1 and FB on the fixture, and both `ci-gate` runs green (task 173; evidence `docs/evidence/2026-10-28-own-linux-engine/m6b/`). Spec close-out: task 174 (Outcomes, M6b).
 
 ## Scope, inheritance and evidence
 
@@ -537,8 +537,9 @@ CUA_LOCK_MAX=100m "$LOCK" "$HOLDER" bash -c 'node scripts/repl-parity.mjs prepar
 node scripts/repl-parity.mjs run --device "$1" --suite native --host cua --engine cua --out "$2/cua-1" &&
   node scripts/repl-parity.mjs run --device "$1" --suite native --host cua --engine cua --out "$2/cua-2"
 status=$?
-node scripts/repl-parity.mjs cleanup-prepared --device "$1"
-exit "$status"' sitting "$DEVICE" "$RUN/parity"
+node scripts/repl-parity.mjs cleanup-prepared --device "$1"; cleaned=$?
+if [ "$status" -ne 0 ]; then exit "$status"; fi
+exit "$cleaned"' sitting "$DEVICE" "$RUN/parity"
 node scripts/repl-parity.mjs diff "$RUN/parity/cua-1" "$RUN/parity/cua-2"
 # expected: each run prints assertions PASS; the cua and cua diff takes no --expected file, so any difference it reports is undeclared
 EV=docs/evidence/2026-10-28-own-linux-engine
@@ -3305,3 +3306,74 @@ Written per milestone as each lands; the whole-plan retrospective at finish. The
 - parity-browser-stress fails the same five Playwright download and file-chooser assertions on main, so it predates M6a. It has never been green since the gate was added (#382), and it is #383 (#564 was filed as a duplicate).
 - `scripts/sandbox-probe/linux-probes.mjs` still reads the vendor tree; it's on the tracker for M6b.
 - M6b deletes the vendor's Linux package after the soak.
+
+### M6b — Retirement of the vendor's Linux package (2026-11-27)
+
+**Achieved.** cua 0.30.0 retires the vendor's Linux package, as "Retirement (M6b)" describes:
+- `cua install` on Linux fetches, places and pins nothing of it;
+- the two deb records are pin-time provenance in `runtime/provenance/`, which nothing install, doctor or launch reaches reads;
+- a home's vendor tree is reported, by an informational `runtime.retired` row and install's `retired`, and never deleted;
+- a vendor setting in effect is refused as `engine_retired`, with one install command;
+- a cloud VM upgrades with `deploy/cloud-vm/update.sh`.
+
+It was built in seven loop tasks (166–172), each reviewed clean, and frozen at H = 3722f2826.
+
+**Acceptance 13** was counted at H (task 173; `docs/evidence/2026-10-28-own-linux-engine/m6b/README.md`). Every cell, E0 to E3 and U0 to U5, passed by the driver's own judge on all three legs: x64 on dc-linux171-1e68 (`m6b/x64/runtime.json`), hosted arm64 and the hosted x64 control (run 46052854181; `m6b/arm64/runtime.json`, `m6b/x64-hosted/runtime.json`). On each leg:
+- E0's fetch log holds only this architecture's pinned assets, and no `ar` or `xz` ran;
+- no traced call of a session names a path under `runtimes/`;
+- U1's and U2's calls there are the report's own `lstat`s, directory reads and one open of `install.json`;
+- U2 and U3 left the tree byte for byte, with every mtime, as it was.
+
+**The regression on x64 at H** (`m6b/x64/regression/`):
+- R1's cua lane by its own verdict: 34 of 34, both text cases positive, each case answered by its own home's engine;
+- R3, by default and with `CUA_NATIVE_ENGINE=cua`, and R4 passed;
+- the fallback part passed 5 of 5, each home refused with 1212's one remedy.
+
+**The fixture's steps on x64** (`m6b/x64/fixture/`): E1 and FB passed, and their file traces name no `runtimes/` path.
+
+**Gates and credit.**
+- `ci-gate` at H was GREEN with `test-1`, `test-2` and `sandbox-live` among its gates (46052942014).
+- `ci-gate --gates engine-linux` was GREEN (46056294731).
+- The credit check passes (`m6b/credit.txt`).
+- Both real debs still give `provenance.json`'s bytes through the new reader (`m6b/provenance.txt`).
+
+**Cited per the pre-flight's §5.3.**
+- Items 2 to 8 are cited cell by cell from M5's table and bridged to H.
+- Item 4's facade half reran on x64 (FB at H). arm64's is task 165's FB at main 854103aa5: 10 of 10, both services equal, the facade and host tied to H by the credit check (`m6b/fb-arm64/README.md`).
+- No vendor diff on the code at H is claimed.
+
+**Measured.** Serve start to a first answer, median of 20, H minus the cua before M6b: x64 −14 ms, hosted arm64 +26 ms and hosted x64 +2 ms. The pilot's +55 ms on arm64 was not reproduced. E0's install fetched 84 MB on x64, against the older cua's 559 MB.
+
+| # | Item | Counted by (milestone, head, engine) | Witness | In M6b |
+|---|---|---|---|---|
+| 1 | No vendor process | M5, R3 on 0.4.0 at H and H‴; T10 on 0.4.3; M6b at H = 3722f2826 on 0.4.5 | `docs/evidence/2026-10-28-own-linux-engine/m5/README.md` (L213–225); `m6b/README.md` (cells E1, U0, U3; the regression) | rerun: E1, U0 and U3 on three legs, R3 both ways, R1's engine binding |
+| 2 | The same answers | M5: V1–V4 on 0.4.1 at H⁗ (x64) and H⁵ (arm64), V5 on 0.4.3 at H8, the events step | `m5/README.md` (L213–225); `m5/x64/README.md`, `m5/arm64/README.md` | cited; bridged to H (`m6b/README.md` §5.3, `m6b/credit.txt`) |
+| 3 | At or below the bar | M5: the seven operations on 0.4.1; D1 on 0.4.3 at H8; D2 on 0.4.2 at H6; D3 on 0.4.0; the events step | `m5/README.md`; `m5/x64/h8/out/D1.pinned-release/run/summary.md`, `m5/x64/h6/out/D2.pinned-release/run/summary.md` | cited; bridged |
+| 4 | The same elements | M5: V2 on 0.4.1, FB on 0.4.0; M6b: FB at H on x64; task 165: FB at main 854103aa5 on arm64 | `m5/README.md`; `m6b/x64/fixture/plain/FB/`; `m6b/fb-arm64/README.md` | V2 cited; FB rerun on x64; arm64's FB cited from task 165 |
+| 5 | Background left alone | M5: V1–V5 and Z0 on 0.4.1; V5 on 0.4.2 at H6 and 0.4.3 at H8 | `m5/README.md`; `m5/x64/README.md`, `m5/arm64/README.md` | cited; bridged |
+| 6 | Text arrives once | M5: V1 and V4 on 0.4.1; M6a's F10 credit | `m5/README.md`; `m6a/f10-credit.txt` | cited through F10; its witness reran (E1, U3 on three legs; R4's case on x64) |
+| 7 | Identity and minimized | M5: V3 on 0.4.1, V5 on 0.4.3, R1's case on 0.4.0 | `m5/README.md`; `m6b/x64/regression/parity/` | cited; R1's minimized case rerun on x64 |
+| 8 | Device mode | M5: V4 on 0.4.1, V5 on 0.4.3, P1–P6 and R4 on 0.4.0 | `m5/README.md`; `m6b/x64/regression/device/` | cited; R4 rerun on x64 |
+| 9 | Install | M5 on 0.4.3 at H8; M6b's E0 at H, statically linked | `m5/README.md`; `m6b/x64/runtime.json`, `m6b/arm64/runtime.json`, `m6b/x64-hosted/runtime.json` | rerun (E0) |
+| 10 | Suites | M5: R1 and R2 on 0.4.0 at H and H‴; T10 on 0.4.3; M6a's R1 diff at f41546d08; M6b: R1's cua lane, R3, R4 at H; ci-gate 46052942014, engine-linux 46056294731 | `m5/README.md`; `m5/t10/README.md`; `m6a/README.md`; `m6b/x64/regression/logs/r1.log.txt`; `m6b/ci-gate-default.log.txt`, `m6b/ci-gate-engine-linux.log.txt` | rerun: the cua lane and the gates; the vendor diff and `compare --engines` cited |
+| 11 | Both architectures | M5: items 2–8 on arm64, 0.4.0 to 0.4.3 | `m5/README.md`; `m5/arm64/README.md` | cited, with arm64's FB from task 165 |
+| 12 | Vendor-free runtime (M6a) | M6a at f41546d08: 12 of 12 cells on x64, hosted arm64 and the hosted x64 control (run 45273664518) | `m6a/README.md` | cited. Its sessions reran in E1, E2 and U0 to U3; its vendor clause is superseded by item 13 |
+| 13 | Retirement (M6b) | M6b at H = 3722f2826: E0 to E3, U0 to U5 on three legs (run 46052854181) | `m6b/README.md`; `m6b/x64/runtime.json`, `m6b/arm64/runtime.json`, `m6b/x64-hosted/runtime.json` | counted |
+
+The witnesses' paths are under `docs/evidence/2026-10-28-own-linux-engine/`.
+
+**What went well**
+- The pre-flight's review turned a planned deletion into a report. That removed three ways a failed upgrade could break an older checkout, and the build met no design fork.
+- The comparator fixture let the vendor comparisons outlive the vendor's lanes. The differential gate still runs against the pinned build, from hashes the repository holds and bytes it never carries.
+- R1 alone takes about 3 minutes now, and T8's whole x64 run took about 50 minutes against the planned 2.5 hours.
+
+**What to keep doing**
+- Judge a refusal by the whole sentence, and source-aware. A substring check let a second remedy through until T3's review.
+- Run a harness that writes outside its own run as fail-closed as product code. T6's driver could have deleted the caller's `engine.json`, and the fake VM sat on a host that is itself a cua device.
+- State a spec's runnable steps from the scripts' own argument handling and locks, and keep the historical recipes apart from them (T9's fix waves).
+
+**Left open**
+- `tech-debt-tracker.md`: the first `engine.json` read; doctor's `remote/device.json` read; `CUA_DEB_WAIT`'s name; accept-lib's tree-snapshot flake.
+- #586: an opt-in removal of the vendor's tree, with 1216's three P1s as its requirements.
+- #574: authenticating a module-tree bump by npm's registry signatures, shared with #117 M6.
+- arm64's first answer runs 20 to 50 ms behind the older cua across three runs (M6a +22, T6's pilot +55, T8 +26), under §5.2's line. It began before M6b.

@@ -220,9 +220,16 @@ is the gate's `E1`.
 | 0.4.5, #572 | `wire.rs`: every line the engine writes carries U+2028 and U+2029 as escapes | the engine's own tests, required in `engine-linux` | cited; `engine-linux` ran at H and passes |
 | M6b | the selection, install, doctor, the harness | – | rerun (above) |
 
-**arm64's FB** (1217, N9) is task 165's run: the gate's FB on the arm VM at main 854103aa5. Its evidence is on branch
-`m6b-fb-arm64` at f18235d8e, under `docs/evidence/2026-10-28-own-linux-engine/m6b/fb-arm64-main/`. Its commit says every
-step passes. It is cited as arm64's witness for item 4's facade half, and T9 fills its result in here.
+**arm64's FB** (1217, N9) is task 165's run: the gate's FB on the arm VM at main 854103aa5, with the home's engine
+0.4.5 equal to the pin. It is cited as arm64's witness for item 4's facade half. Its evidence was made on branch
+`m6b-fb-arm64` at f18235d8e, and T9 copied it by path, byte for byte, into [fb-arm64/](fb-arm64/README.md).
+
+- **The verdict:** `VERDICT: every step passes`, then `acceptance on the pinned release: FB exit 0`
+  ([stdout](fb-arm64/out/FB.pinned-release/stdout.log.txt), [summary](fb-arm64/out/FB.pinned-release/run/summary.md)).
+- **The steps:** 10 of 10 pass, and the vendor service and cua's service are equal on every one. The truncation line on
+  cua's lane reads `{"depth":2,"failed":0,"nodes":1263}`.
+- **What it ran on:** main's facade and host. The credit check's third line ties them to H, an empty diff
+  ([credit.txt](credit.txt)).
 
 **The credit check** ([credit.txt](credit.txt)) passes:
 

@@ -79,6 +79,29 @@ export async function finishWitness(ctx) {
   return {listenAccess: meta.listenAccess, probePids: w.probePids.filter(p => p !== null), tap, controls};
 }
 
+// #212's question for a cua row that acted (ruling 1228): did the probe's key reach TextEdit's pid before the engine
+// received the request? Read from the tap's record of the probe's own pid (`probePid`, the attempt's), its first keyDown
+// on `userPid` against `receivedAt` (the engine's clock, which the tap shares on the device). `witnessed` null: no tap
+// came up (`missing`, meta.witness's reason). Times and kinds only. -> {gaps, keyAt, beforeReceipt, why?}.
+export function probeKeyBeforeReceipt(witnessed, {userPid, probePid, receivedAt, missing = null}) {
+  const gaps = [];
+  if (!witnessed) gaps.push(`no witness tap (${missing ?? 'it did not come up'})`);
+  else {
+    const {tap} = witnessed;
+    if (!witnessed.listenAccess) gaps.push('the witness tap had no Input Monitoring access');
+    if (!tap.taps.some(t => t.pid === userPid && t.created === true)) gaps.push(`no witness tap on TextEdit's pid (${userPid})`);
+    if (!tap.logRead) gaps.push('the witness tap\'s record was not read');
+    if (!witnessed.controls.some(c => c.pid === userPid && c.seen)) gaps.push('the positive control was not seen on TextEdit\'s pid');
+  }
+  if (!Number.isSafeInteger(probePid)) gaps.push('the probe\'s pid was not recorded');
+  if (!Number.isFinite(receivedAt)) gaps.push('the engine\'s receipt was not recorded');
+  if (gaps.length) return {gaps, keyAt: null, beforeReceipt: false, why: gaps.join('; ')};
+  const keys = witnessed.tap.events.filter(e => e.tapPid === userPid && e.source === probePid && e.kind === 'keyDown' && Number.isFinite(e.at)).map(e => e.at);
+  if (!keys.length) return {gaps, keyAt: null, beforeReceipt: false, why: 'the probe\'s key was not seen on TextEdit\'s pid'};
+  const keyAt = Math.min(...keys), beforeReceipt = keyAt < receivedAt;
+  return {gaps, keyAt, beforeReceipt, ...(beforeReceipt ? {} : {why: `its first key ${keyAt - receivedAt} ms after the receipt`})};
+}
+
 // One cell's posts to the user app's pid as the witness saw them over its judged window `at` [from, to] (the act's start
 // to the check's end): `gaps` (what keeps the witness from deciding: coverage, the control, the person's posts not told
 // from the engine's), `others` (posts by anyone but the probe and the control helper) and `probe` (the person's,

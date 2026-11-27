@@ -268,7 +268,7 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 // #212's save sheet (its gate's hosted cell, the M5 pre-flight §6): the sheet variant's dirty untitled document (its
 // new-document and typing cells) given its Save sheet by super+s, its destination moved to a folder the run made (the
 // panel's Go To dialog), then set_value on the sheet's name field (ID saveAsNameTextField, the field #212's report
-// names) at the cell's time, a probe keystroke aimed just after the engine receives the request. The save sheet is told
+// names) at the cell's time, a probe keystroke SAVE_SHEET_PROBE_BEFORE_MS before it (ruling 1228). The save sheet is told
 // from the keep-or-delete sheet by its missing Delete button. Its name field's index is kept across cells
 // (`__saveNameIndex`), so the act's call holds the set_value alone and its meta is its own. The check reads the sheet
 // again after a settle, and the run's folder: the sheet still open and the folder empty are the proof that nothing
@@ -280,9 +280,10 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 export const SAVE_NAME = 'cua-212-intended';
 // The run's own save folder, made under the runner's temporary directory by the destination cell.
 export const SAVE_DIR_PREFIX = 'cua-212-save-';
-// The first attempt's call this long before the post (the call reaches the engine a few ms after it is made); later
-// attempts aim the post SAVE_SHEET_AIM_MS after the measured receipt.
-export const SAVE_SHEET_PRE_MS = 10, SAVE_SHEET_AIM_MS = 5;
+// The probe's keystroke this long BEFORE set_value is sent, on both lanes alike (ruling 1228): inside the engine's
+// "still interacting" window (Intervention.swift interventionDebounceMs, 5 s from the app's last attributed key), so
+// cua's answer is a refusal before it acts, never a race with the request's receipt. Fixed: no attempt re-aims it.
+export const SAVE_SHEET_PROBE_BEFORE_MS = 150;
 // How long after the act the sheet is read again, for a commit that lands late.
 export const SAVE_SHEET_SETTLE_MS = 2_000;
 // The engine's clauses (Intervention.swift `Interruption`): a stop part-way, and the list of what may have taken effect.
@@ -292,8 +293,10 @@ export const MAY_HAVE_TAKEN_EFFECT = 'may have taken effect';
 // rule its `ok` is, and what a step reading the row names when it failed (../hosted-sittings/checks.mjs). The sheet
 // still open after the settle; nothing saved (ruling 1223, R1): the run's folder read and empty after the act and empty
 // at the cancel, and no file behind TextEdit's window (AXDocument); on cua's lane the sentence and the account agreeing,
-// and the answer naming what may have taken effect. AXEdited is a diagnostic only, never a finding: C-6's vendor row
-// read it false from the close button with nothing saved. -> the findings, none when the row passes.
+// and a stop part-way (only a stop: ruling 1228) naming what may have taken effect. Whether cua acted with the probe's
+// key already in TextEdit is the witness's to add (./probe-run.mjs finishSaveSheetWitness). AXEdited is a diagnostic
+// only, never a finding: C-6's vendor row read it false from the close button with nothing saved. -> the findings,
+// none when the row passes.
 export function saveSheetFindings(outcome, engine) {
   const o = outcome ?? {}, findings = [];
   if (o.sheetOpen !== true) findings.push('the Save sheet was gone after the act');
@@ -302,8 +305,8 @@ export function saveSheetFindings(outcome, engine) {
   if (o.unsaved?.document === true) findings.push('a document on disk behind TextEdit\'s window (AXDocument names a file)');
   else if (o.unsaved?.document !== false) findings.push('nothing saved was not proved (AXDocument unread)');
   if (o.cancel?.destinationFiles?.length) findings.push(`the run's folder held ${o.cancel.destinationFiles.join(', ')} at the cancel`);
-  if (engine === 'cua' && o.agree !== true) findings.push('the sentence and the structured account disagree on a stop part-way');
-  if (engine === 'cua' && o.effectsNamed !== true) findings.push('the answer did not name what may have taken effect');
+  if (engine === 'cua' && o.agree !== true) findings.push('the sentence and the structured account disagree on what the request did');
+  if (engine === 'cua' && o.stopped === true && o.effectsNamed !== true) findings.push('the stop part-way did not name what may have taken effect');
   return findings;
 }
 const saveSheet =`const __saveSheet = ax => /ID: saveAsNameTextField\\b/.test(ax) && !/ID: DontSaveButton\\b/.test(ax);

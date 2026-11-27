@@ -70,7 +70,7 @@ import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs'
 import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, FOCUS_REASONS, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, panelWindowsIn, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
-import {PROBE_ROWS, probeCells, ResetBlocked} from './probe-run.mjs';
+import {finishSaveSheetWitness, PROBE_ROWS, probeCells, ResetBlocked} from './probe-run.mjs';
 import {finishWitness, rowPosts, startWitness} from './witness.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause, sendsPointer} from './alert-guard.mjs';
@@ -300,8 +300,9 @@ async function runOnce(options, io) {
     const watch = ops.live(['watch', 'start', '--run', run]);
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
-    // R3's witness (ruling 1225, ./witness.mjs): the user app of the concurrent cells tapped from here to the run's end.
-    startWitness(ctx, [...new Set((plan.concurrent ?? []).map(driven => PROBE_ROWS.concurrent(driven).user))]);
+    // R3's witness (ruling 1225, ./witness.mjs): the user app of the concurrent cells tapped from here to the run's end,
+    // and TextEdit for #212's save sheet (ruling 1228: whether the probe's key reached it before cua's receipt).
+    startWitness(ctx, [...new Set([...(plan.concurrent ?? []).map(driven => PROBE_ROWS.concurrent(driven).user), ...(plan.intervention?.includes('saveSheet') ? ['textedit'] : [])])]);
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
     ctx.lane = guardLane(ctx, await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile}));
     for (const id of scenes) {
@@ -344,6 +345,7 @@ async function runOnce(options, io) {
   } finally {
     let witnessed = null;
     try { witnessed = await finishWitness(ctx); } catch (error) { problems.push(`R3's witness tap could not be finished: ${error.message}`); }
+    finishSaveSheetWitness(ctx, witnessed);
     if (ctx.watcher !== null) finishWatch(ctx, witnessed);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
     quitLaunched(ctx);

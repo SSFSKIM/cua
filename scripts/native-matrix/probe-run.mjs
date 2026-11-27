@@ -17,11 +17,11 @@
 // around the act too (#485).
 import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
-import {noteProbe} from './witness.mjs';
+import {noteProbe, probeKeyBeforeReceipt} from './witness.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, MAY_HAVE_TAKEN_EFFECT,
   NEW_DOCUMENT_CELL, nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith,
-  SAVE_SHEET_AIM_MS, SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PRE_MS, saveSheetActCell, saveSheetFindings, scheduledActCell, SHEET_FOLLOW_MS,
+  SAVE_SHEET_CANCEL_CELL, SAVE_SHEET_CHECK_CELL, SAVE_SHEET_DESTINATION_CELL, SAVE_SHEET_OPEN_CELL, SAVE_SHEET_PROBE_BEFORE_MS, saveSheetActCell, saveSheetFindings, scheduledActCell, SHEET_FOLLOW_MS,
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, STOPPED_PART_WAY, USER_CHANGED,
 } from './probe-plan.mjs';
 import {ABC} from './live-checks.mjs';
@@ -144,6 +144,7 @@ async function sampledRows(ctx, base, attempt) {
     }
     const pushed = push(ctx, {...row, ...out.row, attempts: n, ...(retries.length ? {outcome: {...(out.row.outcome ?? {}), retries}} : {})});
     if (!pushed.invalid) ctx.judged.set(out.key, {row: pushed, oracle: out.oracle ?? null});
+    if (out.pendingWitness) (ctx.saveSheetPending ??= []).push({row: pushed, key: out.key, ...out.pendingWitness});
     cleanupFailed ??= await cleanedUp(out);
     sheetOnRow(ctx, pushed, key);
     // A cleanup whose keys the capture alert held leaves what it would have closed: kept as the run's held fixture, reset
@@ -235,7 +236,7 @@ async function withKeystroke(ctx, {window, scene, lead = PROBE_LEAD_MS}, during)
     finished = device(ctx, ['probe', 'finish']);
     ctx.posted[scene] = ctx.now();
   }
-  return {scheduled: started.scheduled, answer: finished?.answer ?? null, result};
+  return {scheduled: started.scheduled, pid: started?.pid ?? null, answer: finished?.answer ?? null, result};
 }
 
 // ---- concurrent use -------------------------------------------------------------------------------------------------
@@ -544,20 +545,18 @@ async function preActionAttempt(ctx, {lead, id, key, span}) {
 // ---- #212's save sheet -----------------------------------------------------------------------------------------------
 
 // TextEdit in front: its untitled document opened (super+n) and typed into, its Save sheet opened (super+s) and its
-// destination moved to a folder the run made, each under the key guard; then set_value on the sheet's name field at the
-// cell's time, the probe's keystroke aimed into TextEdit's front window just after the engine receives it. cua's answer
-// must be a stop part-way, said alike by its sentence (the user-changed sentence and "stopped part-way") and its
-// structured account (`cua/interruption`, phase inFlight), that says what may have taken effect; the sheet must still
-// be open after the settle and the run's folder empty: nothing committed it. A sentence and an account that disagree
-// fail the row. On cua's lane the sample is valid only when the probe posted after the engine received the request and
-// before the cell had its response (the times kept on the row; a stop before the write reports no action interval and
-// needs none). A post outside that window, a refusal before the action or a set_value that returned first says nothing
-// about a stop part-way: invalid, retried aimed from the receipt it measured. A sheet gone or a file in the run's
-// folder is a failure whatever the timing, never retried. The vendor's lane never stops an action in flight: its row
-// records its answer and the sheet, valid when the post fell inside the call. Whatever happened, once the row is
-// recorded, the debounce is waited out, the sheet cancelled (Escape) and the untitled document closed (`cleanup`).
-async function saveSheetAttempt(ctx, {lead, id, key, span}) {
-  const scene = 'textedit', preMs = lead ?? SAVE_SHEET_PRE_MS;
+// destination moved to a folder the run made, each under the key guard; then the probe's keystroke into TextEdit's
+// front window and, SAVE_SHEET_PROBE_BEFORE_MS later, set_value on the sheet's name field, on both lanes alike (ruling
+// 1228). Every lane's row passes on nothing saved (the sheet still open after the settle, the run's folder empty, no
+// document on disk). cua's must refuse before it acts, its sentence and structured account (`cua/interruption`, phase
+// beforeAction) agreeing; a stop part-way must name what may have taken effect. A cua row that acted is decided by R3's
+// witness tap once the run ends (finishSaveSheetWitness): a failure when it shows the probe's key reaching TextEdit
+// before the engine's receipt, else invalid. Every row keeps the interval and the engine's receipt. A probe that did not
+// post, or detection off, is invalid and retried at the same interval; a sheet gone or a file in the run's folder is a
+// failure whatever the timing, never retried. Whatever happened, once the row is recorded, the debounce is waited out,
+// the sheet cancelled (Escape) and the untitled document closed (`cleanup`).
+async function saveSheetAttempt(ctx, {id, key, span}) {
+  const scene = 'textedit';
   await quiet(ctx, scene);
   const front = activate(ctx, scene);
   const app = SCENES[scene].bundleId, skipped = notActivated(ctx, scene);
@@ -606,7 +605,7 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const readings = {apps: [app], activate: activationOf(ctx, app), before: keyReading(ready)};
   alertCheck(ctx, `before ${id}`);
   // A set_value posts no key, so it goes without the key guard, as the sheet variant's follow-up click does.
-  const probe = await withKeystroke(ctx, {window, scene}, async scheduled => span.add(await ctx.lane.js(saveSheetActCell({at: scheduled - preMs}))));
+  const probe = await withKeystroke(ctx, {window, scene}, async scheduled => span.add(await ctx.lane.js(saveSheetActCell({at: scheduled + SAVE_SHEET_PROBE_BEFORE_MS}))));
   const act = probe.result;
   alertCheck(ctx, `after ${id}`);
   const check = act?.ok ? span.add(await ctx.lane.js(SAVE_SHEET_CHECK_CELL)) : null;
@@ -616,37 +615,55 @@ async function saveSheetAttempt(ctx, {lead, id, key, span}) {
   const unsaved = await unsavedProof(ctx, keys);
   const cua = ctx.engine === 'cua';
   const {value} = act, postedAt = probe.answer?.postedAt;
-  const receivedAt = cua ? act.engine?.receivedAt : value.callAt;
-  // The sentence and the structured account, each saying whether the action was stopped part-way; on cua's lane both.
-  const said = refusedWith(value, USER_CHANGED) && value.message.includes(STOPPED_PART_WAY);
-  const inFlight = act.engine?.interruption?.phase === 'inFlight';
-  const agree = cua ? said === inFlight : null;
-  const stopped = said && (!cua || inFlight);
-  const effectsNamed = stopped && value.message.includes(MAY_HAVE_TAKEN_EFFECT);
+  // The engine's receipt: cua's own clock; the vendor reports none.
+  const receivedAt = cua && Number.isFinite(act.engine?.receivedAt) ? act.engine.receivedAt : null;
+  // What the request did, said by the sentence and, on cua's lane, by the structured account: refused before its first
+  // step (still interacting, or user-changed before the action), or stopped part-way.
+  const phase = act.engine?.interruption?.phase ?? null;
+  const stoppedSaid = refusedWith(value, USER_CHANGED) && value.message.includes(STOPPED_PART_WAY);
+  const refusedSaid = refusedWith(value, STILL_INTERACTING) || (refusedWith(value, USER_CHANGED) && !stoppedSaid);
+  const agree = cua ? (refusedSaid ? phase === 'beforeAction' : stoppedSaid ? phase === 'inFlight' : phase === null) : null;
+  const refused = refusedSaid && (!cua || phase === 'beforeAction'), stopped = stoppedSaid && (!cua || phase === 'inFlight');
+  const effectsNamed = stopped ? value.message.includes(MAY_HAVE_TAKEN_EFFECT) : null;
   const sheetOpen = check.value?.sheetOpen === true;
   const files = Array.isArray(check.value?.destinationFiles) ? check.value.destinationFiles : null;
-  const postAfterReceiptMs = Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? postedAt - receivedAt : null;
   const savedSeen = unsaved.document === true || unsaved.cancel?.destinationFiles?.length > 0;
-  const outcome = {stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
+  const outcome = {refused, stopped, agree, effectsNamed, interruption: act.engine?.interruption ?? null, sheetOpen, nameWritten: check.value?.nameWritten === true, destinationFiles: files,
       initialWhere, ...kept, ...unsavedOutcome(unsaved),
-      threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, leadMs: preMs,
-      postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt: Number.isFinite(receivedAt) ? receivedAt : null, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
-      postAfterReceiptMs, postBeforeResponseMs: Number.isFinite(postedAt) && Number.isFinite(value.endAt) ? value.endAt - postedAt : null, late: value.late ?? null};
+      threw: value.threw, errorName: errorNameOf(act), message: value.message ?? null, probeBeforeMs: SAVE_SHEET_PROBE_BEFORE_MS,
+      postedAt: Number.isFinite(postedAt) ? postedAt : null, receivedAt, callAt: value.callAt ?? null, endAt: value.endAt ?? null,
+      postBeforeReceiptMs: Number.isFinite(postedAt) && receivedAt !== null ? receivedAt - postedAt : null, late: value.late ?? null};
   // The row's verdict is its findings' (probe-plan.mjs saveSheetFindings), kept on it so a reader names them as judged.
   const findings = saveSheetFindings(outcome, ctx.engine);
   const row = {ok: findings.length === 0, inCellMs: value.actMs, wallMs: act.wallMs, inputRoute: act.route, frontKey, outcome: {...outcome, findings}};
-  const why = probeProblem(probe.answer) ?? detectionOff(act) ?? (cua ? responseWindowValidity(postedAt, receivedAt, value.endAt) : postValidity(postedAt, intervalOf(ctx.engine, act)));
+  const why = probeProblem(probe.answer) ?? detectionOff(act);
   // Committed: a finding whatever the timing, recorded with why the timing alone would not have judged it; never retried.
-  if (!sheetOpen || files?.length || savedSeen) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why ?? (cua ? stopValidity(value, stopped) : null)}}, {cleanup});
+  if (!sheetOpen || files?.length || savedSeen) return span.end({...row, ok: false, outcome: {...row.outcome, validity: why}}, {cleanup});
   if (files === null) return span.end({...row, ok: false, invalid: 'the run\'s save folder could not be read after the act'}, {cleanup});
-  // The next call moved by the miss: the post aimed SAVE_SHEET_AIM_MS after the receipt.
-  const next = postAfterReceiptMs === null ? preMs : Math.min(PROBE_LEAD_MS - 1_000, Math.max(-1_000, preMs - (postAfterReceiptMs - SAVE_SHEET_AIM_MS)));
-  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: next, cleanup});
+  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, cleanup});
   if (cua && !agree) return span.end(row, {cleanup});
-  const stop = cua ? stopValidity(value, stopped) : null;
-  if (stop) return span.end({...row, ok: false, invalid: stop}, {retry: true, lead: next, cleanup});
   if (unsaved.unread) return span.end({...row, ok: false, invalid: `nothing saved was not proved: ${unsaved.unread}`}, {cleanup});
+  // cua acted: the witness decides once the run ends (finishSaveSheetWitness); until then the row says nothing.
+  if (cua && !refused) return span.end({...row, ok: false, invalid: SAVE_SHEET_PENDING}, {cleanup, pendingWitness: {probePid: probe.pid, receivedAt, userPid: ctx.records[scene]?.pid ?? null}});
   return span.end(row, {cleanup});
+}
+const SAVE_SHEET_PENDING = 'cua acted: the witness tap was not read';
+// #212's cua rows that acted, decided by R3's witness once the run's tap is stopped (ruling 1228; ./witness.mjs
+// probeKeyBeforeReceipt): the probe's key on TextEdit's pid before the engine's receipt fails the row (it acted while the
+// person was typing, which its debounce exists to refuse), its witness kept; anything short of that leaves it invalid,
+// naming why. `witnessed` finishWitness's (null: no tap came up).
+export function finishSaveSheetWitness(ctx, witnessed) {
+  for (const {row, key, probePid, receivedAt, userPid} of ctx.saveSheetPending ?? []) {
+    const seen = probeKeyBeforeReceipt(witnessed, {userPid, probePid, receivedAt, missing: ctx.meta.witness?.missing ?? null});
+    const {why, ...witness} = seen;
+    row.outcome = {...row.outcome, witness};
+    if (!seen.beforeReceipt) { row.invalid = `cua acted, and the witness does not show the probe's key reaching TextEdit before the engine received the request (${why})`; continue; }
+    delete row.invalid;
+    row.ok = false;
+    row.outcome.findings = [...(row.outcome.findings ?? []), `cua acted though the probe's key reached TextEdit ${receivedAt - seen.keyAt} ms before the engine received the request`];
+    ctx.judged.set(key, {row, oracle: null});
+  }
+  ctx.saveSheetPending = [];
 }
 // Nothing saved, proved on TextEdit's own window once the sheet is cancelled (ruling 1221, F2; ruling 1220's third
 // condition; ruling 1223, R1): the debounce out, the sheet cancelled as the cleanup cancels it (which then finds none),

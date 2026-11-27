@@ -139,6 +139,28 @@ function narrowed(kind, {scene, user}) {
     default: throw new Error(`no plan ${kind}`);
   }
 }
+// A filtered rerun of the full matrix (ruling 1228): the cells `ids` names (each a cell's id, or a section's name for all
+// of its cells; speed and finding are measures, never filtered) run in the units that hold them, each unit whole as the
+// full run runs it (a frontmost target's sequence, a background pairing, a Unicode field, a probe), so no listed cell
+// depends on a row that no longer runs before it; the unit's other rows run unrecorded (./steps.mjs push). Its id is
+// 'filtered': it never counts on its own, only combined with the full run's records of its run number (./combine.mjs).
+const FILTER_SECTIONS = Object.freeze(['method', 'launch', 'concurrent', 'intervention', 'unicode']);
+export function filteredPlan(ids) {
+  if (!ids?.length) throw new Error('--only names no cell');
+  const keyOf = r => `${r.section} ${r.id}`;
+  const cells = manifestOf({run: 1, samples: 1}, {...FULL_PLAN, speed: false, finding: false});
+  const only = new Set();
+  for (const want of ids) {
+    const hits = FILTER_SECTIONS.includes(want) ? cells.filter(r => r.section === want) : cells.filter(r => r.id === want || keyOf(r) === want);
+    if (!hits.length || (!FILTER_SECTIONS.includes(want) && hits.length > 1)) throw new Error(`--only names ${want}, ${hits.length ? 'in more than one section: name it as <section> <id>' : 'no judged cell of the matrix outside speed and finding'}`);
+    for (const r of hits) only.add(keyOf(r));
+  }
+  const holds = unit => manifestOf({run: 1, samples: 1}, {...EMPTY_PLAN, ...unit}).some(r => only.has(keyOf(r)));
+  const fields = UNICODE_PLAN.fields.filter(f => holds({unicode: {...UNICODE_PLAN, fields: [f]}}));
+  return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => holds({frontmost: [t]})), background: FULL_PLAN.background.filter(p => holds({background: [p]})),
+    launch: FULL_PLAN.launch.filter(l => holds({launch: [l]})), concurrent: FULL_PLAN.concurrent.filter(d => holds({concurrent: [d]})), sheet: holds({sheet: true}),
+    intervention: FULL_PLAN.intervention.filter(k => holds({intervention: [k]})), unicode: fields.length ? {...UNICODE_PLAN, fields} : null, only, id: 'filtered'};
+}
 // The scenes a plan brings up.
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
@@ -195,7 +217,9 @@ async function runOnce(options, io) {
     // takes its default desktop mode, the shared one.
     hosted: (io.env ?? process.env).RUNNER_ENVIRONMENT === 'github-hosted', desktopMode: 'shared',
     // The lane that ran first in this run number and this lane's place (ruling 1226: a sitting alternates it).
-    ...(firstLane ? {laneOrder: {first: firstLane, position: firstLane === engine ? 1 : 2}} : {})};
+    ...(firstLane ? {laneOrder: {first: firstLane, position: firstLane === engine ? 1 : 2}} : {}),
+    // A filtered rerun's cells (ruling 1228), as `<section> <id>`.
+    ...(plan.only ? {filter: [...plan.only]} : {})};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
     // A narrowed cell is judged on its own (summary counts only the whole matrix's runs): its verdict judges the oracle.
@@ -247,7 +271,8 @@ async function runOnce(options, io) {
   // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
   // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, witness: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, venueMissing: [], out: dryRun ? null : dir, electronExported: false};
+    watcher: null, witness: null, windows: [], judged: new Map(), posted: {}, activated: null, latin: false, perContextOff: false, ownerInput: null, venueMissing: [], out: dryRun ? null : dir, electronExported: false,
+    only: plan.only ?? null};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {

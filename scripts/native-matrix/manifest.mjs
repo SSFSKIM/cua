@@ -31,7 +31,8 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
   for (const {section, id} of probeRowsOf(plan)) out.push({section, id, sample: run});
   if (plan.unicode) for (const {id} of unicodeRowsOf(plan.unicode)) if (!exclusionOf({section: 'unicode', id})) out.push({section: 'unicode', id, sample: run});
-  return out;
+  // A filtered rerun (ruling 1228, ./run.mjs filteredPlan) expects its listed cells alone.
+  return plan.only ? out.filter(r => plan.only.has(`${r.section} ${r.id}`)) : out;
 }
 
 // The judged cells (rows by section and id) of a full run, in the manifest's order. -> [{section, id, expect?}].

@@ -28,7 +28,8 @@ export class KeyGuardStop extends Stop {
   constructor(message, category) { super(message); this.category = category; }
 }
 
-export const push = (ctx, row) => { ctx.rows.push(row); return row; };
+// A filtered rerun's unit runs whole, its unlisted rows unrecorded (ruling 1228, ./run.mjs filteredPlan).
+export const push = (ctx, row) => { if (!ctx.only || ctx.only.has(`${row.section} ${row.id}`)) ctx.rows.push(row); return row; };
 // A step's device-clock window; a harness step names the apps it intends to activate (`apps`), the only activations
 // it excuses (./oracle.mjs accountActivations).
 export const mark = (ctx, kind, key, at, apps = []) => {

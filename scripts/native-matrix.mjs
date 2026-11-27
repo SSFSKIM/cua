@@ -8,13 +8,15 @@
 //
 //   node scripts/native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <CUA_HOME>
 //        --approved-engine <the approved cua Engine.app> --sitting <hold id> --out <dir> [--runs 3] [--run-number n] [--samples 10]
-//        [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
+//        [--first-lane vendor|cua] [--only <cell>,…] [--run <device dir>] [--dry-run]
 //     One lane, --runs runs, each the whole hold (./native-matrix/run.mjs) and one result in <out>/run-<n>/result.json.
 //     The lanes are --host vendor --engine vendor, --host vendor --engine cua and --host cua --engine cua; every lane
 //     of one hold names the same --sitting, the hold's id, recorded in each run's meta. A hold split by run runs exactly
 //     run n with --run-number n (--runs then counts from n, 1 by default; <out>/run-<n>/), so each run's vendor and cua
 //     lanes share one sitting: `summary` pairs them per run number. --first-lane names the lane that ran first in this
-//     run number (a sitting alternates it, ruling 1226), recorded with this lane's position in meta.laneOrder.
+//     run number (a sitting alternates it, ruling 1226), recorded with this lane's position in meta.laneOrder. --only
+//     makes it a filtered rerun (ruling 1228, ./native-matrix/run.mjs filteredPlan): the listed cells (ids, or whole
+//     sections) in the units that hold them, nothing else recorded, combined with the full run's records by `combine`.
 //   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>]
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
@@ -49,7 +51,7 @@ import {controllerCheckout} from './native-matrix/goldens.mjs';
 import {REPO_ROOT} from './native-matrix/goldens-install.mjs';
 import {dryConnect, dryOps, matrixOps} from './native-matrix/lane.mjs';
 import {listCells, resolveCell, runExternal} from './native-matrix/registry.mjs';
-import {cleanupMatrix, planOf, runMatrix} from './native-matrix/run.mjs';
+import {cleanupMatrix, filteredPlan, planOf, runMatrix} from './native-matrix/run.mjs';
 import {judge, notJudgedLines, readResults, renderSummary} from './native-matrix/summary.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -59,7 +61,7 @@ export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendo
        native-matrix.mjs summary <dir>... [--out <file>]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
-  out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, 'first-lane': {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
+  out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, 'first-lane': {type: 'string'}, only: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
   preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
 const absolute = (value, name) => { if (value !== undefined && (!isAbsolute(value) || value.includes('\n'))) fail(`--${name} needs an absolute path`); return value; };
@@ -92,7 +94,7 @@ export function parseCommand(argv) {
       if (rest.length) fail(`unexpected ${rest.join(' ')}`);
       if (!values.device) fail('--device is required');
       if (!values.out && !dryRun) fail('--out is required');
-      return {command, ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run')};
+      return {command, ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run'), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})};
     case 'cell':
       if (values.list) return {command, list: true};
       if (rest.length !== 1) fail('cell needs one name (cell --list lists them)');
@@ -165,7 +167,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
   if (options.dryRun) log(`# dry run of native-matrix.mjs ${options.command}${options.name ? ` ${options.name}` : ''} on ${options.device}: every device step in order, none run`);
   try {
     if (options.command === 'cleanup') return cleanupMatrix(options, io);
-    if (options.command === 'run') return await runMatrix({...options, cell: 'matrix', plan: planOf('matrix')}, io);
+    if (options.command === 'run') return await runMatrix({...options, cell: 'matrix', plan: options.only ? filteredPlan(options.only) : planOf('matrix')}, io);
     const resolved = await resolveCell(options.name);
     if (resolved.kind === 'external') return await runExternal(options.name, resolved, options, {log, interrupt, dryRun: options.dryRun});
     return await runMatrix({...options, cell: options.name, plan: planOf(resolved.plan, {scene: options.scene, user: options.user})}, io);

@@ -50,13 +50,13 @@ const full = (engine, run, ms) => cellResult({cell: 'matrix', device: 'mini', st
 const extra = (engine, run, ms, n = 10, ids = IDS) => cellResult({cell: 'speed-extra', device: 'mini', started: '2026-11-27T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v'}], complete: true,
   rows: ids.flatMap(id => Array.from({length: n}, (_, i) => ({section: 'speed', id, engine, sample: i + 1, ok: true, inCellMs: typeof ms === 'function' ? ms(id) : ms}))),
   meta: {run, samples: n, sitting: 's1', commit: 'c', os: OS, planId: 'speed-extra'}});
-function judgedWith(extras, fullOf = full) {
+function judgedWith(extras, fullOf = full, {acceptedMisses = []} = {}) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'speed-extra-'));
   try {
     for (let n = 1; n <= 3; n++) for (const engine of ['vendor', 'cua']) writeCellResult(join(dir, engine, `run-${n}`), fullOf(engine, n, 40));
     extras.forEach((r, i) => writeCellResult(join(dir, 'speed-extra', `x-${i}`), r));
     const {results, problems} = readResults([dir]);
-    return judge(results, problems, {departures: []});
+    return judge(results, problems, {departures: [], acceptedMisses});
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 }
 
@@ -79,9 +79,9 @@ test('ruling 1232: the three missed ops are judged on the re-measurement alone, 
   assert.match(text, /^\| method\.paste\.replace \| 100\.0 \| 100\.0 \| 40\.0 \| 40\.0 \| -60% \| passes on re-measurement \|$/m);
   assert.doesNotMatch(text, /pooled with/);
   // The asymmetry, said plainly, and each re-measured op's base beside it.
-  assert.match(text, /^Only the 3 ops that missed in the base were re-measured, at n = 30 a side \(the speed-extra cell, 10 samples a lane in each of runs 1, 2, 3\), and are judged on the re-measurement alone; the other \d+ ops \(\d+ of them beating the vendor\) rest on the full runs' samples, n = 6 or 3 a side\. The base's samples are shown beside each re-measured op for reference, never pooled; each stays the owner's whatever its numbers \(ruling 1232\)\.$/m);
+  assert.match(text, /^Only the 3 ops that missed in the base were re-measured, at n = 30 a side \(the speed-extra cell, 10 samples a lane in each of runs 1, 2, 3\), and are judged on the re-measurement alone; the other \d+ ops \(\d+ of them beating the vendor\) rest on the full runs' samples, n = 6 or 3 a side\. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss \(rulings 1232, 1240\)\.$/m);
   assert.match(text, /^- method\.typeText\.replace: re-measured, n = 30 a side \(runs 1, 2, 3\); the base for reference \(n = 3 a side\): vendor median 40\.0, p95 40\.0; cua median 40\.0, p95 40\.0; change 0%; it missed the beat there$/m);
-  assert.match(text, /^- \*\*Speed\*\*: \d+ of \d+ measured ops beat the vendor by at least 10% with p95 not worse; 3 pass on re-measurement \(the owner's, ruling 1232\); /m);
+  assert.match(text, /^- \*\*Speed\*\*: \d+ of \d+ measured ops beat the vendor by at least 10% with p95 not worse, 3 of them on re-measurement \(ruling 1240\); \d+ missed \(the owner's fork\), /m);
 });
 
 // The split judge's compare reads its one combined dir (../hosted-sittings/plan.mjs: `compare <out>/combined`): the
@@ -95,15 +95,14 @@ test('compare over one combined dir reads the speed-extra records beneath it: th
     const lines = [], out = join(dir, 'comparison.md');
     await main(['compare', dir, '--out', out], {log: line => lines.push(line)});
     assert.ok(lines.some(l => /^VERDICT: /.test(l)), lines.join('\n'));
-    for (const id of IDS) assert.ok(lines.some(l => l.startsWith(`  owner: speed: ${id} passes on re-measurement (`)), `${id}\n${lines.join('\n')}`);
+    for (const id of IDS) assert.ok(!lines.some(l => l.startsWith(`  owner: speed: ${id}`)), `${id}\n${lines.join('\n')}`);
     assert.match(fs.readFileSync(out, 'utf8'), /passes on re-measurement/);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
-test('ruling 1232: a re-measured op is the owner\'s whatever its numbers', () => {
+test('ruling 1232, as 1240 settles it: a pass on re-measurement counts as a pass; any other re-measured op is the owner\'s whatever its numbers', () => {
   const passed = judgedWith(everyRun(100, 40));
-  for (const id of IDS) assert.ok(passed.owner.some(o => o.startsWith(`speed: ${id} passes on re-measurement (cua 40 ms against 100 ms, p95 40 against 100, n = 30 a side; the base's n = 3: cua 40 ms against 40 ms): the owner's whatever the numbers (ruling 1232)`)), `${id}\n${passed.owner.join('\n')}`);
-  assert.ok(!passed.owner.some(o => IDS.some(id => o.startsWith(`speed: ${id} missed the 10% beat (`))), 'no plain miss for a re-measured op');
+  assert.deepEqual(passed.owner.filter(o => IDS.some(id => o.includes(id))), [], 'a pass on re-measurement is no owner\'s fork (ruling 1240)');
   const missed = judgedWith(everyRun(40, 40));
   for (const id of IDS) {
     assert.equal(missed.speed.find(s => s.id === id).beat, false, id);
@@ -149,4 +148,51 @@ test('without extra samples the speed verdict and the report are as they were', 
   for (const id of IDS) assert.equal(judgedWith([extra('vendor', 2, 100), fallback]).speed.find(s => s.id === id).remeasured, undefined, id);
   const torn = (engine, run, ms) => (engine === 'cua' && run === 2 ? {...full(engine, run, ms), meta: {...full(engine, run, ms).meta, commit: 'other'}} : full(engine, run, ms));
   for (const id of IDS) assert.equal(judgedWith([extra('vendor', 2, 100), extra('cua', 2, 40)], torn).speed.find(s => s.id === id).remeasured, undefined, id);
+});
+
+// Ruling 1240: the owner accepted textedit/method.typeText.replace's miss, #593. A declaration (departures.json's
+// acceptedMisses: section speed, the id, its ticket and its ruling) keeps the op judged and shown with its numbers, reads
+// "accepted miss", blocks nothing and leaves the owner's list; an entry that names no speed row or cites no ticket or
+// ruling applies to nothing and is itself blocking.
+const ACCEPTED = {section: 'speed', id: 'textedit/method.typeText.replace', ticket: '#593', ruling: '1240'};
+test('ruling 1240: an accepted miss is judged and shown with its numbers, read as accepted, off the owner\'s list and not blocking', () => {
+  // On re-measurement: the other two pass, typeText.replace misses.
+  const ms = id => (id === ACCEPTED.id ? 40 : 100);
+  const plain = judgedWith(everyRun(ms, 40));
+  const j = judgedWith(everyRun(ms, 40), full, {acceptedMisses: [ACCEPTED]});
+  const s = j.speed.find(x => x.id === ACCEPTED.id);
+  assert.deepEqual([s.beat, s.accepted, s.vendor.n, s.cua.n], [false, {ticket: '#593', ruling: '1240'}, 30, 30]);
+  assert.equal(j.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'accepted-miss');
+  assert.equal(plain.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'missed-remeasured');
+  assert.ok(plain.owner.some(o => o.startsWith(`speed: ${ACCEPTED.id} missed the 10% beat on re-measurement (`)), plain.owner.join('\n'));
+  assert.deepEqual(j.owner.filter(o => o.includes(ACCEPTED.id)), []);
+  assert.deepEqual(j.blocking, plain.blocking);
+  assert.deepEqual(j.acceptedMisses, [{section: 'speed', id: ACCEPTED.id, ticket: '#593', ruling: '1240', vendor: s.vendor, cua: s.cua, deltaPct: s.deltaPct, remeasured: s.remeasured}]);
+  const text = renderSummary(j);
+  assert.match(text, /^\| method\.typeText\.replace \| 40\.0 \| 40\.0 \| 40\.0 \| 40\.0 \| 0% \| accepted miss \(#593, ruling 1240\) \|$/m);
+  assert.match(text, /^- \*\*Speed\*\*: \d+ of \d+ measured ops beat the vendor by at least 10% with p95 not worse, 2 of them on re-measurement \(ruling 1240\); 1 accepted miss \(not blocking\); \d+ missed \(the owner's fork\), /m);
+  assert.match(text, /^## Accepted misses \(not blocking\)$/m);
+  assert.match(text, /^- speed: textedit\/method\.typeText\.replace: accepted miss \(#593, ruling 1240\): cua 40 ms against 40 ms median, p95 40 against 40, n = 30 a side on re-measurement$/m);
+  // Not re-measured: the plain miss accepted the same way.
+  const base = judgedWith([], full, {acceptedMisses: [ACCEPTED]});
+  assert.equal(base.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'accepted-miss');
+  assert.ok(!base.owner.some(o => o.includes(ACCEPTED.id)));
+  // A beat is no miss: the declaration applies to nothing.
+  const beat = judgedWith(everyRun(100, 40), full, {acceptedMisses: [ACCEPTED]});
+  assert.equal(beat.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'beat-remeasured');
+  assert.deepEqual(beat.acceptedMisses, []);
+});
+
+test('ruling 1240: an accepted-miss entry that names no speed row, or cites no ticket or ruling, applies to nothing and is blocking', () => {
+  for (const [entry, why] of [[{...ACCEPTED, section: 'method'}, /names no speed row/], [{...ACCEPTED, id: 'textedit/method.nothing'}, /names no speed row/],
+    [{...ACCEPTED, ticket: undefined}, /cites no ticket/], [{...ACCEPTED, ruling: 'soon'}, /cites no ruling/]]) {
+    const j = judgedWith([], full, {acceptedMisses: [entry]});
+    assert.ok(j.blocking.some(b => /^accepted misses: /.test(b) && why.test(b)), `${JSON.stringify(entry)}\n${j.blocking.join('\n')}`);
+    assert.equal(j.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'missed');
+  }
+});
+
+test('the committed declarations accept typeText.replace\'s miss under #593 and ruling 1240, and nothing else', async () => {
+  const {readAcceptedMisses} = await import('../../scripts/native-matrix/departures.mjs');
+  assert.deepEqual(readAcceptedMisses(), [ACCEPTED]);
 });

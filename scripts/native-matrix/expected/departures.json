@@ -16,5 +16,14 @@
       "decision": "Decision Log, 2026-11-05, #282 (shared mode, item 6): a drag into a background Chromium web area is never posted, refused as backgroundClickRefused; the background-drag study, #591 (ruling 1228)",
       "ruling": "1228"
     }
+  ],
+  "acceptedMissesAbout": "Ruling 1240: a speed op whose miss of the 10% beat the owner accepted (scripts/native-matrix/departures.mjs readAcceptedMisses). Each entry names the speed row ({section: 'speed', id}), its ticket and its ruling. The op stays judged and shown with its numbers; a miss it covers reads accepted, blocks nothing and is no owner's fork. An entry that names no speed row, or cites no ticket or ruling, is itself a failure.",
+  "acceptedMisses": [
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "ticket": "#593",
+      "ruling": "1240"
+    }
   ]
 }

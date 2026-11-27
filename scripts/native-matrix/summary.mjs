@@ -80,7 +80,7 @@ import {stats} from '../native-baseline/summary.mjs';
 import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeRemeasured, judgeSpeed, remeasuredStats, runOf} from './cell-verdict.mjs';
 import {composingRetriesOf, renderComposingRetries} from './composing-retries.mjs';
-import {departureProblems, readDepartures, usableDepartures, vendorAnsweredOk} from './departures.mjs';
+import {acceptedMissProblems, departureProblems, readAcceptedMisses, readDepartures, usableAcceptedMisses, usableDepartures, vendorAnsweredOk} from './departures.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -354,7 +354,7 @@ function speedExtrasOf(results, own, pairable = () => true) {
 // declared-departures file's entries (./departures.mjs). -> {problems, runs, narrowed, methods, launch, speed, finding,
 // findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures, cells, others, owner, blocking,
 // missing, options, desktop, verdict}.
-export function judge(results, problems = [], {departures: entries = readDepartures(), knownDefects = KNOWN_DEFECTS, notJudgedRules = NOT_JUDGED_RULES} = {}) {
+export function judge(results, problems = [], {departures: entries = readDepartures(), acceptedMisses: acceptances = readAcceptedMisses(), knownDefects = KNOWN_DEFECTS, notJudgedRules = NOT_JUDGED_RULES} = {}) {
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
   const fullRuns = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
   const narrowed = results.filter(r => own(r) && !fullRuns.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
@@ -392,7 +392,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   for (const {result, path} of results) {
     if (!result.complete && !narrowed.some(n => n.path === path)) missingProof.push(`${path}: ${result.cell} is ${result.verdict === 'refused' ? 'refused' : 'incomplete'}${result.problems.length ? ` (${result.problems.join('; ')})` : ''}`);
   }
-  const departureFailures = departureProblems(entries).map(p => `departures: ${p}`);
+  const departureFailures = [...departureProblems(entries).map(p => `departures: ${p}`), ...acceptedMissProblems(acceptances).map(p => `accepted misses: ${p}`)];
   const byRow = new Map(usableDepartures(entries).map(e => [`${e.section} ${e.id}`, e]));
   // Only a run whose pair is one proof is compared, and only there may a departure find its vendor ok (finding 1).
   const eligible = pairableRuns(full);
@@ -424,6 +424,11 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     speed.push({id, section: 'speed', scene, op, ...(extra ? judgeRemeasured(base, extra, {required: RUNS_PER_SIDE}) : base)});
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
+  // Ruling 1240: a miss the owner accepted (departures.json's acceptedMisses) stays judged with its numbers and reads
+  // accepted; an entry whose op did not miss applies to nothing.
+  const accepting = new Map(usableAcceptedMisses(acceptances).map(e => [e.id, e]));
+  for (const s of speed) if (s.beat === false && accepting.has(s.id)) s.accepted = {ticket: accepting.get(s.id).ticket, ruling: accepting.get(s.id).ruling};
+  const acceptedMisses = speed.filter(s => s.accepted).map(s => ({section: 'speed', id: s.id, ...s.accepted, vendor: s.vendor, cua: s.cua, deltaPct: s.deltaPct, ...(s.remeasured ? {remeasured: s.remeasured} : {})}));
   // Ruling 1232: the controls' re-measurement beside their base, never judged (their full runs' judgment stands).
   const speedControls = [...SPEED_CONTROL_IDS].sort().filter(id => extras.has(id)).map(id => {
     const judged = speed.find(s => s.id === id);
@@ -507,7 +512,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const unneeded = full.length ? [...byRow.values()].filter(e => !applied.some(a => a.section === e.section && a.id === e.id)) : [];
 
   // Every judged cell of the manifest: its samples with and without a verdict, and whether it qualifies.
-  const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? `${c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed'}${c.remeasured && c.beat !== null ? '-remeasured' : ''}` : c.verdict, account: c.account, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})}]));
+  const speedVerdict = c => (c.accepted ? 'accepted-miss' : `${c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed'}${c.remeasured && c.beat !== null ? '-remeasured' : ''}`);
+  const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? speedVerdict(c) : c.verdict, account: c.account, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})}]));
   for (const f of findingRows) found.set(`${f.section} ${f.id}`, {verdict: f.account.qualifies ? 'measured' : 'no-verdict', account: f.account});
   const empty = {vendor: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, cua: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, pairs: 0, pairRuns: [], qualifies: false};
   const cells = cellsOf().map(({section, id}) => {
@@ -538,13 +544,14 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // Every not-judged entry under ruling 1222's condition: one with neither a ticket nor evidence is missing proof.
   const refusedNotJudged = [...notJudgedRows, ...sharedEntries].map(entry => [entry, notJudgedRefusal(entry)]).filter(([, why]) => why);
   const notJudged = [...notJudgedRows, ...sharedEntries].filter(entry => !refusedNotJudged.some(([e]) => e === entry));
-  const speedMisses = speed.filter(s => s.beat === false && !s.remeasured);
-  // Ruling 1232: a re-measured op is the owner's whatever its numbers.
+  const speedMisses = speed.filter(s => s.beat === false && !s.remeasured && !s.accepted);
+  // Ruling 1232, as 1240 settles it: a pass on re-measurement counts as a pass; any other re-measured op is the owner's
+  // whatever its numbers, unless its miss is accepted.
   const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)`;
   const evidence = evidenceOf(full);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
-    ...speed.filter(s => s.remeasured).map(remeasuredLine),
+    ...speed.filter(s => s.remeasured && s.beat !== true && !s.accepted).map(remeasuredLine),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
     ...unneeded.map(e => `departures: the file declares ${e.section} ${e.id}, which no sample of the full runs needed: remove it`),
@@ -589,7 +596,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const desktop = {recorded: groupCount(full.map(({result}) => result.meta?.desktopMode).filter(m => m !== undefined)), unrecorded: full.filter(({result}) => result.meta?.desktopMode === undefined).length,
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, acceptedMisses, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
     firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), verdict};
 }
@@ -775,7 +782,7 @@ export function renderNotJudged(j) {
   return out;
 }
 
-const MARK = {equal: 'equal', better: 'better', declared: 'declared', shared: 'shared', worse: '**worse**', 'no-verdict': '**no verdict**', beat: 'beat', missed: 'missed', 'beat-remeasured': 'passes on re-measurement', 'missed-remeasured': 'missed on re-measurement', measured: 'measured'};
+const MARK = {equal: 'equal', better: 'better', declared: 'declared', shared: 'shared', worse: '**worse**', 'no-verdict': '**no verdict**', beat: 'beat', missed: 'missed', 'beat-remeasured': 'passes on re-measurement', 'missed-remeasured': 'missed on re-measurement', 'accepted-miss': 'accepted miss', measured: 'measured'};
 const ms = n => (n === null || n === undefined ? '-' : (Math.round(n * 10) / 10).toFixed(1));
 const counts = c => `${c.ok}/${c.valid}${c.invalid ? ` (+${c.invalid} invalid)` : ''}`;
 const verdictCounts = c => `${c.ok}/${c.valid}${c.invalid ? ` (+${c.invalid} no verdict)` : ''}`;
@@ -825,7 +832,7 @@ function renderRemeasurement(j) {
   const runs = [...new Set(re.flatMap(s => s.remeasured.runs))].sort((a, b) => a - b);
   const counts = [...new Set(re.map(s => nOf(s.remeasured)))];
   const perLane = [...new Set(re.flatMap(s => ['vendor', 'cua'].map(e => Math.round((s.remeasured[e] / s.remeasured.runs.length) * 10) / 10)))];
-  return [`Only the ${re.length} op${re.length === 1 ? '' : 's'} that missed in the base ${re.length === 1 ? 'was' : 'were'} re-measured, at n = ${counts.join(' or ')} (the speed-extra cell, ${perLane.join(' or ')} samples a lane in each of run${runs.length === 1 ? '' : 's'} ${runs.join(', ')}), and ${re.length === 1 ? 'is' : 'are'} judged on the re-measurement alone; the other ${others.length} ops (${others.filter(s => s.beat === true).length} of them beating the vendor) rest on the full runs' samples, n = ${ns.join(' or ')} a side. The base's samples are shown beside each re-measured op for reference, never pooled; each stays the owner's whatever its numbers (ruling 1232).`, ''];
+  return [`Only the ${re.length} op${re.length === 1 ? '' : 's'} that missed in the base ${re.length === 1 ? 'was' : 'were'} re-measured, at n = ${counts.join(' or ')} (the speed-extra cell, ${perLane.join(' or ')} samples a lane in each of run${runs.length === 1 ? '' : 's'} ${runs.join(', ')}), and ${re.length === 1 ? 'is' : 'are'} judged on the re-measurement alone; the other ${others.length} ops (${others.filter(s => s.beat === true).length} of them beating the vendor) rest on the full runs' samples, n = ${ns.join(' or ')} a side. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss (rulings 1232, 1240).`, ''];
 }
 
 export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
@@ -839,10 +846,12 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   if (j.missing.length) out.push('## Missing proof (no verdict)', '', ...j.missing.map(b => `- ${b}`), '');
   if (j.options.length) out.push('## Owner options (not run; not part of the verdict)', '', ...j.options.map(o => `- ${o.option} (${o.section} ${o.id}): ${o.reason}`), '');
   if (j.owner.length) out.push('## For the owner', '', ...j.owner.map(o => `- ${o}`), '');
+  // Ruling 1240: the misses the owner accepted, each with its ticket and its numbers.
+  if (j.acceptedMisses?.length) out.push('## Accepted misses (not blocking)', '', ...j.acceptedMisses.map(a => `- speed: ${a.id}: accepted miss (${a.ticket}, ruling ${a.ruling}): cua ${round(a.cua?.median)} ms against ${round(a.vendor?.median)} ms median, p95 ${round(a.cua?.p95)} against ${round(a.vendor?.p95)}, n = ${a.remeasured ? `${nOf(a.remeasured)} on re-measurement` : `${a.vendor?.n ?? 0} a side`}`), '');
 
   out.push('## The three points', '');
-  const beats = j.speed.filter(s => s.beat === true && !s.remeasured).length, repassed = j.speed.filter(s => s.beat === true && s.remeasured).length;
-  out.push(`- **Speed**: ${beats} of ${j.speed.length} measured ops beat the vendor by at least 10% with p95 not worse; ${repassed ? `${repassed} pass on re-measurement (the owner's, ruling 1232); ` : ''}${j.speed.filter(s => s.beat === false).length} missed (the owner's fork), ${j.speed.filter(s => s.beat === null).length} unmeasured or not qualified.`);
+  const beats = j.speed.filter(s => s.beat === true).length, repassed = j.speed.filter(s => s.beat === true && s.remeasured).length, accepted = j.speed.filter(s => s.accepted).length;
+  out.push(`- **Speed**: ${beats} of ${j.speed.length} measured ops beat the vendor by at least 10% with p95 not worse${repassed ? `, ${repassed} of them on re-measurement (ruling 1240)` : ''}; ${accepted ? `${accepted} accepted miss${accepted === 1 ? '' : 'es'} (not blocking); ` : ''}${j.speed.filter(s => s.beat === false && !s.accepted).length} missed (the owner's fork), ${j.speed.filter(s => s.beat === null).length} unmeasured or not qualified.`);
   const sum = engine => j.finding.reduce((n, f) => n + (f[engine]?.resolved ?? 0), 0);
   out.push(`- **Finding elements**: ${j.findingVerdict}; resolved targets vendor ${sum('vendor')}, cua ${sum('cua')} of ${j.finding.reduce((n, f) => n + (f.vendor?.targets ?? f.cua?.targets ?? 0), 0)}.`);
   const share = engine => (j.interference[engine].rows ? `${Math.round((j.interference[engine].ok / j.interference[engine].rows) * 1000) / 10}% (${j.interference[engine].ok}/${j.interference[engine].rows})` : 'no rows');
@@ -898,7 +907,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     const list = j.speed.filter(s => s.scene === scene);
     if (!list.length) continue;
     out.push(`### ${scene}`, '', '| op | vendor median | vendor p95 | cua median | cua p95 | change | beat |', '|---|---|---|---|---|---|---|');
-    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${pct(s.deltaPct)} | ${s.beat !== null ? `${s.beat ? (s.remeasured ? 'passes' : 'yes') : '**no**'}${s.remeasured ? ' on re-measurement' : ''}` : s.provisional === null ? 'unmeasured' : `not qualified${s.remeasured ? ' on re-measurement' : ''}`} |`);
+    for (const s of list) out.push(`| ${s.op} | ${ms(s.vendor?.median)} | ${ms(s.vendor?.p95)} | ${ms(s.cua?.median)} | ${ms(s.cua?.p95)} | ${pct(s.deltaPct)} | ${s.accepted ? `accepted miss (${s.accepted.ticket}, ruling ${s.accepted.ruling})` : s.beat !== null ? `${s.beat ? (s.remeasured ? 'passes' : 'yes') : '**no**'}${s.remeasured ? ' on re-measurement' : ''}` : s.provisional === null ? 'unmeasured' : `not qualified${s.remeasured ? ' on re-measurement' : ''}`} |`);
     out.push('');
     // What an op that does not qualify would give on every eligible reading, partial runs included: apart from the
     // official columns, which rest on the complete run pairs only.

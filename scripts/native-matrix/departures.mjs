@@ -103,6 +103,35 @@ export function usableDepartures(list, judged = judgedCells()) {
   return list.filter((entry, i) => entryProblems(entry, judged).length === 0 && names.indexOf(names[i]) === names.lastIndexOf(names[i]));
 }
 
+// Ruling 1240: an accepted speed miss, the owner's decision on a timing that missed the 10% beat (the file's
+// `acceptedMisses`, beside the departures: {section: 'speed', id, ticket, ruling}). The op stays judged and shown with
+// its numbers; a miss it covers reads `accepted-miss`, blocks nothing and is no owner's fork (./summary.mjs). An entry
+// that names no speed row of the full manifest, cites no ticket (#n) or no ruling, or is given twice applies to nothing
+// and is itself blocking (acceptedMissProblems). -> [Entry].
+export function readAcceptedMisses(file = DEPARTURES_FILE) {
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (json.acceptedMisses !== undefined && !Array.isArray(json.acceptedMisses)) throw new Error(`${file.pathname ?? file}: acceptedMisses is not a list`);
+  return json.acceptedMisses ?? [];
+}
+function acceptedMissOwn(entry, judged) {
+  const name = rowName(entry), out = [];
+  if (entry?.section !== 'speed' || !judged.has(name)) out.push(`${name} names no speed row of the matrix`);
+  if (typeof entry?.ticket !== 'string' || !/^#\d+$/.test(entry.ticket)) out.push(`${name} cites no ticket (#n)`);
+  if (typeof entry?.ruling !== 'string' || !/^\d+$/.test(entry.ruling)) out.push(`${name} cites no ruling`);
+  return out;
+}
+// -> [sentence].
+export function acceptedMissProblems(list, judged = judgedCells()) {
+  const out = list.flatMap(entry => acceptedMissOwn(entry, judged)), names = list.map(rowName);
+  for (const name of new Set(names.filter((n, i) => names.indexOf(n) !== i))) out.push(`${name} is accepted twice`);
+  return out;
+}
+// The entries the judge applies. -> [Entry].
+export function usableAcceptedMisses(list, judged = judgedCells()) {
+  const names = list.map(rowName);
+  return list.filter((entry, i) => acceptedMissOwn(entry, judged).length === 0 && names.indexOf(names[i]) === names.lastIndexOf(names[i]));
+}
+
 // Whether the vendor's row answered ok: its own check passed and its act threw nothing (a row that passed by refusing,
 // a refusal case's, did not answer ok).
 export const vendorAnsweredOk = row => row.ok === true && row.expect !== 'refusal' && answerOf(row).kind === 'ok';

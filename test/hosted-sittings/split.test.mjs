@@ -404,6 +404,23 @@ test('the base re-judged: the Open panel search case\'s timing leaves the judgme
     [['speed textedit/method.panel.typeText.search', 'no-verdict', 'not judged', 'openPanelSearchTiming', '#588', '1235']]);
 });
 
+// Ruling 1240: an accepted miss (departures.json's acceptedMisses) moves its op from a miss the owner had pending to
+// accepted; rejudge-base reads that move as explained by the entry's ruling citation, and nothing else of it.
+test('the base re-judged: a miss the owner accepted reads accepted, explained by its declaration\'s ticket and ruling', () => {
+  const TYPE = {section: 'speed', id: 'textedit/method.typeText.replace', verdict: 'missed-remeasured'};
+  const accepted = {section: 'speed', id: 'textedit/method.typeText.replace', ticket: '#593', ruling: '1240'};
+  const r = baseRejudge([...baseCells({}), TYPE], [...baseCells({}), {...TYPE, verdict: 'accepted-miss'}], {acceptedMisses: [accepted]});
+  assert.deepEqual(r.refused, []);
+  assert.deepEqual(r.differences.map(d => [d.cell, d.was, d.now, d.by.kind, d.by.ticket, d.by.ruling]), [['speed textedit/method.typeText.replace', 'missed-remeasured', 'accepted-miss', 'accepted miss', '#593', '1240']]);
+  assert.match(renderBaseRejudge({...r, at: 'c0b2ce8f1'}).join('\n'), /^- speed textedit\/method\.typeText\.replace: missed-remeasured, now accepted-miss \(expected: the accepted miss, ticket #593, ruling 1240\)$/m);
+  // A plain miss accepted the same way; no ruling, or another move, explains nothing.
+  assert.deepEqual(baseRejudge([{...TYPE, verdict: 'missed'}], [{...TYPE, verdict: 'accepted-miss'}], {acceptedMisses: [accepted]}).refused, []);
+  assert.equal(baseRejudge([TYPE], [{...TYPE, verdict: 'accepted-miss'}], {acceptedMisses: [{...accepted, ruling: undefined}]}).refused.length, 1);
+  assert.equal(baseRejudge([TYPE], [{...TYPE, verdict: 'beat-remeasured'}], {acceptedMisses: [accepted]}).refused.length, 1);
+  // The committed declaration is read by default.
+  assert.deepEqual(baseRejudge([TYPE], [{...TYPE, verdict: 'accepted-miss'}]).refused, []);
+});
+
 test('the base re-judged: what no declaration explains refuses, a row leaving the judgment with no rule and a declared row changing verdict while judged among them', () => {
   const refusedOn = (over, options) => baseRejudge(baseCells({}), baseCells(over), options).refused;
   assert.deepEqual(refusedOn({'method textedit/frontmost/click.control': {verdict: 'worse'}}), ['the new judge reads the base differently from its own judgment at its commit: method textedit/frontmost/click.control equal, now worse']);

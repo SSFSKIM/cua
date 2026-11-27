@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
@@ -222,6 +222,13 @@ test('the fake VM\'s remap places every VM path, leaves only what is safe, and r
   for (const text of ['rm -rf /srv/data', 'cat /home/someone/.ssh/id_ed25519', 'echo x >/tmp/y', 'cp a /usr/lib/x', 'ls /scratch/vmx/root',
     'touch /scratch/vm/../escape', 'cat /proc/1/environ;'])
     assert.throws(() => placed(text), /the fake VM would not place/, text);
+  // `//` is left only as a URL's authority (a scheme before it) or as jq's operator; a path with a `..` segment is
+  // refused whatever it would normalize to, since the original spelling is what the shell resolves under the root
+  for (const text of ['cat //opt/cua/x', 'ls //etc', 'x=//usr/local/bin', '/etc/../../../../opt/cua', 'cp a /var/cache/cua/../../../../../opt/cua/x',
+    'ls /opt/cua/..', 'ls /usr/share/../../home'])
+    assert.throws(() => placed(text), /the fake VM would not place/, text);
+  for (const text of ['git clone git+ssh://host.example/r', 'curl file://localhost/etc', 'jq \'.a // empty\''])
+    assert.equal(placed(text), text);
   assert.equal(contained(`${root}/var/cache/cua/cua.bundle.update`, root), `${root}/var/cache/cua/cua.bundle.update`);
   for (const path of [`${root}/../escape`, `${root}/var/cache/../../../escape`, root, '/etc/passwd'])
     assert.throws(() => contained(path, root), /outside the fake VM/, path);
@@ -244,6 +251,30 @@ test('the fake VM\'s ssh runs nothing of a command it cannot place, and its scp 
     assert.equal(scp.status, 97, `${dest}: ${scp.stderr}`);
   }
   assert.ok(!existsSync(join(vm.scratch, 'payload-copy')) && !existsSync(join(vm.root, 'var/payload-escaped')));
+});
+
+// A destination is judged on disk, not by its spelling: a link inside the root that leads out of it (here to a
+// directory of the run's scratch, never anything of the host's) refuses the copy, as a directory on the way and as the
+// file itself, and nothing is written where it points.
+test('the fake VM\'s scp copies nothing through a link inside the root that leads out of it', {skip: noJq}, async t => {
+  const vm = await makeVm(t);
+  const outside = join(vm.scratch, 'outside');
+  mkdirSync(outside);
+  symlinkSync(outside, vm.path('var/cache/cua/linked-dir'));
+  symlinkSync(join(outside, 'target'), vm.path('var/cache/cua/linked-file'));
+  assert.throws(() => contained(vm.path('var/cache/cua/linked-dir/x'), vm.root), /through the link/);
+  const payload = join(vm.scratch, 'payload');
+  writeFileSync(payload, 'x');
+  for (const dest of ['/var/cache/cua/linked-dir/x', '/var/cache/cua/linked-file']) {
+    const scp = spawnSync(join(vm.bin, 'scp'), [payload, `root@vm:${dest}`], {env: vm.env, encoding: 'utf8'});
+    assert.equal(scp.status, 97, `${dest}: ${scp.stderr}`);
+    assert.match(scp.stderr, /through the link/);
+  }
+  assert.deepEqual(readdirSync(outside), [], 'nothing written where the links lead');
+  // a plain destination under the root still copies
+  const ok = spawnSync(join(vm.bin, 'scp'), [payload, 'root@vm:/var/cache/cua/plain'], {env: vm.env, encoding: 'utf8'});
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(vm.read('var/cache/cua/plain'), 'x');
 });
 
 // What a run did, by step, from the stubs' calls: 1 the packages, 7's npm ci, 8 cua install, 9 the registration, 10 the

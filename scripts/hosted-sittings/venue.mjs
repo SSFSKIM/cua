@@ -199,7 +199,7 @@ const NATIVE_MAC = {
 };
 const GROUNDING = {
   chrome: 'window points grounded on the notes field\'s frame as read in the run\'s window, toolbar and infobars whatever they are (../native-matrix/plan.mjs chromeDragFromField, ruling 1226); a frame not read leaves the drag invalid',
-  electron: 'window points on the fixture\'s size, unchanged at 720x560: its layout (ELECTRON_FIELD_LAYOUT, #259\'s point) holds as it is; only the origin moved',
+  electron: 'window points on the fixture\'s size, unchanged at 720x560: its drag\'s layout (ELECTRON_FIELD_LAYOUT) holds as it is; #259\'s point is grounded on the field\'s frame as read (../native-matrix/plan.mjs electronPointFromField, ruling 1228); only the origin moved',
   finder: 'element-addressed rows; the height is the mini\'s, so the same rows are visible',
   textedit: 'fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare\'s clicks proving each end',
   textEditDocument: 'the window\'s size only: the file is the mini\'s with the view size inserted, so its text and attribute runs are the mini\'s (textutil\'s text and HTML of both files are equal, test/repl-parity/scenes-mac.test.mjs); the cells\' fractions and rows hold as for TextEdit\'s preferences; the wide page stays wider than the window (its 200% zoom)',

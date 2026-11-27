@@ -287,9 +287,9 @@ test('ruling 1226: Chrome\'s drag is grounded on the field frame read; ungrounde
   assert.deepEqual(await dragPoints(mini, jpegOf(2000, 1520)), {ready: true, points: [[620, 564], [32, 500]]});
   // A reading in another window than the shot's fails the prepare's shape check (0.95 against 0.76): never dragged.
   assert.equal((await dragPoints(mini, jpegOf(800, 760))).ready, false);
-  // The other targets' cases are never grounded on a reading: the fixture keeps its size (its layout is the mini's),
-  // TextEdit's drag is in fractions of its window, Finder's cases address rows.
-  for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target]) {
+  // The other targets' cases are never grounded on a reading but #259's point (ruling 1228): the fixture keeps its size
+  // (its drag's layout is the mini's), TextEdit's drag is in fractions of its window, Finder's cases address rows.
+  for (const target of ['textedit', 'finder', 'electron', 'openPanel']) for (const c of CASES[target].filter(x => !(target === 'electron' && x.method === 'click' && x.case === 'point'))) {
     assert.equal(c.fieldFrame, undefined, `${target} ${c.method}.${c.case}`);
     assert.equal(groundCase(c, {window: {width: 800, height: 760}, field}), c, `${target} ${c.method}.${c.case}`);
   }

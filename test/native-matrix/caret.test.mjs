@@ -16,7 +16,7 @@ import {judgeCell} from '../../scripts/native-matrix/cell-verdict.mjs';
 import {departureProblems} from '../../scripts/native-matrix/departures.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {manifestOf} from '../../scripts/native-matrix/manifest.mjs';
-import {CARET, CARET_ROWS, CASES, casesOf, FIELD_LINES, isCaretRow} from '../../scripts/native-matrix/plan.mjs';
+import {CARET, CARET_ROWS, CASES, casesOf, ELECTRON_FIELD_ROWS, electronPointFromField, FIELD_LINES, groundCase, isCaretRow} from '../../scripts/native-matrix/plan.mjs';
 import {FULL_PLAN, planOf} from '../../scripts/native-matrix/run.mjs';
 import {runWith} from './run-doubles.mjs';
 
@@ -42,12 +42,18 @@ test('the two caret cases are the Electron fixture\'s, frontmost only, in every 
   assert.ok(narrowed.includes(SELECTION) && narrowed.includes(POINT));
 });
 
-test('the prepared states the device must read: the word selected for #258, the caret at the value\'s end for #259', () => {
+// Ruling 1228 (C2): #259's click landed on line 3 column 5 on both engines in every run since C-6, never the aimed line
+// 2. The field shows 6 rows of an 8-line value, so the caret the prepare left at the value's end scrolled it to its last
+// lines, and a fixed window point aimed at the unscrolled third line. The caret is now left at the value's start (the
+// field scrolled to its top) and the point is grounded on the field's own frame as read (field-frame), as Chrome's drag.
+test('the prepared states the device must read: the word selected for #258, the caret at the value\'s start for #259', () => {
   assert.deepEqual(CARET.selection.before, {location: VALUE.indexOf('charlie'), length: 'charlie'.length});
-  assert.deepEqual(CARET.point.before, {location: VALUE.length, length: 0});
-  // #259's point: the window point of the 2026-11-01 cell (60, 84), on the field's third line (0-based 2).
-  assert.deepEqual(CARET.point.at, [60, 84]);
+  assert.deepEqual(CARET.point.before, {location: 0, length: 0});
   assert.equal(CARET.point.line, 2);
+  assert.equal(CARET.point.at, undefined, 'no fixed point: the field\'s frame grounds it');
+  const html = fs.readFileSync(new URL('../../scripts/native-matrix/fixtures/electron/index.html', import.meta.url), 'utf8');
+  assert.equal(Number(/<textarea id="text"[^>]* rows="(\d+)"/.exec(html)?.[1]), ELECTRON_FIELD_ROWS);
+  assert.ok(FIELD_LINES.length > ELECTRON_FIELD_ROWS, 'the value outgrows the field: where the caret is decides what shows');
 });
 
 // The fixture's field as the plan's cell tests model it (./plan.test.mjs electronField, reduced): a value, the focus and a
@@ -70,12 +76,12 @@ function field({value = '', press = false, shot = [720, 560]} = {}) {
     async getScreenshot() { return png(...shot); },
     async click(target) { state.clicks.push(target); if (!press) state.selected = null; },
     async setValue(index, v) { if (index === 5) { state.value = v; state.selected = null; } },
-    async selectText(index, word, options) { if (index === 5 && state.value.includes(word)) state.selected = options?.selectionType ? null : word; },
+    async selectText(index, word, options) { if (index === 5 && state.value.includes(word)) { state.selected = options?.selectionType ? null : word; if (options?.selectionType) state.cursor = {word, selectionType: options.selectionType}; } },
   };
   return {app, state};
 }
-async function runCase(kase, f) {
-  const cells = caseCells('electron', caseOf(kase));
+async function runCase(kase, f, reading = null) {
+  const cells = caseCells('electron', groundCase(caseOf(kase), reading));
   const apps = {electron: f.app};
   const out = {prepare: await runCell(cells.prepare, apps), act: await runCell(cells.act, apps), check: await runCell(cells.check, apps)};
   delete globalThis.__m;
@@ -92,17 +98,26 @@ test('#258\'s cell: the field given its value with the word selected, one elemen
   assert.doesNotMatch(JSON.stringify([prepare, act, check]), /alpha|charlie|Fixture/, 'no text leaves the cells');
 });
 
-test('#259\'s cell: the caret at the value\'s end, one coordinate click at the line\'s point in the screenshot\'s pixels', async () => {
-  for (const [shot, point] of [[[720, 560], [60, 84]], [[1440, 1120], [120, 168]]]) {
+test('#259\'s cell: the caret at the value\'s start, one coordinate click at the third line\'s point, grounded on the field\'s frame, in the screenshot\'s pixels', async () => {
+  // The field's frame as read: 16,60 420x102 in the 720x560 window (rows of 16 pt inside 3 pt of border and padding).
+  const reading = {window: {width: 720, height: 560}, field: {x: 16, y: 60, width: 420, height: 102}};
+  assert.deepEqual(electronPointFromField(reading), {window: [720, 560], at: [60, 103]});
+  const lineOf = y => Math.floor((y - 60 - 3) / 16);
+  assert.equal(lineOf(electronPointFromField(reading).at[1]), CARET.point.line);
+  // The plan's own case, no frame read: never prepared, nothing clicked.
+  const unread = field({value: VALUE});
+  assert.deepEqual([(await runCase('point', unread)).prepare.value.ready, unread.state.clicks], [false, []]);
+  for (const [shot, point] of [[[720, 560], [60, 103]], [[1440, 1120], [120, 206]]]) {
     const f = field({value: VALUE, shot});
-    const {prepare, check} = await runCase('point', f);
+    const {prepare, check} = await runCase('point', f, reading);
+    assert.deepEqual(f.state.cursor, {word: 'alpha', selectionType: 'cursor_before'}, 'the caret at the value\'s start');
     assert.equal(prepare.value.ready, true, JSON.stringify(prepare));
     assert.deepEqual(f.state.clicks.at(-1), point, `scale ${shot[0] / 720}`);
     assert.equal(check.value.ok, true);
   }
   // A screenshot of another shape is not the fixture's window: nothing is sent.
   const odd = field({value: VALUE, shot: [800, 800]});
-  const {prepare} = await runCase('point', odd);
+  const {prepare} = await runCase('point', odd, reading);
   assert.deepEqual([prepare.value.ready, prepare.value.reason], [false, 'the screenshot is not the fixture window\'s shape']);
   assert.deepEqual(odd.state.clicks, []);
 });
@@ -134,7 +149,7 @@ test('before the click the device must read what the prepare made, or the row sa
   assert.match(caretPrepared(CARET.selection, {range: {location: 20, length: 0}, focused: true}), /read 20\+0 where the prepare made 20\+7/);
   assert.match(caretPrepared(CARET.point, {error: 'no answer'}), /could not be read before the click \(no answer\)/);
   assert.match(caretPrepared(CARET.point, {range: null, focused: true}), /could not be read before the click/);
-  assert.equal(caretPrepared(CARET.point, {range: {location: VALUE.length, length: 0}, focused: false}), null, 'the focus is recorded, not required');
+  assert.equal(caretPrepared(CARET.point, {range: {location: 0, length: 0}, focused: false}), null, 'the focus is recorded, not required');
 });
 
 test('#258: a click that collapses the selection to a caret passes; one that keeps it fails; the reading is the outcome', () => {
@@ -154,7 +169,7 @@ test('#259: the caret on the aimed line passes, whatever its column; a line low 
   assert.equal(at(33).ok, true, 'the line\'s end');
   assert.deepEqual(at(39).outcome, {range: {location: 39, length: 0}, collapsed: true, line: 3, column: 5, onTarget: false}, 'the 2026-11-01 miss');
   assert.equal(at(39).ok, false);
-  assert.equal(at(VALUE.length).ok, false, 'the caret left where the prepare put it');
+  assert.equal(at(0).ok, false, 'the caret left where the prepare put it');
   assert.equal(at(22, 3).ok, false);
 });
 
@@ -195,7 +210,7 @@ const PLACED = {screenshotPoint: {x: 120, y: 168}, windowPoint: {x: 60, y: 84}, 
 test('a caret row: the device reads the range before and after the click, and the outcome carries the reading', async () => {
   const asked = [];
   const {result} = await runWith({plan: planOf('method', {scene: 'electron'}),
-    ops: ranged([reading(20, 7), reading(44), reading(44), reading(VALUE.length), reading(25), reading(25)], asked),
+    ops: ranged([reading(20, 7), reading(44), reading(44), reading(0), reading(25), reading(25)], asked),
     cell: code => (code.includes(caseOf('point').act) ? {actMs: 1, at: [5, 6], threw: false, _meta: {'cua/inputRoute': 3, 'cua/coordinateClick': PLACED}}
       : code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
   assert.deepEqual(validateCellResult(result), []);
@@ -214,14 +229,14 @@ test('a caret row: the device reads the range before and after the click, and th
 test('a caret row: a kept selection fails its own check; a range the prepare did not make, or one unread after, says nothing', async () => {
   const run = answers => runWith({plan: planOf('method', {scene: 'electron'}), ops: ranged(answers),
     cell: code => (code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
-  const kept = caretRows((await run([reading(20, 7), reading(20, 7), reading(20, 7), reading(VALUE.length), reading(39), reading(39)])).result);
+  const kept = caretRows((await run([reading(20, 7), reading(20, 7), reading(20, 7), reading(0), reading(39), reading(39)])).result);
   assert.deepEqual([kept.selection.ok, kept.selection.invalid, kept.selection.outcome.kept], [false, undefined, true]);
   assert.deepEqual([kept.point.ok, kept.point.outcome.line], [false, 3]);
   const bad = caretRows((await run([reading(0, 0), {error: 'no text area'}])).result);
   assert.match(bad.selection.invalid, /^not prepared: the field's range read 0\+0 where the prepare made 20\+7/);
   assert.deepEqual([bad.selection.inCellMs, bad.selection.frontKey], [undefined, undefined], 'nothing was sent');
   assert.match(bad.point.invalid, /^not prepared: the field's range could not be read before the click \(no text area\)/);
-  const after = caretRows((await run([reading(20, 7), {error: 'the probe did not exit'}, {error: 'the probe did not exit'}, reading(VALUE.length), reading(25), reading(25)])).result);
+  const after = caretRows((await run([reading(20, 7), {error: 'the probe did not exit'}, {error: 'the probe did not exit'}, reading(0), reading(25), reading(25)])).result);
   assert.match(after.selection.invalid, /could not be read after the click \(the probe did not exit\)/);
   assert.ok(after.selection.frontKey?.after, 'the act was sent: the row carries its readings');
 });
@@ -231,10 +246,10 @@ test('the caret after the click is read until two reads agree, up to three 150 m
   const run = answers => runWith({plan: planOf('method', {scene: 'electron'}), ops: ranged(answers), slept,
     cell: code => (code.includes(caseOf('selection').check) || code.includes(caseOf('point').check) ? {ok: true, outcome: {valueKept: true}} : null)});
   // The selection's caret moves once after the click (Chromium's selection follows the DOM), then holds.
-  const settled = caretRows((await run([reading(20, 7), reading(30), reading(44), reading(44), reading(VALUE.length), reading(25), reading(25)])).result);
+  const settled = caretRows((await run([reading(20, 7), reading(30), reading(44), reading(44), reading(0), reading(25), reading(25)])).result);
   assert.deepEqual([settled.selection.ok, settled.selection.caret.after], [true, reading(44)]);
   assert.ok(slept.filter(ms => ms === 150).length >= 3);
-  const moving = caretRows((await run([reading(20, 7), reading(30), reading(40), reading(44), reading(VALUE.length), reading(25), reading(25)])).result);
+  const moving = caretRows((await run([reading(20, 7), reading(30), reading(40), reading(44), reading(0), reading(25), reading(25)])).result);
   assert.match(moving.selection.invalid, /the caret did not settle after the click/);
   assert.equal(moving.selection.ok, false);
   assert.equal(sampleCause(moving.selection).category, 'invalid', 'no verdict, never a difference');

@@ -23,7 +23,8 @@ const isGuardRead = a => a[0] === 'read' && withList(a).includes('alert-bounds')
 // the guard refuses them.
 const FIELD = ['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight'].join('\n');
 // Each click's before-read, then its after-read twice (the settle: two reads that agree).
-const RANGES = [{location: 20, length: 7}, {location: 44, length: 0}, {location: 44, length: 0}, {location: FIELD.length, length: 0}, {location: 25, length: 0}, {location: 25, length: 0}];
+// (#259's caret starts at the value's start, ruling 1228.)
+const RANGES = [{location: 20, length: 7}, {location: 44, length: 0}, {location: 44, length: 0}, {location: 0, length: 0}, {location: 25, length: 0}, {location: 25, length: 0}];
 const alertsBy = alerts => {
   let n = -1, ranges = 0;
   return {matrix: (base, a) => {

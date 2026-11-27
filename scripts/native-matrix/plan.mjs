@@ -652,31 +652,45 @@ export const ELECTRON_FIELD_LAYOUT = Object.freeze({window: Object.freeze([720, 
 // The fixture status's press count, or null.
 export const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
 // #258 and #259's caret cases (T8e, ./caret.mjs): what the prepare makes in the field (`before`, the range the device
-// must read before the click) and, for #259, the point clicked (window points, the 2026-11-01 cell's: about five
-// characters into the drag's middle line) and the line it aims at (0-based). `lines` the field's value, for the
+// must read before the click) and, for #259, the line its click aims at (0-based). `lines` the field's value, for the
 // reading's line and column.
+// #259's caret starts at the value's start (ruling 1228, C2): the field shows ELECTRON_FIELD_ROWS rows of the 8-line
+// value, so a caret at its end scrolled it to its last lines and the click landed a line below its aim on both engines
+// in every run since C-6. At the start the field is scrolled to its top, and the click's point is grounded on the
+// field's own frame as read (`fieldFrame`, as Chrome's drag; electronPointFromField).
 const CARET_WORD = 'charlie';
 export const CARET = Object.freeze({
   selection: Object.freeze({kind: 'selection', lines: FIELD_LINES, before: Object.freeze({location: FIELD_LINES.join('\n').indexOf(CARET_WORD), length: CARET_WORD.length})}),
-  point: Object.freeze({kind: 'point', lines: FIELD_LINES, before: Object.freeze({location: FIELD_LINES.join('\n').length, length: 0}),
-    at: Object.freeze([60, (ELECTRON_FIELD_LAYOUT.from[1] + ELECTRON_FIELD_LAYOUT.to[1]) / 2]), line: 2}),
+  point: Object.freeze({kind: 'point', lines: FIELD_LINES, before: Object.freeze({location: 0, length: 0}), line: 2}),
 });
-// The field holding its value, the caret at the value's end; then #259's point in the screenshot's pixels.
-const caretAtEnd = `${observed}
+// The fixture's text area's rows (fixtures/electron/index.html rows="6"), its border and padding (Chromium's 1 + 2 pt).
+export const ELECTRON_FIELD_ROWS = 6;
+const ELECTRON_FIELD_INSET = 3;
+// #259's point from the field's frame as read (field-frame's answer, window points): about five characters into the
+// aimed line, its row's middle, the row height the field's inner height over its rows. -> {window: [w, h], at: [x, y]}.
+export const electronPointFromField = ({window, field}) => {
+  const row = (field.height - 2 * ELECTRON_FIELD_INSET) / ELECTRON_FIELD_ROWS;
+  return {window: [window.width, window.height], at: [Math.round(field.x + 44), Math.round(field.y + ELECTRON_FIELD_INSET + row * (CARET.point.line + 0.5))]};
+};
+// The field holding its value, the caret at the value's start; then #259's point in the screenshot's pixels. `layout`:
+// electronPointFromField's, or null for the plan's own case, never prepared (the run grounds it, ./steps.mjs caseRow).
+const caretAtStart = layout => (layout === null ? 'return {ready: false, reason: "the click\'s point is grounded on its field\'s frame as read, and none was read"};' : `${observed}
 let now = ax, index = ${named('Fixture text')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
 ${focusOn({clear: true, find: named('Fixture text')})}
 if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) { await __app.setValue(index, ${FIELD_VALUE}); now = await observe(); }
 if (plain(valueOfIndex(now, index)) !== ${FIELD_VALUE}) return {ready: false, reason: "the field could not be given its value"};
-await __app.selectText(index, ${j(FIELD_LINES.at(-1).split(' ').at(-1))}, {selectionType: "cursor_after"}); now = await observe();
+await __app.selectText(index, ${j(FIELD_LINES[0].split(' ')[0])}, {selectionType: "cursor_before"}); now = await observe();
 if (selectedTextOf(now) !== null) return {ready: false, reason: "a selection is left in the field"};
 const size = jpegSize(await __app.getScreenshot({emit: false}));
 if (!size) return {ready: false, reason: "the screenshot's size could not be read"};
-const layout = ${j(ELECTRON_FIELD_LAYOUT)};
+const layout = ${j(layout)};
 if (Math.abs(size.height / size.width - layout.window[1] / layout.window[0]) > 0.03) return {ready: false, reason: "the screenshot is not the fixture window's shape"};
 const scale = size.width / layout.window[0];
-__m.index = index; __m.point = ${j(CARET.point.at)}.map(v => Math.round(v * scale));
-return {ready: true};`;
+__m.index = index; __m.point = layout.at.map(v => Math.round(v * scale));
+return {ready: true};`);
+const caretPoint = reading => ({method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtStart(reading ? electronPointFromField(reading) : null),
+  act: 'await __app.click(__m.point);', check: valueKept, framed: 'window points', fieldFrame: {role: 'AXTextArea'}, ground: caretPoint});
 // The click must leave the field's value as it was.
 const valueKept = `const ax = await observe();
 const kept = plain(valueOfIndex(ax, ${named('Fixture text')})) === ${FIELD_VALUE};
@@ -719,7 +733,7 @@ return {ok: moved, outcome: {moved}};`},
   // question and not these gates'.
   {method: 'click', case: 'selection', expect: 'outcome', regimes: ['frontmost'], caret: CARET.selection,
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j(CARET_WORD)})}\nreturn {ready: true};`, act: 'await __app.click(__m.index);', check: valueKept},
-  {method: 'click', case: 'point', expect: 'outcome', regimes: ['frontmost'], caret: CARET.point, prepare: caretAtEnd, act: 'await __app.click(__m.point);', check: valueKept, framed: 'window points'},
+  caretPoint(null),
   // Ruling 1168: last, so every row before it starts where it did before the cell was added.
   pointerdownCase,
 ];

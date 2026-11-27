@@ -11,7 +11,7 @@ import {writeState} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {MOVE_REFUSED_OFF_HOSTED} from '../../scripts/hosted-sittings/runner.mjs';
 import {alertBoundsOf, clearFrame, contains, guardCause, isAlertWindow, isPanelWindow, MENU_BAR, overlaps, PANEL_SERVICE, sendsPointer} from '../../scripts/native-matrix/alert-guard.mjs';
 import {CAPTURE_ALERT_PROCESS} from '../../scripts/native-matrix/live-checks.mjs';
-import {CASES} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, groundCase} from '../../scripts/native-matrix/plan.mjs';
 
 const UNC = CAPTURE_ALERT_PROCESS;
 const rect = (x, y, width, height) => ({x, y, width, height});
@@ -101,7 +101,9 @@ test('the alert holding the front or the key refuses; unread bounds are unread, 
 });
 
 test('the cells that send a pointer: every click, drag and scroll call, by element or by point; keys and observations do not', () => {
-  const pointer = Object.entries(CASES).flatMap(([target, cases]) => cases.flatMap(c => [
+  // A case grounded on its field's frame is judged as the run sends it, grounded on a reading.
+  const reading = {window: {width: 720, height: 560}, field: {x: 16, y: 60, width: 420, height: 102}};
+  const pointer = Object.entries(CASES).flatMap(([target, cases]) => cases.map(c => groundCase(c, reading)).flatMap(c => [
     ...(sendsPointer(c.prepare) ? [`${target} ${c.method}.${c.case} prepare`] : []), ...(sendsPointer(c.act) ? [`${target} ${c.method}.${c.case} act`] : [])]));
   // The acts that send one.
   for (const act of ['textedit click.element act', 'textedit click.control act', 'textedit scroll.down act', 'textedit drag.select act', 'textedit click.invalidIndex act',

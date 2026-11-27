@@ -148,19 +148,7 @@ function baseDirCheck(root, runId) {
 // R1 (ruling 1230): the base's records judged by this commit's judge and by the judge of the commit that ran them (the
 // tree of that commit, extracted from this checkout's history), cell by cell. -> exit 0, or 2 when a cell reads
 // differently that no declaration of this commit explains (ruling 1234, ./hosted-sittings/split.mjs baseRejudge), or the
-// base names no one commit. What that commit's own tree declared (its departures file, its not-judged rules) counts as
-// declared at the base's commit.
-// What a tree (an older commit's) declared: its departures file's rows and its not-judged rules', as one test of a cell
-// (`<section> <id>`). A tree without either declared nothing of it.
-async function declaredIn(tree) {
-  const file = join(tree, 'scripts', 'native-matrix', 'expected', 'departures.json'), module = join(tree, 'scripts', 'native-matrix', 'not-judged.mjs');
-  const departures = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).departures ?? []).map(e => `${e.section} ${e.id}`) : [];
-  const rules = existsSync(module) ? await import(pathToFileURL(module).href) : {};
-  return cell => {
-    const section = cell.slice(0, cell.indexOf(' ')), id = cell.slice(cell.indexOf(' ') + 1);
-    return departures.includes(cell) || Boolean(rules.exclusionOf?.({section, id}));
-  };
-}
+// base names no one commit.
 async function rejudgeBase(root, outFile) {
   const sitting = join(root, 'sitting'), {results, problems} = readResults([sitting]);
   const commits = [...new Set(results.filter(r => r.result.cell === 'matrix').map(r => r.result.meta?.commit).filter(Boolean))];
@@ -176,8 +164,7 @@ async function rejudgeBase(root, outFile) {
       if (existsSync(join(REPO, 'node_modules'))) symlinkSync(join(REPO, 'node_modules'), join(tree, 'node_modules'));
       const old = await import(pathToFileURL(join(tree, 'scripts', 'native-matrix', 'summary.mjs')).href);
       const read = old.readResults([sitting]);
-      const declaredAtBase = await declaredIn(tree);
-      report = {at: commits[0], ...baseRejudge(old.judge(read.results, read.problems).cells, judge(results, problems).cells, {declaredAtBase})};
+      report = {at: commits[0], ...baseRejudge(old.judge(read.results, read.problems).cells, judge(results, problems).cells)};
     } finally { rmSync(tree, {recursive: true, force: true}); }
   }
   writeJson(outFile, report);

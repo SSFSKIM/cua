@@ -369,8 +369,8 @@ test('the base is judged only when every result.json under it matches digests.sh
 });
 
 // R1 (ruling 1230): the base's stored rows re-judged by the new judge, against its judgment at its own commit. Ruling
-// 1234: a difference is expected only where this commit's declarations explain it, each citing its ruling (or declaring
-// the row at the base's commit): a departure now declared, a ticketed not-judged rule's row now not judged.
+// 1234: a difference is expected only where a declaration of this commit that cites its ruling explains it: a departure
+// now declared, a ticketed not-judged rule's row now not judged.
 const DRAG = 'method chrome/background/drag.select@textedit', NAME_TIMING = 'speed textedit/method.savePanel.typeText.name';
 const baseCells = over => [{section: 'method', id: 'chrome/background/drag.select@textedit', verdict: 'worse'}, {section: 'method', id: 'textedit/frontmost/click.control', verdict: 'equal'},
   {section: 'speed', id: 'textedit/getAXState', verdict: 'beat'}, {section: 'speed', id: 'textedit/method.savePanel.typeText.name', verdict: 'no-verdict'}]
@@ -400,7 +400,7 @@ test('the base re-judged: what no declaration explains refuses, a row leaving th
   assert.match(shown, /^Refused to judge: the new judge reads the base differently/m);
 });
 
-test('the base re-judged: a declaration with a ticket but no ruling explains nothing, unless it declared the row at the base\'s commit', () => {
+test('the base re-judged: a declaration with a ticket but no ruling explains nothing, even one the base\'s commit already had', () => {
   const CONTROL = 'method textedit/frontmost/click.control';
   const rule = {section: 'method', condition: 'fresh', matches: id => id === 'textedit/frontmost/click.control', cause: 'a new rule', ticket: '#999'};
   const gone = {[CONTROL]: {verdict: null}};
@@ -409,11 +409,13 @@ test('the base re-judged: a declaration with a ticket but no ruling explains not
   assert.deepEqual(baseRejudge(baseCells({}), baseCells(gone), {rules: [{...rule, ruling: '1299'}]}).refused, []);
   // A rule with no ticket explains nothing, ruling or not.
   assert.equal(baseRejudge(baseCells({}), baseCells(gone), {rules: [{...rule, ticket: undefined, ruling: '1299'}]}).refused.length, 1);
+  // Ruling 1234 keeps it that strict: having declared the row at the base's commit is no citation (the option is gone).
   const atBase = baseRejudge(baseCells({}), baseCells(gone), {rules: [rule], declaredAtBase: cell => cell === CONTROL});
-  assert.deepEqual([atBase.refused, atBase.differences[0].by.atBase], [[], true]);
-  assert.match(renderBaseRejudge(atBase).join('\n'), /\(expected: the not-judged rule fresh, ticket #999, declared at the base's commit\)$/m);
+  assert.deepEqual([atBase.refused.length, atBase.differences[0].expected, atBase.differences[0].by], [1, false, undefined]);
+  assert.doesNotMatch(renderBaseRejudge(atBase).join('\n'), /base's commit\)/);
   // A departure with no ruling, the same.
   const departure = {section: 'method', id: 'chrome/background/drag.select@textedit', decision: 'Decision Log, #282'};
   assert.equal(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [departure]}).refused.length, 1);
-  assert.deepEqual(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [departure], declaredAtBase: cell => cell === DRAG}).refused, []);
+  assert.equal(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [departure], declaredAtBase: cell => cell === DRAG}).refused.length, 1);
+  assert.deepEqual(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [{...departure, ruling: '1228'}]}).refused, []);
 });

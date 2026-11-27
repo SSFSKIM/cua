@@ -1504,6 +1504,11 @@ test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declar
   const lost = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, run) => (run === 2 ? keyLost(dragAsRecorded('vendor')(rows)) : dragAsRecorded('vendor')(rows))},
     cua: {axMs: 40, tweak: dragAsRecorded('cua')}, departures: readDepartures()});
   assert.match(renderSummary(lost), /the vendor made the selection cleanly in 3 of 3 runs, TextEdit NOT front and key throughout/);
+  // m2 of the cell review: a sample whose front/key went unread says nothing either way: not read, never NOT front and key.
+  const unread = judged({vendor: {resolved: 9, axMs: 50, tweak: (rows, run) => (run === 2 ? set(DRAG, {frontKey: undefined})(dragAsRecorded('vendor')(rows)) : dragAsRecorded('vendor')(rows))},
+    cua: {axMs: 40, tweak: dragAsRecorded('cua')}, departures: readDepartures()});
+  assert.equal(unread.departures[0].measured.frontKey, null);
+  assert.match(renderSummary(unread), /the vendor made the selection cleanly in 3 of 3 runs, TextEdit's front and key not read;/);
 });
 
 // Ruling 1228 (E): combined records name, per run, the job each cell's evidence came from, and a cell that failed in the

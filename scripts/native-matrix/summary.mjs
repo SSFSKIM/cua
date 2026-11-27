@@ -331,9 +331,12 @@ export function runVerdict(section, id, vendorRows, cuaRows) {
 }
 
 // Ruling 1228 (F): the speed-extra cell's samples (../native-matrix/run.mjs SPEED_EXTRA_IDS), of the runs whose two lanes
-// both have them, by op: the judge pools them with the full runs' for those ops alone. -> Map(id -> {vendor, cua, runs}).
-function speedExtrasOf(results, own) {
-  const extra = results.filter(r => own(r) && r.result.cell === 'speed-extra' && r.result.meta?.planId === 'speed-extra');
+// both have them, by op: the judge pools them with the full runs' for those ops alone. Only as it takes a full run's
+// samples (split review): a complete lane attesting its own side (ruling 1149), of a run whose full pair is one proof
+// (`pairable`). -> Map(id -> {vendor, cua, runs}).
+function speedExtrasOf(results, own, pairable = () => true) {
+  const extra = results.filter(r => own(r) && r.result.cell === 'speed-extra' && r.result.meta?.planId === 'speed-extra' && r.result.complete === true
+    && pairable(r.result.meta?.run) && r.result.lanes?.[0]?.engine && r.result.rows.every(row => row.engine === r.result.lanes[0].engine) && !unmeasuredSide(r.result));
   const lane = (engine, run) => extra.filter(r => r.result.lanes[0]?.engine === engine && r.result.meta?.run === run);
   const runs = [...new Set(extra.map(r => r.result.meta?.run))].filter(run => lane('vendor', run).length && lane('cua', run).length).sort((a, b) => a - b);
   const byId = new Map();
@@ -406,7 +409,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   methods.sort((a, b) => a.id.localeCompare(b.id));
 
   // Speed.
-  const speed = [], extras = speedExtrasOf(results, own);
+  const speed = [], extras = speedExtrasOf(results, own, pairable);
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'speed'), r => r.id)) {
     const [scene, op] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
     speed.push({id, section: 'speed', scene, op, ...judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('speed', id), extra: extras.get(id) ?? null})});
@@ -611,8 +614,9 @@ export function departureMeasured(vendorRows) {
   const clean = runs.filter(n => vendorRows.filter(r => r.run === n).every(r => vendorAnsweredOk(r) && r.interference?.ok !== false)).length;
   const user = vendorRows.find(r => r.user)?.user ?? null, bundle = user ? SCENES[user]?.bundleId : null;
   const read = vendorRows.filter(r => r.frontKey?.before && r.frontKey?.after);
-  const frontKey = !bundle || !read.length ? null
-    : read.length === vendorRows.length && read.every(r => [r.frontKey.before, r.frontKey.after].every(x => x.front === bundle && x.key === bundle));
+  // Read on every sample, or not read (null): an unread sample says nothing either way (m2 of the cell review).
+  const frontKey = !bundle || !read.length || read.length !== vendorRows.length ? null
+    : read.every(r => [r.frontKey.before, r.frontKey.after].every(x => x.front === bundle && x.key === bundle));
   return {runs: runs.length, clean, user: user ? APP_NAMES[user] ?? user : null, frontKey};
 }
 

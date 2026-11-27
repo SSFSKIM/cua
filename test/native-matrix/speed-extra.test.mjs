@@ -45,10 +45,10 @@ const full = (engine, run, ms) => cellResult({cell: 'matrix', device: 'mini', st
 const extra = (engine, run, ms, n = 10) => cellResult({cell: 'speed-extra', device: 'mini', started: '2026-11-27T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v'}], complete: true,
   rows: IDS.flatMap(id => Array.from({length: n}, (_, i) => ({section: 'speed', id, engine, sample: i + 1, ok: true, inCellMs: ms}))),
   meta: {run, samples: n, sitting: 's1', commit: 'c', os: OS, planId: 'speed-extra'}});
-function judgedWith(extras) {
+function judgedWith(extras, fullOf = full) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'speed-extra-'));
   try {
-    for (let n = 1; n <= 3; n++) for (const engine of ['vendor', 'cua']) writeCellResult(join(dir, engine, `run-${n}`), full(engine, n, 40));
+    for (let n = 1; n <= 3; n++) for (const engine of ['vendor', 'cua']) writeCellResult(join(dir, engine, `run-${n}`), fullOf(engine, n, 40));
     extras.forEach((r, i) => writeCellResult(join(dir, 'speed-extra', `x-${i}`), r));
     const {results, problems} = readResults([dir]);
     return judge(results, problems, {departures: []});
@@ -70,4 +70,10 @@ test('without extra samples the speed verdict is as it was; with them the three 
   // One lane's extra samples alone are no pair: nothing pooled.
   const lone = judgedWith([extra('vendor', 2, 100)]);
   for (const id of IDS) assert.equal(lone.speed.find(s => s.id === id).extra, undefined, id);
+  // Split review: pooled only as the judge takes a full run's samples: each lane attesting its own side, and the run's
+  // full pair one proof (pairable).
+  const fallback = {...extra('cua', 2, 40), lanes: [{host: 'cua', engine: 'vendor', build: 'b-vendor', version: 'v'}]};
+  for (const id of IDS) assert.equal(judgedWith([extra('vendor', 2, 100), fallback]).speed.find(s => s.id === id).extra, undefined, id);
+  const torn = (engine, run, ms) => (engine === 'cua' && run === 2 ? {...full(engine, run, ms), meta: {...full(engine, run, ms).meta, commit: 'other'}} : full(engine, run, ms));
+  for (const id of IDS) assert.equal(judgedWith([extra('vendor', 2, 100), extra('cua', 2, 40)], torn).speed.find(s => s.id === id).extra, undefined, id);
 });

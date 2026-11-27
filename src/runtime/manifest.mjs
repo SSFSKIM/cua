@@ -173,11 +173,18 @@ export function pointerObstruction({home, release}) {
 const versionParts = v => v.split('.').map(Number);
 const newer = (a, b) => { const x = versionParts(a), y = versionParts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
 
+// What cua tells a cloud VM's provisioner from before 0.30.0, which asks it for a Linux release (selectPin) or passes
+// `install --archive` (src/cli.mjs): the clause names its successor (the pre-flight's §3.6). 0.30.0 is
+// VENDOR_ENGINE_RETIRED_IN (launch.mjs, which imports this module), held equal by test.
+export const OLD_PROVISIONER_CLAUSE = "a cloud VM's provisioner that asks for one is replaced with `deploy/cloud-vm/update.sh`";
+const OLD_PROVISIONER_SENTENCE = `cua 0.30.0 has no vendor release for Linux; ${OLD_PROVISIONER_CLAUSE}`;
+
 // The pin to install by default on this host: the newest checked-in pin for its target. Other targets get an
-// explicit error rather than a guessed download.
+// explicit error rather than a guessed download; a Linux host, which has none since 0.30.0, the sentence above.
 export function selectPin(pins, host = hostTarget()) {
   const target = `${host.platform}-${host.arch}`;
   const matching = pins.filter(p => p.platform === host.platform && p.arch === host.arch);
+  if (!matching.length && host.platform === 'linux') fail('unsupported_platform', OLD_PROVISIONER_SENTENCE);
   if (!matching.length) {
     const supported = [...new Set(pins.map(p => `${p.platform}-${p.arch}`))].join(', ') || 'none';
     fail('unsupported_platform', `unsupported platform ${target}: pinned runtimes exist only for ${supported}`);

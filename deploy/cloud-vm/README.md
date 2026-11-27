@@ -134,13 +134,20 @@ or `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm
 missing, files are rewritten only when different (lightdm restarts only then), the checkout moves to the `CUA_REF` in
 `/etc/cua-provision.conf` and runs `npm ci` when it moved, `cua install` is a no-op for parts already installed, and a
 registered profile or an existing enrolment is kept (a changed relay URL moves it and refreshes the relay fields of
-`/root/cua-enrollment.json`). Edit the conf to change the ref or the relay. With a relay, a re-run restarts the agent
+`/root/cua-enrollment.json`). Edit the conf to change the relay; the ref changes with `update.sh` (below). With a relay, a re-run restarts the agent
 unit (`cua agent install` always does), which ends any remote session open at that moment. On a VM provisioned by an earlier
 version of this template, whose force-list named OpenAI's extension, a re-run is the migration: the force-list now names
 only cua's extension, so Chrome uninstalls the other, cua's host registers and the profile re-binds; no sign-in is
 involved. `cua chrome register` then prints, and doctor's `chrome.route` row names until they are done, the steps that
 remove what the earlier registration left in cua's home and Chrome's native-messaging directory. Root's SSH keys are copied
 to the user only while the user has none, and everything under the user's home is written as the user.
+
+To upgrade, run `deploy/cloud-vm/update.sh root@<vm> [--ref <ref>] [--bundle]` from your checkout. It resolves the ref
+(default `HEAD`) once to a commit, checks that the VM's `CUA_REPO` can give exactly that commit (`--bundle` first
+replaces a stale uploaded bundle with one of yours), installs that commit's `cua-provision.sh` on the VM, sets
+`CUA_REF` to the commit's ID, runs it, and checks that the checkout ends there. From cua 0.30.0 a template must be
+rendered from the ref it provisions: the provisioner stops before `npm ci` and `cua install` unless it is byte for
+byte the checked-out commit's own `deploy/cloud-vm/cua-provision.sh`, and it provisions cua 0.30.0 or later only.
 
 A VM provisioned before cua's own Linux runtime (#171 M6a) needs this re-run once its `CUA_REF` reaches that release:
 until the checkout's `cua install` has run, every session there is refused (`runtime_not_installed`; the main README,

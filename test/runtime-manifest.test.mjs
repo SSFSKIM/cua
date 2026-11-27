@@ -11,6 +11,7 @@ import {defaultHome, realHome} from '../src/runtime/layout.mjs';
 import {realPinJson, scratch, forgeActiveRuntime, REPO} from './fixtures/runtime-fixture.mjs';
 import {RETIRED, plantRetiredRelease} from './fixtures/retired-release.mjs';
 import {fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
+import {VENDOR_ENGINE_RETIRED_IN} from '../src/runtime/launch.mjs';
 
 const LINUX_X64 = {platform: 'linux', arch: 'x64'};
 const LINUX_ARM64 = {platform: 'linux', arch: 'arm64'};
@@ -94,6 +95,17 @@ test('one pin ships, the darwin one: a Linux host has none, and is told so as un
   assert.deepEqual(pins.map(p => p.release), ['26.928.40906-darwin-arm64']);
   for (const host of [LINUX_X64, LINUX_ARM64]) assert.throws(() => selectPin(pins, host), expectCode('unsupported_platform'), host.arch);
   assert.throws(() => selectPin(pins, {platform: 'darwin', arch: 'x64'}), err => /pinned runtimes exist only for darwin-arm64$/.test(err.message));
+});
+
+// §3.6: a cloud VM's provisioner from before 0.30.0 is what still asks for a Linux pin; the sentence names its successor.
+test('selectPin for a Linux host names deploy/cloud-vm/update.sh as what replaces the provisioner that asked', () => {
+  for (const host of [LINUX_X64, LINUX_ARM64, {platform: 'linux', arch: 'riscv64'}]) {
+    assert.throws(() => selectPin(loadPins(), host), err => {
+      assert.equal(err.code, 'unsupported_platform');
+      assert.equal(err.message, `cua ${VENDOR_ENGINE_RETIRED_IN} has no vendor release for Linux; a cloud VM's provisioner that asks for one is replaced with \`deploy/cloud-vm/update.sh\``);
+      return true;
+    }, host.arch);
+  }
 });
 
 test('a Linux pin is invalid_pin, whatever else it holds, naming runtime/linux-runtime.json as Linux\'s record; one put back in a pins directory refuses the load', t => {

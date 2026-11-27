@@ -494,7 +494,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
         XCTAssertEqual(reason(meta), "noLongerSecure", name)
         XCTAssertEqual(record(meta)["secure"] as? Bool, true, "\(name): a password field's record, with no reads or poll time")
         XCTAssertNil(record(meta)["reads"], name)
-        XCTAssertTrue(error?.message.hasSuffix("The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.") ?? false, name)
+        XCTAssertTrue(error?.message.hasSuffix(concealed ? readbackConcealedMayShowRemedy
+          : "The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.") ?? false, name)
         XCTAssertFalse(reply.contains("hunter2"), name)
         XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
         guard let snapshot = safari.log.lastIndex(of: "\(kAXSubroleAttribute)@\(StubSafari.field)") else {
@@ -639,7 +640,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       let (error, meta, _) = type("xyz", into: safari)
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(reason(meta), "noFocusedElement", name)
-      XCTAssertNil(meta.note, "\(name): ruling 1242, a search that did not finish earns no note")
+      XCTAssertNil(meta.note, "\(name): no focused element earns no note (ruling 1247)")
       XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.valueReads)")
       XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }
@@ -649,25 +650,30 @@ final class TypeReadbackMarkerTests: XCTestCase {
     XCTAssertNil(type("xyz", into: small).error)
   }
 
-  /// Ruling 1242 (P1-2) on the route: no field only when the route itself finished with none (its marker names page
-  /// content, the climb reaching the web area) and the walk finished with none too; a route that claimed nothing it
-  /// could vouch for leaves the answer indeterminate, whatever the walk found.
-  func testTheRouteSaysNoFieldOnlyWhenItFinished() {
-    let content = StubSafari(filler: 3)
-    content.focused = []
-    content.named = { _ in (content.el(StubSafari.web), .success) }
-    let (error, meta, _) = type("xyz", into: content)
-    XCTAssertNil(error)
-    XCTAssertEqual(reason(meta), "noFocusedElement")
-    XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement))
-
-    let unnamed = StubSafari(filler: 3)
-    unnamed.focused = []
-    unnamed.named = { _ in (nil, .noValue) }
-    let (unnamedError, unnamedMeta, _) = type("xyz", into: unnamed)
-    XCTAssertEqual(unnamedError?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(reason(unnamedMeta), "noFocusedElement")
-    XCTAssertNil(unnamedMeta.note)
+  /// Ruling 1247 (b): a password field the route classified but whose focus or place under the web area it cannot show
+  /// stops the read-back as a password field's, whatever the walk would find; a route with no such evidence leaves the
+  /// walk to find the field.
+  func testAPasswordFieldTheRouteCannotVouchForStopsTheReadBack() {
+    let cases: [(String, (StubSafari) -> Void)] = [
+      ("its focus unreadable", { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .cannotComplete] }),
+      ("not under the web area", { $0.parents[StubSafari.form] = nil }),
+    ]
+    for (name, setUp) in cases {
+      let safari = StubSafari(filler: 3)
+      safari.subroles[StubSafari.field] = "AXSecureTextField"
+      setUp(safari)
+      let (error, meta, _) = type("xyz", into: safari)
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
+      XCTAssertEqual(reason(meta), "fieldUnreadable", name)
+      XCTAssertEqual(record(meta)["secure"] as? Bool, true, name)
+      XCTAssertTrue(error?.message.contains("the password field could not be read, so it may no longer hide its text") ?? false, name)
+      XCTAssertEqual(safari.valueReads, [], name)
+      XCTAssertEqual(safari.windowChildrenReads, 1, "\(name): no walk after the route's claim")
+    }
+    // A plain field the route could not vouch for is no evidence: the walk finds it on a page it can read.
+    let plain = StubSafari(filler: 3)
+    plain.parents[StubSafari.form] = nil
+    XCTAssertNil(type("xyz", into: plain).error)
   }
 
   /// The marker names an element more than `typeReadbackMarkerFieldHops` below its field: no claim; at the cap, the

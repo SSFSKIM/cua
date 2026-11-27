@@ -492,7 +492,8 @@ final class SecureTypeReadbackTests: XCTestCase {
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
       XCTAssertEqual(reason(meta), "lengthMismatch", label)
       XCTAssertTrue(error?.message.contains("the password field's length or caret is not what the text should have made it, so a character may have been dropped or added, or the text gone in elsewhere") ?? false, label)
-      XCTAssertTrue(error?.message.contains("a screenshot shows its masked characters; getAXState() shows only that it is a password field") ?? false, label)
+      // A secret's answer never advises observing the app (ruling 1247, d).
+      XCTAssertTrue(error?.message.hasSuffix(readbackConcealedRemedy) ?? false, label)
       XCTAssertFalse(error?.message.contains { $0.isNumber } ?? true, label)
       // A concealed request never ends early on a read past the text: the extra character polls the budget as well.
       XCTAssertEqual(app.batches, concealedFailureBatches, "\(label): the snapshot, the whole budget polled, the final batch")

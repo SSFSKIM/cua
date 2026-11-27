@@ -127,7 +127,8 @@ final class ReadbackRetry<Element> {
   /// The retries a failed read gets: `typeReadbackReadRetries`, or none (a caller that reads each once, as before #590).
   private let limit: Int
   var phase = ReadbackPhase.snapshot
-  /// A retry starts only while it and its interval end by this time (`reads.now`'s clock).
+  /// A retry starts only while it and its interval end by this time (`reads.now`'s clock), and its read, after any
+  /// classification before it, starts by it too.
   var retryBy = Double.infinity
   /// When the request's last key was posted, on `reads.now`'s clock.
   var lastKeyAt: Double?
@@ -166,8 +167,16 @@ final class ReadbackRetry<Element> {
         failed(name, error: error, retries: retries)
         return .failed
       }
+      if let recheck {
+        if let closed = recheck() { return .closed(closed) }
+        // The classification's reads take time of their own: the retried read starts only while the bound still
+        // allows it (ruling 1247, h).
+        guard reads.now() <= retryBy else {
+          failed(name, error: error, retries: retries)
+          return .failed
+        }
+      }
       retries += 1
-      if let recheck, let closed = recheck() { return .closed(closed) }
     }
   }
 

@@ -61,6 +61,8 @@ final class FakeField {
   /// Whether a read of the attribute fails, asked before `failing`; and what a failed read does to the field after it
   /// fails (a field that turns secure or changes role between a failed read and its retry).
   var failWhen: ((String) -> Bool)?
+  /// How long each role read takes on the fake app's clock (a classification that takes time of its own).
+  var roleReadMs: Double = 0
   var afterFailing: (FakeField, String) -> Void = { _, _ in }
   private(set) var lastError: Int32?
 
@@ -163,8 +165,6 @@ final class FakeField {
 /// The fake app: its focused field, a clock that advances only by the poll's sleeps, and the reads over both.
 final class FakeApp {
   var focused: FakeField?
-  /// With no focused field: whether the lookup finished and found none (#587, ruling 1242), else it is indeterminate.
-  var noField = false
   var clock: Double = 0
   var sleeps = 0
 
@@ -174,11 +174,11 @@ final class FakeApp {
     // The application's own focus, read again after typing (`stillFocused`) as main's lookup reads it.
     ReadbackReads(focused: {
                     self.focused?.calls.append("focused")
-                    return self.focused.map { .field($0, by: .focus) } ?? (self.noField ? .noField : nil)
+                    return self.focused.map { .field($0, by: .focus) }
                   },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  role: { $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
+                  role: { self.clock += $0.roleReadMs; $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
@@ -538,7 +538,7 @@ final class TypeReadbackTests: XCTestCase {
                                      primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
                                      walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
     // The application's focus names a field `.focus`; the walk's claim is `.walk` (#414's P1-2).
-    guard case .field(let field, let by, _)? = found, by != .marker else { return nil }
+    guard case .field(let field, let by, _, _)? = found, by != .marker else { return nil }
     return field
   }
 
@@ -873,9 +873,7 @@ final class TypeReadbackTests: XCTestCase {
   func testTheNotesText() {
     XCTAssertEqual(readbackUnreadNote(.notTextField),
                    "The text was typed, but the focused element is not a text field, so the text could not be read back to confirm it. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again.")
-    XCTAssertEqual(readbackUnreadNote(.noFocusedElement),
-                   "The text was typed, but no focused element could be found to read it back, so it is not confirmed. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it again.")
-    for reason in [TypeReadbackReason.secure, .becameSecure, .noLongerSecure, .selectionChanged, .valueMismatch, .unchanged,
+    for reason in [TypeReadbackReason.noFocusedElement, .secure, .becameSecure, .noLongerSecure, .selectionChanged, .valueMismatch, .unchanged,
                    .fieldChanged, .roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable] {
       XCTAssertNil(readbackUnreadNote(reason), reason.rawValue)
     }
@@ -897,8 +895,8 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(posted, 10, "\(role): every key sent")
       XCTAssertEqual(meta.entered, 10, role)
       XCTAssertEqual(meta.note, readbackUnreadNote(.notTextField), role)
-      XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": false, "reason": "notTextField", "noField": true, "snapshotMs": 0.0,
-                                                   "pollMs": 0.0, "reads": 0] as NSDictionary, role)
+      XCTAssertEqual(record(meta) as NSDictionary, ["confirmed": false, "reason": "notTextField", "snapshotMs": 0.0, "pollMs": 0.0, "reads": 0] as NSDictionary,
+                     role)
       XCTAssertEqual(row.calls, ["focused", "role", "subrole"], role)
       meta.keyTargetCutOff = 4242
       let result = keyInputResult(meta, note: meta.note, appPid: 4242, appName: "Finder")
@@ -908,98 +906,54 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  /// Invariant 2 (P1-1): a secret typed where no field was found is never a success, and its error never advises a
-  /// screenshot or getAXState(), whatever the search found: a non-text element, none in a finished search, or a search
-  /// that could not finish.
-  func testAConcealedRequestWithNoFieldIsUnconfirmedAndNeverAdvisedToObserve() {
+  /// Ruling 1247 (1): no focused element found stays `typeUnconfirmed`, literal or concealed, as before #587: cua does
+  /// not vouch for typing it cannot place.
+  func testNoFocusedElementStillThrows() {
+    for concealed in [false, true] {
+      let (error, meta) = type("abc", into: FakeApp(nil), concealed: concealed)
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", "concealed \(concealed)")
+      XCTAssertEqual(record(meta)["reason"] as? String, "noFocusedElement")
+      XCTAssertNil(meta.note)
+      XCTAssertTrue(error?.message.contains("no focused field could be found to read back") ?? false)
+    }
+  }
+
+  /// Ruling 1247 (d): a concealed request is never a success with no text field, and none of its `typeUnconfirmed`
+  /// answers after a key advises observing the app, by any reason. Only selectionChanged, which types nothing, may.
+  func testAConcealedRequestsUnconfirmedAnswersNeverAdviseObservingTheApp() {
     let row = FakeField(value: nil, range: nil)
     row.role = "AXOutline"
-    let finished = FakeApp(nil)
-    finished.noField = true
-    for (name, app, reason) in [("not a text field", FakeApp(row), "notTextField"), ("no field, the search finished", finished, "noFocusedElement"),
-                                ("no field, the search unfinished", FakeApp(nil), "noFocusedElement")] {
+    for (name, app, reason) in [("not a text field", FakeApp(row), "notTextField"), ("no focused element", FakeApp(nil), "noFocusedElement")] {
       let (error, meta) = type("s3cret", into: app, concealed: true)
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(record(meta)["reason"] as? String, reason, name)
       XCTAssertNil(meta.note, name)
-      let message = error?.message ?? ""
-      XCTAssertTrue(message.hasSuffix(" " + readbackConcealedNoFieldRemedy), "\(name): \(message)")
-      XCTAssertFalse(message.contains("Observe"), name)
+      XCTAssertTrue(error?.message.hasSuffix(" " + readbackConcealedRemedy) ?? false, "\(name): \(error?.message ?? "")")
     }
-    XCTAssertEqual(readbackConcealedNoFieldRemedy,
-                   "Because it is a secret and may have gone in where it can be seen, do not take a screenshot or call getAXState() to check, and do not type it again; ask the person to check where it went.")
-    XCTAssertEqual(typeUnconfirmed(.notTextField, concealed: true).message,
-                   "The text was typed, but the focused element is not a text field, so it is not confirmed and some or all of it may have gone in. " + readbackConcealedNoFieldRemedy)
-  }
-
-  /// Ruling 1242 (P1-2): no focused element earns the note only from a search that finished and found none; one that
-  /// could not finish stays `typeUnconfirmed`, as before #587.
-  func testNoFocusedElementAnswersSuccessOnlyWhenTheSearchFinished() {
-    let finished = FakeApp(nil)
-    finished.noField = true
-    let (error, meta) = type("abc", into: finished)
-    XCTAssertNil(error)
-    XCTAssertEqual(record(meta)["reason"] as? String, "noFocusedElement")
-    XCTAssertEqual(record(meta)["noField"] as? Bool, true)
-    XCTAssertEqual(record(meta)["confirmed"] as? Bool, false)
-    XCTAssertEqual(meta.note, readbackUnreadNote(.noFocusedElement))
-
-    let (unfinished, unfinishedMeta) = type("abc", into: FakeApp(nil))
-    XCTAssertEqual(unfinished?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(record(unfinishedMeta)["reason"] as? String, "noFocusedElement")
-    XCTAssertNil(record(unfinishedMeta)["noField"])
-    XCTAssertNil(unfinishedMeta.note)
-    XCTAssertTrue(unfinished?.message.contains("no focused field could be found to read back") ?? false)
-  }
-
-  /// Ruling 1242 (P1-2): the lookup's three outcomes. The application's own answer of no focus is not enough (background
-  /// Safari answers so over a focused field); only a walk of the primary window that finished and found no focused
-  /// field is no field. A failed read, the node bound, several focused fields, a field found before a later failure, and
-  /// no readable window are all indeterminate.
-  func testTheLookupSaysNoFieldOnlyForAWalkThatFinished() {
-    func outcome(_ app: Node) -> String {
-      let found = readbackFocusedField(application: app, focused: { $0.focused.map { .value($0) } ?? .absent },
-                                       primaryWindow: { $0.focusedWindow ?? $0.mainWindow }, walk: walkReads({ _ in }, clock: { 0 }, tick: {}))
-      switch found {
-      case .field?: return "field"
-      case .noField?: return "none"
-      case .closed?: return "closed"
-      case nil: return "indeterminate"
+    let reasons: [TypeReadbackReason] = [.noFocusedElement, .roleUnreadable, .secure, .notTextField, .valueUnreadable, .rangeUnreadable,
+      .possiblyTruncated, .valueMismatch, .concealedMismatch, .unchanged, .becameSecure, .fieldUnreadable, .fieldChanged, .lengthUnreadable,
+      .selectionUnreadable, .lengthMismatch, .caretMismatch, .noLongerSecure]
+    for reason in reasons {
+      for (secure, beforeKey) in [(false, false), (true, false), (false, true)] {
+        let message = typeUnconfirmed(reason, beforeKey: beforeKey, secure: secure, concealed: true).message
+        let label = "\(reason.rawValue) secure \(secure) beforeKey \(beforeKey)"
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("screenshot"), label)
+        XCTAssertFalse(message.contains("getAXState"), label)
+        let mayShow = reason == .noLongerSecure || (secure && (reason == .fieldUnreadable || reason == .roleUnreadable))
+        XCTAssertTrue(message.hasSuffix(mayShow ? readbackConcealedMayShowRemedy : readbackConcealedRemedy), label)
       }
     }
-    func app(_ children: [Node]) -> Node {
-      let app = Node("app", role: "AXApplication")
-      app.mainWindow = Node("window", role: "AXWindow", children: children)
-      return app
-    }
-    let unfocused = Node("field", role: "AXTextField")
-    XCTAssertEqual(outcome(app([Node("list", role: "AXOutline", children: [Node("row", role: "AXRow")]), unfocused])), "none")
-    let failing = Node("group", role: "AXGroup")
-    failing.failing = ["role"]
-    XCTAssertEqual(outcome(app([failing])), "indeterminate", "a failed read")
-    XCTAssertEqual(outcome(app((0..<typeReadbackFocusWalkNodes).map { Node("n\($0)", role: "AXStaticText") })), "indeterminate", "the node bound")
-    let one = Node("one", role: "AXTextField"), two = Node("two", role: "AXSecureTextField")
-    one.focusedFlag = true
-    two.focusedFlag = true
-    XCTAssertEqual(outcome(app([one, two])), "indeterminate", "several focused")
-    let secure = Node("secure", role: "AXSecureTextField")
-    secure.focusedFlag = true
-    let after = Node("after", role: "AXGroup")
-    after.failing = ["role"]
-    XCTAssertEqual(outcome(app([secure, after])), "indeterminate", "a password field found, then a failed read")
-    XCTAssertEqual(outcome(Node("app", role: "AXApplication")), "indeterminate", "no window to walk")
-    let alone = Node("alone", role: "AXTextField")
-    alone.focusedFlag = true
-    XCTAssertEqual(outcome(app([alone])), "field")
+    XCTAssertTrue(typeUnconfirmed(.selectionChanged).message.hasPrefix("Nothing was typed"), "nothing typed: its observation stays")
+    XCTAssertEqual(readbackConcealedRemedy,
+                   "Because it is a secret and may have gone in where it can be seen, do not capture the screen or read the app's accessibility state to check, and do not type it again; ask the person to check where it went.")
   }
 
-  /// P2-6: a search that found no field under select_text's range types nothing (`selectionChanged`), as a range gone does.
+  /// P2-6 and ruling 1247 (e): under select_text's range, an element that is no text field, or no field found at all,
+  /// types nothing (`selectionChanged`).
   func testNoFieldUnderSelectTextsRangeTypesNothing() {
     let row = FakeField(value: nil, range: nil)
     row.role = "AXOutline"
-    let finished = FakeApp(nil)
-    finished.noField = true
-    for (name, app) in [("not a text field", FakeApp(row)), ("no field", finished)] {
+    for (name, app) in [("not a text field", FakeApp(row)), ("no focused element", FakeApp(nil))] {
       var posted = 0
       var meta = meta()
       XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, baseline: .selection(NSRange(location: 0, length: 3)), reads: app.reads,
@@ -1010,6 +964,25 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(posted, 0, name)
       XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged", name)
     }
+  }
+
+  /// Ruling 1247 (c): a field the walk or the marker route found by a text-entry role whose snapshot reads another role
+  /// changed: fieldChanged, never notTextField; the application's own focus is not compared.
+  func testAFieldFoundByItsRoleThatReadsAnotherRoleChanged() {
+    for by in [ReadbackLookup.walk, .marker] {
+      let field = FakeField(value: nil, range: nil)
+      field.role = "AXGroup"
+      var reads = FakeApp(field).reads
+      reads.focused = { .field(field, by: by, role: "AXTextField") }
+      var meta = meta()
+      XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+                                               post: { _ in true }, pause: {}, meta: &meta), "\(by)")
+      XCTAssertEqual(record(meta)["reason"] as? String, "fieldChanged", "\(by)")
+      XCTAssertNil(meta.note, "\(by)")
+    }
+    let direct = FakeField(value: nil, range: nil)
+    direct.role = "AXGroup"
+    XCTAssertNil(type("abc", into: FakeApp(direct)).0, "the application's focus: no text field, typed with the note")
   }
 
   /// What stays `typeUnconfirmed`, with no note: a text field that reads otherwise, and a password field's reasons.
@@ -1197,6 +1170,24 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual(meta.typeReadback?.readFailure?.retries, retries, "\(left)")
       XCTAssertEqual(app.clock, Double(retries) * typeReadbackRetryIntervalMs, "\(left)")
     }
+  }
+
+  /// Ruling 1247 (h): the classification before a retry takes time of its own, so the retried read starts only while
+  /// the bound still allows it.
+  func testARetryChecksItsBoundAgainAfterTheClassification() {
+    let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    field.failing["value"] = .max
+    field.roleReadMs = 30
+    let app = FakeApp(field)
+    var meta = meta()
+    // The bound: 50 ms after the start (150 left, less one messaging timeout). The snapshot's role read ends at 30, the
+    // failed value read's retry may start at 45, its classification's role read ends at 75: past the bound.
+    XCTAssertThrowsError(try keyTextReadBack(units("c"), concealed: false, reads: app.reads, remainingMs: { 150 - app.clock },
+                                             checkSource: { _, _ in }, checkIntervention: {}, post: { _ in true }, pause: {}, meta: &meta))
+    XCTAssertEqual(meta.typeReadback?.reason, .valueUnreadable)
+    XCTAssertEqual(meta.typeReadback?.readFailure?.retries, 0)
+    XCTAssertEqual(field.calls.filter { $0 == "value" }.count, 1, "the value never read again: \(field.calls)")
+    XCTAssertEqual(app.clock, 75)
   }
 
   // MARK: Truncation

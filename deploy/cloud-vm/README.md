@@ -120,8 +120,9 @@ a relay it is empty when the bind succeeded; with one:
    then the `devicesAddCommand`, both in `/root/cua-enrollment.json`).
 
 Doctor reads `ok: true` with `secrets.store` blocked (no secret has been stored on the VM; cua's file store works on
-Linux, `cua secrets set KEY` at the VM's terminal). Every other row passes, `chrome.hosts.live` included, but the
-`agent.*` rows read `skip` without a relay or `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
+Linux, `cua secrets set KEY` at the VM's terminal). On a fresh VM every other row passes, `chrome.hosts.live` included,
+but the `agent.*` rows read `skip` without a relay or `pass` with one (a VM upgraded from an older template may also show
+`runtime.retired: skip`, naming the OpenAI package's tree the older template left). To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
 -passwd <one-time password>`, then open `vnc://localhost:5901` (or use the provider's web console).
 
 ## Re-running and upgrading
@@ -148,8 +149,9 @@ byte the checked-out commit's own `deploy/cloud-vm/cua-provision.sh`, and it pro
 A VM provisioned before cua 0.30.0 keeps the provisioner it was created with, because a re-run moves the checkout and
 never that script. Run against a 0.30.0 checkout, an earlier provisioner asks it for a Linux deb pin, which no longer
 exists, or passes `cua install --archive`, which Linux no longer takes. The checkout answers both with a sentence naming
-`update.sh`, in `/var/log/cua-provision.log`. Before cua's own Linux runtime (#171 M6a) the script stops there, before
-any install, and until `update.sh` has run every session is refused (`runtime_not_installed`; the main README, "Updating
-on Linux"); M6a's script with `CUA_DEB=none`, the default, runs to the end, and with a pin, a mirror or an upload it
-installs and registers, then stops at the deb step with exit 0, skipping the relay move and the agent restart. `update.sh`
-repairs each of them: it replaces the script, then runs it.
+`update.sh`, in `/var/log/cua-provision.log`. What each does then differs. A script from before cua's own Linux runtime
+(#171 M6a) stops there, before any install, with the checkout already moved: while the home lacks cua's own runtime every
+session is refused (`runtime_not_installed`; the main README, "Updating on Linux"). M6a's script with `CUA_DEB=none`, the
+default, runs to the end. With a pin, a mirror or an upload it installs and registers, then stops at the deb step with
+exit 0, skipping the relay move and the agent restart; an upload first waits out `CUA_DEB_WAIT` for a deb that never
+comes. `update.sh` repairs each of them: it replaces the script, then runs it.

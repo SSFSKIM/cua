@@ -57,5 +57,16 @@ it. Nothing was found and nothing was redacted. The patterns are listed in the c
     - Every group composed in the end.
   - Under ruling 1229(a) that pattern is lopsided, and the report-only owner flag should have fired.
   - The verdicts are unaffected: retries are report-only, and the rows judged are the rerun's.
-  - The fix is a later harness commit on `feat/117-m5`. This directory stays as the artifacts recorded it.
+- **A second error from the same cause: two cells' NO VERDICT `venue` in run 2.**
+  - `openPanel/background/getAXState.panel@finder` and `openPanel/background/click.cancel@finder` show NO VERDICT
+    `venue` in run 2.
+  - combine kept the base's panel placements (`meta.placement.panel`), so the judge compared the base's frame
+    (x = −60) with the rerun's (x = −58). That made a 2 px split that was never there.
+  - In the run job's own run-2 records (`jobs/m5-sitting-c-run-2-1/`), both lanes' panels read back at x = −58, equal.
+- Both errors are fixed by harness commit ad285cedf on `feat/117-m5`: run-level meta follows the rows combine replaces.
+  - Re-combined from these same records, the composing section reads as above.
+  - Both openPanel@finder cells qualify in run 2 under exact frame equality.
+  - Only concurrent.sheet@electron is left in NO VERDICT by cell.
+  - Ruling 1238 keeps this directory as the record of the pass as it was judged, with the corrections noted here. It
+    is not rewritten.
 - The analysis and its rulings (1234–1237) are in `docs/doperpowers/specs/2026-10-18-own-native-engine-m5-wave1.md`.

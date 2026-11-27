@@ -311,7 +311,7 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
-- 2026-11-27, rulings 1234–1237 (the design session, after the first split dispatch).
+- 2026-11-27, rulings 1234–1238 (the design session, after the first split dispatch).
   - **What happened.** Split run 46052931439 (at 313fbf534) ran its three run jobs to success. Its judge then refused
     at rejudge-base, because 1231's #592 rule moved the savePanel name timing row from no verdict to not judged, and
     the allowance named only the drag cell.
@@ -336,17 +336,38 @@ session's to add on `docs/117-progress`).
     - The records are committed in `docs/evidence/2026-11-27-m5-sitting-c-split/`. They are the base of later
       filtered C runs.
     - The design session takes #587 and #590 on the engine side, in a separate PR.
-    - This round, in order:
-      1. concurrent.sheet@electron arms its probe a fixed interval before the act on both lanes, judged under the
-         save sheet's rule. It had 6 of 6 samples invalid, the probe posting 32–127 ms after the act's interval. cua's
-         typeUnconfirmed there counts as #590's second occurrence.
-      2. An element-addressed panel opening's pair stands on one venue when both panels read back inside the strip;
-         both frames are recorded, and point-addressed cells keep exact equality. A 2 px read-back difference had
-         left both openPanel@finder cells without a verdict in run 2.
+    - This round, in order (as amended by 1238, below):
+      1. concurrent.sheet@electron arms its probe a fixed lead before the opening on both lanes. It had 6 of 6 samples
+         invalid, the probe posting 32–127 ms after the act's interval. cua's typeUnconfirmed there counts as #590's
+         second occurrence.
+      2. Withdrawn by 1238. It would have loosened frame equality for element-addressed panel openings, but it rested
+         on a misreading, below.
       3. 1229(b), below.
       4. A filtered run for #587's live proof is prepared but not dispatched. It holds #587's three cells,
          `textedit/latin/typeText.latin` (#590's evidence), concurrent.sheet@electron and the two openPanel@finder
          cells. It runs over the combined C result once the #587 fix merges into feat/117-m5.
+  - **Run-level meta and the withdrawn venue rule (1238).** combine replaced a filtered cell's rows with the rerun's,
+    but kept the base's run-level meta: the composing readings (1237, below) and the panel placements
+    (`meta.placement.panel`).
+    - The 2 px split reported for the two openPanel@finder cells in run 2 came from that bug. The judge compared the
+      base's placement (x = −60) with the rerun's (x = −58). In 46052931439's own run-2 records both lanes read back at
+      x = −58.
+    - Fixed in ad285cedf: run-level meta follows the rows combine replaces, and each piece names its job.
+    - Re-combined on the real records, both cells qualify in run 2 under exact equality. 1236's item 2 is withdrawn,
+      and exact equality stays for every opening.
+    - 46069842660's judged report stays as the record of that pass, its correction noted beside it in the evidence
+      README. The pass after #587's live proof is the one that must be clean.
+  - **concurrent.sheet@electron (1238).** Option (b):
+    - The probe is armed a fixed lead before the opening (super+w), the same on both lanes. The lead is set from C's
+      measured timings of the cell.
+    - The cell is judged by tap proof against the engine's receipt, inside [act − lead, act end]. The witness tap
+      watches the person's app's pid, here the Electron fixture.
+    - Before the run, the cell's declaration states the expected answers, cua's and the vendor's: acting, since the
+      person is in another app, or refusing. They are taken from cua's design (Intervention.swift checkBeforePosting,
+      the #282 not-interfering design, and how the concurrent@textedit cells are declared), so the judge does not
+      learn them from a result.
+  - **1229(b) (1238).** Accepted: panel-ax writes AXValue "" to the field, with the engine path as a fallback recorded
+    the same way on both lanes. After the first hosted run, the fallback count per lane is reported.
   - **The panel search timing (1235).** `textedit/method.panel.typeText.search` is not judged, under #588 and ruling
     1235: neither engine does the op, so it has no speed to compare.
   - **Composing (1237).**

@@ -48,7 +48,7 @@
 //       app built and granted Input Monitoring alone, the engines' TCC rows read around it, recorded to <file>. Exit 0
 //       recorded (a tap not ready included: its cells stay NO VERDICT), 1 the engines' rows changed or unread, 2 refused.
 import {spawnSync} from 'node:child_process';
-import {appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -58,7 +58,11 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {jobsCheck, renderJobs} from './hosted-sittings/split.mjs';
+import {baseCheck, baseRejudge, jobsCheck, renderBaseRejudge, renderJobs, runJobStops, saveSheetVerdict} from './hosted-sittings/split.mjs';
+import {scenesOf} from './native-matrix/run.mjs';
+import {createHash} from 'node:crypto';
+import {tmpdir} from 'node:os';
+import {pathToFileURL} from 'node:url';
 import {assertGithubHosted, readRunnerRecord} from './hosted-sittings/runner.mjs';
 import {execStep, jobStartedOf, renderSitting, runSitting} from './hosted-sittings/run.mjs';
 import {hostedSetup} from './hosted-sittings/setup.mjs';
@@ -97,27 +101,66 @@ function planOf(sitting, values) {
     pilot: values.pilot, flipped: values.flipped}), ...split});
 }
 // Sitting C split into jobs (ruling 1228, ./hosted-sittings/split.mjs): --split-run <n> [--only <cell>,…] is run job n,
-// --split-judge --jobs <dir>,… [--base <dir>] the judging job. -> {split} or {}.
+// --split-judge --jobs <dir>,… [--only <cell>,…] [--base <evidence dir> --base-run-id <id>] the judging job (--only: the
+// filter its run jobs ran, so it asks for the save-sheet verdict only when they ran that cell). -> {split} or {}.
 function splitOf(sitting, values) {
   if (values['split-run'] === undefined && !values['split-judge']) {
-    if (values.only !== undefined || values.jobs !== undefined || values.base !== undefined || values['speed-extra']) usage('--only, --speed-extra, --jobs and --base belong to a split sitting C');
+    if (values.only !== undefined || values.jobs !== undefined || values.base !== undefined || values['base-run-id'] !== undefined || values['speed-extra']) usage('--only, --speed-extra, --jobs, --base and --base-run-id belong to a split sitting C');
     return {};
   }
   if (sitting !== 'c') usage('only sitting C is split into jobs');
   if (values['split-judge']) {
-    if (values['split-run'] !== undefined || values.only !== undefined || values['speed-extra'] || !values.jobs) usage('--split-judge --jobs <dir>,… [--base <dir>]');
-    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), base: values.base ? resolve(values.base) : null}};
+    if (values['split-run'] !== undefined || values['speed-extra'] || !values.jobs || Boolean(values.base) !== Boolean(values['base-run-id'])) usage('--split-judge --jobs <dir>,… [--only <cell>,…] [--base <evidence dir> --base-run-id <id>]');
+    return {split: {judge: true, jobs: values.jobs.split(',').filter(Boolean).map(d => resolve(d)), base: values.base ? resolve(values.base) : null,
+      ...(values['base-run-id'] ? {baseRunId: values['base-run-id']} : {}), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {})}};
   }
   if (!/^\d+$/.test(values['split-run'])) usage('--split-run <run number>');
   return {split: {run: Number(values['split-run']), ...(values.only !== undefined ? {only: values.only.split(',').filter(Boolean)} : {}), ...(values['speed-extra'] ? {speedExtra: true} : {})}};
 }
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
+// Every record under it (its matrix lanes, save-sheet and speed-extra cells) and its sitting report (sitting.json: the
+// run job's save-sheet verdicts, I3).
 function jobDir(dir) {
-  const {results} = readResults(['vendor', 'cua'].map(d => join(dir, d)).filter(existsSync));
-  const file = join(dirname(dir), 'hardware.json');
-  let hardware = null;
-  try { hardware = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; } catch { hardware = null; }
-  return {dir, results, hardware};
+  const {results} = readResults([dir]);
+  const readJsonFile = file => { try { return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; } catch { return null; } };
+  return {dir, results, hardware: readJsonFile(join(dirname(dir), 'hardware.json')), report: readJsonFile(join(dir, 'sitting.json'))};
+}
+// Every result.json under `dir`, relative to it, in path order.
+function resultFiles(dir, rel = '') {
+  if (!existsSync(join(dir, rel))) return [];
+  return readdirSync(join(dir, rel), {withFileTypes: true}).sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap(e => (e.isDirectory() ? resultFiles(dir, rel ? `${rel}/${e.name}` : e.name) : e.name === 'result.json' ? [rel ? `${rel}/${e.name}` : e.name] : []));
+}
+// H1: the base's committed directory checked against its digests.sha256 and README before anything of it is read.
+function baseDirCheck(root, runId) {
+  const read = file => (existsSync(join(root, file)) ? readFileSync(join(root, file), 'utf8') : null);
+  return baseCheck({digests: read('digests.sha256'), readme: read('README.md'), results: resultFiles(root),
+    sha: path => (existsSync(join(root, path)) ? createHash('sha256').update(readFileSync(join(root, path))).digest('hex') : null)}, {runId});
+}
+// R1 (ruling 1230): the base's records judged by this commit's judge and by the judge of the commit that ran them (the
+// tree of that commit, extracted from this checkout's history), cell by cell. -> exit 0, or 2 when a cell other than the
+// declared drag cell reads differently (or the base names no one commit).
+async function rejudgeBase(root, outFile) {
+  const sitting = join(root, 'sitting'), {results, problems} = readResults([sitting]);
+  const commits = [...new Set(results.filter(r => r.result.cell === 'matrix').map(r => r.result.meta?.commit).filter(Boolean))];
+  let report;
+  if (commits.length !== 1) report = {at: null, differences: [], refused: [`the base's matrix records name ${commits.length ? `more than one commit (${commits.join(', ')})` : 'no commit'}: it has no one judge of its own`]};
+  else {
+    const tree = mkdtempSync(join(tmpdir(), 'cua-base-judge-')), tar = join(tree, 'tree.tar');
+    try {
+      const archived = spawnSync('git', ['archive', '--format=tar', '-o', tar, commits[0]], {cwd: REPO, encoding: 'utf8'});
+      if (archived.status !== 0) throw new Error(`git archive ${commits[0]} failed: ${archived.stderr.trim()}`);
+      const extracted = spawnSync('tar', ['-xf', tar, '-C', tree], {encoding: 'utf8'});
+      if (extracted.status !== 0) throw new Error(`tar failed: ${extracted.stderr.trim()}`);
+      if (existsSync(join(REPO, 'node_modules'))) symlinkSync(join(REPO, 'node_modules'), join(tree, 'node_modules'));
+      const old = await import(pathToFileURL(join(tree, 'scripts', 'native-matrix', 'summary.mjs')).href);
+      const read = old.readResults([sitting]);
+      report = {at: commits[0], ...baseRejudge(old.judge(read.results, read.problems).cells, judge(results, problems).cells)};
+    } finally { rmSync(tree, {recursive: true, force: true}); }
+  }
+  writeJson(outFile, report);
+  process.stdout.write(renderBaseRejudge(report).join('\n'));
+  return report.refused.length ? 2 : 0;
 }
 
 async function runCommand(sitting, values) {
@@ -140,6 +183,11 @@ async function runCommand(sitting, values) {
       renameSync(partial, join(out, 'sitting.md'));
     }});
   const parts = [renderSitting(report)];
+  // I3 of the split review: a run job fails only on a harness or infrastructure stop; its verdicts ride in sitting.md
+  // and sitting.json to the judging job.
+  const stops = plan.split && !plan.split.judge ? runJobStops(report) : null;
+  if (stops) parts.push('## The run job (ruling 1228)', '', stops.length ? `Stopped: ${stops.map(s => `${s.id} ${s.status}${s.reason ? ` (${s.reason})` : ''}`).join('; ')}: re-run this job.`
+    : 'No harness or infrastructure stop: the job passes; its verdicts above go to the judging job.', '');
   if (plan.counts.length) {
     const {results, problems} = readResults(plan.counts.filter(existsSync));
     const counts = renderCounts(cellCounts(results));
@@ -156,9 +204,13 @@ async function runCommand(sitting, values) {
       parts.push(reads);
     }
   }
-  // The judging job's run jobs (ruling 1228): each one's runner and hardware, and the refusal, when there was one.
-  const jobsFile = join(out, 'jobs.json');
-  if (existsSync(jobsFile)) { try { parts.push(...renderJobs(JSON.parse(readFileSync(jobsFile, 'utf8')))); } catch {} }
+  // The judging job's run jobs (ruling 1228): each one's runner, hardware and scenes, every attempt the workflow found,
+  // the base re-judged (ruling 1230), and the refusal, when there was one. A record that cannot be read is said.
+  for (const [file, render] of [['attempts.md', null], ['jobs.json', renderJobs], ['base-rejudge.json', renderBaseRejudge]]) {
+    const path = join(out, file);
+    if (!existsSync(path)) continue;
+    try { parts.push(...(render ? render(JSON.parse(readFileSync(path, 'utf8'))) : [readFileSync(path, 'utf8'), ''])); } catch (error) { parts.push(`${file} could not be read: ${error.message}`, ''); }
+  }
   // The alert guard's tally (rulings 1154, 1160, 1164): per step and cell, its refusals and the key cells sent with
   // their key reading not taken, from every record the plan names.
   const readRecord = path => { try { return JSON.parse(readFileSync(resolve(REPO, path), 'utf8')); } catch { return null; } };
@@ -180,10 +232,10 @@ async function runCommand(sitting, values) {
   parts.push(renderVenue(venue));
   // A diagnostic's own section (C's key-route, ruling 1198), as it wrote it; one it did not write is named.
   parts.push(...stepSections(plan.steps, report, {read: path => (existsSync(path) ? readFileSync(path, 'utf8') : null)}));
-  writeJson(join(out, 'sitting.json'), {...report, screenAtEnd, venue});
+  writeJson(join(out, 'sitting.json'), {...report, screenAtEnd, venue, ...(stops ? {runJobStops: stops} : {})});
   writeFileSync(join(out, 'sitting.md'), parts.join('\n'));
   process.stdout.write(parts.join('\n'));
-  return report.exit;
+  return stops ? (stops.length ? 1 : 0) : report.exit;
 }
 
 // The scratch document up, its windows then placed clear of replayd's alerts from a fresh reading (rulings 1160, 1164;
@@ -221,7 +273,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, allowPositionals: true, options: {
     out: {type: 'string'}, pilot: {type: 'boolean', default: false}, flipped: {type: 'boolean', default: false}, 'engine-archive': {type: 'string'},
-    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
+    report: {type: 'string'}, 'split-run': {type: 'string'}, 'split-judge': {type: 'boolean', default: false}, 'speed-extra': {type: 'boolean', default: false}, 'base-run-id': {type: 'string'}, 'jobs-file': {type: 'string'}, only: {type: 'string'}, jobs: {type: 'string'}, base: {type: 'string'},
     'approved-engine': {type: 'string'}, 'approved-runtime': {type: 'string'}, sitting: {type: 'string'}, file: {type: 'string'}, samples: {type: 'string'}, commit: {type: 'string'}, 'env-file': {type: 'string'}, record: {type: 'string'}}});
   switch (command) {
     case 'setup': {
@@ -269,12 +321,26 @@ async function main(argv) {
     }
     case 'textedit': return textedit(positionals[0], values);
     case 'jobs-check': {
-      // Ruling 1228: the run jobs' records, refused when they are not one harness and one pair of engines (exit 2).
-      if (!values.jobs || !values.out) usage('jobs-check --jobs <dir>,… [--base <dir>] --out <file>');
-      const check = jobsCheck(values.jobs.split(',').filter(Boolean).map(d => jobDir(resolve(d))), {base: values.base ? jobDir(resolve(values.base)) : null});
-      writeJson(resolve(values.out), check);
+      // Ruling 1228: the run jobs' records, refused when they are not one harness and one pair of engines (exit 2). The
+      // base (H1) is its committed evidence directory, read only once its digests and README check.
+      if (!values.jobs || !values.out || Boolean(values.base) !== Boolean(values['base-run-id'])) usage('jobs-check --jobs <dir>,… [--base <evidence dir> --base-run-id <id>] --out <file>');
+      const base = values.base ? resolve(values.base) : null, unfit = base ? baseDirCheck(base, values['base-run-id']) : [];
+      const jobs = values.jobs.split(',').filter(Boolean).map(d => jobDir(resolve(d)));
+      const check = unfit.length ? {refused: unfit, jobs: [], base: null} : jobsCheck(jobs, {base: base ? jobDir(join(base, 'sitting')) : null, scenesOf});
+      writeJson(resolve(values.out), {...check, ...(base ? {baseDir: base, baseRunId: values['base-run-id']} : {})});
       process.stdout.write(json(check));
       return check.refused.length ? 2 : 0;
+    }
+    case 'save-sheet-verdicts': {
+      // I3: the run jobs' save-sheet verdicts, as jobs-check read them from each job's sitting report.
+      if (!values['jobs-file']) usage('save-sheet-verdicts --jobs-file <jobs.json>');
+      const {verdict, lines} = saveSheetVerdict(JSON.parse(readFileSync(resolve(values['jobs-file']), 'utf8')));
+      process.stdout.write(`${lines.join('\n')}\nVERDICT: ${verdict}\n`);
+      return {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4}[verdict];
+    }
+    case 'rejudge-base': {
+      if (!values.base || !values.out) usage('rejudge-base --base <evidence dir> --out <file>');
+      return rejudgeBase(resolve(values.base), resolve(values.out));
     }
     case 'key-route': {
       // Refused off a GitHub-hosted runner inside, before anything is read, built, written or opened.

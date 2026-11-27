@@ -66,6 +66,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo 'Registered; dispatch with sitting, form, image and flipped.'
+  # form=split is sitting C's alone: any other sitting is refused, never silently run as nothing.
+  split_refused:
+    if: github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting != 'c'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prerequisites
+        env:
+          SITTING: ${{ inputs.sitting }}
+        run: |
+          echo "form=split splits sitting c only, not $SITTING"
+          exit 2
   engine:
     if: github.event_name == 'workflow_dispatch' && inputs.sitting != 'e' && inputs.sitting != 'f'
     runs-on: macos-latest
@@ -250,16 +261,17 @@ jobs:
           if-no-files-found: warn
   # The judging job: every run job's artifact (each attempt listed, each run's latest judged), a full run's beneath
   # filtered reruns, refused when the jobs differ in harness commit or engine version; then the judge and key-route.
+  # A run job fails only on a harness or infrastructure stop (its verdicts ride in its artifact), so the judge runs
+  # whenever the run jobs ended, on each run's artifact; one missing fails it closed. The base (a filtered rerun's) is the
+  # committed evidence directory whose README names base_run_id, checked against its digests before it is read (H1).
   split_judge:
     needs: [engine, split_run]
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.split_run.result == 'success' }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.form == 'split' && inputs.sitting == 'c' && needs.engine.result == 'success' }}
     runs-on: ${{ inputs.image == 'default' && 'xcode-27' || inputs.image }}
     timeout-minutes: 360
-    permissions:
-      contents: read
-      actions: read
     env:
       SPLIT_RUNS: ${{ inputs.split_runs }}
+      FILTER: ${{ inputs.filter }}
       BASE_RUN_ID: ${{ inputs.base_run_id }}
     steps:
       - name: Job start
@@ -285,20 +297,15 @@ jobs:
         with:
           pattern: m5-sitting-c-run-*
           path: ${{ runner.temp }}/m5-jobs
-      - if: inputs.base_run_id != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: m5-sitting-c-full-*
-          path: ${{ runner.temp }}/m5-base
-          run-id: ${{ inputs.base_run_id }}
-          github-token: ${{ github.token }}
       - name: The run jobs (every attempt listed, each run's latest judged)
         shell: bash
         run: |
           set -euo pipefail
           # shellcheck disable=SC2012 # the artifact names are ours: m5-sitting-c-<run|full>-<n>-<attempt>
           latest() { ls -d "$1"-* 2>/dev/null | awk -F- '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2-; }
-          { echo '## Run job attempts'; for d in "$RUNNER_TEMP"/m5-jobs/*; do echo "- ${d##*/}"; done; } | tee "$RUNNER_TEMP/m5-out/attempts.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/m5-out/sitting"
+          { echo '## Run job attempts (every one found; the latest of each run judged)'; echo; for d in "$RUNNER_TEMP"/m5-jobs/*; do echo "- ${d##*/}"; done; } \
+            | tee "$RUNNER_TEMP/m5-out/sitting/attempts.md" >> "$GITHUB_STEP_SUMMARY"
           jobs=()
           for run in ${SPLIT_RUNS//,/ }; do
             dir=$(latest "$RUNNER_TEMP/m5-jobs/m5-sitting-c-run-$run") || true
@@ -307,9 +314,10 @@ jobs:
           done
           echo "M5_JOBS=$(IFS=,; echo "${jobs[*]}")" >> "$GITHUB_ENV"
           if [ -n "$BASE_RUN_ID" ]; then
-            base=$(latest "$RUNNER_TEMP/m5-base/m5-sitting-c-full") || true
-            [ -n "$base" ] || { echo "no full sitting C artifact in run $BASE_RUN_ID"; exit 1; }
-            echo "M5_BASE=$base/sitting" >> "$GITHUB_ENV"
+            # The committed base whose README names the run; jobs-check verifies its digests and README again.
+            readme=$(grep -l "actions/runs/$BASE_RUN_ID)" docs/evidence/*/README.md | head -1) || true
+            [ -n "$readme" ] && [ -f "$(dirname "$readme")/digests.sha256" ] || { echo "no committed base names run $BASE_RUN_ID"; exit 1; }
+            echo "M5_BASE=$(dirname "$readme")" >> "$GITHUB_ENV"
           fi
       - name: Pin the O0 source for the TCC writer
         shell: bash
@@ -332,7 +340,8 @@ jobs:
         run: |
           set -uo pipefail
           flags=(--split-judge --jobs "$M5_JOBS")
-          [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE")
+          [ -n "${M5_BASE:-}" ] && flags+=(--base "$M5_BASE" --base-run-id "$BASE_RUN_ID")
+          [ -n "$FILTER" ] && flags+=(--only "$FILTER")
           code=0
           node scripts/hosted-sittings.mjs run c --out "$RUNNER_TEMP/m5-out/sitting" "${flags[@]}" || code=$?
           [ -f "$RUNNER_TEMP/m5-out/sitting/sitting.md" ] && cat "$RUNNER_TEMP/m5-out/sitting/sitting.md" >> "$GITHUB_STEP_SUMMARY"

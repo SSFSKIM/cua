@@ -110,19 +110,28 @@ const sittingCOrder = ctx => {
 const sittingCSchedule = ctx => sittingCOrder(ctx).runs;
 // The judging job (ruling 1228, ./split.mjs): the run jobs' records checked, combined (with a full run beneath filtered
 // reruns) per lane, judged, and key-route last. Each job dir is a run job's sitting output (vendor, cua, save-sheet).
+// `base` (H1): the base run's committed evidence directory (its records under sitting/, digests.sha256, README.md naming
+// `baseRunId`), checked by jobs-check before anything reads it, then re-judged (R1, ruling 1230) before the judging.
+// `only`: the filter the run jobs ran; the save-sheet verdict is asked only when they ran that cell.
 function splitJudge(ctx) {
-  const {jobs, base = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
+  const {jobs, base = null, baseRunId = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args], keyRoute = `${ctx.out}/key-route`;
+  const gate = base ? ['jobs-check', 'rejudge-base'] : ['jobs-check'];
   return [
-    {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228)', kind: 'verdict', check: 'exit',
-      argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base] : []), '--out', `${ctx.out}/jobs.json`]},
+    {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228); the base matches its digests (H1)', kind: 'verdict', check: 'exit',
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base, '--base-run-id', baseRunId] : []), '--out', `${ctx.out}/jobs.json`]},
+    ...(base ? [{id: 'rejudge-base', label: 'the base re-judged by this judge against its own commit\'s: only the declared drag cell may differ (ruling 1230)', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'rejudge-base', '--base', base, '--out', `${ctx.out}/base-rejudge.json`]}] : []),
     // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F). Its
     // verdict is NO VERDICT when a rerun could not be combined; the judges still run, each such problem their missing proof.
-    {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'verdict', needs: ['jobs-check'],
-      argv: matrix('combine', ...(base ? [base] : []), ...jobs, '--out', combined)},
-    {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: ['jobs-check'],
+    {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'verdict', needs: gate,
+      argv: matrix('combine', ...(base ? [`${base}/sitting`] : []), ...jobs, '--out', combined)},
+    {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: gate,
       argv: matrix('summary', combined, '--out', `${ctx.out}/summary.md`)},
-    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: ['jobs-check'], argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
+    {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: gate, argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
+    // I3: the run jobs' save-sheet verdicts, carried into this job's verdict.
+    ...(!only || only.includes(SAVE_SHEET_CELL) ? [{id: 'save-sheet', label: '#212\'s save-sheet cell as each run job recorded it (I3 of the split review)', kind: 'verdict', check: 'verdict', needs: ['jobs-check'],
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'save-sheet-verdicts', '--jobs-file', `${ctx.out}/jobs.json`]}] : []),
     {id: 'key-route', label: 'the key-route diagnostic (ruling 1198): where each engine\'s Escape lands while TextEdit\'s Open panel is focused', kind: 'diagnostic',
       check: 'diagnostic', report: `${keyRoute}/key-route.json`, section: `${keyRoute}/key-route.md`,
       argv: ['node', 'scripts/hosted-sittings.mjs', 'key-route', ...approvedArgs(ctx), '--sitting', sitting, '--out', keyRoute]},
@@ -241,7 +250,7 @@ export function sittingPlan(sitting, ctx) {
   const build = BUILDERS[sitting];
   if (!build) throw new Error(`no sitting ${sitting}: the sittings are ${SITTINGS.join(', ')}`);
   const [title, proves] = TITLES[sitting];
-  return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx),
+  return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx), ...(sitting === 'c' && ctx.split ? {split: ctx.split} : {}),
     counts: sitting !== 'c' || (ctx.split && !ctx.split.judge) ? [] : ctx.split?.judge ? [`${ctx.out}/combined/vendor`, `${ctx.out}/combined/cua`, ...ctx.split.jobs.map(d => `${d}/save-sheet`)]
       : ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`), pilotReads: sitting === 'c' && Boolean(ctx.pilot),
     ...(sitting === 'c' ? {laneOrder: sittingCOrder(ctx)} : {}),

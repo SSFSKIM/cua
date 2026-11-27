@@ -16,10 +16,14 @@ export const unicodeConditionOf = id => (typeof id === 'string' ? id.split('/')[
 // Every rule that puts rows out of the judged matrix: its section, the ids it covers, its condition (the report's group),
 // its reason and its ticket.
 export const OPEN_PANEL_SEARCH = 'openPanel/frontmost/typeText.search';
+// The Save sheet name case's own timing (./plan.mjs methodTimingId).
+export const SAVE_PANEL_NAME_TIMING = 'textedit/method.savePanel.typeText.name';
 export const NOT_JUDGED_RULES = Object.freeze([
   Object.freeze({section: 'unicode', condition: 'perContext', matches: id => unicodeConditionOf(id) === 'perContext', cause: NOT_JUDGED.perContext, ticket: '#577'}),
   Object.freeze({section: 'method', condition: 'openPanelSearch', matches: id => id === OPEN_PANEL_SEARCH,
     cause: 'out of M5\'s judged matrix (ruling 1222): typeText into the Open panel\'s search field is a known product defect, #588, run and reported until it is fixed', ticket: '#588'}),
+  Object.freeze({section: 'speed', condition: 'savePanelNameTiming', matches: id => id === SAVE_PANEL_NAME_TIMING,
+    cause: 'out of M5\'s judged matrix (ruling 1231): the Save sheet name case\'s timing stays unmeasured: filtered reruns record no timing; the vendor\'s prepare failed in the base', ticket: '#592'}),
 ]);
 // The rule that puts `row` out of every verdict, or null.
 export const notJudgedRuleOf = (row, rules = NOT_JUDGED_RULES) => (typeof row?.id === 'string' ? rules.find(r => r.section === row.section && r.matches(row.id)) ?? null : null);

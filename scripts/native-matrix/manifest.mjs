@@ -19,9 +19,8 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   // The speed-extra cell (ruling 1228, F): its ops' timings, `samples` each.
   if (plan.speedExtra) return plan.frontmost.flatMap(t => speedExtraCases(t, 'timed').flatMap(c => Array.from({length: samples}, (_, i) => ({section: 'speed', id: methodTimingId(t, c), sample: i + 1}))));
   const out = [];
-  const judged = id => !exclusionOf({section: 'method', id});
-  for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) if (judged(caseId(target, 'frontmost', c))) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
-  for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) if (judged(caseId(driven, 'background', c, user))) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
+  for (const target of plan.frontmost) for (const c of casesOf(target, 'frontmost')) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run, expect: c.expect});
+  for (const {driven, user} of plan.background) for (const c of casesOf(driven, 'background')) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run, expect: c.expect});
   const scenes = [...new Set(plan.frontmost.filter(t => !isPanelTarget(t)).map(t => SCENE_OF[t]))];
   if (plan.speed) for (const scene of scenes) for (const op of SPEED_OPS) for (let i = 1; i <= samples; i++) out.push({section: 'speed', id: `${scene}/${op}`, sample: (run - 1) * samples + i});
   // Each frontmost case's own timing, one per run (./steps.mjs caseRow's `speed`): part 5's "each method cell".
@@ -32,9 +31,11 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   }
   for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
   for (const {section, id} of probeRowsOf(plan)) out.push({section, id, sample: run});
-  if (plan.unicode) for (const {id} of unicodeRowsOf(plan.unicode)) if (!exclusionOf({section: 'unicode', id})) out.push({section: 'unicode', id, sample: run});
-  // A filtered rerun (ruling 1228, ./run.mjs filteredPlan) expects its listed cells alone.
-  return plan.only ? out.filter(r => plan.only.has(`${r.section} ${r.id}`)) : out;
+  if (plan.unicode) for (const {id} of unicodeRowsOf(plan.unicode)) out.push({section: 'unicode', id, sample: run});
+  // A not-judged rule's rows (./not-judged.mjs) are no judged cell; a filtered rerun (ruling 1228, ./run.mjs
+  // filteredPlan) expects its listed cells alone.
+  const judged = out.filter(r => !exclusionOf(r));
+  return plan.only ? judged.filter(r => plan.only.has(`${r.section} ${r.id}`)) : judged;
 }
 
 // The judged cells (rows by section and id) of a full run, in the manifest's order. -> [{section, id, expect?}].

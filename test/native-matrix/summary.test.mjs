@@ -1433,6 +1433,23 @@ test('ruling 1222: openPanel/frontmost/typeText.search is not judged, naming #58
   assert.match(renderSummary(failing), /### openPanelSearch\n\n.*#588.*\n\nTicket: #588\./);
 });
 
+// Ruling 1231 (2): the Save sheet name case's timing stays unmeasured: filtered reruns record no timing, and the vendor's
+// prepare failed in the base. It is a not-judged entry naming #592, never missing proof.
+test('ruling 1231: textedit/method.savePanel.typeText.name\'s speed row is not judged, naming #592, and absent from missing', () => {
+  const TIMING = 'textedit/method.savePanel.typeText.name';
+  const unmeasured = rows => rows.map(r => (r.section === 'speed' && r.id === TIMING && r.engine === 'vendor' ? {...r, ok: false, inCellMs: undefined, invalid: 'the case was not prepared'} : r));
+  const j = judged({vendor: {resolved: 9, axMs: 50, tweak: unmeasured}, cua: {axMs: 40}});
+  assert.ok(!j.speed.some(s => s.id === TIMING));
+  assert.ok(!j.missing.some(m => m.includes(TIMING)), j.missing.join('\n'));
+  const entry = j.notJudged.find(n => n.id === TIMING);
+  assert.deepEqual([entry.section, entry.ticket], ['speed', '#592']);
+  assert.match(entry.cause, /filtered reruns record no timing; the vendor's prepare failed in the base/);
+  assert.equal(j.verdict, 'PASS');
+  // Unrecorded, it is still listed (the plan's own timing rows are candidates).
+  const none = judged({vendor: {resolved: 9, axMs: 50, tweak: rows => rows.filter(r => r.id !== TIMING)}, cua: {axMs: 40, tweak: rows => rows.filter(r => r.id !== TIMING)}});
+  assert.ok(none.notJudged.some(n => n.id === TIMING && n.recorded === false));
+});
+
 // Fix wave M4, ruling 1219: the Korean pressKey row judges each engine against 가 on its own. A cua sample that read it
 // passes with no valid vendor pair (not NO VERDICT unpaired); one that read ㄱ fails even when its vendor pair read ㄱ
 // too (not a shared limit). The Latin row keeps ruling 1119's pairing.

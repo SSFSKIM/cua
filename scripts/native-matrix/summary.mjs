@@ -84,7 +84,7 @@ import {departureProblems, readDepartures, usableDepartures, vendorAnsweredOk} f
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
-import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
+import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, methodTimingId, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN, SPEED_EXTRA_IDS} from './run.mjs';
 import {exclusionOf, NOT_JUDGED_RULES, notJudgedRefusal, notJudgedRuleOf} from './not-judged.mjs';
@@ -124,15 +124,17 @@ const sampleCounts = rows => {
 function notJudgedOf(excluded, plan = FULL_PLAN, rules = NOT_JUDGED_RULES) {
   const candidates = [...unicodeRowsOf(plan.unicode).map(r => ({section: 'unicode', id: r.id})),
     ...plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'method', id: caseId(t, 'frontmost', c)}))),
-    ...plan.background.flatMap(({driven, user}) => casesOf(driven, 'background').map(c => ({section: 'method', id: caseId(driven, 'background', c, user)})))];
+    ...plan.background.flatMap(({driven, user}) => casesOf(driven, 'background').map(c => ({section: 'method', id: caseId(driven, 'background', c, user)}))),
+    ...(plan.speed ? plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'speed', id: methodTimingId(t, c)}))) : [])];
   const entryOf = r => {
     const rule = notJudgedRuleOf(r, rules);
     return {id: r.id, section: r.section, condition: rule.condition, cause: rule.cause, ...(rule.ticket ? {ticket: rule.ticket} : {})};
   };
   const planned = candidates.filter(r => notJudgedRuleOf(r, rules)).map(entryOf);
-  const others = [...new Map(excluded.filter(r => !planned.some(p => p.id === r.id)).map(r => [r.id, entryOf(r)])).values()];
+  const same = (a, b) => a.section === b.section && a.id === b.id;
+  const others = [...new Map(excluded.filter(r => !planned.some(p => same(p, r))).map(r => [`${r.section} ${r.id}`, entryOf(r)])).values()];
   return [...planned, ...others].map(entry => {
-    const mine = excluded.filter(r => r.id === entry.id);
+    const mine = excluded.filter(r => same(r, entry));
     return {...entry, recorded: mine.length > 0, ...Object.fromEntries(['vendor', 'cua'].map(engine => [engine, sampleCounts(mine.filter(r => r.engine === engine))]))};
   }).sort((a, b) => a.id.localeCompare(b.id));
 }

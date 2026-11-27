@@ -1514,9 +1514,10 @@ test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declar
 // Ruling 1228 (E): combined records name, per run, the job each cell's evidence came from, and a cell that failed in the
 // full run on its own verdict and passes only in a filtered rerun goes to the owner, never silently replaced.
 test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a rerun flag is the owner\'s', () => {
-  const POINT = 'electron/frontmost/click.point';
+  const POINT = 'electron/frontmost/click.point', NAME = 'savePanel/frontmost/typeText.name';
   const rerunMeta = run => ({runner: {run: {id: '45468052791', attempt: '1'}}, ...(run === 2 ? {reruns: [{runId: '777', attempt: '2', commit: 'c2', filter: [`method ${POINT}`], build: 'b'}],
-    rerunFlags: [{run: 2, cell: `method ${POINT}`, why: 'its pair was judged fail in the full run and equal in the rerun', full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
+    rerunFlags: [{run: 2, cell: `method ${POINT}`, why: 'its pair was judged fail in the full run and equal in the rerun', full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}],
+    rerunVendorOnly: [{run: 2, cell: `method ${NAME}`, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
   const evidenced = (rows, run) => (run === 2 ? rows.map(r => (r.id === POINT ? {...r, evidence: {runId: '777', attempt: '2'}} : r)) : rows);
   const j = judged({vendor: {resolved: 9, axMs: 50, meta: rerunMeta, tweak: evidenced}, cua: {axMs: 40, meta: rerunMeta, tweak: evidenced}});
   assert.deepEqual(j.evidence.jobs, [{run: 1, full: {runId: '45468052791', attempt: '1'}, reruns: []}, {run: 2, full: {runId: '45468052791', attempt: '1'}, reruns: [{runId: '777', attempt: '2', commit: 'c2', cells: [`method ${POINT}`]}]},
@@ -1527,4 +1528,9 @@ test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a 
   assert.match(text, /^## Evidence by job \(ruling 1228\)$/m);
   assert.match(text, new RegExp(`^- run 2: job 45468052791 attempt 1, but 1 cell from job 777 attempt 2 \\(commit c2\\): method ${POINT.replace(/[./]/g, c => `\\${c}`)}$`, 'm'));
   assert.doesNotMatch(renderSummary(judged()), /Evidence by job/);
+  // Ruling 1231: a vendor-only change between the base and the rerun is parity, listed, never the owner's flag.
+  assert.deepEqual(j.evidence.vendorOnly.map(v => [v.run, v.cell]), [[2, `method ${NAME}`]]);
+  assert.ok(!j.owner.some(o => o.includes(NAME)), j.owner.join('\n'));
+  assert.match(text, /^## Vendor-only changes between the base and the rerun \(ruling 1231\)$/m);
+  assert.match(text, new RegExp(`^- method ${NAME.replace(/[./]/g, c => `\\${c}`)}, run 2: the vendor's row failed in the full run \\(job 45468052791, attempt 1\\) and passes in the rerun \\(job 777, attempt 2\\); cua's row and the pair's verdict unchanged$`, 'm'));
 });

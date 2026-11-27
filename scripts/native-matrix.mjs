@@ -131,8 +131,9 @@ function combineDirs({dirs, out}, io, log) {
   const full = results.filter(r => own(r) && r.result.meta?.planId === 'full'), reruns = results.filter(r => own(r) && r.result.meta?.planId === 'filtered');
   const account = combineReruns(full, reruns);
   for (const {result} of account.results) {
-    const flags = account.flags.filter(f => f.run === result.meta.run);
-    io.writeResult(join(out, result.lanes[0].engine, `run-${result.meta.run}`), flags.length ? {...result, meta: {...result.meta, rerunFlags: flags}} : result);
+    const flags = account.flags.filter(f => f.run === result.meta.run), parity = account.vendorOnly.filter(v => v.run === result.meta.run);
+    io.writeResult(join(out, result.lanes[0].engine, `run-${result.meta.run}`), flags.length || parity.length
+      ? {...result, meta: {...result.meta, ...(flags.length ? {rerunFlags: flags} : {}), ...(parity.length ? {rerunVendorOnly: parity} : {})}} : result);
   }
   // The speed-extra cell's records (ruling 1228, F) as they are, for the judge to pool (./native-matrix/summary.mjs).
   for (const {result} of results.filter(({result}) => result.cell === 'speed-extra')) io.writeResult(join(out, 'speed-extra', result.lanes[0].engine, `run-${result.meta.run}`), result);
@@ -140,7 +141,7 @@ function combineDirs({dirs, out}, io, log) {
   for (const f of account.flags) log(`FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun`);
   for (const p of [...unread, ...account.problems]) log(`problem: ${p}`);
   const problems = [...unread, ...account.problems];
-  io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, problems});
+  io.writeJson(join(out, 'combined.json'), {combined: account.combined, flags: account.flags, vendorOnly: account.vendorOnly, problems});
   log(`VERDICT: ${problems.length ? 'NO VERDICT' : 'PASS'}`);
   return problems.length ? VERDICT_CODE['NO VERDICT'] : 0;
 }

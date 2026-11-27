@@ -42,7 +42,25 @@ test('a cell that failed in the full run and passes only in the rerun is flagged
   const {flags} = combineReruns(base(2), reruns);
   // A failed on both lanes (ok false, no invalid): its rows flagged; B's vendor row was invalid: a missing proof, no flag.
   assert.deepEqual(flags.map(f => [f.run, f.cell, f.full, f.rerun]), [[2, A, {runId: '45468052791', attempt: '1'}, {runId: '777', attempt: '2'}]]);
-  assert.match(flags[0].why, /^its rows failed on vendor and cua in the full run and pass in the rerun$/);
+  assert.match(flags[0].why, /^its cua row failed in the full run and passes in the rerun$/);
+});
+
+// Ruling 1231: the owner's flags are cua's alone (its row, or the pair's verdict, from fail to not); a change on the
+// vendor's side only goes to the parity list, never flagged.
+test('a vendor-only fail to pass is listed as parity, not flagged; a cua row or a pair verdict from fail to not is flagged', () => {
+  const pair = (run, {vendor = {}, cua = {}} = {}, meta = null) => ['vendor', 'cua'].map(engine => {
+    const rows = [row(B, engine, engine === 'vendor' ? vendor : cua), row(C, engine)];
+    return meta ? rerun(run, engine, rows, meta) : result(engine, run, rows);
+  });
+  // The vendor failed and cua passed in the base (the pair: better); both pass in the rerun (equal).
+  const vendorOnly = combineReruns(pair(2, {vendor: {ok: false}}), pair(2, {}, {filter: [B]}));
+  assert.deepEqual(vendorOnly.flags, []);
+  assert.deepEqual(vendorOnly.vendorOnly.map(v => [v.run, v.cell, v.full, v.rerun]), [[2, B, {runId: '45468052791', attempt: '1'}, {runId: '777', attempt: '2'}]]);
+  // The vendor's base sample had no verdict (the pair no verdict), cua's row failed: cua's own change, flagged.
+  const cuaRow = combineReruns(pair(2, {vendor: {ok: false, invalid: 'not prepared'}, cua: {ok: false}}), pair(2, {}, {filter: [B]}));
+  assert.deepEqual([cuaRow.flags.map(f => f.why), cuaRow.vendorOnly], [['its cua row failed in the full run and passes in the rerun'], []]);
+  const verdict = combineReruns(pair(2, {cua: {ok: false}}), pair(2, {}, {filter: [B]}));
+  assert.deepEqual(verdict.flags.map(f => f.why), ['its pair was judged fail in the full run and equal in the rerun']);
 });
 
 // I5 of the split review: the cell judged per run, the full run's pair against the rerun's, as the judge reads it; a
@@ -101,7 +119,7 @@ test('the combine command reads every result under its directories and writes th
   await main(['combine', '/a', '/b', '--out', '/o'], {log: l => lines.push(l), io: {combine: io}});
   assert.deepEqual(combined, [['/o/vendor/run-2', 2, 'vendor', 1], ['/o/cua/run-2', 2, 'cua', 1]]);
   assert.ok(lines.some(l => /^combined run 2 from job 777 attempt 2: 2 cell\(s\)$/.test(l)), lines.join('\n'));
-  assert.ok(lines.some(l => /^FLAG: method electron\/frontmost\/click\.point, run 2: its rows failed/.test(l)), lines.join('\n'));
+  assert.ok(lines.some(l => /^FLAG: method electron\/frontmost\/click\.point, run 2: its cua row failed/.test(l)), lines.join('\n'));
 });
 
 test('F: combine writes a speed-extra cell\'s records through as they are, beside the combined lanes, and nothing else of another cell', async () => {

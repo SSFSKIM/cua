@@ -581,7 +581,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
 // (a cell that failed on its own verdict in the full run and passes only in the rerun), which go to the owner. Nothing
 // when no full run names a job. -> {jobs: [{run, full, reruns: [{runId, attempt, commit, cells}]}], flags}.
 export function evidenceOf(full) {
-  const jobs = new Map(), flags = [];
+  const jobs = new Map(), flags = [], vendorOnly = [];
   for (const {result} of full) {
     const run = result.meta?.run, job = result.meta?.runner?.run;
     if (!job || jobs.has(run)) continue;
@@ -592,7 +592,12 @@ export function evidenceOf(full) {
     const key = `${f.run} ${f.cell}`;
     if (!seen.has(key)) { seen.add(key); flags.push(f); }
   }
-  return {jobs: [...jobs.values()].sort((a, b) => a.run - b.run), flags};
+  // Ruling 1231: a change on the vendor's side alone is parity, listed and never the owner's flag.
+  for (const {result} of full) for (const v of result.meta?.rerunVendorOnly ?? []) {
+    const key = `vendor-only ${v.run} ${v.cell}`;
+    if (!seen.has(key)) { seen.add(key); vendorOnly.push(v); }
+  }
+  return {jobs: [...jobs.values()].sort((a, b) => a.run - b.run), flags, vendorOnly};
 }
 // The evidence as a report section, nothing when no run named its job. -> [line].
 export function renderEvidence(evidence) {
@@ -600,7 +605,9 @@ export function renderEvidence(evidence) {
   const job = j => `job ${j.runId} attempt ${j.attempt}`;
   return ['## Evidence by job (ruling 1228)', '', 'Each run\'s cells come from its full run\'s job, but those a filtered rerun replaced, both lanes together (./combine.mjs).', '',
     ...evidence.jobs.map(e => `- run ${e.run}: ${job(e.full)}${e.reruns.map(r => `, but ${r.cells.length} cell${r.cells.length === 1 ? '' : 's'} from ${job(r)} (commit ${r.commit}): ${r.cells.join(', ')}`).join('')}`),
-    ...evidence.flags.map(f => `- FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun (the owner's)`), ''];
+    ...evidence.flags.map(f => `- FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun (the owner's)`), '',
+    ...(evidence.vendorOnly?.length ? ['## Vendor-only changes between the base and the rerun (ruling 1231)', '',
+      ...evidence.vendorOnly.map(v => `- ${v.cell}, run ${v.run}: the vendor's row failed in the full run (job ${v.full.runId}, attempt ${v.full.attempt}) and passes in the rerun (job ${v.rerun.runId}, attempt ${v.rerun.attempt}); cua's row and the pair's verdict unchanged`), ''] : [])];
 }
 
 // A declared departure's known capability difference as the runs measured it (ruling 1228): of the vendor's runs of

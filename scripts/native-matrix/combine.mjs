@@ -29,20 +29,24 @@ function pairUnfit(lanes) {
   const apart = frameAsymmetry(lanes.cua, lanes.vendor);
   return apart ? `its lanes did not stand on one frame (${apart})` : null;
 }
-// Why a listed cell's rerun passes where its full run failed, or null (I5).
-function rerunOnlyPass(cell, base, fresh) {
+// How a listed cell's rerun changed from its full run (I5, ruling 1231): {flag: why} when cua's side went from fail to
+// not (the pair's verdict, or cua's own row), the owner's; {vendorOnly: true} when only the vendor's row did (parity,
+// listed, never flagged); else null.
+function rerunChange(cell, base, fresh) {
   const section = cell.slice(0, cell.indexOf(' ')), id = cell.slice(cell.indexOf(' ') + 1);
   const was = runVerdict(section, id, base.vendor, base.cua), now = runVerdict(section, id, fresh.vendor, fresh.cua);
-  if (was === 'fail' && now !== 'fail') return `its pair was judged fail in the full run and ${now} in the rerun`;
-  const failedOwn = ['vendor', 'cua'].filter(e => base[e].some(r => r.ok === false && r.invalid === undefined) && fresh[e].length && fresh[e].every(r => r.ok === true && r.invalid === undefined));
-  return failedOwn.length ? `its rows failed on ${failedOwn.join(' and ')} in the full run and pass in the rerun` : null;
+  if (was === 'fail' && now !== 'fail') return {flag: `its pair was judged fail in the full run and ${now} in the rerun`};
+  const turned = e => base[e].some(r => r.ok === false && r.invalid === undefined) && fresh[e].length > 0 && fresh[e].every(r => r.ok === true && r.invalid === undefined);
+  if (turned('cua')) return {flag: 'its cua row failed in the full run and passes in the rerun'};
+  return turned('vendor') ? {vendorOnly: true} : null;
 }
 
 // `full`: [{path, result}] of the full runs (planId 'full'); `reruns`: [{path, result}] of filtered ones. -> {results:
-// the full runs as combined, combined: [{run, runId, attempt, cells}], flags: [{run, cell, why, full, rerun}], problems}.
+// the full runs as combined, combined: [{run, runId, attempt, cells}], flags: [{run, cell, why, full, rerun}], vendorOnly:
+// [{run, cell, full, rerun}], problems}.
 export function combineReruns(full, reruns) {
   const results = full.map(({path, result}) => ({path, result: {...result, rows: [...result.rows], meta: {...result.meta}}}));
-  const combined = [], flags = [], problems = [];
+  const combined = [], flags = [], vendorOnly = [], problems = [];
   const groups = new Map();
   for (const entry of reruns) {
     const {meta} = entry.result, job = jobOf(entry.result), key = `${meta.run} ${job.runId} ${job.attempt}`;
@@ -62,8 +66,9 @@ export function combineReruns(full, reruns) {
     // Each cell's pair before and after, judged before any row is replaced.
     for (const cell of cells) {
       const rowsOf = side => Object.fromEntries(['vendor', 'cua'].map(e => [e, side[e].rows.filter(r => keyOf(r) === cell)]));
-      const why = rerunOnlyPass(cell, rowsOf({vendor: under.vendor.result, cua: under.cua.result}), rowsOf(lanes));
-      if (why) flags.push({run, cell, why, full: jobOf(under.vendor.result), rerun: job});
+      const change = rerunChange(cell, rowsOf({vendor: under.vendor.result, cua: under.cua.result}), rowsOf(lanes));
+      if (change?.flag) flags.push({run, cell, why: change.flag, full: jobOf(under.vendor.result), rerun: job});
+      if (change?.vendorOnly) vendorOnly.push({run, cell, full: jobOf(under.vendor.result), rerun: job});
     }
     for (const engine of ['vendor', 'cua']) {
       const base = under[engine].result, rerun = lanes[engine];
@@ -76,5 +81,5 @@ export function combineReruns(full, reruns) {
     }
     combined.push({run, ...job, cells});
   }
-  return {results, combined, flags, problems};
+  return {results, combined, flags, vendorOnly, problems};
 }

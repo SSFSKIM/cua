@@ -156,7 +156,7 @@ function metadataProblems(result) {
 // classifyAttestedRecord: a vendor answer anywhere on the cua side is state 1, a result left unattested is missing); a run
 // that kept none is classed by its lane. -> null, or the problem. A run whose lane or side cannot be read is left to
 // metadataProblems.
-function unmeasuredSide(result) {
+export function unmeasuredSide(result) {
   const engines = [...new Set(result.rows.map(r => r.engine))];
   const kept = result.meta?.nativeEngine;
   const side = kept?.requested ?? (engines.length === 1 ? engines[0] : null);
@@ -307,6 +307,28 @@ export function findingMeasures(rows) {
 // (the user window in front, the sheet variant's among them) and the Unicode matrix's rows behind a user window.
 const oracleJudges = r => (r.section === 'method' && r.regime === 'background') || r.section === 'launch' || r.section === 'concurrent'
   || (r.section === 'unicode' && r.id.split('/')[1]?.includes('@'));
+// How the judge reads a cell (judge below): its judgeCell mode and the options that are the cell's own.
+function cellMode(section, id) {
+  if (section === 'method') {
+    const regime = id.split('/')[1];
+    // Ruling 1168: a pointerdown row's pair has no verdict unless the vendor's count rose by exactly one.
+    return {mode: regime !== 'frontmost' ? 'own' : isCaretRow(id) ? 'reading' : 'reference', options: {reference: isPointerdownRow(id) ? pointerdownReference : null, ownEffect: OWN_EFFECT_IDS.includes(id)}};
+  }
+  const mode = section !== 'unicode' || isMidSwitchRow(id) ? 'own' : isPressKeyRow(id) ? 'pressKey' : 'absolute';
+  // Ruling 1219: the Korean r k is judged against ruling 1119's oracle (가) on each engine, not cua against the vendor.
+  return {mode, options: mode === 'pressKey' && id.includes('/korean/') ? {expected: PRESS_KEY.expected.korean} : {}};
+}
+// One cell's verdict on one run's pair, as the judge reads it with that run alone and no declared departure (I5 of the
+// split review: combine's rerun flag, ./combine.mjs): 'fail' when cua's sample is worse or a cua oracle reading
+// interfered (undeclared), else judgeCell's verdict. -> 'fail' | 'no-verdict' | 'equal' | 'better' | 'shared' | ….
+export function runVerdict(section, id, vendorRows, cuaRows) {
+  const {mode, options} = cellMode(section, id);
+  const regime = section === 'method' ? id.split('/')[1] : undefined, tag = r => ({...r, section, id, ...(regime ? {regime: r.regime ?? regime} : {})});
+  const v = vendorRows.map(tag), c = cuaRows.map(tag);
+  const judged = judgeCell(mode, v, c, {...options, required: 1, oracle: oracleJudges, acceptance: isAcceptanceRow(id)});
+  const interfered = c.some(r => oracleJudges(r) && !sampleCause(r) && r.interference?.ok === false && !r.interference.declared);
+  return interfered || judged.verdict === 'worse' ? 'fail' : judged.verdict;
+}
 
 // Ruling 1228 (F): the speed-extra cell's samples (../native-matrix/run.mjs SPEED_EXTRA_IDS), of the runs whose two lanes
 // both have them, by op: the judge pools them with the full runs' for those ops alone. -> Map(id -> {vendor, cua, runs}).
@@ -378,10 +400,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const methods = [];
   for (const [id, list] of groupBy(rows.filter(r => r.section === 'method'), r => r.id)) {
     const [target, regime] = id.split('/');
-    const mode = regime !== 'frontmost' ? 'own' : isCaretRow(id) ? 'reading' : 'reference';
-    // Ruling 1168: a pointerdown row's pair has no verdict unless the vendor's count rose by exactly one.
-    const reference = isPointerdownRow(id) ? pointerdownReference : null;
-    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), {...options('method')(id), reference, ownEffect: OWN_EFFECT_IDS.includes(id)})});
+    const {mode, options: own} = cellMode('method', id);
+    methods.push({id, section: 'method', target, regime, method: list[0].method, case: list[0].case, ...judgeCell(mode, ...sides(list), {...options('method')(id), ...own})});
   }
   methods.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -428,10 +448,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     const out = [];
     for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
       const section = list[0].section;
-      const mode = section !== 'unicode' || isMidSwitchRow(id) ? 'own' : isPressKeyRow(id) ? 'pressKey' : 'absolute';
-      // Ruling 1219: the Korean r k is judged against ruling 1119's oracle (가) on each engine, not cua against the vendor.
-      const korean = mode === 'pressKey' && id.includes('/korean/') ? {expected: PRESS_KEY.expected.korean} : {};
-      out.push({id, section, ...judgeCell(mode, ...sides(list), {...options(section)(id), ...korean})});
+      const {mode, options: own} = cellMode(section, id);
+      out.push({id, section, ...judgeCell(mode, ...sides(list), {...options(section)(id), ...own})});
     }
     return out.sort((a, b) => a.id.localeCompare(b.id));
   };
@@ -509,7 +527,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
     ...unneeded.map(e => `departures: the file declares ${e.section} ${e.id}, which no sample of the full runs needed: remove it`),
-    ...evidence.flags.map(f => `rerun: ${f.cell} on ${f.engine}, run ${f.run}: failed on its own verdict in the full run (job ${f.full.runId}, attempt ${f.full.attempt}) and passes only in the filtered rerun (job ${f.rerun.runId}, attempt ${f.rerun.attempt})`),
+    ...evidence.flags.map(f => `rerun: ${f.cell}, run ${f.run}: ${f.why} (full run job ${f.full.runId}, attempt ${f.full.attempt}; rerun job ${f.rerun.runId}, attempt ${f.rerun.attempt}): it passes only in the filtered rerun`),
   ];
   const blocking = [
     ...departureFailures,
@@ -568,7 +586,7 @@ export function evidenceOf(full) {
   }
   const seen = new Set();
   for (const {result} of full) for (const f of result.meta?.rerunFlags ?? []) {
-    const key = `${f.run} ${f.engine} ${f.cell}`;
+    const key = `${f.run} ${f.cell}`;
     if (!seen.has(key)) { seen.add(key); flags.push(f); }
   }
   return {jobs: [...jobs.values()].sort((a, b) => a.run - b.run), flags};
@@ -579,7 +597,7 @@ export function renderEvidence(evidence) {
   const job = j => `job ${j.runId} attempt ${j.attempt}`;
   return ['## Evidence by job (ruling 1228)', '', 'Each run\'s cells come from its full run\'s job, but those a filtered rerun replaced, both lanes together (./combine.mjs).', '',
     ...evidence.jobs.map(e => `- run ${e.run}: ${job(e.full)}${e.reruns.map(r => `, but ${r.cells.length} cell${r.cells.length === 1 ? '' : 's'} from ${job(r)} (commit ${r.commit}): ${r.cells.join(', ')}`).join('')}`),
-    ...evidence.flags.map(f => `- FLAG: ${f.cell} on ${f.engine}, run ${f.run}: failed on its own verdict in the full run, passes only in the filtered rerun (the owner's)`), ''];
+    ...evidence.flags.map(f => `- FLAG: ${f.cell}, run ${f.run}: ${f.why}: it passes only in the filtered rerun (the owner's)`), ''];
 }
 
 // A declared departure's known capability difference as the runs measured it (ruling 1228): of the vendor's runs of

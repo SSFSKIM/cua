@@ -1511,12 +1511,12 @@ test('ruling 1228: 45468052791\'s Chrome background drag re-judged is the declar
 test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a rerun flag is the owner\'s', () => {
   const POINT = 'electron/frontmost/click.point';
   const rerunMeta = run => ({runner: {run: {id: '45468052791', attempt: '1'}}, ...(run === 2 ? {reruns: [{runId: '777', attempt: '2', commit: 'c2', filter: [`method ${POINT}`], build: 'b'}],
-    rerunFlags: [{run: 2, engine: 'cua', cell: `method ${POINT}`, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
+    rerunFlags: [{run: 2, cell: `method ${POINT}`, why: 'its pair was judged fail in the full run and equal in the rerun', full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]} : {})});
   const evidenced = (rows, run) => (run === 2 ? rows.map(r => (r.id === POINT ? {...r, evidence: {runId: '777', attempt: '2'}} : r)) : rows);
   const j = judged({vendor: {resolved: 9, axMs: 50, meta: rerunMeta, tweak: evidenced}, cua: {axMs: 40, meta: rerunMeta, tweak: evidenced}});
   assert.deepEqual(j.evidence.jobs, [{run: 1, full: {runId: '45468052791', attempt: '1'}, reruns: []}, {run: 2, full: {runId: '45468052791', attempt: '1'}, reruns: [{runId: '777', attempt: '2', commit: 'c2', cells: [`method ${POINT}`]}]},
     {run: 3, full: {runId: '45468052791', attempt: '1'}, reruns: []}]);
-  assert.ok(j.owner.some(o => o === `rerun: method ${POINT} on cua, run 2: failed on its own verdict in the full run (job 45468052791, attempt 1) and passes only in the filtered rerun (job 777, attempt 2)`), j.owner.join('\n'));
+  assert.ok(j.owner.some(o => o === `rerun: method ${POINT}, run 2: its pair was judged fail in the full run and equal in the rerun (full run job 45468052791, attempt 1; rerun job 777, attempt 2): it passes only in the filtered rerun`), j.owner.join('\n'));
   assert.equal(j.verdict, 'OWNER');
   const text = renderSummary(j);
   assert.match(text, /^## Evidence by job \(ruling 1228\)$/m);

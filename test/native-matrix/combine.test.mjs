@@ -14,10 +14,10 @@ import {main, parseCommand} from '../../scripts/native-matrix.mjs';
 const A = 'method electron/frontmost/click.point', B = 'method savePanel/frontmost/typeText.name', C = 'method textedit/frontmost/click.element';
 const idOf = key => key.slice(key.indexOf(' ') + 1);
 const row = (key, engine, extra = {}) => ({section: key.split(' ')[0], id: idOf(key), engine, sample: 1, ok: true, ...extra});
-const result = (engine, run, rows, meta = {}) => ({path: `/x/${engine}/run-${run}/result.json`, result: {cell: 'matrix', lanes: [{engine, build: `b-${engine}`, version: 'v'}], rows,
-  meta: {run, planId: 'full', commit: 'c1', runner: {run: {id: '45468052791', attempt: '1'}}, ...meta}}});
+const result = (engine, run, rows, meta = {}, top = {}) => ({path: `/x/${engine}/run-${run}/result.json`, result: {cell: 'matrix', lanes: [{engine, build: `b-${engine}`, version: 'v'}], rows,
+  complete: true, verdict: 'pass', meta: {run, planId: 'full', commit: 'c1', runner: {run: {id: '45468052791', attempt: '1'}}, ...meta}, ...top}});
 const base = run => ['vendor', 'cua'].map(engine => result(engine, run, [row(A, engine, {ok: false}), row(B, engine, engine === 'vendor' ? {ok: false, invalid: 'not prepared'} : {}), row(C, engine)]));
-const rerun = (run, engine, rows, meta = {}) => result(engine, run, rows, {planId: 'filtered', filter: [A, B], commit: 'c2', runner: {run: {id: '777', attempt: '2'}}, ...meta});
+const rerun = (run, engine, rows, meta = {}, top = {}) => result(engine, run, rows, {planId: 'filtered', filter: [A, B], commit: 'c2', runner: {run: {id: '777', attempt: '2'}}, ...meta}, top);
 
 test('a filtered rerun replaces its listed cells of its run number in both lanes, each replaced row naming its job', () => {
   const reruns = ['vendor', 'cua'].map(engine => rerun(2, engine, [row(A, engine), row(B, engine)]));
@@ -37,13 +37,45 @@ test('a filtered rerun replaces its listed cells of its run number in both lanes
   assert.deepEqual(out.combined, [{run: 2, runId: '777', attempt: '2', cells: [A, B]}]);
 });
 
-test('a cell that failed on its own verdict in the full run and passes only in the rerun is flagged; one with a missing proof is not', () => {
+test('a cell that failed in the full run and passes only in the rerun is flagged; one with a missing proof is not', () => {
   const reruns = ['vendor', 'cua'].map(engine => rerun(2, engine, [row(A, engine), row(B, engine)]));
   const {flags} = combineReruns(base(2), reruns);
-  // A failed on both lanes (ok false, no invalid): flagged on each; B's vendor row was invalid: a missing proof, no flag.
-  assert.deepEqual(flags, [
-    {run: 2, engine: 'vendor', cell: A, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}},
-    {run: 2, engine: 'cua', cell: A, full: {runId: '45468052791', attempt: '1'}, rerun: {runId: '777', attempt: '2'}}]);
+  // A failed on both lanes (ok false, no invalid): its rows flagged; B's vendor row was invalid: a missing proof, no flag.
+  assert.deepEqual(flags.map(f => [f.run, f.cell, f.full, f.rerun]), [[2, A, {runId: '45468052791', attempt: '1'}, {runId: '777', attempt: '2'}]]);
+  assert.match(flags[0].why, /^its rows failed on vendor and cua in the full run and pass in the rerun$/);
+});
+
+// I5 of the split review: the cell judged per run, the full run's pair against the rerun's, as the judge reads it; a
+// change from a failing verdict to another is flagged, whatever the rows' own ok said.
+test('a cell whose pair failed the judge in the full run (cua worse than the vendor, or interfering) and not in the rerun is flagged', () => {
+  const D = 'method textedit/background/click.element@finder';
+  const held = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
+  const pair = (run, cua, meta) => ['vendor', 'cua'].map(engine => { const rows = [row(D, engine, {regime: 'background', interference: held, ...(engine === 'cua' ? cua : {})}), row(C, engine)]; return meta ? rerun(run, engine, rows, meta) : result(engine, run, rows); });
+  const interfered = combineReruns(pair(2, {interference: {...held, ok: false, frontmost: false}}), pair(2, {}, {filter: [D]}));
+  assert.deepEqual(interfered.flags.map(f => [f.cell, f.why]), [[D, 'its pair was judged fail in the full run and equal in the rerun']]);
+  // A cua sample worse than the vendor's in the full run.
+  const worse = combineReruns(['vendor', 'cua'].map(engine => result(engine, 2, [row(B, engine, engine === 'cua' ? {ok: false} : {}), row(C, engine)])),
+    ['vendor', 'cua'].map(engine => rerun(2, engine, [row(B, engine)], {filter: [B]})));
+  assert.deepEqual(worse.flags.map(f => f.why), ['its pair was judged fail in the full run and equal in the rerun'], 'judged before the rows: a cua row failing alone reads worse');
+  const same = combineReruns(pair(2, {}), pair(2, {}, {filter: [D]}));
+  assert.deepEqual(same.flags, [], 'a pass that stays one is no flag');
+});
+
+// I4 of the split review: a rerun's pair is combined only as the judge would take a full run's: both lanes complete, not
+// refused, each attesting its own side (ruling 1149), on one frame (ruling 1169); else nothing of it is.
+test('a rerun pair that is incomplete, refused, attesting the other side or on two frames is not combined, said', () => {
+  const lanes = (overrides = {}) => ['vendor', 'cua'].map(engine => rerun(2, engine, [row(A, engine), row(B, engine)], overrides[engine]?.meta ?? {}, overrides[engine]?.top ?? {}));
+  const refusedOf = overrides => combineReruns(base(2), lanes(overrides));
+  const incomplete = refusedOf({cua: {top: {complete: false, verdict: 'no-verdict'}}});
+  assert.match(incomplete.problems[0], /^run 2's filtered rerun \(job 777, attempt 2\): its cua lane is not complete: not combined$/);
+  assert.equal(incomplete.combined.length, 0);
+  assert.match(refusedOf({vendor: {top: {verdict: 'refused', complete: false}}}).problems[0], /its vendor lane was refused: not combined$/);
+  const fallback = combineReruns(base(2), [rerun(2, 'vendor', [row(A, 'vendor'), row(B, 'vendor')]), {...rerun(2, 'cua', [row(A, 'cua'), row(B, 'cua')]), result: {...rerun(2, 'cua', []).result, rows: [row(A, 'cua'), row(B, 'cua')], lanes: [{engine: 'vendor', build: 'b', version: 'v'}]}}]);
+  assert.ok(fallback.problems.some(p => /has no cua lane|attested/.test(p)), fallback.problems.join('\n'));
+  const frame = (x) => ({meta: {venue: {frames: {electron: {x, y: 0, width: 800, height: 600}}}}});
+  const apart = refusedOf({vendor: frame(0), cua: frame(40)});
+  assert.match(apart.problems[0], /: its lanes did not stand on one frame \(.*\): not combined$/);
+  assert.deepEqual(refusedOf({vendor: frame(0), cua: frame(0)}).problems, []);
 });
 
 test('a rerun is combined only with both lanes of its run number, the same cells listed, and a full run beneath it', () => {
@@ -67,9 +99,9 @@ test('the combine command reads every result under its directories and writes th
     writeResult: (dir, result) => { (combined ??= []).push([dir, result.meta.run, result.lanes[0].engine, result.meta.rerunFlags?.length ?? 0]); }, writeJson: () => {}};
   const lines = [];
   await main(['combine', '/a', '/b', '--out', '/o'], {log: l => lines.push(l), io: {combine: io}});
-  assert.deepEqual(combined, [['/o/vendor/run-2', 2, 'vendor', 2], ['/o/cua/run-2', 2, 'cua', 2]]);
+  assert.deepEqual(combined, [['/o/vendor/run-2', 2, 'vendor', 1], ['/o/cua/run-2', 2, 'cua', 1]]);
   assert.ok(lines.some(l => /^combined run 2 from job 777 attempt 2: 2 cell\(s\)$/.test(l)), lines.join('\n'));
-  assert.ok(lines.some(l => /^FLAG: method electron\/frontmost\/click\.point on vendor, run 2/.test(l)), lines.join('\n'));
+  assert.ok(lines.some(l => /^FLAG: method electron\/frontmost\/click\.point, run 2: its rows failed/.test(l)), lines.join('\n'));
 });
 
 test('F: combine writes a speed-extra cell\'s records through as they are, beside the combined lanes, and nothing else of another cell', async () => {

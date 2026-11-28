@@ -249,7 +249,7 @@ final class Engine: @unchecked Sendable {
       try signposted("prologue.lockCheck") { try refuseWhenLocked(isLocked: screenLocked) }
       if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try signposted("prologue.resolveApp") { try resolveApp(args) } }
     } catch let error as EngineError where inputMethods.contains(method) {
-      throw withMeta(error, InputMeta(context))
+      throw withMeta(error, .beforeInput(context))
     }
     // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
     // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
@@ -279,7 +279,7 @@ final class Engine: @unchecked Sendable {
     do {
       try connection.enterMenuSpan(step)
     } catch let error as EngineError where inputMethods.contains(method) {
-      throw withMeta(error, InputMeta(context))
+      throw withMeta(error, .beforeInput(context))
     }
     // The focus hold ends before anything aimed at another app.
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
@@ -293,7 +293,7 @@ final class Engine: @unchecked Sendable {
                                      connection: connection, budgetMs: Double(deadline - unixMilliseconds()))
         }
       } catch let error as EngineError {
-        throw withMeta(error, InputMeta(context))
+        throw withMeta(error, .beforeInput(context))
       }
     }
     let spanBefore = connection.menuSpan.serial

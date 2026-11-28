@@ -486,7 +486,10 @@ input errors  → the error below plus the same meta (startedAt/endedAt null whe
                 frontmost or the 1 s poll timed out; the click is refused, nothing posted, never retried with ⌘); every error of an
                 input method carries the meta, startedAt/endedAt
                 null when nothing was posted (an unresolvable or forbidden app, or a forbidden owning process of the target element,
-                refused at dispatch included)
+                refused at dispatch included); beforeInput: true (#602, ruling 1260) only where the engine knows the request
+                stopped before any of its input went out (no key, ⌘V or Return, no value write: refused at dispatch, a type_text,
+                paste or set_value stopped before its keys, its first ⌘V or Return, or its write), absent otherwise; the secret
+                wrapper says nothing was entered only on it, never on a null startedAt
 type_text/paste/set_value args may carry concealed: true (set by src/services/sky.mjs on a substituted request);
   a concealed request that would need the paste route fails with errorName "concealedInputUnavailable" before input
 error    {code: number (the vendor's codes where mapped; -10005 otherwise), message: string, errorName: string}

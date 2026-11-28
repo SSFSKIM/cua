@@ -61,6 +61,9 @@ final class Engine: @unchecked Sendable {
   /// The paste's effect reading of the application's focused element within a budget (Paste.swift `effectReading`): the
   /// live one when nil, replaced in the unit tests (#361's, whose fake fields have no process to read).
   let pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)?
+  /// The paste's notification source (`pasteNotificationSource`), given the effect watch it reports to: the live rule
+  /// when nil, replaced in the unit tests (#600), which post the field's notifications to the watch themselves.
+  let pasteNotifications: ((PasteEffect) -> NotificationSource)?
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
   /// The after-action watches of closed connections, still running (#237, Activation.swift).
@@ -80,6 +83,7 @@ final class Engine: @unchecked Sendable {
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
+       pasteNotifications: ((PasteEffect) -> NotificationSource)? = nil,
        cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
        cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil,
        clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) },
@@ -98,6 +102,7 @@ final class Engine: @unchecked Sendable {
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
     self.pasteEffectReading = pasteEffectReading
+    self.pasteNotifications = pasteNotifications
     self.cursor = cursor
     // The person acting in an app a cursor acts in turns that cursor half-transparent: from the detector's own ledger.
     intervention.ledger.onRecord = { [cursor] pid in cursor.userActed(pid: pid) }

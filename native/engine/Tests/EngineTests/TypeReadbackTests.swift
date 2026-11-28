@@ -999,6 +999,10 @@ final class TypeReadbackTests: XCTestCase {
     var keys = 1
     /// Before the change: the field's set-up (a read that fails once first, a field that drops the text).
     var prepare: (FakeField) -> Void = { _ in }
+    /// The point's own answers where they differ from the rest (a role-only reading).
+    var expect: ((Transition) -> String?)? = nil
+    /// After the poll, the walk's lookup of the field again: a fake that reads the field's role as the walk does.
+    var walksAfterPoll = false
     /// Whether this classification read is the point's (called at every one, in order, until it says so).
     let at: () -> (FakeField, String) -> Bool
   }
@@ -1009,6 +1013,15 @@ final class TypeReadbackTests: XCTestCase {
     var role: String? = nil
     var subrole: ReadbackSubrole? = nil
     var fails = false
+  }
+
+  /// What the walk's focus check after the poll answers: its role alone.
+  private func walkAnswer(_ transition: Transition) -> String? {
+    switch transition.name {
+    case "unchanged", "open → secure by subrole", "a subrole change while open": return nil
+    case "open → secure by role": return "becameSecure"
+    default: return "fieldChanged"
+    }
   }
 
   private func classifyPoints() -> [ClassifyPoint] {
@@ -1044,6 +1057,12 @@ final class TypeReadbackTests: XCTestCase {
       ClassifyPoint(name: "a poll read's retry", snapshot: false, prepare: { $0.failingAfterTyping["role"] = 1 },
                     at: nth("role", 2, where: { $0.delivered })),
       ClassifyPoint(name: "a checkpoint's poll", snapshot: false, text: "c\t", keys: 2, at: nth("role", 1, where: { $0.delivered })),
+      // Ruling 1254: the focus check after the poll, when the walk finds the field again: it reads the role alone, so
+      // a subrole changes nothing it sees, and an element it does not claim (no text-entry role, a read that failed) is
+      // not found again: a moved focus.
+      ClassifyPoint(name: "the walk's focus check after the poll", snapshot: false, expect: walkAnswer, walksAfterPoll: true, at: nth("walk", 1)),
+      ClassifyPoint(name: "the walk's focus check before a Tab", snapshot: false, text: "c\t", keys: 2, expect: walkAnswer, walksAfterPoll: true,
+                    at: nth("walk", 1)),
       // A password field's: the snapshot's first read against the lookup's, the wait's batch, the snapshot's batch, the
       // settle's batch, the poll's batch, a concealed request's final batch.
       ClassifyPoint(name: "password: lookup (walk) → snapshot", secure: true, claim: walkClaim("AXSecureTextField"), at: nth("role", 1)),
@@ -1059,6 +1078,7 @@ final class TypeReadbackTests: XCTestCase {
 
   /// What the transition answers at a point, with nothing pending: nil for a success.
   private func expected(_ point: ClassifyPoint, _ transition: Transition) -> String? {
+    if let expect = point.expect { return expect(transition) }
     let lookup = point.claim != nil, walk = point.claim?.subrole == nil && lookup
     switch transition.name {
     case "unchanged": return point.concealed ? "lengthMismatch" : nil
@@ -1066,7 +1086,7 @@ final class TypeReadbackTests: XCTestCase {
     case "open → secure by subrole", "a subrole change while open", "a subrole change while secure":
       return walk ? (point.concealed ? "lengthMismatch" : nil) : transition.name.hasPrefix("open") ? "becameSecure" : "fieldChanged"
     case "open → secure by role": return "becameSecure"
-    case "secure → open": return "noLongerSecure"
+    case "secure → open", "secure → AXGroup, its subrole unread": return "noLongerSecure"
     default: return "fieldChanged"
     }
   }
@@ -1091,6 +1111,10 @@ final class TypeReadbackTests: XCTestCase {
       Transition(name: "secure → open", role: "AXTextField"),
       Transition(name: "secure → secure, another role", role: "AXTextField", subrole: .value("AXSecureTextField")),
       Transition(name: "a subrole change while secure", subrole: .value("AXSearchField")),
+      // Ruling 1254: a role never secure text entry is open whatever its subrole did, at the concealed final batch too;
+      // one still secure by a subrole that was read is another role.
+      Transition(name: "secure → AXGroup, its subrole unread", role: "AXGroup", subrole: .failed),
+      Transition(name: "secure → AXGroup, still secure by its subrole", role: "AXGroup", subrole: .value("AXSecureTextField")),
       Transition(name: "a read that fails", fails: true),
     ]
     var runs = 0
@@ -1118,6 +1142,15 @@ final class TypeReadbackTests: XCTestCase {
           let app = FakeApp(field)
           var reads = app.reads
           if let claim = point.claim { reads.focused = { .field(field, by: claim.subrole == nil ? .walk : .marker, identity: claim) } }
+          if point.walksAfterPoll {
+            reads.stillFocused = { looked, _ in
+              looked.onClassify?(looked, "walk")
+              looked.calls.append("walk")
+              // The walk claims a text-entry role or a password field's, by its role alone.
+              guard !looked.fails("role"), let role = looked.role, typeReadbackFocusWalkRoles.contains(role) else { return .moved }
+              return ReadbackRefocus(focus: .focused, role: role)
+            }
+          }
           var keys = 0
           var meta = meta()
           var thrown: EngineError?
@@ -1151,7 +1184,7 @@ final class TypeReadbackTests: XCTestCase {
         }
       }
     }
-    XCTAssertEqual(runs, 9 * 7 * 2 + 7 * 5 * 2, "points × transitions × pending")
+    XCTAssertEqual(runs, 11 * 7 * 2 + 7 * 7 * 2, "points × transitions × pending")
   }
 
   /// Round 4 (a), (b) and (c), by name. (a) A field the marker route took for a password field by its subrole whose
@@ -1220,6 +1253,14 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(readbackClassify(walked, role: "AXTextField", subrole: .value("AXSecureTextField")),
                    .same(ReadbackIdentity(role: "AXTextField", subrole: .value("AXSecureTextField"), secure: true)), "the walk's first subrole")
     XCTAssertEqual(readbackClassify(walked, role: "AXTextArea", subrole: .absent), .changed(.fieldChanged))
+    // Ruling 1254: where the reason is decided, a role never secure text entry with its subrole unread is open (#525),
+    // and one still secure by a subrole that was read is another role.
+    XCTAssertEqual(readbackClassify(bySubrole, role: "AXGroup", subrole: .failed, presumeSecure: false), .changed(.noLongerSecure))
+    XCTAssertEqual(readbackClassify(bySubrole, role: "AXGroup", subrole: .value("AXSecureTextField"), presumeSecure: false), .changed(.fieldChanged))
+    // The walk's reading after the poll: its role alone.
+    XCTAssertEqual(readbackClassify(open, role: "AXTextField", subrole: nil), .same(open))
+    XCTAssertEqual(readbackClassify(open, role: "AXSecureTextField", subrole: nil), .changed(.becameSecure))
+    XCTAssertEqual(readbackClassify(open, role: "AXTextArea", subrole: nil), .changed(.fieldChanged))
     let presumed = ReadbackIdentity(role: "AXTextField", subrole: .failed, secure: true)
     XCTAssertEqual(readbackClassify(presumed, role: "AXTextField", subrole: .value("AXSecureTextField")),
                    .same(ReadbackIdentity(role: "AXTextField", subrole: .value("AXSecureTextField"), secure: true)))

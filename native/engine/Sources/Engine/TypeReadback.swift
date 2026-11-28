@@ -259,6 +259,16 @@ struct ReadbackIdentity: Equatable {
   var secure: Bool
 }
 
+/// The focus check after the poll (`ReadbackReads.stillFocused`): whether the field is still the focus, and the role the
+/// walk read of it when the walk found it again (ruling 1254: R1 compares it), nil when no walk did.
+struct ReadbackRefocus: Equatable {
+  var focus: ReadbackFocus
+  var role: String? = nil
+  static let focused = ReadbackRefocus(focus: .focused)
+  static let moved = ReadbackRefocus(focus: .moved)
+  static let unknown = ReadbackRefocus(focus: .unknown)
+}
+
 /// What one classification found against the baseline: the same field (with the baseline as it now stands: a subrole
 /// it never read is taken from this read), a transition that ends the read-back, or a read that failed.
 enum ReadbackClassCheck: Equatable {
@@ -275,10 +285,17 @@ enum ReadbackClassCheck: Equatable {
 /// compared: a subrole the walk never read, with the same role, is the baseline's from now on and decides `secure` with
 /// it, as #405 classifies them. A role that cannot be read is a read that failed; so is a subrole that cannot be read
 /// on an open field with the same role, while a password field's reads on as one (#414's batches), except where the
-/// reason is decided (`presumeSecure` false: a concealed request's final batch). A role that changed is a transition
-/// whatever the subrole read answered.
-func readbackClassify(_ baseline: ReadbackIdentity, role: String?, subrole: ReadbackSubrole, presumeSecure: Bool = true) -> ReadbackClassCheck {
+/// reason is decided (`presumeSecure` false: a concealed request's final batch) where the role leaves its security
+/// open to question: not AXSecureTextField, secure whatever its subrole did, and not a role never secure text entry
+/// (`neverSecureRoles`, #525), open whatever its subrole did (ruling 1254). A role that changed is a transition whatever
+/// the subrole read answered. A reading of the role alone (`subrole` nil: the walk's, after the poll) compares the role.
+func readbackClassify(_ baseline: ReadbackIdentity, role: String?, subrole: ReadbackSubrole?, presumeSecure: Bool = true) -> ReadbackClassCheck {
   guard let role else { return .unreadable(.role) }
+  guard let subrole else {
+    if role == baseline.role { return .same(baseline) }
+    let secureNow = baseline.secure ? readbackPasswordField(role: role, subrole: .failed) : role == "AXSecureTextField"
+    return .changed(secureNow == baseline.secure ? .fieldChanged : secureNow ? .becameSecure : .noLongerSecure)
+  }
   if baseline.subrole == nil, role == baseline.role {
     return .same(ReadbackIdentity(role: role, subrole: subrole, secure: readbackSecure(role: role, subrole: subrole)))
   }
@@ -286,7 +303,7 @@ func readbackClassify(_ baseline: ReadbackIdentity, role: String?, subrole: Read
   if case .failed = subrole {
     // AXSecureTextField is secure whatever its subrole did; a text-entry role is presumed so, which a decided reason
     // does not take.
-    if baseline.secure, !presumeSecure, role != "AXSecureTextField" { return .unreadable(.subrole) }
+    if baseline.secure, !presumeSecure, role != "AXSecureTextField", !neverSecureRoles.contains(role) { return .unreadable(.subrole) }
     if role == baseline.role { return baseline.secure ? .same(baseline) : .unreadable(.subrole) }
     // Only the role was read, and it changed: a password field's text-entry role is presumed still one (#414).
     secureNow = baseline.secure ? readbackPasswordField(role: role, subrole: .failed) : role == "AXSecureTextField"
@@ -309,8 +326,9 @@ struct ReadbackReads<Element> {
   /// Before the first event: the field typed keys reach (`readbackFocusedField`).
   var focused: () -> ReadbackFound<Element>?
   /// After an event (the final poll's and each checkpoint's): whether the snapshot's field is still that field
-  /// (`readbackStillFocused`), never through the marker: focused, moved, or unknown. #354's plain path.
-  var stillFocused: (Element, ReadbackLookup) -> ReadbackFocus
+  /// (`readbackStillFocused`), never through the marker: focused, moved, or unknown, with the role the lookup read of it
+  /// when the walk found it again (R1 compares it, ruling 1254). #354's plain path.
+  var stillFocused: (Element, ReadbackLookup) -> ReadbackRefocus
   /// #414: a password field's focus check after typing, one AX call (`readbackFieldFocused`). A fake that does not say
   /// answers unknown, which never confirms.
   var fieldFocused: (Element, ReadbackLookup) -> ReadbackFocus = { _, _ in .unknown }
@@ -376,10 +394,13 @@ extension ReadbackReads where Element == AXUIElement {
                            walk: walk, marker: marker)
     }
     return ReadbackReads(focused: { lookup(marker: takesMarker ? marker : nil) }, stillFocused: { field, found in
-      readbackStillFocused(field, found: found, again: {
-        if case .field(let again, _, _)? = lookup(marker: nil) { return again }
-        return nil
+      var walked: String?  // the role the walk read of the element it found again, when it did
+      let focus = readbackStillFocused(field, found: found, again: {
+        guard case .field(let again, _, let identity)? = lookup(marker: nil) else { return nil }
+        if CFEqual(again, field) { walked = identity?.role }
+        return again
       }, isFocused: walk.isFocused, same: { CFEqual($0, $1) })
+      return ReadbackRefocus(focus: focus, role: focus == .focused ? walked : nil)
     }, fieldFocused: { field, found in
       readbackFieldFocused(field, found: found, applicationFocus: {
         read(timed(AXUIElementCreateApplication(pid)), kAXFocusedUIElementAttribute, asElement)
@@ -1199,7 +1220,10 @@ final class TypeReadback<Element> {
     if let closed = poll.closed { throw unconfirmed(closed, beforeKey) }
     // Still the field, asked as it was found and never through the marker (#395, ruling 1ea561bc:824): no marker call
     // follows delivered text, whose offset it would carry.
-    guard reads.stillFocused(field, found) == .focused else { throw unconfirmed(.fieldChanged, beforeKey) }  // #354's: an unknown focus, as before
+    let refocus = reads.stillFocused(field, found)
+    guard refocus.focus == .focused else { throw unconfirmed(.fieldChanged, beforeKey) }  // #354's: an unknown focus, as before
+    // R1 (ruling 1254): the role the walk read of the field it found again is classified against the baseline too.
+    if let role = refocus.role, case .changed(let why) = readbackClassify(identity, role: role, subrole: nil) { throw unconfirmed(why, beforeKey) }
     switch poll.last {
     case .equal?: return
     case .equalUnconsumed?: throw unconfirmed(.unchanged, beforeKey)

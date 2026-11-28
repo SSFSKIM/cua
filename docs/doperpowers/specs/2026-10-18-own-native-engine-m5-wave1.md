@@ -311,6 +311,39 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-27, ruling 1248: how sitting C proves #587's engine fix and then the flip.
+  - **The problem.** The #587/#590 fix changes cua's engine build. jobs-check (1230) holds a filtered rerun to the base's
+    build (0.3.0, 2de28fcc909d7577). That rule matters, because the fix could move any of the base's other ~410 cells,
+    all judged on the old build.
+  - **(1) A proof run first.** It is a filtered split with no base_run_id. Its 7 cells are judged pairwise on the new
+    build, alone, and never combined over a base:
+    - #587's three typeSelect cells;
+    - `textedit/latin/typeText.latin`;
+    - concurrent.sheet@electron;
+    - the two openPanel@finder cells.
+    jobs-check still holds the jobs to one harness commit, engine versions and build among themselves. It records the new
+    build against the last judged C (the newest committed `*-m5-sitting-c-*` evidence) as information. Neither
+    rejudge-base nor combine runs, and the report heads itself "proof run: N cells, no base". This run gates the #587
+    PR's merge to main. If a cell fails, the fix goes back to the engine.
+  - **(2) Then, for the flip, a full split C on the shipping build:** every cell, no filter and no base. It is not
+    dispatched until (1) is clean. 1239's layered rebuild stays as history only.
+  - **concurrent.sheet@electron.** The declaration is accepted: both engines act, with a 400 ms lead on both lanes, and
+    the tap on the Electron fixture's pid.
+    - A refusal with tap proof FAILs. That includes cua's pre-post refusal, which has a receipt but no action interval:
+      its window ends at the cell's own recorded end.
+    - A non-refusal throw on either action still FAILs; the tap rule decides only whether the probe is valid.
+    - The vendor reports no receipt. Its key must come before the opening's call time, and it is judged by its declared
+      "act".
+  - **1239's difference list.** The two openPanel@finder cells (no verdict → equal) are approved under ad285cedf and
+    1239. The other two differences are already explained, by #593/1240 and #588/1235.
+  - **Report-level moves.** They are printed as informational, with before and after values, and never compared:
+    - cells that do not qualify: 4 → 1;
+    - the three re-measured owner lines leave;
+    - composing retries: vendor 3 in 2 groups, with the lopsided finding;
+    - not interfering: 379/382 → 381/384.
+  - **Known capability differences in the flip report.** #597 (P3, deferred; ruling 1247) is added. When type_text finds
+    no focused element, cua answers typeUnconfirmed noFocusedElement where the vendor answers ok. It is report text
+    only, in `expected/capability-notes.json`; the judge never reads it. #591's drag entry stays.
 - 2026-11-27, ruling 1240: the owner's speed decision, accept. It settles the three ops that missed the 10% beat in the
   base and were re-measured under 1232.
   - electron/method.paste.replace and textedit/method.paste.replace pass on re-measurement, and count as passing.

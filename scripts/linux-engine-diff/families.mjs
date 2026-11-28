@@ -310,7 +310,8 @@ export const FAMILIES = {
     kind: 'electron',
     geometry: [900, 700],
     // Chromium's web contents expose no tree on Linux until its accessibility mode is set: --force-renderer-accessibility
-    // sets it at the start, and so does one AT-SPI GetAttributes request from any client at any time (cua-engine's own
+    // sets it at the start, and so does one AT-SPI GetAttributes request from any client at any time once the app is on the
+    // bus (cua-engine's own
     // observation sends it since 0.4.7, #228; the pre-flight docs/doperpowers/specs/2026-11-27-electron-a11y-preflight.md,
     // A). ACCESSIBILITY_ENABLED=1 and the bus's ScreenReaderEnabled do not set the mode (M0.4 probe), and the flag does
     // not start the ATK bridge: that needs ACCESSIBILITY_ENABLED=1 on the run's session bus, which has no org.a11y.Status

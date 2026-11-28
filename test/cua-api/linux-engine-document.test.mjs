@@ -89,7 +89,11 @@ const CLAIMS = [
   ['the drop guard: shared mode, a family whose drop changes the desktop, unless in front', [[README, 'unless the window is already active, focused and fully unobscured']],
     'native/linux-engine/src/engine/pointer.rs',
     'if self.cfg.desktop == DesktopMode::Shared && self.family_of(window).is_some_and(|f| f.drop_changes_desktop) => { let standing = self.x.standing(window); let in_front = standing.active && standing.focused && self.x.unobscured(window);'],
-  ['launch_app gives the application ACCESSIBILITY_ENABLED=1 (#228)', [[README, 'That launch gives the application `ACCESSIBILITY_ENABLED=1`']],
+  // The environment gio runs with is the session's own variables, then cua's one (#228); it is passed to the launch itself.
+  ['launch_app passes the application ACCESSIBILITY_ENABLED=1 (#228)', [[README, 'That launch passes the application `ACCESSIBILITY_ENABLED=1`']],
+    'src/repl-host/launch-services.mjs',
+    'const desktopEnv = {...Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === \'string\').map(name => [name, env[name]])), ...LAUNCH_ENV}; try { await launch(real, desktopEnv);'],
+  ['that cua variable is ACCESSIBILITY_ENABLED=1', [[README, 'That launch passes the application `ACCESSIBILITY_ENABLED=1`']],
     'src/repl-host/launch-services.mjs', 'const LAUNCH_ENV = {ACCESSIBILITY_ENABLED: \'1\'};'],
   ['Qt ignores the background wheel always', [[README, 'Qt** ignores synthetic wheel events in the background']], 'native/linux-engine/src/families.rs',
     'name: "Qt", toolkit: Some("Qt"), toolkit_major: None, classes: &[], drag: DragPacing::NONE, paste: DEFAULT_PASTE, ignores: &[Ignored { kind: Kind::Scroll, when: When::Always, }],'],

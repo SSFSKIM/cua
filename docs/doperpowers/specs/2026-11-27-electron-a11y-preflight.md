@@ -595,9 +595,12 @@ its own.
 **What shipped** (the pull request closes #228; each task's as-built entry is in §K).
 - **The engine (cua-engine 0.4.7; T1 to T3, and the review's fixes).** When a tree is asked for and the frame of an
   Electron window (`WM_WINDOW_ROLE` `browser-window`) reads bare, the engine sends one `GetAttributes` to the
-  application, waits up to 2 s of wall time for the page, and answers with it; a screenshot never asks. An Electron
-  window whose process is not on the bus, and one that was asked and showed nothing, get `tree_unavailable` with
-  `no_provider` or `asked`. Every other window's answer is the 0.4.6 engine's, key for key.
+  application. Only a request that got its reply is followed by the wait: up to 2 s of wall time after the reply, for
+  the pauses and the accessibility-bus calls, not the X server's replies. The observation answers with the page when it
+  arrives in time. A screenshot never asks. `tree_unavailable` is `no_provider` for an Electron window whose process
+  association found, with the registry's listing whole, to have no application on the bus, and `asked` for a wait that ended at the
+  bound with the frame still alone (an empty document or panels alone give neither). Every other window's answer is the
+  0.4.6 engine's, key for key.
 - **The JavaScript (T4).** `launch_app` on Linux starts the application with `ACCESSIBILITY_ENABLED=1`, through both
   routes (the supervisor's `gio launch` and the engine's own launcher). `getScreenshot` sends `tree_wanted: false`.
   The facade renders the two sentences after the tree, and doctor's `accessibility.enabled` row names Chromium beside
@@ -608,8 +611,8 @@ its own.
   and dated (§J 1; its Decision Log and Surprises entries stay as written). `scripts/linux-engine-diff/families.mjs`'s
   Electron comment (§J 4). `test/cua-api/linux-engine-document.test.mjs` pins the new sentences to the facade's text
   and the launch variable to the code.
-- **The release and the pin (T5).** The engine's release, its pin and `MIN_ENGINE_VERSION` 0.4.7 together. They are
-  not part of T6's documents.
+- **The release and the pin (T5), pending.** The engine's release, its pin and `MIN_ENGINE_VERSION` 0.4.7 together,
+  filled in from T5. At T6's base the pin is 0.4.6 with a minimum of 0.4.5; none of that is T6's.
 
 **The acceptance** (§G's live tests 1 and 3 through the confined service on the VM, T5):
 
@@ -639,5 +642,4 @@ its own.
   did nothing on the route that matches a window by its title; the review found it, and the fix is a re-association
   made for the ask, on every route.
 - **Tests of what must not happen have to fail closed.** The live tests for the screenshot and the browsers bracket
-  each observation with markers on the bus, so an engine that asks when it should not turns them red, and each has a
-  broken-engine control that exits 1.
+  each observation with markers on the bus, so an engine that asks when it should not turns them red.

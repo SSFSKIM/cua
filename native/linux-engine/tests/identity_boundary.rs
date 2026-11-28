@@ -1,7 +1,8 @@
 //! The X11 fallback stays the vendor's (M4's T5; F5): a window whose association met duplicates never answers the
 //! one-node X11 tree, whatever happens after. The types carry most of it:
 //!
-//! - `X11::fallback_tree` takes an `atspi::Fallback`, whose only field is private to `atspi`;
+//! - `X11::fallback_tree` takes an `atspi::Fallback`, whose only field (`Why`, which says whether the window's process
+//!   has no application on the bus, #228) is private to `atspi`;
 //! - `atspi::associate` answers cua's own routes (duplicates told apart, the caption) with `Association::Identity` or a
 //!   frame, never with an error or leave (`own_route`), and `Associated::fallback` gives no leave for a frame they
 //!   found;
@@ -45,7 +46,7 @@ fn violations(files: &[(PathBuf, String)]) -> Vec<String> {
     for (path, code) in files {
         let name = path.to_string_lossy();
         let is = |p: &str| Path::new(p) == path;
-        if !is("atspi.rs") && count(code, "Fallback(())") > 0 {
+        if !is("atspi.rs") && count(code, "Fallback(Why") > 0 {
             found.push(format!("{name} makes leave for the X11 fallback"));
         }
         let constructor = count(code, "after_vendor_error");
@@ -125,7 +126,7 @@ fn each_rule_fails_where_it_should() {
     );
     assert!(found.iter().any(|v| v.contains("2 times, not once")), "{found:?}");
     let found = with("engine/paste.rs", &|c| {
-        format!("{c}\nfn leak() {{ let _ = Fallback(()); }}\n")
+        format!("{c}\nfn leak() {{ let _ = Fallback(Why::NoProvider); }}\n")
     });
     assert!(found.iter().any(|v| v.contains("makes leave")), "{found:?}");
     let found = with("engine/elements.rs", &|c| {

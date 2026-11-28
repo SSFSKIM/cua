@@ -1140,8 +1140,8 @@ mod tests {
             let leave = of_process(20, &apps, &[pid(10), unnamed.clone(), pid(40)]).unwrap_err();
             assert!(!leave.no_provider(), "{unnamed:?}");
         }
-        // the vendor's other leaves never say so
-        assert!(!super::Fallback::after_vendor_error().no_provider());
+        // the vendor's other leaves never say so (an error's leave is `Why::Other` by its definition, which
+        // tests/identity_boundary.rs keeps the only mention of its constructor in this file)
         assert!(!associated(Told::Title).fallback().unwrap().no_provider());
     }
 

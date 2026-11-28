@@ -1,14 +1,14 @@
 {
-  "version": "0.4.5",
-  "release": "linux-engine-v0.4.5",
+  "version": "0.4.6",
+  "release": "linux-engine-v0.4.6",
   "assets": {
     "x64": {
-      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-x64",
-      "sha256": "ef714179ac244114431275580f600d9dc340b3d62142a59d7563149a76cc119a"
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.6/cua-engine-0.4.6-linux-x64",
+      "sha256": "086b270b54555b74e90a1ae910fca2af173561b1065a111021fc3407761155a4"
     },
     "arm64": {
-      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.5/cua-engine-0.4.5-linux-arm64",
-      "sha256": "f81121552e77f50ec2d8dcf3135006a9245c411f2b67bc9cfbe408850e6e637c"
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.6/cua-engine-0.4.6-linux-arm64",
+      "sha256": "9f39085d90193e16cd67e2c6c84f65b4c28432945bd49df38f9d8442bb36f625"
     }
   }
 }

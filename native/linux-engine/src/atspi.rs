@@ -97,7 +97,11 @@ impl Transport for ReadBy<'_> {
     }
 
     fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: std::time::Instant) -> Result<Option<CallResult>> {
-        Transport::call_until(self.bus, obj, field, deadline.min(self.deadline))
+        // inside the read's deadline, so a call it catches unwritten is dropped, not `Broken` (`Bus::flush`)
+        let read_by = self.deadline;
+        self.bus.by(read_by, |bus| {
+            Transport::call_until(bus, obj, field, deadline.min(read_by))
+        })
     }
 }
 
@@ -305,9 +309,9 @@ pub fn toolkit_name(bus: &mut Bus, app: &ObjRef) -> Result<Option<String>> {
 
 /// One `Accessible.GetAttributes` to an application root, the request that sets a Chromium application's
 /// accessibility mode (`ask.rs`; the #228 pre-flight's §A). Its reply, the root's attributes, says nothing the engine
-/// uses.
-pub fn ask_attributes(bus: &mut Bus, app: &ObjRef) -> Result<CallResult> {
-    bus.call(&MethodCall {
+/// uses; what matters is whether it was written, answered, refused or left unanswered (`Bus::call_answered`).
+pub fn ask_attributes(bus: &mut Bus, app: &ObjRef) -> Result<crate::dbus::Answer> {
+    bus.call_answered(&MethodCall {
         dest: &app.bus,
         path: &app.path,
         iface: ACCESSIBLE,

@@ -9,22 +9,26 @@
 //! when all of these hold (`decide`):
 //!
 //! - a tree was asked for: never for a screenshot (`get_window_state`'s `tree_wanted: false`);
-//! - the frame's read came back bare: the frame alone ([`bare`]);
+//! - the frame's read came back bare: the frame alone ([`bare`]), its own child listing having answered (a frame whose
+//!   `GetChildren` failed is not known to be bare, [`after_read`]);
 //! - the application has not been asked before on this bus connection ([`Asked`]);
 //! - the application's `ToolkitName` is `Chromium`, read only in this bare case and once per application;
-//! - the window's `WM_WINDOW_ROLE` is `browser-window`, Electron's own role: Chrome's windows are `browser` and
-//!   `pop-up`, and CEF's sample sets none, so a browser and other embedders are left as they are (taste call 3).
+//! - the window's `WM_WINDOW_ROLE` is exactly `browser-window` (`X11::role_exactly`), Electron's own role: Chrome's
+//!   windows are `browser` and `pop-up`, and CEF's sample sets none, so a browser and other embedders are left as they
+//!   are (taste call 3);
+//! - right before the request, the window's association still names this frame (`Application::confirm`).
 //!
-//! A send that fails, or that the application answers with an error, is not remembered, so the next observation tries
-//! again. Any other window gets no new call, beyond the one `ToolkitName` read for a bare frame.
+//! A request not written, one the application refused, and one skipped because the association changed are not
+//! remembered, so the next observation tries again; one written and left unanswered is, since it may have changed the
+//! application, which a request cannot undo. Any other window gets no new call, beyond the one `ToolkitName` read for
+//! a bare frame.
 //!
-//! A request that went out is followed by the wait (`wait.rs`, [`after_read`]): the frame is read again until its
+//! A request the application answered is followed by the wait (`wait.rs`, [`after_read`]): the frame is read again until its
 //! content comes or the bound passes, so the observation that asked answers with the page. It comes with the request,
 //! once per application per connection, and nothing else waits.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::dbus::CallResult;
 use crate::tree::{AxNode, ReadStats};
 use crate::wait::{Frame, Summary};
 
@@ -80,6 +84,12 @@ pub enum Left {
     AskedBefore,
     Toolkit,
     Role,
+    /// The frame's own child listing failed: a frame with no children whose `GetChildren` timed out or failed is not
+    /// known to be bare (fix of the whole-change review, P1).
+    Unlisted,
+    /// Right before the request, the window's association no longer named this frame, or could not be confirmed
+    /// (the same review, P1): nothing was sent, and the next observation asks again.
+    Changed,
 }
 
 impl Left {
@@ -91,6 +101,8 @@ impl Left {
             Left::AskedBefore => "asked_before",
             Left::Toolkit => "toolkit",
             Left::Role => "role",
+            Left::Unlisted => "unlisted",
+            Left::Changed => "changed",
         }
     }
 }
@@ -141,10 +153,11 @@ impl Asked {
         self.toolkits.insert(app.to_string(), name);
     }
 
-    /// Records the request's outcome: an application is remembered only when its reply came back without error, so
-    /// a send that failed is tried again at the next observation.
-    pub fn sent(&mut self, app: &str, outcome: &anyhow::Result<CallResult>) {
-        if matches!(outcome, Ok(Ok(_))) {
+    /// Records the request's outcome: an application is remembered once its request was written and not refused, so
+    /// a request that was not written, or that the application answered with an error, is tried again at the next
+    /// observation, and one written and unanswered (which may have changed the application) is never sent twice.
+    pub fn sent(&mut self, app: &str, outcome: &anyhow::Result<Delivery>) {
+        if matches!(outcome, Ok(Delivery::Answered | Delivery::Unanswered(_))) {
             self.asked.insert(app.to_string());
         }
     }
@@ -154,6 +167,27 @@ impl Asked {
         self.asked.clear();
         self.toolkits.clear();
     }
+}
+
+/// What became of a request that was written (`Application::send`; its error is a request not written).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    /// The application answered without error.
+    Answered,
+    /// The application answered with an error: it did not take the request.
+    Rejected(String),
+    /// No answer came in time: the application may have taken the request.
+    Unanswered(String),
+}
+
+/// What [`ask_if_due`]'s request came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sent {
+    Answered,
+    Rejected(String),
+    Unanswered(String),
+    /// Not written: the connection failed before the request was on it.
+    Unwritten(String),
 }
 
 /// The application of a frame just read, as [`ask_if_due`] reaches it: the engine's memory, the lookups and the
@@ -168,8 +202,11 @@ pub trait Application: Frame {
     fn read_toolkit(&mut self) -> anyhow::Result<Option<String>>;
     /// The window's `WM_WINDOW_ROLE`: None when absent or unreadable.
     fn read_role(&mut self) -> Option<String>;
-    /// One `Accessible.GetAttributes` to the application root.
-    fn send(&mut self) -> anyhow::Result<CallResult>;
+    /// Whether the window's association still names this frame, confirmed right before the request on the
+    /// connection that found it: an error when it cannot be told.
+    fn confirm(&mut self) -> anyhow::Result<bool>;
+    /// One `Accessible.GetAttributes` to the application root: an error when it was not written.
+    fn send(&mut self) -> anyhow::Result<Delivery>;
 }
 
 /// What [`ask_if_due`] did, for the `--stats` line.
@@ -181,8 +218,8 @@ pub struct Outcome {
     pub toolkit: Option<Option<String>>,
     /// The window's role, when the rule needed it.
     pub role: Option<Option<String>>,
-    /// The request's outcome when it was sent: its failure's text, if it failed.
-    pub sent: Option<Result<(), String>>,
+    /// The request's outcome when it was sent.
+    pub sent: Option<Sent>,
     /// The wait for the frame's content, which follows a request that went out (`wait.rs`).
     pub waited: Option<Summary>,
 }
@@ -205,9 +242,16 @@ impl Outcome {
             record.insert("role".into(), role.clone().into());
         }
         if let Some(sent) = &self.sent {
-            record.insert("sent".into(), sent.is_ok().into());
-            if let Err(error) = sent {
-                record.insert("failed".into(), error.clone().into());
+            record.insert("sent".into(), (*sent == Sent::Answered).into());
+            match sent {
+                Sent::Answered => {}
+                Sent::Rejected(error) | Sent::Unwritten(error) => {
+                    record.insert("failed".into(), error.clone().into());
+                }
+                Sent::Unanswered(error) => {
+                    record.insert("failed".into(), error.clone().into());
+                    record.insert("unanswered".into(), true.into());
+                }
             }
         }
         if let Some(waited) = &self.waited {
@@ -244,12 +288,19 @@ pub fn ask_if_due(tree_wanted: bool, bare: bool, app: &mut impl Application) -> 
             }
             Decision::ReadRole => outcome.role = Some(app.read_role()),
             Decision::Ask => {
+                // the association again, right before the effect: the frame was chosen before the lookups above, and
+                // a request to the wrong application cannot be taken back
+                if !matches!(app.confirm(), Ok(true)) {
+                    outcome.left = Some(Left::Changed);
+                    return outcome;
+                }
                 let sent = app.send();
                 app.asked().sent(&name, &sent);
                 outcome.sent = Some(match sent {
-                    Ok(Ok(_)) => Ok(()),
-                    Ok(Err(error)) => Err(error),
-                    Err(error) => Err(format!("{error:#}")),
+                    Ok(Delivery::Answered) => Sent::Answered,
+                    Ok(Delivery::Rejected(error)) => Sent::Rejected(error),
+                    Ok(Delivery::Unanswered(error)) => Sent::Unanswered(error),
+                    Err(error) => Sent::Unwritten(format!("{error:#}")),
                 });
                 return outcome;
             }
@@ -271,8 +322,17 @@ pub fn after_read(
     stats: ReadStats,
     app: &mut impl Application,
 ) -> (AxNode, ReadStats, Outcome) {
+    // a frame with no children whose own listing failed is not known to be bare (the measured bare frame lists its one
+    // child, whose role fails): it is left as it was read
+    if tree_wanted && bare(&tree) && stats.listings_failed > 0 {
+        let outcome = Outcome {
+            left: Some(Left::Unlisted),
+            ..Default::default()
+        };
+        return (tree, stats, outcome);
+    }
     let mut outcome = ask_if_due(tree_wanted, bare(&tree), app);
-    if outcome.sent != Some(Ok(())) {
+    if outcome.sent != Some(Sent::Answered) {
         return (tree, stats, outcome);
     }
     let waited = crate::wait::wait(app, tree, stats);
@@ -417,14 +477,20 @@ mod tests {
     }
 
     #[test]
-    fn an_application_is_remembered_only_once_its_request_was_answered_without_error() {
+    fn an_application_is_remembered_once_its_request_was_written_and_not_refused() {
         let mut asked = Asked::default();
         asked.sent(":1.7", &Err(anyhow::anyhow!("broken connection")));
-        assert!(!asked.asked_before(":1.7"), "a send that failed");
-        asked.sent(":1.7", &Ok(Err("org.freedesktop.DBus.Error.UnknownObject".into())));
+        assert!(!asked.asked_before(":1.7"), "a send that was not written");
+        asked.sent(
+            ":1.7",
+            &Ok(Delivery::Rejected("org.freedesktop.DBus.Error.UnknownObject".into())),
+        );
         assert!(!asked.asked_before(":1.7"), "an error reply");
-        asked.sent(":1.7", &Ok(Ok(vec![])));
+        asked.sent(":1.7", &Ok(Delivery::Answered));
         assert!(asked.asked_before(":1.7"));
+        // the whole-change review, P2: written, and no answer came; the application may have taken it
+        asked.sent(":1.9", &Ok(Delivery::Unanswered("timed out".into())));
+        assert!(asked.asked_before(":1.9"), "a written request whose answer never came");
         assert!(!asked.asked_before(":1.8"), "another application");
         asked.forget();
         assert!(!asked.asked_before(":1.7"), "a new connection");
@@ -452,8 +518,12 @@ mod tests {
         asked: Asked,
         toolkit: Option<&'static str>,
         role: Option<&'static str>,
-        /// Each request's outcome in turn: true answered, false failed to send.
+        /// Each request's outcome in turn: true answered, false not written.
         sends: Vec<bool>,
+        /// When set, each request's delivery in turn instead (written requests that were refused or not answered).
+        deliveries: Vec<Delivery>,
+        /// Each confirmation right before a request, in turn; once they run out, confirmed.
+        confirms: Vec<Result<bool, &'static str>>,
         /// How many toolkit reads fail on the bus before one answers.
         toolkit_failures: usize,
         calls: Vec<&'static str>,
@@ -469,6 +539,8 @@ mod tests {
                 toolkit,
                 role,
                 sends: vec![],
+                deliveries: vec![],
+                confirms: vec![],
                 toolkit_failures: 0,
                 calls: vec![],
                 frame_reads: vec![],
@@ -500,10 +572,20 @@ mod tests {
             self.calls.push("WM_WINDOW_ROLE");
             self.role.map(str::to_owned)
         }
-        fn send(&mut self) -> anyhow::Result<CallResult> {
+        fn confirm(&mut self) -> anyhow::Result<bool> {
+            self.calls.push("confirm");
+            match self.confirms.is_empty() {
+                true => Ok(true),
+                false => self.confirms.remove(0).map_err(|e| anyhow::anyhow!(e)),
+            }
+        }
+        fn send(&mut self) -> anyhow::Result<Delivery> {
             self.calls.push("GetAttributes");
+            if !self.deliveries.is_empty() {
+                return Ok(self.deliveries.remove(0));
+            }
             match self.sends.remove(0) {
-                true => Ok(Ok(vec![])),
+                true => Ok(Delivery::Answered),
                 false => Err(anyhow::anyhow!("the connection broke")),
             }
         }
@@ -551,6 +633,7 @@ mod tests {
             [
                 "ToolkitName",
                 "WM_WINDOW_ROLE",
+                "confirm",
                 "GetAttributes",
                 "pause",
                 "read",
@@ -627,8 +710,8 @@ mod tests {
         app.sends = vec![true];
         let first = ask_if_due(true, true, &mut app);
         assert_eq!(first.left, None);
-        assert_eq!(first.sent, Some(Ok(())));
-        assert_eq!(app.calls, ["ToolkitName", "WM_WINDOW_ROLE", "GetAttributes"]);
+        assert_eq!(first.sent, Some(Sent::Answered));
+        assert_eq!(app.calls, ["ToolkitName", "WM_WINDOW_ROLE", "confirm", "GetAttributes"]);
         assert_eq!(
             first.record(),
             Some(serde_json::json!({"toolkit": "Chromium", "role": "browser-window", "sent": true}))
@@ -636,7 +719,7 @@ mod tests {
         // a second observation, still bare: asked before, so no lookup and no request
         let again = ask_if_due(true, true, &mut app);
         assert_eq!(again.left, Some(Left::AskedBefore));
-        assert_eq!(app.calls.len(), 3);
+        assert_eq!(app.calls.len(), 4);
         assert_eq!(again.record(), Some(serde_json::json!({"left": "asked_before"})));
     }
 
@@ -645,7 +728,7 @@ mod tests {
         let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
         app.sends = vec![false, true];
         let failed = ask_if_due(true, true, &mut app);
-        assert_eq!(failed.sent, Some(Err("the connection broke".into())));
+        assert_eq!(failed.sent, Some(Sent::Unwritten("the connection broke".into())));
         assert_eq!(
             failed.record(),
             Some(
@@ -653,7 +736,7 @@ mod tests {
                 "failed": "the connection broke"})
             )
         );
-        assert_eq!(ask_if_due(true, true, &mut app).sent, Some(Ok(())));
+        assert_eq!(ask_if_due(true, true, &mut app).sent, Some(Sent::Answered));
         assert_eq!(ask_if_due(true, true, &mut app).left, Some(Left::AskedBefore));
         assert_eq!(app.count("GetAttributes"), 2);
         assert_eq!(app.count("ToolkitName"), 1, "the toolkit is read once");
@@ -667,7 +750,7 @@ mod tests {
         let failed = ask_if_due(true, true, &mut app);
         assert_eq!(failed.left, Some(Left::Toolkit));
         assert_eq!(app.count("GetAttributes"), 0);
-        assert_eq!(ask_if_due(true, true, &mut app).sent, Some(Ok(())));
+        assert_eq!(ask_if_due(true, true, &mut app).sent, Some(Sent::Answered));
         assert_eq!(app.count("ToolkitName"), 2);
     }
 
@@ -691,6 +774,95 @@ mod tests {
                 assert_eq!(app.count("ToolkitName"), 1, "{case}");
             }
         }
+    }
+
+    /// The whole-change review, P1: the association is confirmed again right before the request, so a frame chosen on
+    /// evidence that changed while its toolkit and role were read (focus moving between same-title duplicates) is
+    /// never asked; the skip is not remembered, and the next observation asks.
+    #[test]
+    fn the_frame_is_confirmed_right_before_the_request_and_a_changed_one_is_not_asked() {
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.confirms = vec![Ok(false), Err("the association timed out")];
+        app.sends = vec![true];
+        for _ in 0..2 {
+            let skipped = ask_if_due(true, true, &mut app);
+            assert_eq!((skipped.left, &skipped.sent), (Some(Left::Changed), &None));
+            assert_eq!(skipped.record().unwrap()["left"], "changed");
+        }
+        assert_eq!(
+            app.count("GetAttributes"),
+            0,
+            "nothing sent on a changed or unconfirmed frame"
+        );
+        assert_eq!(ask_if_due(true, true, &mut app).sent, Some(Sent::Answered));
+        assert_eq!(
+            app.calls[app.calls.len() - 2..],
+            ["confirm", "GetAttributes"],
+            "the confirmation is last"
+        );
+        assert_eq!(app.count("ToolkitName"), 1);
+        // a skipped request waits for nothing
+        let mut skipped = Scripted::new(Some("Chromium"), Some("browser-window"));
+        skipped.confirms = vec![Ok(false)];
+        let (_, _, outcome) = after_read(true, node(vec![]), ReadStats::default(), &mut skipped);
+        assert_eq!((outcome.waited, skipped.count("read")), (None, 0));
+    }
+
+    /// The whole-change review, P1: a frame with no children because its own `GetChildren` failed is not known to be
+    /// bare, so it is not asked; the measured bare case (the frame listed one child, whose role failed) still is.
+    #[test]
+    fn a_frame_whose_own_child_listing_failed_is_not_asked_and_the_measured_bare_frame_is() {
+        let unlisted = ReadStats {
+            listings_failed: 1,
+            ..Default::default()
+        };
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.sends = vec![true];
+        let (tree, stats, outcome) = after_read(true, node(vec![]), unlisted.clone(), &mut app);
+        assert_eq!((tree, stats), (node(vec![]), unlisted), "the read as it was");
+        assert_eq!(outcome.left, Some(Left::Unlisted));
+        assert_eq!(outcome.record(), Some(serde_json::json!({"left": "unlisted"})));
+        assert!(app.calls.is_empty(), "no lookup, no request, no wait");
+        let mut measured = ReadStats::default();
+        measured.truncated.failed = 1;
+        let (_, _, asked) = after_read(true, node(vec![]), measured, &mut app);
+        assert_eq!(asked.sent, Some(Sent::Answered));
+        // a screenshot with a failed listing writes nothing, as any screenshot
+        let mut shot = Scripted::new(Some("Chromium"), Some("browser-window"));
+        let (_, _, quiet) = after_read(
+            false,
+            node(vec![]),
+            ReadStats {
+                listings_failed: 1,
+                ..Default::default()
+            },
+            &mut shot,
+        );
+        assert_eq!(quiet.record(), None);
+    }
+
+    /// The whole-change review, P2: a request written and left unanswered may already have changed the application,
+    /// so it is remembered and never sent twice, and nothing waits on it; one the application refused is sent again.
+    #[test]
+    fn an_unanswered_request_is_never_sent_twice_and_a_refused_one_is_sent_again() {
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.deliveries = vec![Delivery::Rejected("org.freedesktop.DBus.Error.UnknownMethod".into())];
+        let refused = ask_if_due(true, true, &mut app);
+        assert!(matches!(refused.sent, Some(Sent::Rejected(_))));
+        app.deliveries = vec![Delivery::Unanswered("timed out".into())];
+        let (_, _, unanswered) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+        assert!(matches!(unanswered.sent, Some(Sent::Unanswered(_))));
+        assert_eq!(unanswered.waited, None, "no wait on a request that was not answered");
+        let record = unanswered.record().unwrap();
+        assert_eq!((&record["sent"], &record["unanswered"]), (&false.into(), &true.into()));
+        for _ in 0..3 {
+            assert_eq!(ask_if_due(true, true, &mut app).left, Some(Left::AskedBefore));
+        }
+        assert_eq!(
+            app.count("GetAttributes"),
+            2,
+            "the refused one and the unanswered one, never a third"
+        );
     }
 
     #[test]

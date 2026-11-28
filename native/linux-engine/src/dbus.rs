@@ -575,8 +575,20 @@ pub struct Bus {
     write_by: Option<Instant>,
     /// The instant every wait of the connection ends by, inside [`Bus::by`]: None, the I/O timeout alone.
     deadline: Option<Instant>,
+    /// The serials among `ready` whose failure is a silence, not an error reply (`Bus::call_answered`).
+    unanswered: std::collections::HashSet<u32>,
     pub unique_name: String,
     pub stats: BusStats,
+}
+
+/// What became of one call that was written (`Bus::call_answered`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answer {
+    Replied(Vec<Value>),
+    /// The application answered with an error.
+    Refused(String),
+    /// No answer came before the silence timeout or the deadline: the call was written and may have been taken.
+    Unanswered(String),
 }
 
 /// A failure of the connection itself (as opposed to one call): the caller reconnects or gives up.
@@ -700,6 +712,7 @@ impl Bus {
             io_timeout: timeout,
             write_by: None,
             deadline: None,
+            unanswered: Default::default(),
             unique_name: String::new(),
             stats: BusStats::default(),
         })
@@ -788,7 +801,9 @@ impl Bus {
         };
         self.stream.set_write_timeout(Some(self.io_timeout))?;
         match written {
-            Err(_) if out_of_time && sent == 0 => Ok(()),
+            // only inside the wait's deadline (`Bus::by`): everywhere else a batch the deadline caught unwritten fails
+            // `Broken` as it did in 0.4.6, which a paste's field read counts on (the whole-change review, P2)
+            Err(_) if out_of_time && sent == 0 && self.deadline.is_some() => Ok(()),
             written => written.map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")).into()),
         }
     }
@@ -864,6 +879,27 @@ impl Bus {
         self.out.clear();
     }
 
+    /// [`Bus::call`], its answer told apart (the whole-change review of #228, P2): an error reply is the application's
+    /// refusal, and a call the bus's silence (or the deadline inside [`Bus::by`]) failed after it was written is
+    /// unanswered, as the application may have taken it. An error is a call that was not written, or a connection that
+    /// broke meanwhile (`Broken`), which the caller drops.
+    pub fn call_answered(&mut self, call: &MethodCall) -> Result<Answer> {
+        // inside `Bus::by` a call the deadline caught unwritten would read as unanswered
+        debug_assert!(
+            self.deadline.is_none(),
+            "a call answered is told apart outside a deadline"
+        );
+        let serial = self.send(call)?;
+        self.flush()?;
+        let result = self.reply_to(serial)?;
+        let silenced = self.unanswered.remove(&serial);
+        Ok(match result {
+            Ok(values) => Answer::Replied(values),
+            Err(error) if silenced => Answer::Unanswered(error),
+            Err(error) => Answer::Refused(error),
+        })
+    }
+
     /// A reply that has already arrived, without waiting for the bus.
     pub fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
         if self.ready.is_empty() {
@@ -876,6 +912,11 @@ impl Bus {
     pub fn call(&mut self, call: &MethodCall) -> Result<CallResult> {
         let serial = self.send(call)?;
         self.flush()?;
+        self.reply_to(serial)
+    }
+
+    /// The reply to `serial`, a call already written, keeping any other replies for [`Bus::recv`].
+    fn reply_to(&mut self, serial: u32) -> Result<CallResult> {
         let mut waited = false;
         loop {
             if let Some(index) = self.ready.iter().position(|(s, _)| *s == serial) {
@@ -1073,13 +1114,7 @@ impl Bus {
         };
         let now = Instant::now();
         if now >= deadline {
-            let mut serials: Vec<u32> = self.pending.keys().copied().collect();
-            serials.sort_unstable();
-            for serial in serials {
-                self.pending.remove(&serial);
-                self.ready
-                    .push_back((serial, Err("the call passed its deadline".to_string())));
-            }
+            self.fail_unanswered("the call passed its deadline");
             return Ok(());
         }
         self.stream
@@ -1108,13 +1143,7 @@ impl Bus {
                 // The bus stayed silent for IO_TIMEOUT: every outstanding call fails with the I/O error, as each
                 // of the vendor's calls fails on its socket timeout (behaviour §19). Late replies are discarded.
                 self.inbuf.truncate(start);
-                let sentence = error.to_string();
-                let mut serials: Vec<u32> = self.pending.keys().copied().collect();
-                serials.sort_unstable();
-                for serial in serials {
-                    self.pending.remove(&serial);
-                    self.ready.push_back((serial, Err(sentence.clone())));
-                }
+                self.fail_unanswered(&error.to_string());
                 Ok(())
             }
             Err(error) if error.kind() == ErrorKind::Interrupted => {
@@ -1125,6 +1154,21 @@ impl Bus {
                 self.inbuf.truncate(start);
                 Err(Broken(format!("failed to read from the accessibility bus: {error}")).into())
             }
+        }
+    }
+
+    /// Fails every outstanding call with `sentence`, each one remembered as unanswered (`Bus::call_answered`), in serial
+    /// order. Late replies are discarded.
+    fn fail_unanswered(&mut self, sentence: &str) {
+        // only the failures still waiting to be handed out are worth telling apart
+        let ready = &self.ready;
+        self.unanswered.retain(|s| ready.iter().any(|(r, _)| r == s));
+        let mut serials: Vec<u32> = self.pending.keys().copied().collect();
+        serials.sort_unstable();
+        for serial in serials {
+            self.pending.remove(&serial);
+            self.ready.push_back((serial, Err(sentence.to_string())));
+            self.unanswered.insert(serial);
         }
     }
 
@@ -1873,11 +1917,9 @@ mod tests {
         assert_eq!(bus.recv_until(past).unwrap(), None);
         assert_eq!(bus.in_flight(), 0);
         assert_eq!(peer_received(&mut theirs), 0, "nothing reached the bus");
-        let got = bus.calls_until(&[call("C")], past).unwrap();
-        assert_eq!(
-            got, None,
-            "a batch past its deadline is not written either, and is not Broken"
-        );
+        // inside the wait's deadline (`Bus::by`), a batch past it is not written either, and is not Broken
+        let got = bus.by(past, |bus| bus.calls_until(&[call("C")], past)).unwrap();
+        assert_eq!(got, None);
         assert_eq!(peer_received(&mut theirs), 0);
         theirs.set_nonblocking(false).unwrap();
         let server = std::thread::spawn(move || {
@@ -1887,6 +1929,67 @@ mod tests {
         });
         assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
         server.join().unwrap();
+    }
+
+    /// The whole-change review, P2: outside the wait, a batch whose deadline passes before any byte is written fails
+    /// `Broken`, as in 0.4.6, so the pre-paste field read (`field::read`, which a paste calls with `?`) stops the paste
+    /// rather than going on without the field's text.
+    #[test]
+    fn the_paste_s_field_read_past_its_deadline_fails_broken_as_before() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let past = Instant::now();
+        std::thread::sleep(Duration::from_millis(5));
+        let element = crate::tree::ObjRef {
+            bus: ":1.7".into(),
+            path: "/org/a11y/atspi/accessible/9".into(),
+        };
+        let error = crate::field::read(&mut bus, &element, 0, 4, past).unwrap_err();
+        assert!(error.downcast_ref::<Broken>().is_some(), "{error:#}");
+        assert_eq!(peer_received(&mut theirs), 0);
+        let error = bus.calls_until(&[call("C")], past).unwrap_err();
+        assert!(error.downcast_ref::<Broken>().is_some(), "{error:#}");
+    }
+
+    /// The whole-change review, P2: a call that was written is told from one the application refused: an error reply
+    /// is `Refused`, a silence that fails the call is `Unanswered`, and a call not written is an error.
+    #[test]
+    fn a_written_call_s_answer_is_told_from_its_silence_and_from_a_refusal() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let (a, _) = read_calls(&mut theirs, 1).remove(0);
+            theirs.write_all(&answer(METHOD_RETURN, a, None, "fine")).unwrap();
+            let (b, _) = read_calls(&mut theirs, 1).remove(0);
+            theirs
+                .write_all(&answer(
+                    ERROR,
+                    b,
+                    Some("org.freedesktop.DBus.Error.UnknownMethod"),
+                    "no",
+                ))
+                .unwrap();
+            read_calls(&mut theirs, 1); // never answered
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+            theirs
+        });
+        let mut bus = Bus::over(ours, Duration::from_millis(150)).unwrap();
+        assert_eq!(
+            bus.call_answered(&call("A")).unwrap(),
+            Answer::Replied(vec![Value::Str("fine".into())])
+        );
+        assert!(matches!(bus.call_answered(&call("B")).unwrap(), Answer::Refused(_)));
+        assert!(matches!(
+            bus.call_answered(&call("Silent")).unwrap(),
+            Answer::Unanswered(_)
+        ));
+        // the silence is forgotten with its call: the next answered call is Replied
+        assert!(matches!(bus.call_answered(&call("Next")).unwrap(), Answer::Replied(_)));
+        drop(server.join().unwrap());
+        // a call that cannot be written is an error
+        let error = bus.call_answered(&call("Gone")).unwrap_err();
+        assert!(error.downcast_ref::<Broken>().is_some(), "{error:#}");
     }
 
     /// Fix wave 1: every call made inside `Bus::by` ends by its deadline, however the bus's silence timeout is set, and

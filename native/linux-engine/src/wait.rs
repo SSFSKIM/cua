@@ -97,11 +97,13 @@ pub fn shape(tree: &AxNode, lost: u32) -> Shape {
     }
 }
 
-/// Where a read may have lost a subtree: a node whose role failed, which the read leaves out with its subtree, and a
-/// node whose `GetChildren` failed, which it shows with no children (fix wave 2). Neither changes the tree the engine
-/// answers; the wait only takes such a read for one that tells nothing yet.
+/// Where a read may have lost a subtree: a node whose role failed, which the read leaves out with its subtree; a node
+/// whose `GetChildren` failed, which it shows with no children (fix wave 2); and the nodes the element and depth limits
+/// left out (the whole-change review, P2). None changes the tree the engine answers; the wait only takes such a read
+/// for one that tells nothing yet, unless it holds a populated document.
 pub fn lost(stats: &ReadStats) -> u32 {
-    stats.truncated.failed + stats.listings_failed
+    let cut = &stats.truncated;
+    cut.failed + cut.nodes + cut.depth + stats.listings_failed
 }
 
 /// Why the wait ended.

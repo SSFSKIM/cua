@@ -115,6 +115,14 @@ pub fn property_text(bytes: &[u8]) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
+/// A `STRING` property exactly as it was set (the whole-change review of #228, P2): its whole value, in 8-bit format,
+/// as Latin-1 characters with nothing trimmed. None for any other type or format, or for a value the read did not
+/// reach the end of. For the decisions that compare a value literally (`WM_WINDOW_ROLE` against `browser-window`).
+pub fn exact_string(type_: Atom, format: u8, bytes_after: u32, value: &[u8]) -> Option<String> {
+    let string: Atom = AtomEnum::STRING.into();
+    (type_ == string && format == 8 && bytes_after == 0).then(|| value.iter().map(|&b| char::from(b)).collect())
+}
+
 /// The class from `WM_CLASS`: the last NUL-separated segment after trimming.
 pub fn wm_class_app(bytes: &[u8]) -> Option<String> {
     let text = property_text(bytes)?;
@@ -640,6 +648,18 @@ impl X11 {
             .filter(|&atom| atom != x11rb::NONE)
             .and_then(|atom| self.get_property(window, atom).ok())
             .and_then(|r| property_text(&r.value))
+    }
+
+    /// `WM_WINDOW_ROLE` exactly as set ([`exact_string`]): the whole 8-bit `STRING` value, nothing trimmed, for the
+    /// decisions that compare it literally (`ask.rs`, `unavailable.rs`; the whole-change review of #228, P2). Its atom
+    /// is interned only when asked, and only if some client has interned it already.
+    pub fn role_exactly(&self, window: Window) -> Option<String> {
+        let atom = self.conn.intern_atom(true, b"WM_WINDOW_ROLE").ok()?.reply().ok()?.atom;
+        if atom == x11rb::NONE {
+            return None;
+        }
+        let reply = self.get_property(window, atom).ok()?;
+        exact_string(reply.type_, reply.format, reply.bytes_after, &reply.value)
     }
 
     /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its
@@ -1386,6 +1406,53 @@ mod tests {
         assert_eq!(property_text(b"  gedit \0\0"), Some("gedit".into()));
         assert_eq!(property_text(b"\0"), None);
         assert_eq!(property_text(b"caf\xe9"), Some("caf\u{fffd}".into()));
+    }
+
+    #[test]
+    fn an_exact_string_is_the_whole_8_bit_string_property_untrimmed() {
+        let string: Atom = AtomEnum::STRING.into();
+        assert_eq!(
+            exact_string(string, 8, 0, b"browser-window"),
+            Some("browser-window".into())
+        );
+        // a padded value stays padded, so the rule that compares it literally leaves it
+        for padded in [
+            &b"browser-window "[..],
+            b" browser-window",
+            b"browser-window\0",
+            b"browser-window\n",
+        ] {
+            let read = exact_string(string, 8, 0, padded).unwrap();
+            assert_ne!(read, "browser-window", "{padded:?}");
+            let known = crate::ask::Known {
+                tree_wanted: true,
+                bare: true,
+                asked_before: false,
+                toolkit: crate::ask::Fact::Read(Some("Chromium")),
+                role: crate::ask::Fact::Read(Some(&read)),
+            };
+            assert_eq!(
+                crate::ask::decide(&known),
+                crate::ask::Decision::Leave(crate::ask::Left::Role)
+            );
+        }
+        assert_eq!(
+            exact_string(string, 8, 0, b"caf\xe9"),
+            Some("caf\u{e9}".into()),
+            "Latin-1"
+        );
+        assert_eq!(
+            exact_string(AtomEnum::ATOM.into(), 8, 0, b"browser-window"),
+            None,
+            "another type"
+        );
+        assert_eq!(exact_string(string, 32, 0, b"browser-window"), None, "another format");
+        assert_eq!(
+            exact_string(string, 8, 4, b"browser-window"),
+            None,
+            "a value read only in part"
+        );
+        assert_eq!(exact_string(string, 8, 0, b""), Some(String::new()));
     }
 
     #[test]

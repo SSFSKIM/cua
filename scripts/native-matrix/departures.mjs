@@ -118,7 +118,26 @@ function acceptedMissOwn(entry, judged) {
   if (entry?.section !== 'speed' || !judged.has(name)) out.push(`${name} names no speed row of the matrix`);
   if (typeof entry?.ticket !== 'string' || !/^#\d+$/.test(entry.ticket)) out.push(`${name} cites no ticket (#n)`);
   if (typeof entry?.ruling !== 'string' || !/^\d+$/.test(entry.ruling)) out.push(`${name} cites no ruling`);
+  if (entry?.bound !== undefined && !boundWellFormed(entry.bound)) out.push(`${name}'s bound names no ruling, evidence, n, or cua and vendor median and p95 above 0`);
   return out;
+}
+const positive = v => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const boundWellFormed = b => Boolean(b) && typeof b.ruling === 'string' && /^\d+$/.test(b.ruling) && typeof b.evidence === 'string' && b.evidence.length > 0
+  && Number.isSafeInteger(b.n) && b.n > 0 && ['cua', 'vendor'].every(k => positive(b[k]?.median) && positive(b[k]?.p95));
+// Ruling 1278: an accepted miss whose entry carries a `bound` (the re-measurement it was accepted at: {ruling, evidence,
+// n, cua: {median, p95}, vendor: {median, p95}}) holds on a re-measurement only while that re-measurement is no worse
+// than the bound: cua's median and p95 each, as a ratio to the vendor's of the same samples, at most the bound's ratio.
+// The ratio, not cua's own milliseconds, since a sitting's vendor is slower or faster with its runner. A miss not
+// re-measured is not held to the bound (its n = 3 says nothing against an n = 30). -> null when the acceptance holds,
+// else {ratios: {median, p95}, bound: {median, p95}, evidence, ruling} saying where it is worse.
+export function acceptanceExceeded(entry, s) {
+  const b = entry?.bound;
+  if (!b || !s?.remeasured || !s.cua || !s.vendor) return null;
+  const ratio = (cua, vendor) => (positive(cua) && positive(vendor) ? cua / vendor : null);
+  const ratios = {median: ratio(s.cua.median, s.vendor.median), p95: ratio(s.cua.p95, s.vendor.p95)};
+  const bound = {median: b.cua.median / b.vendor.median, p95: b.cua.p95 / b.vendor.p95};
+  const worse = ['median', 'p95'].filter(k => ratios[k] === null || ratios[k] > bound[k]);
+  return worse.length ? {worse, ratios, bound, evidence: b.evidence, ruling: b.ruling} : null;
 }
 // -> [sentence].
 export function acceptedMissProblems(list, judged = judgedCells()) {

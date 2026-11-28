@@ -838,7 +838,8 @@ export const isAcceptance3 = (target, regime, c, user) => regime === 'background
 export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;
 // A frontmost case's own timing row (section 'speed'): part 5's "each method cell", one per run.
 export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${{openPanel: 'panel.', savePanel: 'savePanel.'}[target] ?? ''}${c.method}.${c.case}`;
-// Ruling 1228 (F): the speed ops full sitting C missed, re-timed by the speed-extra cell (./run.mjs), by target: the cases
+// Ruling 1228 (F): the speed ops full sitting C missed, re-timed by the speed-extra cell (./run.mjs), with Chrome's
+// typeText.replace, which the full split on 0.3.3 (46165236186) missed on p95 alone (ruling 1278 (c)), by target: the cases
 // timed each sample (`timed`, judged on these samples alone, ruling 1232), the controls timed beside them (`control`,
 // ruling 1232: the base's most narrowly passing method timings on a scene the cell brings up, reported, never judged),
 // and those run after them unrecorded so the next sample finds its field as the first did (TextEdit's document written
@@ -846,7 +847,7 @@ export const methodTimingId = (target, c) => `${SCENE_OF[target]}/method.${{open
 export const SPEED_EXTRA = Object.freeze({
   textedit: {timed: ['typeText.replace', 'paste.replace'], control: ['getAXState.tree'], restore: ['setValue.document']},
   electron: {timed: ['paste.replace'], control: ['pressKey.tab'], restore: []},
-  chrome: {timed: [], control: ['paste.replace'], restore: []},
+  chrome: {timed: ['typeText.replace'], control: ['paste.replace'], restore: []},
 });
 // A target's speed-extra cases of any of `kinds`, in the full run's order.
 export const speedExtraCases = (target, ...kinds) => casesOf(target, 'frontmost').filter(c => kinds.some(kind => SPEED_EXTRA[target]?.[kind].includes(`${c.method}.${c.case}`)));

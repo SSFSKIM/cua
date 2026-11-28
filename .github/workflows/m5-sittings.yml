@@ -54,7 +54,7 @@ on:
         type: string
         default: ''
       speed_extra:
-        description: "split: each run job also re-times the three speed ops full sitting C missed, ten samples each on both lanes (about 10 min), and three narrow base passes as controls; the judge judges the three on these samples alone, the base shown beside them, and reports the controls unjudged"
+        description: "split: each run job also re-times the four speed ops sitting C missed (rulings 1228, 1278), ten samples each on both lanes (about 12 min), and three narrow base passes as controls; the judge judges the four on these samples alone, the base shown beside them, and reports the controls unjudged"
         type: boolean
         default: false
       image:

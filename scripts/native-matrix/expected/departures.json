@@ -17,13 +17,20 @@
       "ruling": "1228"
     }
   ],
-  "acceptedMissesAbout": "Ruling 1240: a speed op whose miss of the 10% beat the owner accepted (scripts/native-matrix/departures.mjs readAcceptedMisses). Each entry names the speed row ({section: 'speed', id}), its ticket and its ruling. The op stays judged and shown with its numbers; a miss it covers reads accepted, blocks nothing and is no owner's fork. An entry that names no speed row, or cites no ticket or ruling, is itself a failure.",
+  "acceptedMissesAbout": "Ruling 1240: a speed op whose miss of the 10% beat the owner accepted (scripts/native-matrix/departures.mjs readAcceptedMisses). Each entry names the speed row ({section: 'speed', id}), its ticket and its ruling. The op stays judged and shown with its numbers; a miss it covers reads accepted, blocks nothing and is no owner's fork. An entry that names no speed row, or cites no ticket or ruling, is itself a failure. Ruling 1278: an entry's optional bound (the re-measurement it was accepted at: ruling, evidence, n, cua and vendor median and p95) holds the acceptance only while a re-measurement's cua/vendor median and p95 ratios are each at most the bound's; worse, the miss is the owner's again, with why (scripts/native-matrix/departures.mjs acceptanceExceeded).",
   "acceptedMisses": [
     {
       "section": "speed",
       "id": "textedit/method.typeText.replace",
       "ticket": "#593",
-      "ruling": "1240"
+      "ruling": "1240",
+      "bound": {
+        "ruling": "1278",
+        "evidence": "docs/evidence/2026-11-27-m5-sitting-c-split",
+        "n": 30,
+        "cua": {"median": 300.7, "p95": 442.0},
+        "vendor": {"median": 304.9, "p95": 406.0}
+      }
     }
   ]
 }

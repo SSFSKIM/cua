@@ -81,7 +81,7 @@ import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeRemeasured, judgeSpeed, remeasuredStats, runOf} from './cell-verdict.mjs';
 import {noteLine, readCapabilityNotes} from './capability-notes.mjs';
 import {composingRetriesOf, renderComposingRetries} from './composing-retries.mjs';
-import {acceptedMissProblems, departureProblems, readAcceptedMisses, readDepartures, usableAcceptedMisses, usableDepartures, vendorAnsweredOk} from './departures.mjs';
+import {acceptanceExceeded, acceptedMissProblems, departureProblems, readAcceptedMisses, readDepartures, usableAcceptedMisses, usableDepartures, vendorAnsweredOk} from './departures.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
@@ -433,9 +433,15 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
   // Ruling 1240: a miss the owner accepted (departures.json's acceptedMisses) stays judged with its numbers and reads
-  // accepted; an entry whose op did not miss applies to nothing.
+  // accepted; an entry whose op did not miss applies to nothing. Ruling 1278: one whose re-measurement is worse than
+  // the entry's bound is not accepted, and is the owner's with why (./departures.mjs acceptanceExceeded).
   const accepting = new Map(usableAcceptedMisses(acceptances).map(e => [e.id, e]));
-  for (const s of speed) if (s.beat === false && accepting.has(s.id)) s.accepted = {ticket: accepting.get(s.id).ticket, ruling: accepting.get(s.id).ruling};
+  for (const s of speed) {
+    if (s.beat !== false || !accepting.has(s.id)) continue;
+    const entry = accepting.get(s.id), exceeded = acceptanceExceeded(entry, s);
+    if (exceeded) s.acceptanceExceeded = {ticket: entry.ticket, ...exceeded};
+    else s.accepted = {ticket: entry.ticket, ruling: entry.ruling};
+  }
   const acceptedMisses = speed.filter(s => s.accepted).map(s => ({section: 'speed', id: s.id, ...s.accepted, vendor: s.vendor, cua: s.cua, deltaPct: s.deltaPct, ...(s.remeasured ? {remeasured: s.remeasured} : {})}));
   // Ruling 1232: the controls' re-measurement beside their base, never judged (their full runs' judgment stands).
   const speedControls = [...SPEED_CONTROL_IDS].sort().filter(id => extras.has(id)).map(id => {
@@ -556,7 +562,9 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const speedMisses = speed.filter(s => s.beat === false && !s.remeasured && !s.accepted);
   // Ruling 1232, as 1240 settles it: a pass on re-measurement counts as a pass; any other re-measured op is the owner's
   // whatever its numbers, unless its miss is accepted.
-  const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)`;
+  const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)${s.acceptanceExceeded ? exceededNote(s.acceptanceExceeded) : ''}`;
+  const ratio = v => (v === null ? 'unread' : v.toFixed(3));
+  const exceededNote = e => `; worse than ${e.ticket}'s accepted bound (ruling ${e.ruling}, ${e.evidence}) on ${e.worse.join(' and ')}: cua/vendor median ${ratio(e.ratios.median)} against ${ratio(e.bound.median)}, p95 ${ratio(e.ratios.p95)} against ${ratio(e.bound.p95)}, so no longer the accepted miss`;
   const evidence = evidenceOf(full);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),

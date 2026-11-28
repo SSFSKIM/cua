@@ -69,7 +69,7 @@ import {cellCounts, guardTally, renderCounts, renderGuardTally, renderKeyWindowO
 import {timeFocusProbe} from './hosted-sittings/focus-timing.mjs';
 import {pilotReads, renderPilotReads} from './hosted-sittings/pilot-reads.mjs';
 import {SITTINGS, sittingContext, sittingPlan} from './hosted-sittings/plan.mjs';
-import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, renderBaseRejudge, renderJobs, reportFactsOf, reportMoves, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, lastJudgedOf, renderBaseRejudge, renderJobs, reportFactsOf, reportMoves, renderSourceRun, runJobStops, saveSheetVerdict, sourceRunCheck} from './hosted-sittings/split.mjs';
 import {filteredPlan, scenesOf} from './native-matrix/run.mjs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -142,21 +142,13 @@ function basesOf(values) {
   try { layers = baseLayersOf(dirs, {list: dir => (existsSync(dir) ? readdirSync(dir) : null)}); } catch (error) { usage(error.message); }
   return {dirs, ids, layers};
 }
+// Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it (./hosted-sittings/split.mjs
+// lastJudgedOf): every cell record under each docs/evidence/<date>-m5-sitting-c-* directory, whatever its layout.
+// Information only: a comparator that cannot be read is said so, never thrown.
+const lastJudgedC = () => lastJudgedOf({list: () => readdirSync(join(REPO, 'docs', 'evidence')), resultsOf: name => readResults([join(REPO, 'docs', 'evidence', name)]).results});
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
 // Every record under it (its matrix lanes, save-sheet and speed-extra cells) and its sitting report (sitting.json: the
 // run job's save-sheet verdicts, I3).
-// Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it: the newest docs/evidence/<date>-m5-
-// sitting-c-* directory, its run jobs' records (jobs/*/sitting) or else its sitting/'s, and the cua builds they name.
-// -> {dir (relative to the checkout), cua: [build]} | null.
-function lastJudgedC() {
-  const root = join(REPO, 'docs', 'evidence');
-  const dir = existsSync(root) ? readdirSync(root).filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().at(-1) : null;
-  if (!dir) return null;
-  const jobs = join(root, dir, 'jobs');
-  const records = existsSync(jobs) ? readdirSync(jobs).sort().map(j => join(jobs, j, 'sitting')) : [join(root, dir, 'sitting')];
-  const {jobs: read} = jobsCheck(records.map(jobDir), {scenesOf});
-  return {dir: `docs/evidence/${dir}`, cua: [...new Set(read.flatMap(j => j.cua))]};
-}
 function jobDir(dir) {
   const {results} = readResults([dir]);
   const readJsonFile = file => { try { return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; } catch { return null; } };

@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {sittingPlan, SPEED_EXTRA_SAMPLES} from '../../scripts/hosted-sittings/plan.mjs';
 import {createHash} from 'node:crypto';
-import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, readJudgeFixes, renderBaseRejudge, reportFactsOf, reportMoves, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
+import {baseCheck, baseLayersOf, baseRejudge, HARNESS_PATHS, jobsCheck, lastJudgedOf, readJudgeFixes, renderBaseRejudge, reportFactsOf, reportMoves, renderJobs, renderSourceRun, runJobStops, SAVE_SHEET_CELL, saveSheetVerdict, sourceRunCheck} from '../../scripts/hosted-sittings/split.mjs';
 import {JOB_LIMIT_MINUTES} from '../../scripts/hosted-sittings/run.mjs';
 import {parseCommand} from '../../scripts/native-matrix.mjs';
 
@@ -643,6 +643,40 @@ test('jobs-check records the jobs\' cua build against the last judged sitting C\
   assert.equal(jobsCheck([job('/j/1', {planId: 'filtered'})], {lastJudged: last}).lastJudged.same, true);
   // The jobs still agree with each other on the build.
   assert.match(jobsCheck([job('/j/1', {planId: 'filtered'}), job('/j/2', {run: 2, planId: 'filtered', build: 'b2'})], {lastJudged: last}).refused[0], /more than one cua engine version/);
+});
+
+// The review of the 1248 round: the last judged C is information only, so a comparator that cannot be read never stops
+// jobs-check. It is chosen by the cua build the directory's records actually name, in whatever layout they were
+// committed (a proof run's evidence may come later in a layout of its own); a directory that names none is skipped,
+// said so, and an older one taken.
+test('the last judged sitting C: the newest *-m5-sitting-c-* directory whose records name a cua build, the others skipped with why, unavailable said and never thrown', () => {
+  const records = {
+    '2026-11-24-m5-sitting-c-full': job('/x', {build: 'b0'}).results,
+    '2026-11-27-m5-sitting-c-split': job('/x', {build: 'b1'}).results,
+    '2026-11-28-m5-sitting-c-proof': job('/x', {build: 'b2', cells: ['speed-extra']}).results.filter(r => r.result.lanes[0].engine === 'vendor'),
+    '2026-11-29-m5-sitting-c-later': null,
+    '2026-11-26-m5-sitting-b': job('/x', {build: 'b9'}).results,
+  };
+  const resultsOf = name => { if (records[name] === null) throw new Error('ENOENT: no such file or directory'); return records[name]; };
+  const last = lastJudgedOf({list: () => Object.keys(records), resultsOf});
+  assert.deepEqual(last, {dir: 'docs/evidence/2026-11-27-m5-sitting-c-split', cua: ['0.3.0 build b1'], skipped: [
+    {dir: 'docs/evidence/2026-11-29-m5-sitting-c-later', why: 'its records could not be read: ENOENT: no such file or directory'},
+    {dir: 'docs/evidence/2026-11-28-m5-sitting-c-proof', why: 'its records name no cua build'}]});
+  const check = jobsCheck([job('/j/1', {planId: 'filtered', build: 'b2'})], {lastJudged: last});
+  assert.deepEqual([check.refused, check.lastJudged.same, check.lastJudged.skipped.length], [[], false, 2]);
+  assert.match(renderJobs(check).join('\n'), /^The cua engine against the last judged sitting C \(docs\/evidence\/2026-11-27-m5-sitting-c-split\): 0\.3\.0 build b1 then, 0\.3\.0 build b2 in these jobs: a new build; newer evidence skipped: docs\/evidence\/2026-11-29-m5-sitting-c-later \(its records could not be read: ENOENT: no such file or directory\), docs\/evidence\/2026-11-28-m5-sitting-c-proof \(its records name no cua build\) \(recorded, never refused; ruling 1248\)\.$/m);
+  // None to compare with: said as information, jobs-check still judging the jobs.
+  const none = lastJudgedOf({list: () => ['2026-11-28-m5-sitting-c-proof', '2026-11-29-m5-sitting-c-later'], resultsOf});
+  assert.deepEqual(none, {unavailable: 'no docs/evidence/*-m5-sitting-c-* directory holds a cua record (2 skipped)', skipped: [
+    {dir: 'docs/evidence/2026-11-29-m5-sitting-c-later', why: 'its records could not be read: ENOENT: no such file or directory'},
+    {dir: 'docs/evidence/2026-11-28-m5-sitting-c-proof', why: 'its records name no cua build'}]});
+  const unchecked = jobsCheck([job('/j/1', {planId: 'filtered'})], {lastJudged: none});
+  assert.deepEqual([unchecked.refused, unchecked.lastJudged.unavailable], [[], none.unavailable]);
+  assert.match(renderJobs(unchecked).join('\n'), /^The cua engine against the last judged sitting C: last judged C unavailable: no docs\/evidence\/\*-m5-sitting-c-\* directory holds a cua record \(2 skipped\); skipped: docs\/evidence\/2026-11-29-m5-sitting-c-later \(its records could not be read: ENOENT: no such file or directory\), docs\/evidence\/2026-11-28-m5-sitting-c-proof \(its records name no cua build\) \(recorded, never refused; ruling 1248\)\.$/m);
+  assert.deepEqual(lastJudgedOf({list: () => ['2026-11-26-m5-sitting-b'], resultsOf}), {unavailable: 'no docs/evidence/*-m5-sitting-c-* directory is committed', skipped: []});
+  assert.deepEqual(lastJudgedOf({list: () => { throw new Error('EACCES: permission denied'); }, resultsOf}), {unavailable: 'docs/evidence could not be listed: EACCES: permission denied', skipped: []});
+  assert.match(renderJobs(jobsCheck([job('/j/1')], {lastJudged: {unavailable: 'docs/evidence could not be listed: EACCES', skipped: []}})).join('\n'),
+    /^The cua engine against the last judged sitting C: last judged C unavailable: docs\/evidence could not be listed: EACCES \(recorded, never refused; ruling 1248\)\.$/m);
 });
 
 test('jobs-check with no base reads the last judged sitting C\'s build from the committed evidence', () => {

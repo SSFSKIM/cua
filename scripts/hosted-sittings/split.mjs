@@ -36,9 +36,10 @@ function jobOf({dir, results, hardware = null, report = null}, scenesOf = () => 
 // `jobs`: [{dir, results: [{result}], hardware, report}] of the run jobs; `base`: the full run beneath filtered reruns,
 // or null; `scenesOf`: a recorded plan's scenes (../native-matrix/run.mjs). Ruling 1230: the jobs agree with each other
 // on harness commit and engines, and beneath filtered reruns both engines (the vendor's version, cua's engine version
-// and build) are the base's exactly; both harness commits are recorded. `lastJudged` {dir, cua} (ruling 1248): the last
-// judged sitting C's cua build, from its committed evidence, recorded against the jobs' as information, never refused
-// on. -> {refused: [why], jobs: [jobOf], base: jobOf | null, commits: {jobs, base}, lastJudged?: {dir, cua, jobs, same}}.
+// and build) are the base's exactly; both harness commits are recorded. `lastJudged` (ruling 1248, lastJudgedOf): the
+// last judged sitting C's cua build, from its committed evidence, recorded against the jobs' as information, never
+// refused on; when it could not be read, that said instead. -> {refused: [why], jobs: [jobOf], base: jobOf | null,
+// commits: {jobs, base}, lastJudged?: {dir, cua, jobs, same, skipped?} | {unavailable, skipped?}}.
 export function jobsCheck(jobs, {base = null, scenesOf, lastJudged = null} = {}) {
   const read = jobs.map(j => jobOf(j, scenesOf)), under = base ? jobOf(base, scenesOf) : null, refused = [];
   const differ = (label, pick) => {
@@ -65,11 +66,40 @@ export function jobsCheck(jobs, {base = null, scenesOf, lastJudged = null} = {})
       }
     }
   }
-  const builds = [...new Set(read.flatMap(j => j.cua))];
+  const builds = [...new Set(read.flatMap(j => j.cua))], skipped = lastJudged?.skipped?.length ? {skipped: lastJudged.skipped} : {};
   return {refused, jobs: read, base: under, commits: {jobs: [...new Set(read.flatMap(j => j.commit))], base: under?.commit ?? null},
-    ...(lastJudged ? {lastJudged: {dir: lastJudged.dir, cua: lastJudged.cua, jobs: builds, same: builds.length > 0 && builds.every(b => lastJudged.cua.includes(b))}} : {})};
+    ...(lastJudged?.unavailable ? {lastJudged: {unavailable: lastJudged.unavailable, ...skipped}}
+      : lastJudged ? {lastJudged: {dir: lastJudged.dir, cua: lastJudged.cua, jobs: builds, same: builds.length > 0 && builds.every(b => lastJudged.cua.includes(b)), ...skipped}} : {})};
 }
 
+// Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it, information for jobs-check and never
+// a reason to stop it: the newest docs/evidence/<date>-m5-sitting-c-* directory whose records name a cua build, read
+// from whatever records it holds (`resultsOf(name)`: every cell record under it, in any layout; a proof run's evidence
+// may be committed later in one of its own), its cua builds as a job's are named. A newer directory that names none, or
+// whose records cannot be read, is skipped and said so. -> {dir, cua: [build], skipped: [{dir, why}]} |
+// {unavailable: why, skipped}.
+export function lastJudgedOf({list, resultsOf}) {
+  let names;
+  try { names = list(); } catch (error) { return {unavailable: `docs/evidence could not be listed: ${error.message}`, skipped: []}; }
+  const candidates = names.filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().reverse(), skipped = [];
+  if (!candidates.length) return {unavailable: 'no docs/evidence/*-m5-sitting-c-* directory is committed', skipped};
+  for (const name of candidates) {
+    const dir = `docs/evidence/${name}`;
+    let cua;
+    try { cua = jobOf({dir, results: resultsOf(name)}).cua; } catch (error) { skipped.push({dir, why: `its records could not be read: ${error.message}`}); continue; }
+    if (cua.length) return {dir, cua, skipped};
+    skipped.push({dir, why: 'its records name no cua build'});
+  }
+  return {unavailable: `no docs/evidence/*-m5-sitting-c-* directory holds a cua record (${skipped.length} skipped)`, skipped};
+}
+
+// jobs-check's account of the last judged sitting C (ruling 1248), the directories skipped on the way named.
+function lastJudgedLine(last) {
+  const skipped = (last.skipped ?? []).map(s => `${s.dir} (${s.why})`).join(', ');
+  if (last.unavailable) return `The cua engine against the last judged sitting C: last judged C unavailable: ${last.unavailable}${skipped ? `; skipped: ${skipped}` : ''}`;
+  return `The cua engine against the last judged sitting C (${last.dir}): ${last.cua.join(', ') || 'none recorded'} then, ${last.jobs.join(', ') || 'none recorded'} in these jobs: `
+    + `${last.same ? 'the same build' : 'a new build'}${skipped ? `; newer evidence skipped: ${skipped}` : ''}`;
+}
 // The jobs as the sitting report lists them: each job's runs, run id and attempt, runner and hardware, and why the judge
 // refused, when it did. -> [line].
 export function renderJobs(check) {
@@ -79,7 +109,7 @@ export function renderJobs(check) {
   return ['## The run jobs (ruling 1228)', '', '| job | runs | run id | attempt | image | VM | hardware | scenes | save sheet |', '|---|---|---|---|---|---|---|---|---|',
     ...[...(check.base ? [{...check.base, dir: `${check.base.dir} (beneath)`}] : []), ...(check.layers ?? []).flatMap(l => l.jobs.map(j => ({...j, dir: `${j.dir} (beneath, layer ${l.runId})`}))), ...check.jobs].map(j => `| ${j.dir} | ${j.runs.join(', ')} | ${j.runId} | ${j.attempt} | ${j.image ?? '-'} | ${j.vm ?? '-'} | ${hardware(j.hardware)} | ${j.scenes?.join(', ') || '-'} | ${sheet(j)} |`),
     '', ...(check.commits ? [`Harness commits: the jobs ${check.commits.jobs.join(', ') || 'none recorded'}${check.base ? `; the base ${check.commits.base?.join(', ') || 'none recorded'}` : ''}.`, ''] : []),
-    ...(check.lastJudged ? [`The cua engine against the last judged sitting C (${check.lastJudged.dir}): ${check.lastJudged.cua.join(', ') || 'none recorded'} then, ${check.lastJudged.jobs.join(', ') || 'none recorded'} in these jobs: ${check.lastJudged.same ? 'the same build' : 'a new build'} (recorded, never refused; ruling 1248).`, ''] : []),
+    ...(check.lastJudged ? [`${lastJudgedLine(check.lastJudged)} (recorded, never refused; ruling 1248).`, ''] : []),
     ...check.jobs.flatMap(j => (j.saveSheet ?? []).filter(s => s.status !== 'PASS').map(s => `- ${j.dir} ${s.id}: ${s.status}${s.reason ? ` (${s.reason})` : ''}`)),
     ...(check.refused.length ? [`Refused to judge: ${check.refused.join('; ')}.`, ''] : [])];
 }

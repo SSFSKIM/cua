@@ -683,13 +683,16 @@ test('jobs-check with no base reads the last judged sitting C\'s build from the 
   const cli = (...args) => spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', ...args], {encoding: 'utf8'});
   const root = fs.mkdtempSync(join(tmpdir(), 'split-last-')), out = join(root, 'jobs.json');
   try {
-    const jobs = ['1-1', '2-1', '3-1'].map(n => `${SPLIT_BASE}/jobs/m5-sitting-c-run-${n}/sitting`);
+    // The newest committed sitting C is whichever was committed last, so it is read here, not named: its own run jobs,
+    // checked against it, are the same build.
+    const newest = `docs/evidence/${fs.readdirSync('docs/evidence').filter(d => /-m5-sitting-c-/.test(d)).sort().at(-1)}`;
+    const jobs = fs.readdirSync(`${newest}/jobs`).sort().map(n => `${newest}/jobs/${n}/sitting`).filter(d => fs.existsSync(`${d}/cua`));
     const r = cli('jobs-check', '--jobs', jobs.join(','), '--out', out);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const {lastJudged} = JSON.parse(fs.readFileSync(out, 'utf8'));
-    const recorded = JSON.parse(fs.readFileSync(`${SPLIT_BASE}/jobs/m5-sitting-c-run-1-1/sitting/cua/run-1/result.json`, 'utf8')).lanes[0].build;
-    assert.deepEqual([lastJudged.dir, lastJudged.cua, lastJudged.same], [SPLIT_BASE, [`0.3.0 build ${recorded}`], true]);
-    assert.ok(recorded.startsWith('2de28fcc909d7577'));
+    const lane = JSON.parse(fs.readFileSync(`${jobs[0]}/cua/${fs.readdirSync(`${jobs[0]}/cua`)[0]}/result.json`, 'utf8')).lanes[0];
+    assert.deepEqual([lastJudged.dir, lastJudged.cua, lastJudged.same], [newest, [`${lane.version} build ${lane.build}`], true]);
+    assert.ok(/^[0-9a-f]{64}$/.test(lane.build));
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 

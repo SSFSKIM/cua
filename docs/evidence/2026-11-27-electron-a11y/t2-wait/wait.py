@@ -59,13 +59,14 @@ BUTTONS = ('Close', 'Minimize', 'Maximize', 'Restore')
 
 
 class Engine(rule.Engine):
-    """Task 1's engine, each request timed and its stats line kept."""
+    """Task 1's engine, each request timed and its stats line and output kept."""
 
     def ask(self, command, payload):
         started = time.monotonic()
         answer = super().ask(command, payload)
         self.last_ms = round((time.monotonic() - started) * 1000, 1)
         self.last_stats = answer[1]
+        self.last_output = answer[0].get('output') or {}
         return answer
 
 
@@ -74,14 +75,16 @@ def observe(engine, window):
     read['request_ms'] = engine.last_ms
     read['wait'] = (read['ask'] or {}).get('wait')
     read['identity'] = (engine.last_stats.get('tree') or {}).get('identity')
+    read['tree_unavailable'] = engine.last_output.get('tree_unavailable')
     return read
 
 
 def waited_the_bound_bare(read):
     """An observation answered bare after waiting the whole bound: what §G 9 accepts for a first observation in place of
-    the page (with task 3, the answer's `tree_unavailable` marks it too)."""
+    the page, its answer saying so (task 3's `tree_unavailable: {reason: "asked"}`)."""
     wait = read['wait'] or {}
-    return wait.get('end') == 'bound' and read['nodes'] == 1 and wait.get('ms', 0) >= BOUND_MS - 25
+    return wait.get('end') == 'bound' and read['nodes'] == 1 and wait.get('ms', 0) >= BOUND_MS - 25 \
+        and read['tree_unavailable'] == {'reason': 'asked'}
 
 
 def names(node, role):

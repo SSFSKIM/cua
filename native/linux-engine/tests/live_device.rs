@@ -6316,7 +6316,8 @@ fn outlasted_cause(app: &str) -> String {
 /// Under load a short path's in-floor tail can drop a visit, and that drop is answered unconfirmed with the same
 /// notice whatever option (c) says (#512, ruling 1142 (2)). The drop's record tells the two apart (`visits_dropped`,
 /// and `unconfirmed` naming the cause, #580): a drop that dropped a visit is held to that answer, and its case runs
-/// again until a drop with both visits proves the activation's, at most `ATTEMPTS` times.
+/// again until a drop with both visits proves the activation's, at most `ATTEMPTS` times. Only an in-floor tail, its
+/// gate shut, may drop one: a tail after the path sends both visits, so a dropped visit there fails the test.
 #[test]
 fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_unconfirmed() {
     const ATTEMPTS: u32 = 3;
@@ -6374,6 +6375,12 @@ fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_u
                     "{case}: {sync}"
                 );
                 let dropped = sync["visits_dropped"].as_u64().expect("the tail's record") > 0;
+                // only an in-floor tail, its gate shut, can drop a visit under load: a tail after the path sends both
+                // visits whatever its wakeups, so a dropped visit there is a regression, never the load's
+                assert!(
+                    !dropped || (sync["open"] == json!(false) && sync["schedule"] == json!("in_floor")),
+                    "{case}: a visit dropped from a tail that did not run inside the floor: {sync}"
+                );
                 let cause = match (dropped, outlasting && unconfirm) {
                     (true, _) => json!("visit_dropped"),
                     (false, true) => json!("outlasted"),
@@ -6408,7 +6415,7 @@ fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_u
                     assert_eq!(next, Ok(Value::Null), "{case}");
                 }
                 // the case is proved, unless a dropped visit stood in for the activation's answer
-                if !dropped || (outlasting && unconfirm) {
+                if !dropped {
                     break;
                 }
                 assert!(

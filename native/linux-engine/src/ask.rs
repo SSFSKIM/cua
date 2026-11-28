@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(
             asked.known_toolkit(":1.8"),
             Some(None),
-            "an unreadable name is kept too"
+            "an answer that is not a name is kept too"
         );
         asked.forget();
         assert_eq!(asked.known_toolkit(":1.7"), None, "read again on a new connection");

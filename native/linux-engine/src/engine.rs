@@ -340,7 +340,8 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     }
 }
 
-/// A frame's application as `ask::ask_if_due` reaches it, through the engine's own connections.
+/// A frame's application as `ask::ask_if_due` reaches it: on the bus connection whose read found it, never another
+/// (`Engine::on_this_connection`), and the window's role from the X server.
 struct FrameApp<'a> {
     engine: &'a mut Engine,
     app: &'a tree::ObjRef,
@@ -358,7 +359,7 @@ impl crate::ask::Application for FrameApp<'_> {
 
     fn read_toolkit(&mut self) -> Result<Option<String>> {
         let app = self.app;
-        self.engine.with_bus(|bus, _| atspi::toolkit_name(bus, app))
+        self.engine.on_this_connection(|bus| atspi::toolkit_name(bus, app))
     }
 
     fn read_role(&mut self) -> Option<String> {
@@ -367,7 +368,7 @@ impl crate::ask::Application for FrameApp<'_> {
 
     fn send(&mut self) -> Result<crate::dbus::CallResult> {
         let app = self.app;
-        self.engine.with_bus(|bus, _| atspi::ask_attributes(bus, app))
+        self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))
     }
 }
 
@@ -703,10 +704,27 @@ impl Engine {
     }
 
     fn drop_bus(&mut self) {
-        if let Some(mut bus) = self.bus.take() {
+        let bus = self.bus.take();
+        self.forget_bus(bus);
+    }
+
+    /// A connection that ended: its stats kept, and what the engine remembered of its applications forgotten.
+    fn forget_bus(&mut self, bus: Option<Bus>) {
+        if let Some(mut bus) = bus {
             merge(&mut self.bus_stats, bus.take_stats());
         }
         self.asked.forget();
+    }
+
+    /// Runs `f` on the current connection and never on another (`dbus::on_this_connection`): for a call naming an
+    /// object that connection found. A broken connection is dropped, not replaced; the next observation connects and
+    /// associates again.
+    fn on_this_connection<T>(&mut self, f: impl FnOnce(&mut Bus) -> Result<T>) -> Result<T> {
+        let (result, broken) = crate::dbus::on_this_connection(&mut self.bus, f);
+        if broken.is_some() {
+            self.forget_bus(broken);
+        }
+        result
     }
 
     /// The family of a window (`families.rs`): by its X11 class, and where no class entry matches and some entry is

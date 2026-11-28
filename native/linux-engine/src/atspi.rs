@@ -192,17 +192,22 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Too
     }))
 }
 
-/// An application root's `Application.ToolkitName`: one `Properties.Get` (`ask.rs`). None when it is not a string or
-/// the application answers an error.
+/// An application root's `Application.ToolkitName`: one `Properties.Get` (`ask.rs`). None when the application
+/// answers with something other than a string; an error when the call failed in any way (an error reply, the bus's
+/// I/O timeout, a broken connection), which says nothing of the toolkit, so nothing is kept of it.
 pub fn toolkit_name(bus: &mut Bus, app: &ObjRef) -> Result<Option<String>> {
     const NAME: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
-    Ok(first_str(&bus.call(&MethodCall {
+    let result = bus.call(&MethodCall {
         dest: &app.bus,
         path: &app.path,
         iface: PROPERTIES,
         member: "Get",
         args: &NAME,
-    })?))
+    })?;
+    result
+        .as_ref()
+        .map_err(|error| anyhow!("its ToolkitName could not be read: {error}"))?;
+    Ok(first_str(&result))
 }
 
 /// One `Accessible.GetAttributes` to an application root, the request that sets a Chromium application's

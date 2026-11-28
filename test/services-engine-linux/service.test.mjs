@@ -101,7 +101,7 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
   await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
   assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
   // the same service with a current engine settles the element action as T8 measured it
-  old.setVersion('cua-engine 0.4.5 (77ed101d43ea)');
+  old.setVersion('cua-engine 0.4.6 (61c97dda619f)');
   events.length = 0;
   await execute(svc, 'click', {window: W, element_id: 'n'});
   assert.deepEqual(events, ['wait', 'defer click_element']);
@@ -111,7 +111,7 @@ test('a 0.3.0 engine, which names no animated action, is refused before any sett
 // answers, then a drag, an element click, an element's secondary action, a coordinate click and list_windows are each
 // refused with the version sentence with nothing deferred, and so is drag_start, with no server started; installing
 // the current engine (`CURRENT`) needs no new session, and the next drag is sent and settles as before.
-const CURRENT = 'cua-engine 0.4.5 (77ed101d43ea)';
+const CURRENT = 'cua-engine 0.4.6 (61c97dda619f)';
 async function assertRefusedBeforeAnything(t, versionLine) {
   const found = versionLine.split(' ')[1];
   const OLD = `cua-engine ${found} is older than 0.4.5, which this cua needs; ${REMEDY}`;

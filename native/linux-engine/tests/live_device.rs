@@ -6312,82 +6312,117 @@ fn outlasted_cause(app: &str) -> String {
 /// confirmation, answers unconfirmed at once with the outlasted notice, and the next acting request is refused with it,
 /// on every route such a drop takes. Off, the same drop is confirmed by that request, as in 0.4.2. On, a short path,
 /// which shuts the gate, is confirmed as before.
+///
+/// Under load a short path's in-floor tail can drop a visit, and that drop is answered unconfirmed with the same
+/// notice whatever option (c) says (#512, ruling 1142 (2)). The drop's record tells the two apart (`visits_dropped`,
+/// and `unconfirmed` naming the cause, #580): a drop that dropped a visit is held to that answer, and its case runs
+/// again until a drop with both visits proves the activation's, at most `ATTEMPTS` times. Only an in-floor tail, its
+/// gate shut, may drop one: a tail after the path sends both visits, so a dropped visit there fails the test.
 #[test]
 fn option_c_answers_an_outlasted_chrome_drop_confirmed_by_its_activation_alone_unconfirmed() {
+    const ATTEMPTS: u32 = 3;
     support::fresh_display();
     let listed = ActiveWindowSupported::listed();
     for route in [HoldRoute::InFront, HoldRoute::Dedicated, HoldRoute::Desktop] {
         for (outlasting, unconfirm) in [(true, true), (true, false), (false, true)] {
-            let case = format!("{route:?}, outlasting {outlasting}, option (c) {unconfirm}");
-            let (window, stop, recorder) = drag_source_answering(
-                OnRelease::Drops {
-                    activates: true,
-                    cursors: &[],
-                },
-                None,
-            );
-            // the foreground route's drop window is the managed top-level under the pointer at the release
-            match route {
-                HoldRoute::Desktop => managed(window),
-                HoldRoute::Dedicated => {
-                    in_front(window);
-                    managed(window);
+            for attempt in 1..=ATTEMPTS {
+                let case = format!("{route:?}, outlasting {outlasting}, option (c) {unconfirm}, attempt {attempt}");
+                let (window, stop, recorder) = drag_source_answering(
+                    OnRelease::Drops {
+                        activates: true,
+                        cursors: &[],
+                    },
+                    None,
+                );
+                // the foreground route's drop window is the managed top-level under the pointer at the release
+                match route {
+                    HoldRoute::Desktop => managed(window),
+                    HoldRoute::Dedicated => {
+                        in_front(window);
+                        managed(window);
+                    }
+                    _ => in_front(window),
                 }
-                _ => in_front(window),
-            }
-            let mut args = vec!["--drag-dnd-unconfirm-outlasted", if unconfirm { "on" } else { "off" }];
-            if route == HoldRoute::Dedicated {
-                args.extend(["--desktop", "dedicated"]);
-            }
-            let mut engine = Engine::start_with_stats(&args);
-            let app = app_of(&mut engine, window);
-            let path = match outlasting {
-                true => outlasting_path(),
-                false => json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
-            };
-            let request = match route {
-                HoldRoute::Desktop => json!({"path": path}),
-                _ => json!({"window": {"id": window}, "path": path}),
-            };
-            let dragged = engine.exchange("drag", request);
-            let stats = engine.stats_of(engine.last_id());
-            sleep(SETTLE);
-            let read = engine.exchange("list_windows", json!({}));
-            let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
-            set_active_window(None);
-            stop.send(()).unwrap();
-            recorder.join().unwrap();
-            assert_eq!(dragged["ok"], json!(true), "{case}: {dragged}");
-            let sync = &stats["release_sync"];
-            assert_eq!(sync["open"], json!(outlasting), "{case}: {sync}");
-            let confirmed_by = stats["after_release"]["confirmed_by"].as_str().unwrap_or_default();
-            if outlasting && unconfirm {
-                assert_eq!(sync["unconfirm_outlasted"], json!(true), "{case}: {sync}");
-                assert_eq!(confirmed_by, "Outlasted", "{case}: {stats}");
-                let notice = format!(
-                    "{}. Read the window before sending input again: your next input request will not be run",
-                    outlasted_cause(&app)
-                );
+                let mut args = vec!["--drag-dnd-unconfirm-outlasted", if unconfirm { "on" } else { "off" }];
+                if route == HoldRoute::Dedicated {
+                    args.extend(["--desktop", "dedicated"]);
+                }
+                let mut engine = Engine::start_with_stats(&args);
+                let app = app_of(&mut engine, window);
+                let path = match outlasting {
+                    true => outlasting_path(),
+                    false => json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]),
+                };
+                let request = match route {
+                    HoldRoute::Desktop => json!({"path": path}),
+                    _ => json!({"window": {"id": window}, "path": path}),
+                };
+                let dragged = engine.exchange("drag", request);
+                let stats = engine.stats_of(engine.last_id());
+                sleep(SETTLE);
+                let read = engine.exchange("list_windows", json!({}));
+                let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+                set_active_window(None);
+                stop.send(()).unwrap();
+                recorder.join().unwrap();
+                assert_eq!(dragged["ok"], json!(true), "{case}: {dragged}");
+                let sync = &stats["release_sync"];
+                assert_eq!(sync["open"], json!(outlasting), "{case}: {sync}");
+                // option (c)'s own word is its gate and switch, whatever the tail dropped (#580)
                 assert_eq!(
-                    dragged["notice"],
-                    json!(notice),
-                    "{case}: the drag's own answer carries it"
+                    sync["unconfirm_outlasted"],
+                    json!(outlasting && unconfirm),
+                    "{case}: {sync}"
                 );
-                assert_eq!(read["notice"], json!(notice), "{case}: {read}");
-                assert_eq!(
-                    next,
-                    Err(format!(
-                        "{}; this click request was not run, so read the window before sending it again",
+                let dropped = sync["visits_dropped"].as_u64().expect("the tail's record") > 0;
+                // only an in-floor tail, its gate shut, can drop a visit under load: a tail after the path sends both
+                // visits whatever its wakeups, so a dropped visit there is a regression, never the load's
+                assert!(
+                    !dropped || (sync["open"] == json!(false) && sync["schedule"] == json!("in_floor")),
+                    "{case}: a visit dropped from a tail that did not run inside the floor: {sync}"
+                );
+                let cause = match (dropped, outlasting && unconfirm) {
+                    (true, _) => json!("visit_dropped"),
+                    (false, true) => json!("outlasted"),
+                    (false, false) => Value::Null,
+                };
+                assert_eq!(sync["unconfirmed"], cause, "{case}: {sync}");
+                let confirmed_by = stats["after_release"]["confirmed_by"].as_str().unwrap_or_default();
+                if (outlasting && unconfirm) || dropped {
+                    assert_eq!(confirmed_by, "Outlasted", "{case}: {stats}");
+                    let notice = format!(
+                        "{}. Read the window before sending input again: your next input request will not be run",
                         outlasted_cause(&app)
-                    )),
-                    "{case}"
+                    );
+                    assert_eq!(
+                        dragged["notice"],
+                        json!(notice),
+                        "{case}: the drag's own answer carries it"
+                    );
+                    assert_eq!(read["notice"], json!(notice), "{case}: {read}");
+                    assert_eq!(
+                        next,
+                        Err(format!(
+                            "{}; this click request was not run, so read the window before sending it again",
+                            outlasted_cause(&app)
+                        )),
+                        "{case}"
+                    );
+                } else {
+                    assert!(confirmed_by.starts_with("Activation"), "{case}: {stats}");
+                    assert_eq!(dragged.get("notice"), None, "{case}: {dragged}");
+                    assert_eq!(read.get("notice"), None, "{case}: a confirmed drop: {read}");
+                    assert_eq!(next, Ok(Value::Null), "{case}");
+                }
+                // the case is proved, unless a dropped visit stood in for the activation's answer
+                if !dropped {
+                    break;
+                }
+                assert!(
+                    attempt < ATTEMPTS,
+                    "{case}: every attempt dropped a visit, so the activation's answer went unproved"
                 );
-            } else {
-                assert_eq!(sync["unconfirm_outlasted"], json!(false), "{case}: {sync}");
-                assert!(confirmed_by.starts_with("Activation"), "{case}: {stats}");
-                assert_eq!(dragged.get("notice"), None, "{case}: {dragged}");
-                assert_eq!(read.get("notice"), None, "{case}: a confirmed drop: {read}");
-                assert_eq!(next, Ok(Value::Null), "{case}");
+                eprintln!("{case}: a dropped visit, answered unconfirmed for it; the case runs again");
             }
         }
     }

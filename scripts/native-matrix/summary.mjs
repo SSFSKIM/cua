@@ -567,9 +567,9 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const speedMisses = speed.filter(s => s.beat === false && !s.remeasured && !s.accepted);
   // Ruling 1232, as 1240 settles it: a pass on re-measurement counts as a pass; any other re-measured op is the owner's
   // whatever its numbers, unless its miss is accepted.
-  // Why a re-measurement did not qualify, by its counts: too few runs, or a run short of its samples on a lane.
+  // Why a re-measurement did not qualify, by its counts: too few runs, or a run whose lane does not hold its plan exactly.
   const shortOf = r => [...(r.runs.length < r.need.runs ? [`${r.runs.length} of the ${r.need.runs} runs it needs re-measured`] : []),
-    ...r.short.map(c => `run ${c.run} holds ${c.vendor} vendor and ${c.cua} cua usable samples, of the ${r.need.samples} a lane each re-measured run needs`)].join('; ');
+    ...r.short.map(c => `run ${c.run} holds ${c.vendor} vendor and ${c.cua} cua usable samples, where each re-measured run needs exactly samples 1 to ${r.need.samples} on each lane, each usable once (off: ${c.off.join(' and ')})`)].join('; ');
   const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (${s.beat === null && s.remeasured.need ? `${shortOf(s.remeasured)}; ` : ''}cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)${s.acceptanceExceeded ? exceededNote(s.acceptanceExceeded) : ''}${s.acceptanceNotEvaluated ? `; ${s.acceptanceNotEvaluated.ticket}'s acceptance not evaluated: the re-measurement does not qualify` : ''}`;
   const ratio = v => (v === null ? 'unread' : v.toFixed(3));
   // Worse than the bound on a measure, or the bound not evaluated on one (no ratio): either way not the accepted miss.

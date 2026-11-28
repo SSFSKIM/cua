@@ -221,15 +221,21 @@ export function remeasuredStats(extra) {
   return {vendor, cua, deltaPct: vendor && cua ? round(((cua.median - vendor.median) / vendor.median) * 100) : null, runs: extra.runs};
 }
 // Ruling 1232: one op the full runs missed, judged on its re-measurement alone (`extra`), never pooled with its full
-// runs' (`base`, judgeSpeed's, kept for reference). It qualifies on `required` runs re-measured on both lanes, each run
-// holding `samples` usable samples (no cause) on each lane (ruling 1278 (c): the bound it is held to is an n of that
-// size); the account is the base's but for that. -> judgeSpeed's shape over the re-measurement, with `remeasured: {runs,
-// vendor, cua, need: {runs, samples}, short: [{run, vendor, cua}]}` (its usable sample counts, and each run short of
-// `samples` on a lane) and `base: {vendor, cua, deltaPct, beat}`.
+// runs' (`base`, judgeSpeed's, kept for reference). It qualifies on `required` runs re-measured on both lanes, each
+// lane of each run holding exactly samples 1..`samples`, each once and usable (no cause), nothing beside them (ruling
+// 1278 (c): the bound it is held to is an n of that size); the account is the base's but for that. -> judgeSpeed's
+// shape over the re-measurement, with `remeasured: {runs, vendor, cua, need: {runs, samples}, short: [{run, vendor, cua,
+// off}]}` (its usable sample counts, and each run with the lanes `off` that plan, by their usable counts) and `base:
+// {vendor, cua, deltaPct, beat}`.
 export function judgeRemeasured(base, extra, {required = 1, samples = 1} = {}) {
   const {vendor, cua, deltaPct, runs} = remeasuredStats(extra);
+  // A lane's run holds the plan exactly: samples 1..`samples`, each once and usable, nothing beside them.
   const usable = (rows, run) => rows.filter(r => !causeOf(r) && runOf(r) === run).length;
-  const short = runs.map(run => ({run, vendor: usable(extra.vendor, run), cua: usable(extra.cua, run)})).filter(c => c.vendor < samples || c.cua < samples);
+  const exact = (rows, run) => {
+    const mine = rows.filter(r => runOf(r) === run), ids = mine.map(r => r.sample).sort((a, b) => a - b);
+    return mine.length === samples && mine.every(r => !causeOf(r)) && ids.every((id, i) => id === i + 1);
+  };
+  const short = runs.map(run => ({run, vendor: usable(extra.vendor, run), cua: usable(extra.cua, run), off: ['vendor', 'cua'].filter(e => !exact(extra[e], run))})).filter(c => c.off.length);
   const qualifies = runs.length >= required && short.length === 0 && Boolean(vendor && cua);
   return {vendor, cua, deltaPct, beat: qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(vendor, cua), partial: {vendor, cua},
     account: {...base.account, qualifies}, remeasured: {runs, vendor: vendor?.n ?? 0, cua: cua?.n ?? 0, need: {runs: required, samples}, short},

@@ -238,19 +238,19 @@ test('a re-measurement qualifies only with SPEED_EXTRA_SAMPLES usable samples in
   const j = judgedWith(fewer, full, {acceptedMisses: [bounded]});
   const s = j.speed.find(x => x.id === ACCEPTED.id);
   assert.deepEqual([s.beat, s.accepted, s.acceptanceExceeded], [null, undefined, undefined]);
-  assert.deepEqual(s.remeasured, {runs: [1, 2, 3], vendor: 30, cua: 27, need: {runs: 3, samples: 10}, short: [{run: 2, vendor: 10, cua: 7}]});
+  assert.deepEqual(s.remeasured, {runs: [1, 2, 3], vendor: 30, cua: 27, need: {runs: 3, samples: 10}, short: [{run: 2, vendor: 10, cua: 7, off: ['cua']}]});
   assert.equal(j.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'no-verdict');
   assert.deepEqual(j.acceptedMisses, []);
   const line = j.owner.find(o => o.startsWith(`speed: ${ACCEPTED.id} not qualified on re-measurement (`));
-  assert.match(line ?? '', /^speed: textedit\/method\.typeText\.replace not qualified on re-measurement \(run 2 holds 10 vendor and 7 cua usable samples, of the 10 a lane each re-measured run needs; cua 330 ms against 300 ms/, j.owner.join('\n'));
+  assert.match(line ?? '', /^speed: textedit\/method\.typeText\.replace not qualified on re-measurement \(run 2 holds 10 vendor and 7 cua usable samples, where each re-measured run needs exactly samples 1 to 10 on each lane, each usable once \(off: cua\); cua 330 ms against 300 ms/, j.owner.join('\n'));
   assert.match(line, /: the owner's whatever the numbers \(ruling 1232\); #593's acceptance not evaluated: the re-measurement does not qualify$/);
   // An op that would pass is not qualified either: no pass on a short re-measurement.
   const other = j.speed.find(x => x.id === 'textedit/method.paste.replace');
-  assert.deepEqual([other.beat, other.remeasured.short], [null, [{run: 2, vendor: 10, cua: 7}]]);
+  assert.deepEqual([other.beat, other.remeasured.short], [null, [{run: 2, vendor: 10, cua: 7, off: ['cua']}]]);
   // A sample with a cause is not usable: run 3's vendor lane holds 9.
   const invalid = r => (r.meta.run === 3 && r.lanes[0].engine === 'vendor' ? {...r, rows: r.rows.map((row, i) => (i === 0 ? {...row, ok: false, invalid: 'not prepared'} : row))} : r);
   const k = judgedWith(everyRun(100, 40).map(invalid)).speed.find(x => x.id === IDS[0]);
-  assert.deepEqual([k.beat, k.remeasured.short], [null, [{run: 3, vendor: 9, cua: 10}]]);
+  assert.deepEqual([k.beat, k.remeasured.short], [null, [{run: 3, vendor: 9, cua: 10, off: ['vendor']}]]);
   // Fewer runs than the rule asks: said by count.
   const one = judgedWith([extra('vendor', 2, 100), extra('cua', 2, 40)]);
   assert.match(one.owner.find(o => o.startsWith(`speed: ${IDS[0]} not qualified on re-measurement (`)) ?? '', /^speed: \S+ not qualified on re-measurement \(1 of the 3 runs it needs re-measured; cua 40 ms/);
@@ -287,4 +287,27 @@ test('a bound whose ratio cannot be formed is said not evaluated, not worse, and
   const line = j.owner.find(o => o.startsWith(`speed: ${ACCEPTED.id} missed the 10% beat on re-measurement (`)) ?? '';
   assert.match(line, /; #593's accepted bound \(ruling 1278, docs\/evidence\/2026-11-27-m5-sitting-c-split\) could not be evaluated \(cua\/vendor median unread, p95 unread\): the acceptance is withheld$/, j.owner.join('\n'));
   assert.doesNotMatch(line, /worse than/);
+});
+
+// Verification review of the qualification: the floor is no floor. A run qualifies only when each lane holds exactly
+// the planned samples 1..SPEED_EXTRA_SAMPLES, each usable once: more samples than planned, the right count under other
+// sample ids, or samples repeated across two records of one lane's run is not the n the bound was set at.
+test('a re-measured run qualifies only with exactly samples 1..SPEED_EXTRA_SAMPLES on each lane: no extras, no gaps, no repeats', () => {
+  const ids = (r, sampleOf) => ({...r, rows: r.rows.map((row, i) => ({...row, sample: sampleOf(i % 10, i)}))});
+  const at = (lane, change) => [1, 2, 3].flatMap(run => ['vendor', 'cua'].map(engine => (run === 2 && engine === lane ? change(engine, run) : extra(engine, run, engine === 'vendor' ? 100 : 40))));
+  const judgedOf = list => judgedWith(list).speed.find(x => x.id === IDS[0]);
+  // 33 against 30: run 2's cua lane holds 11 samples.
+  const more = judgedOf(at('cua', (engine, run) => extra(engine, run, 40, 11)));
+  assert.deepEqual([more.beat, more.remeasured.short], [null, [{run: 2, vendor: 10, cua: 11, off: ['cua']}]]);
+  // Ten usable samples whose ids are 2..11.
+  const shifted = judgedOf(at('vendor', (engine, run) => ids(extra(engine, run, 100), k => k + 2)));
+  assert.deepEqual([shifted.beat, shifted.remeasured.short], [null, [{run: 2, vendor: 10, cua: 10, off: ['vendor']}]]);
+  // Ten usable samples from two records of the lane's run, samples 1..5 twice and 6..10 never.
+  const twice = [1, 2, 3].flatMap(run => ['vendor', 'cua'].flatMap(engine => (run === 2 && engine === 'cua' ? [extra(engine, run, 40, 5), extra(engine, run, 40, 5)] : [extra(engine, run, engine === 'vendor' ? 100 : 40)])));
+  const repeated = judgedOf(twice);
+  assert.deepEqual([repeated.beat, repeated.remeasured.short], [null, [{run: 2, vendor: 10, cua: 10, off: ['cua']}]]);
+  assert.match(judgedWith(at('cua', (engine, run) => extra(engine, run, 40, 11))).owner.find(o => o.startsWith(`speed: ${IDS[0]} not qualified on re-measurement (`)) ?? '',
+    /\(run 2 holds 10 vendor and 11 cua usable samples, where each re-measured run needs exactly samples 1 to 10 on each lane, each usable once \(off: cua\); /);
+  // Exactly the plan on every lane: qualified.
+  assert.equal(judgedOf(everyRun(100, 40)).beat, true);
 });

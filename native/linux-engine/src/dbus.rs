@@ -1187,17 +1187,29 @@ impl Bus {
         serials.sort_unstable();
         for serial in serials {
             self.pending.remove(&serial);
-            self.fail_unrefused(serial, sentence.to_string(), Unrefused::Silence);
+            self.ready.push_back((serial, Err(sentence.to_string())));
+            self.failed_how.insert(serial, Unrefused::Silence);
         }
+        self.trim_failed_how();
     }
 
     /// Fails `serial`'s call locally with `sentence`, as no error reply did, so [`Bus::call_answered`] can tell it apart.
     fn fail_unrefused(&mut self, serial: u32, sentence: String, how: Unrefused) {
-        // only the failures still waiting to be handed out are worth telling apart
-        let ready = &self.ready;
-        self.failed_how.retain(|s, _| ready.iter().any(|(r, _)| r == s));
         self.ready.push_back((serial, Err(sentence)));
         self.failed_how.insert(serial, how);
+        self.trim_failed_how();
+    }
+
+    /// Drops what `failed_how` keeps for replies already handed out by a path that does not tell failures apart (only
+    /// `call_answered` takes its own entry out): only the failures still waiting to be handed out are worth telling
+    /// apart. It runs only once the map holds more than twice the queue, so each trim at least halves it and the cost
+    /// is linear in the failures over time (task 185's fix wave 3: a scan per failure made a silence quadratic).
+    fn trim_failed_how(&mut self) {
+        if self.failed_how.len() <= 2 * self.ready.len() + 16 {
+            return;
+        }
+        let waiting: std::collections::HashSet<u32> = self.ready.iter().map(|(serial, _)| *serial).collect();
+        self.failed_how.retain(|serial, _| waiting.contains(serial));
     }
 
     /// Takes the counters and starts new ones.
@@ -2059,6 +2071,38 @@ mod tests {
             "the connection stays"
         );
         server.join().unwrap();
+    }
+
+    /// Task 185's fix wave 3: failing a large batch at a silence is linear, so a provider that stops answering an
+    /// association's unbounded batch cannot hold the engine past the confirmation's deadline; each failure is still told
+    /// apart as a silence.
+    #[test]
+    fn a_silence_fails_ten_thousand_calls_at_once_each_told_apart() {
+        let (ours, _theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let serials: Vec<u32> = (0..10_000).map(|_| bus.send(&call("A")).unwrap()).collect();
+        let started = Instant::now();
+        bus.fail_unanswered("silent");
+        let took = started.elapsed();
+        assert!(took < Duration::from_millis(250), "failing 10,000 calls took {took:?}");
+        assert_eq!(bus.pending.len(), 0);
+        assert_eq!(bus.ready.len(), 10_000);
+        assert!(
+            serials
+                .iter()
+                .all(|s| bus.failed_how.get(s) == Some(&Unrefused::Silence)),
+            "every one a silence"
+        );
+        // handed out by a path that does not tell them apart, they are dropped from the bookkeeping in time
+        bus.ready.clear();
+        let one = bus.send(&call("B")).unwrap();
+        bus.fail_unanswered("silent");
+        assert_eq!(bus.failed_how.get(&one), Some(&Unrefused::Silence));
+        assert!(
+            bus.failed_how.len() <= 2 * bus.ready.len() + 16,
+            "{} kept",
+            bus.failed_how.len()
+        );
     }
 
     /// Fix wave 1: every call made inside `Bus::by` ends by its deadline, however the bus's silence timeout is set, and

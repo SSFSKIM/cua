@@ -284,6 +284,34 @@ test('the sheet variant: cua refusing super+w before posting (a receipt, no acti
   assert.match(silent.row.invalid, /reported no interval/);
 });
 
+// Review of the 1248 sheet declaration: an opening that throws before anything is posted for another reason (pressKey on
+// a minimized target, Input.swift) has cua's receipt and no action interval, as the refusal does, and the vendor's lane
+// times the same throw by its cell. Its window ends at the cell's own recorded end too: on the tap's proof the probe is
+// valid and the throw fails the row (ruling 1248: a non-refusal throw on either action FAILs); without it, invalid.
+test('the sheet variant: a non-refusal throw on super+w before posting (a receipt, no action interval) fails on the tap\'s proof and is invalid without it; a success with no interval stays invalid', async () => {
+  const minimized = {threw: true, errorName: 'Error', message: 'Computer Use server error -10005: the target window is minimized'};
+  const prePost = c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
+    : sheetCells({open: c2 => opening(c2, {interval: null, over: minimized}), follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c));
+  const proved = await sheetWitnessed({cell: prePost});
+  const o = proved.row.outcome;
+  assert.deepEqual([proved.row.ok, proved.row.invalid, proved.row.attempts, o.openingThrew, o.openingRefused, o.answer], [false, undefined, 1, true, false, null], JSON.stringify(o));
+  assert.deepEqual([o.intervalMs, o.receivedAt, o.actEnd], [null, o.callAt + 40, o.callAt + 200], 'the cell\'s own end bounds the window');
+  assert.deepEqual(o.witness.window, [o.callAt - SHEET_PROBE_BEFORE_MS, o.callAt + 200]);
+  assert.equal(proved.result.verdict, 'fail');
+  const unseen = await sheetWitnessed({cell: prePost, keyAt: null});
+  assert.match(unseen.row.invalid, /^the witness does not show the probe's key reaching the Electron fixture before the engine received the opening \(the probe's key was not seen on the Electron fixture's pid\)$/);
+  assert.equal(unseen.result.verdict, 'no-verdict');
+  // Without cua's own receipt, the throw is no sample.
+  const unreceived = await sheetWitnessed({cell: c => (tagOf(c) === 'sheet.open' ? (({_meta: {'cua/receivedAt': _r, ...meta}, ...rest}) => ({...rest, _meta: meta}))(opening(c, {interval: null, over: minimized})) : prePost(c))});
+  assert.match(unreceived.row.invalid, /the opening carried no cua\/receivedAt/);
+  assert.equal(unreceived.result.verdict, 'no-verdict');
+  // An opening that returned with its interval metadata missing claims nothing about its posting: never a sample.
+  const silent = await sheetWitnessed({cell: sheetCells({open: c => opening(c, {interval: null})})});
+  assert.equal(silent.row.outcome.openingThrew, false);
+  assert.match(silent.row.invalid, /reported no interval/);
+  assert.equal(silent.result.verdict, 'no-verdict');
+});
+
 test('the sheet variant (ruling 1238): the vendor is judged by its own declared answer, against its opening\'s call time', async () => {
   const vendorOpening = c => ({...opening(c), _meta: {'cua/inputRoute': "2'"}});
   const vendorFollow = c => ({...followUp(c), _meta: {}});

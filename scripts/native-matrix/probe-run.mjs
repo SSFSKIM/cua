@@ -374,10 +374,14 @@ async function sheetAttempt(ctx, {id, key, span}) {
   const openingReceivedAt = cua && Number.isFinite(opening.engine?.receivedAt) ? opening.engine.receivedAt : null;
   const userLanded = after.focus?.named === true && after.focus.valueHash === USER_HASH;
   const openingRefused = refusedWith(opening.value, STILL_INTERACTING) || refusedWith(opening.value, USER_CHANGED);
-  // A refusal before anything was posted (Input.swift pressKey's checkBeforePosting): cua reports its receipt and no
-  // action interval, so its window ends at the cell's own recorded end, as the vendor's does.
-  const refusedBeforePosting = cua && openingRefused && !opening.value.message.includes(STOPPED_PART_WAY) && (opening.engine?.interruption?.phase ?? 'beforeAction') === 'beforeAction';
-  const {callAt} = opening.value, actEnd = interval?.to ?? (refusedBeforePosting && Number.isFinite(opening.value.endAt) ? opening.value.endAt : null);
+  // A throw before anything was posted, a refusal (Input.swift pressKey's checkBeforePosting) or another error (pressKey
+  // on a minimized target): cua reports its receipt and no action interval, so its window ends at the cell's own
+  // recorded end, as the vendor's lane times the same throw by its cell; its receipt is still required, and the tap still
+  // decides the probe. A throw that says it stopped part-way posted something, and without its interval is no sample; a
+  // return without one claims nothing about its posting and is none either.
+  const threwBeforePosting = cua && opening.value.threw === true && !interval && !String(opening.value.message ?? '').includes(STOPPED_PART_WAY)
+    && (opening.engine?.interruption?.phase ?? 'beforeAction') === 'beforeAction';
+  const {callAt} = opening.value, actEnd = interval?.to ?? (threwBeforePosting && Number.isFinite(opening.value.endAt) ? opening.value.endAt : null);
   const followUpRefused = refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED);
   // What the engine answered: refused (either action), acted (both returned), or neither (a throw of another kind).
   const answer = openingRefused || followUpRefused ? 'refuse' : !opening.value.threw && value.clicked === true && !value.threw ? 'act' : null;
@@ -391,7 +395,7 @@ async function sheetAttempt(ctx, {id, key, span}) {
       postBeforeReceiptMs: Number.isFinite(postedAt) && openingReceivedAt !== null ? openingReceivedAt - postedAt : null}};
   // No sheet came up, so nothing was followed up: the opening's own outcome is the sample's, its receipt unneeded.
   const why = probeProblem(probe.answer) ?? detectionOff(opening) ?? detectionOff(follow)
-    ?? preArmValidity({engine: ctx.engine, postedAt, interval, receivedAt: openingReceivedAt, callAt, refusedBeforePosting})
+    ?? preArmValidity({engine: ctx.engine, postedAt, interval, receivedAt: openingReceivedAt, callAt, threwBeforePosting})
     ?? (value.clicked === true ? receiptValidity({engine: ctx.engine, postedAt, receivedAt: follow.engine?.receivedAt, callAt: value.clickAt}) : null);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});

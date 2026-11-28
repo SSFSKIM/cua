@@ -1,0 +1,6 @@
+{
+  "name": "cua-a11y-probe-nw",
+  "description": "The #228 probes' page as an NW.js application: the same page as probe-app's, with nothing that turns accessibility on.",
+  "main": "index.html",
+  "window": {"title": "cua a11y probe (nw)", "width": 900, "height": 640}
+}

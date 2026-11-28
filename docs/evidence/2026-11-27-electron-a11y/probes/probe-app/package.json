@@ -1,0 +1,8 @@
+{
+  "name": "cua-a11y-probe",
+  "productName": "cua a11y probe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The #228 probes' own Electron app: reports Chromium's accessibility mode as the app sees it, and takes commands from files.",
+  "main": "main.js"
+}

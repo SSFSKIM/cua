@@ -968,6 +968,7 @@ final class TypeReadbackTests: XCTestCase {
       }
       XCTAssertEqual(posted, 0, name)
       XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged", name)
+      XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, "#602: no key went out (\(name))")
     }
   }
 

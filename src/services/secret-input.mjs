@@ -7,7 +7,7 @@
 import {isAbsolute} from 'node:path';
 import {SecretStoreError, STORE_ENV, fileStore, tieredStore} from '../secrets/store.mjs';
 import {LABEL_RULE, RESERVED_PREFIX, isReserved} from '../secrets/label.mjs';
-import {EFFECT_PHRASES, ENTERING_EFFECTS} from './engine/interruption.mjs';
+import {EFFECT_PHRASES} from './engine/interruption.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
 const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
@@ -97,26 +97,52 @@ const MAY_SHOW = {
   unplaced: 'It may show where it went: do not capture the screen or read the app\'s accessibility state; ask the person to check, and do not enter it again. ',
 };
 
+// Rulings 1260 and 1268 (#602): nothing was entered only on cua's macOS engine's positive record that the request
+// stopped before any of its input went out (its input meta's `beforeInput: true`: no key, no ⌘V or Return, no value
+// write), and, when the meta carries #212's interruption account, only if its phase is one the engine sends and every
+// effect it names is a preparation step that never carries the value. The sky service reads it only from cua's engine
+// as the selected backend (sky.mjs). Anything else (no record, `startedAt` null alone, a meta or an account that is not
+// a plain object, an unknown phase or effect, effects not an array) answers "may have been entered"; an input or value
+// effect always does.
+const INTERRUPTION_PHASES = ['beforeAction', 'inFlight'];
+// The engine's `InputEffect`s other than `value` and `input` (native/engine/Sources/Engine/Intervention.swift,
+// feat/117-m5): the scroll into view, the background activation, its click, the focus write, the focus fallback click,
+// and a held activation's end.
+const PREPARATION_EFFECTS = ['scroll', 'activation', 'activationClick', 'focus', 'focusClick', 'activationRelease'];
+export const secretUnentered = meta => {
+  if (!isPlainObject(meta) || meta.beforeInput !== true) return false;
+  if (!Object.hasOwn(meta, 'interruption')) return true;
+  const account = meta.interruption;
+  return isPlainObject(account) && INTERRUPTION_PHASES.includes(account.phase) && Array.isArray(account.effects)
+    && account.effects.every(effect => PREPARATION_EFFECTS.includes(effect));
+};
+
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text, and
 // the warning `mayShow` names, if any (the sky service names one for every failure that may have entered part of it).
 export const inputFailed = (what, label, kind, mayShow = null) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. ${MAY_SHOW[mayShow] ?? ''}The runtime's error is withheld because it can contain the secret`);
-// The same failure when the runtime reports nothing posted (cua's engine: the error's input meta with startedAt null).
+// The same failure when the runtime records that nothing was posted (secretUnentered).
 export const inputFailedUnentered = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read, and ${NOTHING_ENTERED}. The runtime's error is withheld because it can contain the secret`);
 
 // userIntervened (−10016) carries one of two sentences that ask the model for different things (the vendor's, which cua's
 // engine keeps): wait and retry while the user is still at the app, or re-query its state after the user changed it.
-// The wrapper withholds the runtime's text, so it repeats which one with a fixed sentence of its own. "Still interacting"
-// is always a refusal before the action on either engine, so nothing was entered; "changed" was entered in part only
-// when the runtime does not say nothing was posted (cua's engine stops a typed sequence in flight; the vendor's meta
-// says nothing either way). Once entered, the re-query becomes the user's check (ruling 1247, d). Never a count of what
-// was entered, which would tell the secret's length.
+// The wrapper withholds the runtime's text, so it repeats which one with a fixed sentence of its own, and either sentence
+// was entered in part unless the runtime records that nothing was posted (`unentered`, secretUnentered: cua's engine's
+// refusal before the action, or a stop before the first key, which is "changed" as a stop between keys is; ruling 1268:
+// not the sentence, nor the vendor, whose meta says nothing either way). Once it may be entered, neither waiting and
+// retrying nor the re-query is the instruction: the user's check is (ruling 1247, d). Never a count of what was entered,
+// which would tell the secret's length.
 const INTERVENED = {
   stillInteracting: 'the user is still interacting with the app; wait 5 seconds and retry',
   userChanged: 'the user changed the app; re-query its state (getAXState) before sending more actions',
-  userChangedEntered: 'the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows',
-  // A changed app whose password field may now show the secret: the one instruction is the user's (the review of
-  // f35a42b8..cbce12e2, P1).
-  userChangedMayShow: 'the user changed the app; ask the user to hide or clear the password field, before any setValue',
+};
+const INTERVENED_ENTERED = {
+  stillInteracting: 'the user is interacting with the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows',
+  userChanged: 'the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows',
+};
+// A password field that may now show the secret: the one instruction is the user's (the review of f35a42b8..cbce12e2, P1).
+const INTERVENED_MAY_SHOW = {
+  stillInteracting: 'the user is interacting with the app; ask the user to hide or clear the password field, before any setValue',
+  userChanged: 'the user changed the app; ask the user to hide or clear the password field, before any setValue',
 };
 // Which of the two a runtime's message is, read from the sentence's fixed opening only; null for anything else.
 export function interventionKind(message) {
@@ -125,31 +151,30 @@ export function interventionKind(message) {
   if (message.includes('The user changed \'')) return 'userChanged';
   return null;
 }
-// #212: with cua's engine's account of the request (`interruption`, ./engine/interruption.mjs readInterruption), what was
-// entered follows it instead: a refusal before the action took none of the input's steps (not "did nothing": the
-// request's prologue may have re-enabled a Chromium app's accessibility); otherwise the account's phase and each step
-// it names, in the engine's fixed phrases, and the secret counts as possibly entered once its write or the action's own
-// input may have gone (or, stopped part-way, when no step is named), never "nothing was entered" beside a step.
-function interruptionOutcome({phase, effects}) {
-  if (phase === 'beforeAction' && effects.length === 0) return {entered: false, outcome: `it was refused before its first step; ${NOTHING_ENTERED}`};
-  const entered = effects.some(effect => ENTERING_EFFECTS.includes(effect)) || (phase === 'inFlight' && effects.length === 0);
-  const reached = effects.length ? `what may have taken effect: ${effects.map(effect => EFFECT_PHRASES[effect]).join('; ')}` : 'any step it had begun may have taken effect';
+// #212: with cua's engine's account of the request (`interruption`, ./engine/interruption.mjs readInterruption), the
+// answer also says where the intervention stopped it and what may have taken effect, in the engine's fixed phrases: a
+// refusal before the action took none of the input's steps (not "did nothing": the request's prologue may have re-enabled
+// a Chromium app's accessibility); otherwise the account's phase and each step it names. The account only describes:
+// whether anything was entered is `unentered` alone (ruling 1268), never the phase or the effects.
+function interruptionAccount({phase, effects}) {
   const opening = phase === 'beforeAction' ? 'it was refused before its first step' : 'it was stopped part-way';
-  return {entered, outcome: `${opening}, and ${reached}; ${entered ? 'the secret may have been partly entered' : 'the secret was not entered'}; nothing was undone`};
+  if (phase === 'beforeAction' && effects.length === 0) return opening;
+  const reached = effects.length ? `what may have taken effect: ${effects.map(effect => EFFECT_PHRASES[effect]).join('; ')}` : 'any step it had begun may have taken effect';
+  return `${opening}, and ${reached}; nothing was undone`;
 }
-// Whether the secret was entered comes from the account when there is one, else from the error; the instruction and the
+// Whether the secret was entered is the runtime's record alone (`unentered`, secretUnentered); the instruction and the
 // password field's warning follow `mayShow`, the placement (secretMayShow), only once it may have been entered, so no
-// answer after a key advises observing the app (ruling 1247, d).
+// answer that may follow a key advises observing the app (ruling 1247, d). `interruption` (#212) adds its account.
 export function userIntervened(what, label, kind, unentered, mayShow = 'unplaced', interruption = null) {
-  const account = interruption ? interruptionOutcome(interruption) : null;
-  const entered = account ? account.entered : kind !== 'stillInteracting' && !unentered;
+  const entered = !unentered;
   const password = entered && mayShow === 'passwordField';
-  const instruction = kind !== 'userChanged' || !entered ? INTERVENED[kind] : password ? INTERVENED.userChangedMayShow : INTERVENED.userChangedEntered;
-  const outcome = account ? account.outcome : entered ? 'it may have been partly entered' : NOTHING_ENTERED;
-  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${outcome}. ${password ? MAY_SHOW.passwordField : ''}The runtime's error is withheld because it can contain the secret`);
+  const instruction = (!entered ? INTERVENED : password ? INTERVENED_MAY_SHOW : INTERVENED_ENTERED)[kind];
+  const account = interruption ? `; ${interruptionAccount(interruption)}` : '';
+  return new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${instruction}; ${entered ? 'it may have been partly entered' : NOTHING_ENTERED}${account}. ${password ? MAY_SHOW.passwordField : ''}The runtime's error is withheld because it can contain the secret`);
 }
 
-// cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
+// cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable, with the
+// record that nothing was posted; without it the sky service gives the failure's diagnostic instead): a secret is
 // never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under
 // an input source whose reading the engine trusts and only when the app takes every character of it (ruling 1128: a
 // Chromium or Electron app drops a character above U+FFFF, so such a secret is refused rather than typed partly). A

@@ -107,7 +107,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
   // that took its time would show.
   const timed = {get identity() { return client.identity; }, execute: async (method, args, options) => ({...await client.execute(method, args, options), engineMs: ENGINE_MS[method] ?? 7.25})};
   const service = createService({nodeRepl, client: timed});
-  const wrapper = createSkyService({loadVendor: async () => service, secrets: {read: async label => secrets[label]}, platform: 'darwin'});
+  const wrapper = createSkyService({loadVendor: async () => service, secrets: {read: async label => secrets[label]}, platform: 'darwin', cuaEngine: true});
   const saved = globalThis.nodeRepl;
   globalThis.nodeRepl = {rpc: async (name, request) => { assert.equal(name, 'sky'); return wrapper.handleRpc(request); }};
   let sky;
@@ -443,7 +443,8 @@ for (const concealed of [false, true]) test(`#212: the interrupted action's snap
   let phase;
   const effects = () => phase === 'beforeAction' ? [] : ['focus', 'focusClick'];
   const {getApp, call, meta} = await session(t, {secrets: {fixture: 'private-value'}, handlers: {
-    'execute:set_value': () => { throw new EngineFailure(-10016, engineText(phase), 'userIntervened', {meta: {...INPUT_META, startedAt: null, endedAt: null,
+    // Stopped before its value write either way, so the engine's record that nothing was posted rides beside the account (#602).
+    'execute:set_value': () => { throw new EngineFailure(-10016, engineText(phase), 'userIntervened', {meta: {...INPUT_META, startedAt: null, endedAt: null, beforeInput: true,
       ...(phase === 'beforeAction' ? {inputRoute: null, activationClick: undefined, activationClickKind: undefined, activationJoin: undefined, activationGuardMs: undefined} : {}),
       interruption: {phase, effects: effects()}}}); },
     'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", receivedAt: 2000}}),
@@ -460,7 +461,7 @@ for (const concealed of [false, true]) test(`#212: the interrupted action's snap
       await assert.rejects(app.setValue(1, concealed ? '{{secret:fixture}}' : 'report.txt'), error => { caught = error; return true; });
       const at = `${phase}, concealed=${concealed}`;
       if (concealed) {
-        assert.match(caught.message, phase === 'beforeAction' ? /it was refused before its first step; nothing was entered/ : /it was stopped part-way/, at);
+        assert.match(caught.message, phase === 'beforeAction' ? /nothing was entered; it was refused before its first step\./ : /nothing was entered; it was stopped part-way/, at);
         assert.doesNotMatch(caught.message, /private-value|TextEdit\.app/, at);
       } else assert.equal(caught.message, `Computer Use server error -10016: ${engineText(phase)}`, at);
       assert.deepEqual(meta['cua/interruption'], interrupted, at);
@@ -978,7 +979,8 @@ test('the kept identity: a new pid drops it so the next call resolves again; a n
 
 test('a secret typed through the wrapper reaches the engine concealed; the engine\'s concealedInputUnavailable is the wrapper\'s own sentence, unchanged', async t => {
   const {getApp, call, engine} = await session(t, {secrets: {WORK_PASSWORD: 'hunter2-value'}, handlers: {'execute:type_text': ({args}) => {
-    if (args.concealed) throw new EngineFailure(-10005, 'Concealed text is keyed only under a reliable Latin input source.', 'concealedInputUnavailable', {meta: {...INPUT_META, startedAt: null, endedAt: null}});
+    // The engine's refusal before anything is entered, with its record that nothing was posted (#602).
+    if (args.concealed) throw new EngineFailure(-10005, 'Concealed text is keyed only under a reliable Latin input source.', 'concealedInputUnavailable', {meta: {...INPUT_META, startedAt: null, endedAt: null, beforeInput: true}});
     return {meta: INPUT_META};
   }}});
   const {app} = await getApp('TextEdit');

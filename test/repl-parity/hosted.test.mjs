@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {judgeDenials, publicKind} from '../../scripts/repl-parity/hosted/denials-within.mjs';
 import {bindLine, diffLines, label, onlyBackend, readyLines, runLines} from '../../scripts/repl-parity/hosted/public.mjs';
 import {declaredDevice} from '../../scripts/repl-parity/devices.mjs';
+import {loadPin} from '../../scripts/native-matrix/fixtures/chrome-for-testing.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const HOSTED = join(ROOT, 'scripts/repl-parity/hosted');
@@ -289,4 +290,13 @@ test('a failed cell that says what it saw (`; seen {...}`, #168) prints that in 
     const view = '{"focused":false,"active":{"tag":"body","id":""},"value":"","where":"<withheld>"}';
     assert.deepEqual(lines.slice(3, 5), [`    reason cell-error cell type timeout false seen ${view}`, `    cell type: ok false ms 3319 error Error timeout false seen ${view}`]);
   } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+// #606: the gate's harness Chrome is a pinned build, not the image's, so an image release cannot change it unseen.
+test('the harness Chrome is the pinned build: a valid pin, placed and checked by hosted.sh', () => {
+  const pin = loadPin(join(HOSTED, 'chrome-for-testing.json'));
+  assert.equal(pin.platform, 'mac-arm64');
+  const script = readFileSync(join(HOSTED, 'hosted.sh'), 'utf8');
+  assert.match(script, /chrome-for-testing\.mjs --pin "\$pin"/);
+  assert.doesNotMatch(script, /^CFT="\/Applications\//m, 'the image\'s Chrome for Testing is only reported, never launched');
 });

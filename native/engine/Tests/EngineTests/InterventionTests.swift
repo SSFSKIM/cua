@@ -483,6 +483,55 @@ final class KeyedSequenceStopTests: XCTestCase {
     XCTAssertNil(pressRefused.endedAt)
   }
 
+  /// #602 (ruling 1260): the engine's positive record that no key went out, set by keyText on whatever stops it before
+  /// its first key (the guard's stop, which is `userIntervened` as one between keys is, a source change, a checkpoint, a
+  /// first event that could not be created) and sent as `beforeInput: true`; absent once a key was posted, and on an
+  /// empty text that posts nothing and answers success.
+  func testAStopBeforeTheFirstKeyIsRecordedAndOneAfterAKeyIsNot() {
+    let stops: [(String, (inout InputMeta) throws -> Void)] = [
+      ("the guard", { try keyText(self.units(3), concealed: true, checkSource: { _, _ in }, checkIntervention: { throw userChanged("x") },
+                                  post: { _ in true }, pause: {}, meta: &$0) }),
+      ("the source", { try keyText(self.units(3), concealed: true, checkSource: { _, _ in throw EngineError(name: "inputSourceChanged", "changed") },
+                                   checkIntervention: {}, post: { _ in true }, pause: {}, meta: &$0) }),
+      ("a checkpoint", { try keyText(self.units(3), concealed: true, checkSource: { _, _ in },
+                                     beforeUnit: { _ in throw EngineError(name: "typeUnconfirmed", "checkpoint") },
+                                     checkIntervention: {}, post: { _ in true }, pause: {}, meta: &$0) }),
+      ("the first event not created", { try keyText(self.units(3), concealed: true, checkSource: { _, _ in }, checkIntervention: {},
+                                                    post: { _ in false }, pause: {}, meta: &$0) }),
+    ]
+    for (label, stop) in stops {
+      var meta = meta()
+      XCTAssertThrowsError(try stop(&meta), label)
+      XCTAssertTrue(meta.beforeInput, label)
+      XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, label)
+    }
+
+    var checks = 0
+    var between = meta()
+    XCTAssertThrowsError(try keyText(units(3), concealed: true, checkSource: { _, _ in },
+                                     checkIntervention: { checks += 1; if checks == 2 { throw userChanged("x") } },
+                                     post: { _ in true }, pause: {}, meta: &between)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened", "the same name as a stop before the first key")
+    }
+    XCTAssertFalse(between.beforeInput, "a key was posted")
+    XCTAssertNil(between.wire["beforeInput"])
+
+    var posts = 0
+    var midUnit = meta()
+    XCTAssertThrowsError(try keyText(units(2), concealed: true, checkSource: { _, _ in }, checkIntervention: {},
+                                     post: { _ in posts += 1; return posts == 1 }, pause: {}, meta: &midUnit))
+    XCTAssertFalse(midUnit.beforeInput, "the first unit's key down went before its next event failed")
+
+    var after = meta()
+    XCTAssertThrowsError(try keyText(units(2), concealed: true, checkSource: { entered, total in if entered == total { throw EngineError(name: "inputSourceChanged", "changed") } },
+                                     checkIntervention: {}, post: { _ in true }, pause: {}, meta: &after))
+    XCTAssertFalse(after.beforeInput, "the source check after the last key")
+
+    var empty = meta()
+    XCTAssertNoThrow(try keyText([], concealed: true, checkSource: { _, _ in }, checkIntervention: {}, post: { _ in true }, pause: {}, meta: &empty))
+    XCTAssertNil(empty.wire["beforeInput"])
+  }
+
   /// The rule itself: started as the first successful post begins, ended after the last one that succeeded.
   func testTheIntervalSpansTheSuccessfulPosts() {
     var meta = meta()

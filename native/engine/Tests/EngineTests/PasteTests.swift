@@ -500,6 +500,49 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertTrue(failing.cleared, "the write took the pasteboard before it failed")
     XCTAssertFalse(posted)
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, "#602: no ⌘V went out")
+  }
+
+  /// #602 (ruling 1260): the paste's record of no ⌘V or Return posted, on whatever stops it before the first (the
+  /// in-flight check just before ⌘V, a first event that could not be created, a text that opens with a Return stopped
+  /// before it); absent once one went, whatever fails after it.
+  func testAStopBeforeTheFirstKeyIsRecordedAndOneAfterItIsNot() {
+    let stops: [(String, [PastePart], () throws -> Void, () -> Bool)] = [
+      ("the check before ⌘V", [.content(plain("x"), units: 1)], { throw userChanged("x") }, { true }),
+      ("⌘V not created", [.content(plain("x"), units: 1)], {}, { false }),
+      ("the check before an opening Return", pasteParts(typing: "\nx"), { throw userChanged("x") }, { true }),
+    ]
+    for (label, parts, check, post) in stops {
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var entered = 0
+      var meta = meta()
+      XCTAssertThrowsError(try run(parts, pasteboard, effect: effect(), checkInFlight: check, postPaste: post, postReturn: post,
+                                   entered: &entered, meta: &meta), label)
+      XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, label)
+    }
+
+    // ⌘V went, and its read timed out: the paste may have landed.
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var timedOut = meta()
+    XCTAssertThrowsError(try run([.content(plain("x"), units: 1)], pasteboard, effect: effect(), postPaste: { true },
+                                 entered: &entered, meta: &timedOut)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardReadTimedOut")
+    }
+    XCTAssertNil(timedOut.wire["beforeInput"])
+
+    // The second line's check stops it after the first line's ⌘V and Return.
+    var characters = 0
+    var checks = 0
+    var later = meta()
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters) },
+                                 checkInFlight: { checks += 1; if checks == 3 { throw userChanged("x") } },
+                                 postPaste: { _ = pasteboard.appReads(); characters += 1; return true },
+                                 postReturn: { characters += 1; return true }, entered: &entered, meta: &later))
+    XCTAssertEqual(checks, 3)
+    XCTAssertNil(later.wire["beforeInput"])
   }
 
   /// A human copy during a line's effect wait: the next line never retakes the pasteboard, the paste stops as the
@@ -1575,6 +1618,7 @@ final class PasteActivationTests: XCTestCase {
       XCTAssertEqual(meta.inputRoute, .paste)
       XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept for the diagnosis (\(typed ? "type_text" : "paste"))")
       XCTAssertNil(meta.startedAt, "nothing was posted")
+      XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, "#602: before the operation's keys (\(typed ? "type_text" : "paste"))")
       XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the pasteboard was never touched")
     }
   }
@@ -1610,6 +1654,7 @@ extension PasteActivationTests {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened")
     }
     XCTAssertTrue(lockedAtSecondCheck, "the recheck runs under the registry's lock")
+    XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, "#602: stopped before runPaste")
     XCTAssertTrue(seam.posts.isEmpty, "no activation")
     XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the pasteboard was never touched")
   }
@@ -1688,6 +1733,7 @@ extension PasteActivationTests {
     }
     XCTAssertEqual(checks, 3, "the stop is the check just before ⌘V")
     XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored")
+    XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, "#602: the activation's click went, no ⌘V")
     return meta
   }
 

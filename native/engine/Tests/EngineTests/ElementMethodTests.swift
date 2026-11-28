@@ -387,6 +387,39 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertEqual(acted, 1)
   }
 
+  /// #602: an error before the write, after the focus click or not, is recorded as before the input (the value unsent)
+  /// although the click's events set the interval; a write the field refused is not, nor is a success.
+  func testOnlyAnErrorBeforeTheWriteIsRecordedAsBeforeTheInput() throws {
+    var coercion = meta(), intervened = meta(), acted = 0
+    XCTAssertThrowsError(try setValue("three", acted: &acted, meta: &coercion))
+    XCTAssertThrowsError(try setValue("4", inFlight: { throw userChanged("x") }, acted: &acted, meta: &intervened))
+    for (label, meta) in [("a refused coercion", coercion), ("an intervention before the write", intervened)] {
+      XCTAssertNotNil(meta.startedAt, "\(label): the click's events were posted")
+      XCTAssertEqual(meta.wire["beforeInput"] as? Bool, true, label)
+    }
+
+    let unsettable = field(focused: true)
+    var refused = meta()
+    XCTAssertThrowsError(try setElementValue("4", on: el(1), role: kAXTextFieldRole, ax: unsettable.ops, meta: &refused, focus: { _ in },
+                                             checkInFlight: {}, acted: {}))
+    XCTAssertEqual(refused.wire["beforeInput"] as? Bool, true, "not settable")
+
+    let rejecting = field(focused: true)
+    rejecting.settable[1]?.insert(kAXValueAttribute)
+    var ops = rejecting.ops
+    ops.write = { _, _, _ in .failure }
+    var rejected = meta()
+    XCTAssertThrowsError(try setElementValue("4", on: el(1), role: kAXTextFieldRole, ax: ops, meta: &rejected, focus: { _ in },
+                                             checkInFlight: {}, acted: {})) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "actionFailed")
+    }
+    XCTAssertNil(rejected.wire["beforeInput"], "the write was made")
+
+    var written = meta()
+    _ = try setValue("4", acted: &acted, meta: &written)
+    XCTAssertNil(written.wire["beforeInput"])
+  }
+
   func testAWriteAfterTheFocusClickExtendsTheIntervalAndMarksOnceMore() throws {
     var meta = meta(), acted = 0
     let ax = try setValue("4", acted: &acted, meta: &meta)

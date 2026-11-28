@@ -247,6 +247,7 @@ gates:
       - "src/repl-host/launch-services.mjs"
       - "bin/cua-codex-compat"
       - "scripts/repl-parity/hosted/**"
+      - "scripts/native-matrix/fixtures/chrome-for-testing.mjs"   # places the harness Chrome the pin names
       - "scripts/sandbox-probe/denials.mjs"
       - ".github/ci-kit.yml"
   - name: parity-browser
@@ -254,7 +255,8 @@ gates:
     # differences: none undeclared. About 11 minutes with the setup.
     # On pull requests since 2026-11-20 (#168): it was kept by hand while three parity cells raced (the waitfor cell's
     # two deadlines, cua's drag cell, the type cell's click before the first paint); with all three fixed it passed
-    # five runs in a row at 215a07af.
+    # five runs in a row at 215a07af. The harness Chrome is pinned (scripts/repl-parity/hosted/chrome-for-testing.json,
+    # #606): image 20261123's Chrome for Testing 158 stalled CDP commands for seconds and failed 5 of 8 runs.
     lane: hosted-macos
     timeout: 40
     run: sh scripts/repl-parity/hosted/hosted.sh browser
@@ -277,6 +279,7 @@ gates:
       - "extension/**"
       - "scripts/repl-parity.mjs"
       - "scripts/repl-parity/**"
+      - "scripts/native-matrix/fixtures/chrome-for-testing.mjs"   # places the harness Chrome the pin names
       - "test/repl-parity/**"
       - "scripts/browser-parity/**"
       - "test/browser-parity/**"

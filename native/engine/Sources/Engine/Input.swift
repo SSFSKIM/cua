@@ -127,6 +127,12 @@ struct InputMeta {
   /// Why a concealed type_text was refused before anything was posted (`ConcealedRefusal`, ruling 1128), so the wrapper
   /// names the cause found; a cause only, never a character, a position or a length.
   var concealedRefusal: ConcealedRefusal?
+  /// #602 (ruling 1260): the engine's positive record that the request stopped before any of its input went out: no key,
+  /// no ⌘V or Return, no value write (a scroll, an activation or a focus step may have run). Set only where the engine
+  /// knows it, by the stretch of the request that threw, never inferred from a null `startedAt`, which also reads null on
+  /// a path that posts nothing it stamps. Sent as `beforeInput: true` only when set; the secret wrapper says nothing was
+  /// entered only on it (src/services/sky.mjs).
+  var beforeInput = false
   /// The per-app route-4 override named once route 3's guard has failed three actions in a row for the app.
   var routeAdvice: String?
   /// Route 4 only: whether the user's key window is the one it was before the foreground assist (ForegroundAssist).
@@ -189,6 +195,13 @@ struct InputMeta {
     hidIdleMs = context.hidIdleMs
   }
 
+  /// The meta of an input request refused in the request's prologue, before its method ran (#602).
+  static func beforeInput(_ context: ExecutionContext) -> InputMeta {
+    var meta = InputMeta(context)
+    meta.beforeInput = true
+    return meta
+  }
+
   /// What the request's intervention guard says about it: detection off, or the idle time since the app's last
   /// attributed event.
   mutating func apply(_ guarding: InterventionGuard) {
@@ -202,9 +215,9 @@ struct InputMeta {
   /// The action interval's one rule, for every method that posts events: `post` posts one event (or one group posted
   /// back to back) and answers whether it was posted. `startedAt` is stamped as the first post that succeeds begins and
   /// `endedAt` after the last one that succeeded, so a request that posts nothing (refused, stopped before its first
-  /// event, empty, or whose first event could not be created) keeps both null, which is how the service and the wrapper
-  /// know nothing was entered. A post is noted as `effect`, the action's own input unless a preparation step says
-  /// otherwise (#212).
+  /// event, empty, or whose first event could not be created) keeps both null (`cua/actionInterval`). The secret wrapper
+  /// does not read "nothing entered" from that: only from `beforeInput`, which the stretch that knows sets (#602). A post
+  /// is noted as `effect`, the action's own input unless a preparation step says otherwise (#212).
   @discardableResult
   mutating func posting(as effect: InputEffect = .input, _ post: () -> Bool) -> Bool {
     let begun = unixMilliseconds()
@@ -231,6 +244,7 @@ struct InputMeta {
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
     if let concealedRefusal { wire["concealedRefusal"] = concealedRefusal.rawValue }
+    if beforeInput { wire["beforeInput"] = true }
     // Only once keys were posted: a refusal before them claims nothing about where keys went.
     if let keyTargetCutOff, startedAt != nil { wire["keyTargetCutOff"] = ["pid": Int(keyTargetCutOff)] }
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
@@ -476,24 +490,33 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
 /// inserts its text on (#186): a source switch seen before that unit's key up or flags restore counts it, so the count
 /// is the field's committed prefix and a model resuming from it types nothing twice. `beforeUnit` runs before each
 /// unit's guard (#354's checkpoint before a key, TypeReadback.swift), so a stop there leaves the unit unsent and the
-/// guard runs after its wait.
+/// guard runs after its wait. Anything it throws before its first key event is posted (a checkpoint, the guard, the
+/// source check, a first event that could not be created) marks the meta `beforeInput` (#602): an intervention then is
+/// `userIntervened` as one between keys is, and only the mark tells the two apart.
 func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int, _ total: Int) throws -> Void,
              beforeUnit: (_ index: Int) throws -> Void = { _ in },
              checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   let total = units.reduce(0) { $0 + $1.consumed }
   var entered = 0
+  var keyed = false
   defer { if !concealed { meta.entered = entered } }
-  for (index, unit) in units.enumerated() {
-    try beforeUnit(index)
-    try checkIntervention()
-    for spec in unit.events {
-      try checkSource(entered, total)
-      guard meta.posting({ post(spec) }) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
-      if spec.kind == .down { entered += unit.consumed }
-      pause()
+  do {
+    for (index, unit) in units.enumerated() {
+      try beforeUnit(index)
+      try checkIntervention()
+      for spec in unit.events {
+        try checkSource(entered, total)
+        guard meta.posting({ post(spec) }) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+        keyed = true
+        if spec.kind == .down { entered += unit.consumed }
+        pause()
+      }
     }
+    try checkSource(entered, total)
+  } catch {
+    if !keyed { meta.beforeInput = true }
+    throw error
   }
-  try checkSource(entered, total)
 }
 
 /// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses. Answered
@@ -944,6 +967,9 @@ extension Engine {
 
     var meta = InputMeta(context)
     var named: (pid: pid_t, name: String)?
+    // #602: until a route's text stretch begins (the paste route's operation, or the keys), nothing of the text has gone
+    // out; from then on the stretch marks the meta `beforeInput` itself when it knows.
+    var textBegun = false
     do {
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
@@ -969,6 +995,7 @@ extension Engine {
       case .paste:
         // #361: read back as the keyed route is, over the same live reads, its snapshot taken after the paste's activation.
         // The paste reads the keys' process again once its activation has run (`PasteTarget.reread`).
+        textBegun = true
         let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: early, guarding: guarding,
                                                          reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, selection: selection, settle: { self.recentKeys.settles(pid: pid) },
@@ -998,6 +1025,7 @@ extension Engine {
       // for select_text's range or, within a posted click's window, a stable range (ruling 1ea561bc:785). In Safari, by
       // the bundle identifier of the process read, a field no focus attribute names is found by WebKit's text-marker
       // route before the walk (#395, ruling 1ea561bc:824).
+      textBegun = true
       try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed,
                           settle: recentKeys.settles(pid: pid),
                           baseline: baselineWait(selection: selection, pointerPending: clickOrdering.pointerPending(pids: [pid, target])),
@@ -1014,6 +1042,7 @@ extension Engine {
       // #414: a password field's success carries what its length confirmation proves (`readbackLengthNote`).
       return keyInputResult(meta, note: meta.note, appPid: pid, appName: app.displayName)
     } catch let error as EngineError {
+      if !textBegun { meta.beforeInput = true }
       throw named.map { keyInputError(error, meta, appPid: $0.pid, appName: $0.name) } ?? withMeta(error, meta)
     }
   }

@@ -572,7 +572,10 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
   /// One ⌘V or Return posted through `deliver`; the action interval is the events' own, never the guard's samples.
   /// `beforeFirstKey` runs just before the first of them (ruling 1207: the deadline, after the snapshot, the baseline,
   /// the write and the key-focus read), inside the restore's reach.
+  /// `anyPosted`: whether any of them went (#602), noted as it goes, so a delivery guard that throws after the events
+  /// still counts them.
   var keyed = false
+  var anyPosted = false
   func posting(_ events: () -> Bool) throws -> Bool {
     if !keyed {
       try beforeFirstKey()
@@ -580,7 +583,10 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     }
     return try withoutActuallyEscaping(events) { events in
       var posted = false
-      if let outcome = try deliver({ posted = meta.posting(events) }) { meta.delivery = outcome }
+      if let outcome = try deliver({
+        posted = meta.posting(events)
+        if posted { anyPosted = true }
+      }) { meta.delivery = outcome }
       return posted
     }
   }
@@ -688,6 +694,9 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
       }
     }
   } catch let error as EngineError {
+    // #602: stopped before its first ⌘V or Return went out (a write refused, the guard, the deadline, a first event that
+    // could not be created), nothing of the text was posted.
+    if !anyPosted { meta.beforeInput = true }
     // A read or effect timeout with the count moved is the conflict (F §7.6): the user's copy, not the app's silence. A
     // Return's settle is no paste of anyone's contents, so its error stays its own.
     let moved = own.map { pasteboard.changeCount != $0 } ?? false
@@ -765,7 +774,10 @@ extension Engine {
   func paste(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     var meta = InputMeta(context)
     var named: (pid: pid_t, name: String)?
+    // #602: until the operation begins nothing is pasted; from then on it marks the meta `beforeInput` itself.
+    var pasteBegun = false
     if (args["concealed"] as? NSNumber)?.boolValue == true {
+      meta.beforeInput = true
       throw withMeta(EngineError(name: "concealedInputUnavailable",
                                  "Nothing was entered: a concealed value is never pasted. Use set_value on a settable element instead."), meta)
     }
@@ -788,12 +800,14 @@ extension Engine {
       // Converted before the app or the pasteboard is touched, so a conversion that fails changes nothing.
       let representations = try pasteRepresentations(text, format: format)
       var entered = 0
+      pasteBegun = true
       let outcome = try pasteOperation([.content(representations, units: text.utf16.count)],
                                        PasteTarget(app: app, pid: pid, application: application, keyboard: keyboard, guarding: guarding,
                                                    reread: { try self.finalKeyTarget(application, pid: pid, app: app, context: context) }),
                                        context, entered: &entered, meta: &meta)
       return keyInputResult(meta, note: pasteUnconfirmedNote(outcome), appPid: pid, appName: app.displayName)
     } catch let error as EngineError {
+      if !pasteBegun { meta.beforeInput = true }
       throw named.map { keyInputError(error, meta, appPid: $0.pid, appName: $0.name) } ?? withMeta(error, meta)
     }
   }
@@ -864,7 +878,20 @@ extension Engine {
   func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext, typing: PasteTyping? = nil,
                       entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
     meta.inputRoute = .paste
-    return try withPasteLock(pasteLock, deadline: context.deadline) {
+    // #602: everything before `runPaste` (the lock, the guard's rechecks, the activation, the snapshot, the keys' process,
+    // the deadline) goes before any ⌘V or Return, so an error there posted none; `runPaste` marks its own.
+    var pasting = false
+    do {
+      return try pasteOperationLocked(parts, target, context, typing: typing, pasting: &pasting, entered: &entered, meta: &meta)
+    } catch {
+      if !pasting { meta.beforeInput = true }
+      throw error
+    }
+  }
+
+  private func pasteOperationLocked(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext, typing: PasteTyping?,
+                                    pasting: inout Bool, entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
+    try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
       // An earlier action's after-action watch ends before anything of this one happens (its activation included).
@@ -929,6 +956,7 @@ extension Engine {
       meta.keyTargetCutOff = keys.walkCutOff ? keys.pid : nil
       let keyboard = keys.pid
       try refuseLateKeys(deadline: context.deadline)
+      pasting = true
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
       // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
       let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, keyboard) }

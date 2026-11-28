@@ -10,7 +10,7 @@
 //                       xcode-27 build it) or built here; its signature verified
 //   vendor helper       not running yet, so its first launch is after its rows (a running helper keeps the old answer;
 //                       nothing here kills one)
-//   vendor rows         the vendor's helper's rows (./tcc.mjs, the one guarded writer)
+//   vendor rows         the vendor's helper's rows (./tcc.mjs, the one guarded writer; its attempts on the entry, ruling 1264)
 //   approve             cua's engine's rows, the relaunch and the two-pass approve (./approve.mjs)
 //   warm-up cua,        each copy's first capture made here, outside every judged cell, so replayd's alert for it is
 //   warm-up vendor      raised in setup, not in a run (ruling 1153; pilot A, run 45220897246), then a bounded,
@@ -118,8 +118,11 @@ export function plannedPlacement(screen) {
     venue: venueRecord({alerts, displays, placed, textEdit: null})};
 }
 
-class StepFailed extends Error {}
-const failIf = (condition, detail) => { if (condition) throw new StepFailed(detail); };
+// `facts`: what the step's entry carries besides its detail, failed or not (the TCC writer's attempts, ruling 1264).
+class StepFailed extends Error { constructor(detail, facts = {}) { super(detail); this.facts = facts; } }
+const failIf = (condition, detail, facts) => { if (condition) throw new StepFailed(detail, facts); };
+// A TCC write's attempts (./tcc.mjs BUSY: each statement's, with each failed attempt's error), as a step's entry holds them.
+const attemptsOf = sqlite => (sqlite ? {sqlite} : {});
 
 // deps: {env, platform, home (the account's), checkout (the job's), commit (the tested one), engineArchive (the build
 // job's, or null to build here), exec(command, args, options) -> {status, stdout, stderr}, runtimeOf(cuaHome),
@@ -127,7 +130,7 @@ const failIf = (condition, detail) => { if (condition) throw new StepFailed(deta
 // exists, savedStateFs (./venue.mjs clearTextEditSavedState's fs; node:fs's by default), vendorRunning(app), grant, approve, warmUp(copy) (./warm-up.mjs), switchMode() (./display-mode.mjs
 // switchDisplayMode), screen() (the window list and displays, ../native-matrix/system-windows.swift), sleep(ms), stopEngine()
 // (src/runtime/engine.mjs stopEngine), write(path, record), log}.
-// -> {ok, steps: [{step, ok, detail}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
+// -> {ok, steps: [{step, ok, detail, sqlite?}], approve, warmUps, modeSwitch, placement, venue, engineStop: {wasRunning, pid?, stopped}, record, approved: {runtime, engine}}.
 export async function hostedSetup({env = process.env, platform = process.platform, home = env.HOME, checkout = process.cwd(), commit, engineArchive = null,
   exec = (command, args, options) => spawnSync(command, args, {encoding: 'utf8', cwd: checkout, ...options}),
   runtimeOf = cuaHome => locateRuntime({home: cuaHome}), engineOf = engineToApprove, identityOf = bundleIdentity, vmOf = vmIdentity, newId = randomUUID, realpath = realpathSync, exists = existsSync, savedStateFs = undefined,
@@ -180,13 +183,14 @@ export async function hostedSetup({env = process.env, platform = process.platfor
     }],
     ['vendor rows', () => {
       const rows = grant([{client: CLIENTS.vendor, bundle: runtime.paths.skyServiceApp}], {env, platform, log});
-      failIf(rows.missing.length, `rows missing: ${rows.missing.join(', ')}`);
-      return `${CLIENTS.vendor}: written`;
+      failIf(rows.missing.length, `rows missing: ${rows.missing.join(', ')}`, attemptsOf(rows.sqlite));
+      return {detail: `${CLIENTS.vendor}: written`, ...attemptsOf(rows.sqlite)};
     }],
     ['approve', async () => {
       report.approve = await approve({env, platform, home, log});
-      failIf(!report.approve.approved, report.approve.summary);
-      return report.approve.summary;
+      const facts = attemptsOf(report.approve.rows?.sqlite);
+      failIf(!report.approve.approved, report.approve.summary, facts);
+      return {detail: report.approve.summary, ...facts};
     }],
     ...['cua', 'vendor'].map(copy => [`warm-up ${copy}`, async () => {
       const done = await warmUp(copy);
@@ -252,11 +256,12 @@ export async function hostedSetup({env = process.env, platform = process.platfor
   ];
   for (const [step, body] of steps) {
     try {
-      const detail = await body();
-      report.steps.push({step, ok: true, detail});
+      const done = await body();
+      const {detail, ...facts} = typeof done === 'object' && done !== null ? done : {detail: done};
+      report.steps.push({step, ok: true, detail, ...facts});
       log(`hosted-sittings: setup ${step}: PASS (${detail})`);
     } catch (error) {
-      report.steps.push({step, ok: false, detail: error.message});
+      report.steps.push({step, ok: false, detail: error.message, ...(error.facts ?? attemptsOf(error.sqlite))});
       log(`hosted-sittings: setup ${step}: FAIL (${error.message})`);
       return report;
     }

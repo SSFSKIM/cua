@@ -317,3 +317,39 @@ test('input sources: enabled after TextEdit\'s defaults and read back from TIS\'
   assert.equal(refused.venue.inputSources.reads, 3, 'read again after each settle, up to the bound');
   assert.match(refused.steps.find(s => s.step === 'input sources').detail, /com\.apple\.inputmethod\.Korean\.2SetKorean not in the enabled list \(not in the preference\); MISSING com\.apple\.inputmethod\.Korean\.2SetKorean: the input rows needing it are NO VERDICT venue/);
 });
+
+// Ruling 1264: the TCC writer's attempts (each statement's, with each failed attempt's error) are on the step's entry in
+// setup.json, whether the rows were written, read back short, or the lock outlasted every attempt.
+test('the rows\' steps carry the TCC writer\'s attempts on their entries: written, short, or locked throughout', async () => {
+  const LOCKED = 'Error in 2nd command line argument: database is locked';
+  const retried = [{op: `insert kTCCServiceAccessibility ${CLIENTS.vendor}`, attempts: 2, errors: [LOCKED]}, {op: 'read back', attempts: 1}];
+  const engine = [{op: `insert kTCCServiceAccessibility ${CLIENTS.engine}`, attempts: 1}, {op: 'read back', attempts: 1}];
+  {
+    const {deps} = spies();
+    const report = await hostedSetup({...deps, grant: () => ({rows: [], missing: [], sqlite: retried}),
+      approve: () => ({approved: true, rows: {missing: [], sqlite: engine}, summary: 'approved in two passes'})});
+    assert.equal(report.ok, true);
+    assert.deepEqual(report.steps.find(s => s.step === 'vendor rows'), {step: 'vendor rows', ok: true, detail: `${CLIENTS.vendor}: written`, sqlite: retried});
+    assert.deepEqual(report.steps.find(s => s.step === 'approve').sqlite, engine);
+    assert.ok(!('sqlite' in report.steps.find(s => s.step === 'loopback')), 'a step that writes no row carries none');
+  }
+  {
+    const {deps} = spies();
+    const report = await hostedSetup({...deps, grant: () => ({rows: [], missing: [`${CLIENTS.vendor} accessibility`], sqlite: retried})});
+    assert.deepEqual(report.steps.at(-1), {step: 'vendor rows', ok: false, detail: `rows missing: ${CLIENTS.vendor} accessibility`, sqlite: retried});
+  }
+  {
+    const {deps} = spies();
+    const locked = [{op: `insert kTCCServiceAccessibility ${CLIENTS.vendor}`, attempts: 3, errors: [LOCKED, LOCKED, LOCKED]}];
+    const grant = () => { throw Object.assign(new Error(`the TCC writer: insert kTCCServiceAccessibility ${CLIENTS.vendor}: database is locked after 3 attempts`), {sqlite: locked}); };
+    const report = await hostedSetup({...deps, grant});
+    assert.equal(report.ok, false);
+    assert.deepEqual(report.steps.at(-1), {step: 'vendor rows', ok: false, detail: `the TCC writer: insert kTCCServiceAccessibility ${CLIENTS.vendor}: database is locked after 3 attempts`, sqlite: locked});
+  }
+  {
+    const {deps} = spies();
+    const locked = [{op: `insert kTCCServiceAccessibility ${CLIENTS.engine}`, attempts: 3, errors: [LOCKED, LOCKED, LOCKED]}];
+    const report = await hostedSetup({...deps, approve: async () => { throw Object.assign(new Error('the TCC writer: locked'), {sqlite: locked}); }});
+    assert.deepEqual(report.steps.at(-1), {step: 'approve', ok: false, detail: 'the TCC writer: locked', sqlite: locked});
+  }
+});

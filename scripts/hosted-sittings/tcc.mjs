@@ -120,16 +120,46 @@ export function csreqHex(bundle) {
   } finally { rmSync(dir, {recursive: true, force: true}); }
 }
 
-// Every store access a write makes, in one place, so the test can replace it with a spy.
-const STORE = {
-  exists: path => existsSync(path),
-  csreq: bundle => csreqHex(bundle),
-  sql: (db, statement) => run('/usr/bin/sudo', ['-n', '/usr/bin/sqlite3', db, statement]),
-};
+// Busy handling (ruling 1264; proof run 46095539139's `vendor rows` met "database is locked"): every statement runs with
+// sqlite3's own busy handler, set by `-cmd '.timeout'` before the SQL argument, so a lock tccd holds while it writes is
+// waited out; a statement still locked after it is tried at most `retries` more times, `spacingMs` apart, so one
+// statement takes at most 3 x 5 s + 2 x 2 s, never unbounded. Any other error is not retried.
+export const BUSY = Object.freeze({timeoutMs: 5000, retries: 2, spacingMs: 2000});
+const LOCKED = /database is locked|database table is locked|SQLITE_BUSY/;
+// An error's own words: sqlite3's or sudo's last stderr line (execFileSync's message repeats the whole argv), else its message.
+const errorText = error => String(error?.stderr || error?.message || error).trim().split('\n').at(-1);
+const sleepSync = ms => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+
+// Every store access a write makes, in one place: the system store over the real sudo and sqlite3 by default, and a
+// test may build it over a double of the runner (`run`), or replace the store with a spy.
+export function systemStore({run: runner = run, exists = existsSync, csreq = csreqHex} = {}) {
+  return {exists, csreq, sql: (db, statement) => runner('/usr/bin/sudo', ['-n', '/usr/bin/sqlite3', '-cmd', `.timeout ${BUSY.timeoutMs}`, db, statement])};
+}
+const STORE = systemStore();
+
+// `store` whose sql(db, statement, op) retries a locked statement (BUSY) and records each statement's attempts in
+// `attempts`, [{op, attempts, errors?}] (errors: each failed attempt's, in order), as the record shows them.
+function busyStore(store, attempts, sleep) {
+  return {...store, sql: (db, statement, op) => {
+    const entry = {op, attempts: 0};
+    attempts.push(entry);
+    for (;;) {
+      entry.attempts++;
+      try { return store.sql(db, statement); } catch (error) {
+        (entry.errors ??= []).push(errorText(error));
+        if (!LOCKED.test(entry.errors.at(-1)) && !LOCKED.test(String(error?.message))) throw error;
+        if (entry.attempts > BUSY.retries) throw new Error(`the TCC writer: ${op}: database is locked after ${entry.attempts} attempts (sqlite3's busy timeout ${BUSY.timeoutMs} ms each, ${BUSY.spacingMs} ms apart): ${entry.errors.at(-1)}`);
+        sleep(BUSY.spacingMs);
+      }
+    }
+  }};
+}
 
 // The one function that writes: the guard first, then the action against the store.
 // `decisionLog()`: the pinned spec, {sha, text} (pinnedDecisionLog), read only once the host is known to be a runner.
-function tccWrite(action, {env = process.env, platform = process.platform, decisionLog = () => pinnedDecisionLog(env), store = STORE, log = line => process.stderr.write(`${line}\n`)} = {}) {
+// `sleep(ms)`: the spacing between a locked statement's attempts (BUSY). The result, and the error a failed write throws,
+// carry `sqlite`: each statement's attempts (busyStore).
+function tccWrite(action, {env = process.env, platform = process.platform, decisionLog = () => pinnedDecisionLog(env), store = STORE, sleep = sleepSync, log = line => process.stderr.write(`${line}\n`)} = {}) {
   assertGithubHosted(env, platform, 'the TCC writer');
   const refuse = why => { throw new Error(`the TCC writer: refused: ${why}`); };
   const pinned = decisionLog();
@@ -138,19 +168,24 @@ function tccWrite(action, {env = process.env, platform = process.platform, decis
   const problem = decisionEntryProblem(pinned.text);
   if (problem) refuse(`${problem} (${DECISION_SPEC} at ${pinned.sha})`);
   log(`hosted-sittings: writing TCC rows on a GitHub-hosted runner under the design spec's Decision Log at ${pinned.sha}, entry: ${DECISION_LOG_ENTRY}`);
-  return action(store, {entry: DECISION_LOG_ENTRY, commit: pinned.sha});
+  const sqlite = [];
+  try { return {...action(busyStore(store, sqlite, sleep), {entry: DECISION_LOG_ENTRY, commit: pinned.sha}), sqlite}; } catch (error) {
+    if (error && typeof error === 'object') error.sqlite = sqlite;
+    throw error;
+  }
 }
 
 // Whether `services` names a non-empty list of SERVICES' keys.
 const knownServices = services => Array.isArray(services) && services.length > 0 && services.every(key => Object.hasOwn(SERVICES, key));
 // The rows of `clients` for `services` (keys) as the system database reads them: [[service, client, auth_value]].
-const readRows = (store, clients, services) => String(store.sql(SYSTEM_DB, `select service, client, auth_value from access where client in (${clients.map(quote).join(', ')}) and service in (${services.map(key => quote(SERVICES[key])).join(', ')})`) ?? '')
+const readRows = (store, clients, services) => String(store.sql(SYSTEM_DB, `select service, client, auth_value from access where client in (${clients.map(quote).join(', ')}) and service in (${services.map(key => quote(SERVICES[key])).join(', ')})`, 'read back') ?? '')
   .split('\n').filter(Boolean).map(line => line.split('|'));
 
 // Grants each `{client, bundle, services?}` (client one of CLIENTS, bundle the app whose designated requirement the
 // rows carry, services the keys of SERVICES to grant, every one by default) in the system database, then reads the rows
-// back. `deps`: {env, platform, decisionLog (() -> {sha, text} | null, the pinned spec), store, log, now}. `decision`:
-// the entry and the pinned commit. -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>']}.
+// back. `deps`: {env, platform, decisionLog (() -> {sha, text} | null, the pinned spec), store, sleep, log, now}. `decision`:
+// the entry and the pinned commit; `sqlite`: each statement's attempts (BUSY; on the error too, when the write fails).
+// -> {decision, rows: [{client, granted: [service key]}], missing: ['<client> <service key>'], sqlite: [{op, attempts, errors?}]}.
 export function grantRows(grants, {now = Date.now, ...deps} = {}) {
   if (!grants.length || grants.some(g => !Object.values(CLIENTS).includes(g.client) || typeof g.bundle !== 'string'))
     throw new Error('the TCC writer grants only cua\'s engine and the vendor\'s helper, each with its bundle');
@@ -164,7 +199,7 @@ export function grantRows(grants, {now = Date.now, ...deps} = {}) {
       const hex = store.csreq(bundle);
       if (!/^[0-9a-f]+$/.test(hex)) throw new Error(`the designated requirement of ${bundle} did not compile`);
       for (const key of services)
-        store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(SERVICES[key])}, ${quote(client)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${at});`);
+        store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(SERVICES[key])}, ${quote(client)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${at});`, `insert ${SERVICES[key]} ${client}`);
     }
     const read = readRows(store, named.map(g => g.client), [...new Set(named.flatMap(g => g.services))]);
     const allowed = (client, key) => read.some(([s, c, value]) => s === SERVICES[key] && c === client && value === '2');
@@ -176,13 +211,13 @@ export function grantRows(grants, {now = Date.now, ...deps} = {}) {
 
 // Removes cua's engine's rows for `services` (keys of SERVICES) from the system database, then reads them back (the
 // hosted staged onboarding's, T3b: ./onboarding.mjs). Only cua's engine's bundle id: the vendor's helper's rows and any
-// other app's are never removed. `deps`: grantRows'. -> {decision, client, removed: [service key], remaining: [service key]}.
+// other app's are never removed. `deps`: grantRows'. -> {decision, client, removed: [service key], remaining: [service key], sqlite}.
 export function revokeRows({client, services} = {}, deps = {}) {
   if (client !== CLIENTS.engine || !knownServices(services))
     throw new Error(`the TCC writer removes only cua's engine's rows (${CLIENTS.engine}), for services of ${Object.keys(SERVICES).join(', ')}`);
   return tccWrite((store, decision) => {
     if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
-    store.sql(SYSTEM_DB, `delete from access where client = ${quote(client)} and service in (${services.map(key => quote(SERVICES[key])).join(', ')});`);
+    store.sql(SYSTEM_DB, `delete from access where client = ${quote(client)} and service in (${services.map(key => quote(SERVICES[key])).join(', ')});`, `delete ${client} ${services.map(key => SERVICES[key]).join(' ')}`);
     const read = readRows(store, [client], services);
     const present = key => read.some(([s, c]) => s === SERVICES[key] && c === client);
     return {decision, client, removed: services.filter(key => !present(key)), remaining: services.filter(present)};
@@ -196,7 +231,7 @@ export const DIAGNOSTIC_CLIENT = 'io.github.ssfskim.cua.key-route-tap';
 
 // Grants Input Monitoring to the diagnostic's tap app (`bundle`, whose designated requirement the row carries) in the
 // system database, through the same guard as every write (hosted, under O0), then reads the row back. `deps`:
-// grantRows'. -> {decision, client, service, granted}.
+// grantRows'. -> {decision, client, service, granted, sqlite}.
 export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} = {}) {
   if (typeof bundle !== 'string' || !bundle) throw new Error('the TCC writer grants the key-route diagnostic its tap app\'s bundle only');
   const service = SERVICES.inputMonitoring;
@@ -204,7 +239,7 @@ export function grantDiagnosticListen({bundle} = {}, {now = Date.now, ...deps} =
     if (!store.exists(SYSTEM_DB)) throw new Error(`no TCC database at ${SYSTEM_DB}`);
     const hex = store.csreq(bundle);
     if (!/^[0-9a-f]+$/.test(hex)) throw new Error(`the designated requirement of ${bundle} did not compile`);
-    store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(service)}, ${quote(DIAGNOSTIC_CLIENT)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${Math.floor(now() / 1000)});`);
+    store.sql(SYSTEM_DB, `insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values (${quote(service)}, ${quote(DIAGNOSTIC_CLIENT)}, 0, 2, 4, 1, X'${hex}', 0, 'UNUSED', ${Math.floor(now() / 1000)});`, `insert ${service} ${DIAGNOSTIC_CLIENT}`);
     const granted = readRows(store, [DIAGNOSTIC_CLIENT], ['inputMonitoring']).some(([s, c, value]) => s === service && c === DIAGNOSTIC_CLIENT && value === '2');
     return {decision, client: DIAGNOSTIC_CLIENT, service, granted};
   }, deps);

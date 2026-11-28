@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, decisionEntryProblem, grantRows, O0_COMMIT, pinnedDecisionLog, revokeRows, SERVICES, SYSTEM_DB} from '../../scripts/hosted-sittings/tcc.mjs';
+import {BUSY, CLIENTS, DECISION_LOG_ENTRY, DECISION_MARKER, DIAGNOSTIC_CLIENT, decisionEntryProblem, grantDiagnosticListen, grantRows, O0_COMMIT, pinnedDecisionLog, revokeRows, SERVICES, SYSTEM_DB, systemStore} from '../../scripts/hosted-sittings/tcc.mjs';
 
 // The spec as it holds the entry (wrapped as the spec wraps it, in its own Decision Log section), and the ways it may not.
 const O0 = '- Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the\n  owner\'s Macs (O0; ruling 1111)): a kit that writes a TCC row refuses, before any write, unless …\n  Date/Author: 2026-11-23, the owner.\n';
@@ -154,7 +154,8 @@ test('revokeRows removes cua\'s engine\'s rows for the named services only, in t
   assert.deepEqual(deletes.map(c => c[2]), ["delete from access where client = 'io.github.ssfskim.cua.engine' and service in ('kTCCServiceScreenCapture', 'kTCCServicePostEvent');"]);
   assert.ok(calls.every(c => !String(c[2] ?? '').includes(CLIENTS.vendor)), 'the vendor\'s rows are never named');
   assert.ok(calls.every(c => !/Accessibility|ListenEvent/.test(String(c[2] ?? ''))), 'no service it was not asked to remove');
-  assert.deepEqual(report, {decision: {entry: DECISION_LOG_ENTRY, commit: SHA}, client: CLIENTS.engine, removed: ['screenRecording', 'postEvent'], remaining: []});
+  const {sqlite: _attempts, ...removal} = report;
+  assert.deepEqual(removal, {decision: {entry: DECISION_LOG_ENTRY, commit: SHA}, client: CLIENTS.engine, removed: ['screenRecording', 'postEvent'], remaining: []});
   assert.match(logged.join('\n'), /Decision Log at .*TCC rows may be written by kits on GitHub-hosted runners only/, 'the removal cites the pinned commit too');
 });
 
@@ -171,4 +172,86 @@ test('revokeRows removes only cua\'s engine\'s rows, and only services it knows:
     assert.throws(() => revokeRows(args, {...HOSTED, store}), /removes only cua's engine's rows/, what);
     assert.deepEqual(calls, [], what);
   }
+});
+
+// Ruling 1264: the system database may be locked (tccd writing it) when a row is written, as proof run 46095539139's
+// `vendor rows` met it ("database is locked"). Every statement waits on sqlite3's own busy handler (`.timeout`, set
+// before the SQL argument), then is tried at most BUSY.retries more times, spaced; each statement's attempts (and each
+// failed attempt's error) are recorded on the writer's result, and on its error when the lock outlasts them.
+const LOCKED = 'Error in 2nd command line argument: database is locked';
+// A double for the sudo/sqlite3 runner under the real store: it records every argv and throws as execFileSync throws
+// on a non-zero exit (stderr carried) for the statements `locked(statement, attempt)` names.
+function sqliteRunner({rows = [], locked = () => false} = {}) {
+  const calls = [], seen = new Map();
+  const run = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    const statement = args.at(-1), attempt = (seen.get(statement) ?? 0) + 1;
+    seen.set(statement, attempt);
+    if (locked(statement, attempt)) throw Object.assign(new Error(`Command failed: ${cmd} ${args.join(' ')}\n${LOCKED}\n`), {status: 1, stderr: `${LOCKED}\n`});
+    return statement.startsWith('select') ? rows.join('\n') : '';
+  };
+  return {store: systemStore({run, exists: () => true, csreq: () => 'fade'}), calls};
+}
+const VENDOR = [{client: CLIENTS.vendor, bundle: GRANTS[1].bundle, services: ['accessibility']}];
+const VENDOR_ROW = [`${SERVICES.accessibility}|${CLIENTS.vendor}|2`];
+
+test('every statement goes through sudo -n sqlite3 with a busy timeout set before the SQL argument', () => {
+  const {store, calls} = sqliteRunner({rows: VENDOR_ROW});
+  grantRows(VENDOR, {...HOSTED, store, log: () => {}, sleep: () => {}});
+  assert.equal(calls.length, 2, 'the insert and its read-back');
+  for (const call of calls) assert.deepEqual(call.slice(0, 6), ['/usr/bin/sudo', '-n', '/usr/bin/sqlite3', '-cmd', `.timeout ${BUSY.timeoutMs}`, SYSTEM_DB]);
+  assert.ok(calls.every(call => call.length === 7), 'the statement is the one argument after the database');
+  assert.equal(BUSY.timeoutMs, 5000);
+  assert.ok(BUSY.retries >= 1 && BUSY.retries <= 2, 'the timeout plus at most two retries');
+});
+
+test('a statement locked on its first attempt is retried once, spaced, and its two attempts are recorded', () => {
+  const {store, calls} = sqliteRunner({rows: VENDOR_ROW, locked: (statement, attempt) => statement.startsWith('insert') && attempt === 1});
+  const slept = [];
+  const report = grantRows(VENDOR, {...HOSTED, store, log: () => {}, sleep: ms => slept.push(ms)});
+  assert.deepEqual(report.missing, []);
+  assert.equal(calls.filter(call => call.at(-1).startsWith('insert')).length, 2);
+  assert.deepEqual(slept, [BUSY.spacingMs]);
+  assert.deepEqual(report.sqlite, [
+    {op: `insert ${SERVICES.accessibility} ${CLIENTS.vendor}`, attempts: 2, errors: [LOCKED]},
+    {op: 'read back', attempts: 1},
+  ]);
+});
+
+test('a lock that outlasts every attempt fails the write with each attempt recorded, and nothing after it runs', () => {
+  const {store, calls} = sqliteRunner({rows: VENDOR_ROW, locked: statement => statement.startsWith('insert')});
+  const slept = [];
+  let thrown = null;
+  try { grantRows(VENDOR, {...HOSTED, store, log: () => {}, sleep: ms => slept.push(ms)}); } catch (error) { thrown = error; }
+  assert.ok(thrown, 'the write fails');
+  const attempts = 1 + BUSY.retries;
+  assert.match(thrown.message, new RegExp(`the TCC writer: insert ${SERVICES.accessibility} ${CLIENTS.vendor.replaceAll('.', '\\.')}: database is locked after ${attempts} attempts`));
+  assert.deepEqual(thrown.sqlite, [{op: `insert ${SERVICES.accessibility} ${CLIENTS.vendor}`, attempts, errors: Array(attempts).fill(LOCKED)}]);
+  assert.equal(calls.length, attempts, 'no read-back after a write that failed');
+  assert.deepEqual(slept, Array(BUSY.retries).fill(BUSY.spacingMs));
+});
+
+test('an error that is not a lock is not retried: one attempt, recorded, the error as it was', () => {
+  const run = () => { throw Object.assign(new Error('Command failed: sudo: a password is required'), {status: 1, stderr: 'sudo: a password is required\n'}); };
+  let thrown = null;
+  try { grantRows(VENDOR, {...HOSTED, store: systemStore({run, exists: () => true, csreq: () => 'fade'}), log: () => {}, sleep: () => { throw new Error('slept'); }}); } catch (error) { thrown = error; }
+  assert.match(thrown.message, /a password is required/);
+  assert.deepEqual(thrown.sqlite, [{op: `insert ${SERVICES.accessibility} ${CLIENTS.vendor}`, attempts: 1, errors: ['sudo: a password is required']}]);
+});
+
+test('every write takes the same busy path: the removal and the diagnostic\'s Input Monitoring row too', () => {
+  const first = (statement, attempt) => !statement.startsWith('select') && attempt === 1;
+  const revoked = revokeRows({client: CLIENTS.engine, services: ['postEvent']}, {...HOSTED, store: sqliteRunner({locked: first}).store, log: () => {}, sleep: () => {}});
+  assert.deepEqual(revoked.sqlite, [{op: `delete ${CLIENTS.engine} ${SERVICES.postEvent}`, attempts: 2, errors: [LOCKED]}, {op: 'read back', attempts: 1}]);
+  const tap = sqliteRunner({rows: [`${SERVICES.inputMonitoring}|${DIAGNOSTIC_CLIENT}|2`], locked: first});
+  const listened = grantDiagnosticListen({bundle: '/Users/runner/tap.app'}, {...HOSTED, store: tap.store, log: () => {}, sleep: () => {}});
+  assert.equal(listened.granted, true);
+  assert.deepEqual(listened.sqlite, [{op: `insert ${SERVICES.inputMonitoring} ${DIAGNOSTIC_CLIENT}`, attempts: 2, errors: [LOCKED]}, {op: 'read back', attempts: 1}]);
+  assert.ok(tap.calls.every(call => call[3] === '-cmd' && call[4] === `.timeout ${BUSY.timeoutMs}`));
+});
+
+test('the diagnostic\'s grant refuses before any store access off a GitHub-hosted runner, like every write', () => {
+  const {store, calls} = spyStore();
+  assert.throws(() => grantDiagnosticListen({bundle: '/Users/runner/tap.app'}, {...HOSTED, env: {}, store, decisionLog: throwsIfCalled}), /refused: .*GitHub-hosted/);
+  assert.deepEqual(calls, []);
 });

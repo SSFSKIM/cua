@@ -1,0 +1,334 @@
+{
+ "driver": "linux-electron-a11y",
+ "cli": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5-base/bin/cua.mjs",
+ "home": "/Users/new/.local/share/cua-171/t183/run3/base-home",
+ "baseCli": null,
+ "baseHome": null,
+ "override": null,
+ "display": ":99",
+ "electron": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/node_modules/electron/dist/electron",
+ "scenarios": [
+  {
+   "scenario": "live1",
+   "checks": [
+    {
+     "what": "the session's IsEnabled and ScreenReaderEnabled are off before the launch",
+     "ok": true,
+     "detail": {
+      "IsEnabled": false,
+      "ScreenReaderEnabled": false
+     }
+    },
+    {
+     "what": "the session opened, its first cell answered",
+     "ok": true
+    },
+    {
+     "what": "launch_app answered",
+     "ok": true,
+     "detail": "launched"
+    },
+    {
+     "what": "the fixture's window appeared",
+     "ok": true
+    },
+    {
+     "what": "the window's process is the launched fixture, outside the sandbox (this PID namespace)",
+     "ok": true,
+     "detail": {
+      "pid": 3438827,
+      "ours": [
+       3438827,
+       3438860,
+       3438863,
+       3438872
+      ]
+     }
+    },
+    {
+     "what": "the first observation (getApp's) has Fixture button",
+     "ok": false,
+     "detail": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture"
+    },
+    {
+     "what": "the next getAXState has Fixture button",
+     "ok": false
+    },
+    {
+     "what": "the first observation sent one GetAttributes, to the fixture's application (on the bus by the launch's variable)",
+     "ok": false,
+     "detail": []
+    },
+    {
+     "what": "the next sent none: asked before",
+     "ok": true,
+     "detail": []
+    },
+    {
+     "what": "IsEnabled and ScreenReaderEnabled are still off",
+     "ok": true,
+     "detail": {
+      "IsEnabled": false,
+      "ScreenReaderEnabled": false
+     }
+    }
+   ],
+   "switches": {
+    "IsEnabled": false,
+    "ScreenReaderEnabled": false
+   },
+   "entry": "cua-t5-fixture-73603af3.desktop",
+   "window": {
+    "app": "cua-electron-fixture",
+    "focused": false,
+    "height": 480,
+    "id": 6291459,
+    "modal": false,
+    "title": "cua Electron fixture",
+    "width": 640,
+    "window_type": "normal",
+    "x": 160,
+    "y": 140,
+    "pid": 3438827
+   },
+   "observations": [
+    {
+     "error": false,
+     "text": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture",
+     "images": 0,
+     "requests": [],
+     "value": null
+    },
+    {
+     "error": false,
+     "text": "{\"t5\":\"Accessibility source: x11\\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture\"}",
+     "images": 0,
+     "requests": [],
+     "value": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture"
+    }
+   ],
+   "switchesAfter": {
+    "IsEnabled": false,
+    "ScreenReaderEnabled": false
+   },
+   "end": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "5e389113-4b7b-4e3c-aa30-3c53ce06a748"
+   },
+   "exit": {
+    "code": 0,
+    "signal": null
+   },
+   "status": "FAIL"
+  },
+  {
+   "scenario": "live3",
+   "checks": [
+    {
+     "what": "the session's IsEnabled and ScreenReaderEnabled are off before the start",
+     "ok": true,
+     "detail": {
+      "IsEnabled": false,
+      "ScreenReaderEnabled": false
+     }
+    },
+    {
+     "what": "the fixture's environment names none of the three variables",
+     "ok": true
+    },
+    {
+     "what": "the session opened, its first cell answered",
+     "ok": true
+    },
+    {
+     "what": "the fixture's window appeared",
+     "ok": true
+    },
+    {
+     "what": "the window is the process this driver started",
+     "ok": true,
+     "detail": {
+      "window": 3438957,
+      "started": 3438957
+     }
+    },
+    {
+     "what": "the fixture is not on the accessibility bus (a listing read whole)",
+     "ok": true,
+     "detail": {
+      "listed": [],
+      "reply": "(@a(so) [],)"
+     }
+    },
+    {
+     "what": "the first observation (getApp's) ends with the sentence, word for word",
+     "ok": false,
+     "detail": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture"
+    },
+    {
+     "what": "the next getAXState ends with the sentence, word for word",
+     "ok": false,
+     "detail": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture"
+    },
+    {
+     "what": "no request was sent",
+     "ok": true,
+     "detail": []
+    }
+   ],
+   "switches": {
+    "IsEnabled": false,
+    "ScreenReaderEnabled": false
+   },
+   "window": {
+    "app": "cua-electron-fixture",
+    "focused": false,
+    "height": 480,
+    "id": 4194307,
+    "modal": false,
+    "title": "cua Electron fixture",
+    "width": 640,
+    "window_type": "normal",
+    "x": 160,
+    "y": 140,
+    "pid": 3438957
+   },
+   "observations": [
+    {
+     "error": false,
+     "text": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture",
+     "images": 0,
+     "requests": [],
+     "value": null
+    },
+    {
+     "error": false,
+     "text": "{\"t5\":\"Accessibility source: x11\\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture\"}",
+     "images": 0,
+     "requests": [],
+     "value": "Accessibility source: x11\n0 window cua Electron fixture, Description: cua-electron-fixture / cua-electron-fixture"
+    }
+   ],
+   "sentence": "No accessibility tree: cua-electron-fixture, an Electron app by its window's role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.",
+   "end": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "9b84d558-a9dd-42ce-b74d-2ea7e5748f65"
+   },
+   "exit": {
+    "code": 0,
+    "signal": null
+   },
+   "status": "FAIL"
+  },
+  {
+   "scenario": "screenshot",
+   "checks": [
+    {
+     "what": "the session's IsEnabled is on, ScreenReaderEnabled off",
+     "ok": true,
+     "detail": {
+      "IsEnabled": true,
+      "ScreenReaderEnabled": false
+     }
+    },
+    {
+     "what": "the session opened, its first cell answered",
+     "ok": true
+    },
+    {
+     "what": "the fixture's window appeared",
+     "ok": true
+    },
+    {
+     "what": "the window is the process this driver started",
+     "ok": true,
+     "detail": {
+      "window": 3439171,
+      "started": 3439171
+     }
+    },
+    {
+     "what": "the fixture is on the accessibility bus",
+     "ok": true,
+     "detail": {
+      "listed": [
+       {
+        "bus": ":1.33",
+        "pid": 3439171
+       }
+      ],
+      "reply": "([(':1.33', objectpath '/org/a11y/atspi/accessible/root')],)"
+     }
+    },
+    {
+     "what": "getScreenshot answered with its image",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "what": "getScreenshot sent no GetAttributes (nor GetRelationSet)",
+     "ok": true,
+     "detail": []
+    },
+    {
+     "what": "the next getAXState sent one GetAttributes, to the fixture's application",
+     "ok": false,
+     "detail": []
+    },
+    {
+     "what": "the next getAXState has Fixture button",
+     "ok": false,
+     "detail": "Accessibility source: at_spi\n0 frame cua Electron fixture\nAccessibility tree truncated: at least 1 elements not shown (unreadable)"
+    }
+   ],
+   "switches": {
+    "IsEnabled": true,
+    "ScreenReaderEnabled": false
+   },
+   "window": {
+    "app": "cua-electron-fixture",
+    "focused": false,
+    "height": 480,
+    "id": 4194307,
+    "modal": false,
+    "title": "cua Electron fixture",
+    "width": 640,
+    "window_type": "normal",
+    "x": 160,
+    "y": 140,
+    "pid": 3439171
+   },
+   "observations": [
+    {
+     "error": false,
+     "text": "",
+     "images": 1,
+     "requests": [],
+     "value": null
+    },
+    {
+     "error": false,
+     "text": "{\"t5\":\"Accessibility source: at_spi\\n0 frame cua Electron fixture\\nAccessibility tree truncated: at least 1 elements not shown (unreadable)\"}",
+     "images": 0,
+     "requests": [],
+     "value": "Accessibility source: at_spi\n0 frame cua Electron fixture\nAccessibility tree truncated: at least 1 elements not shown (unreadable)"
+    }
+   ],
+   "end": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "3cfdbcf2-de22-422e-b834-6eedc11036d0"
+   },
+   "exit": {
+    "code": 0,
+    "signal": null
+   },
+   "status": "FAIL"
+  }
+ ],
+ "preconditions": [],
+ "a11yBus": "unix:path=/Users/new/.local/share/cua-171/t183/run3/xdg-runtime/at-spi/bus_99,guid=26a1b11cacc1fa406dc613b46b0b33a8",
+ "status": "FAIL"
+}

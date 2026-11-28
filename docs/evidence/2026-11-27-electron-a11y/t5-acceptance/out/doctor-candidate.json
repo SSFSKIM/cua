@@ -1,0 +1,208 @@
+{
+  "home": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua",
+  "ok": true,
+  "checks": [
+    {
+      "name": "platform",
+      "status": "pass",
+      "detail": "linux-x64: cua's own runtime cua-linux-x64-e0.4.7-n24.22.0-s0.163.0-mb71dc1f8185d"
+    },
+    {
+      "name": "runtime.installed",
+      "status": "pass",
+      "detail": "cua's own runtime cua-linux-x64-e0.4.7-n24.22.0-s0.163.0-mb71dc1f8185d at /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c: its module tree, Node and sandbox helper are installed, and current.json names it, the last install that completed here"
+    },
+    {
+      "name": "runtime.modules",
+      "status": "pass",
+      "detail": "the module tree at /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c verifies: 23 packages, each file's digest, and 12 native files by SHA-256"
+    },
+    {
+      "name": "runtime.node",
+      "status": "pass",
+      "detail": "the pinned Node 24.22.0 at /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/node/24.22.0/bin/node, its bytes the ones its install record names"
+    },
+    {
+      "name": "sandbox",
+      "status": "pass",
+      "detail": "CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection's run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network (the trusted services do, so the computer-use helper reaches the X display and the session bus); CUA_SHIM_SANDBOX=disabled lifts both limits"
+    },
+    {
+      "name": "sandbox.launcher",
+      "status": "pass",
+      "detail": "cua's own sandbox confines the children: the pinned helper /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox (SHA-256 da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344); no Codex CLI is launched"
+    },
+    {
+      "name": "run.stale",
+      "status": "pass",
+      "detail": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/run: nothing stale"
+    },
+    {
+      "name": "runtime.leftovers",
+      "status": "pass",
+      "detail": "nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)"
+    },
+    {
+      "name": "display",
+      "status": "pass",
+      "detail": "X display :99 has XTEST, Composite and XFIXES"
+    },
+    {
+      "name": "accessibility.bus",
+      "status": "pass",
+      "detail": "AT-SPI (org.a11y.Bus) is on the session bus at unix:path=/tmp/dbus-yO3nDGJrPk,guid=693e16a310f6ad92c75b7f896b0b33a0"
+    },
+    {
+      "name": "accessibility.enabled",
+      "status": "pass",
+      "detail": "org.a11y.Status IsEnabled is true on the session bus at unix:path=/tmp/dbus-yO3nDGJrPk,guid=693e16a310f6ad92c75b7f896b0b33a0, so Qt applications put their accessibility trees on the bus and Chromium applications (Electron apps, Chrome) join it as they start"
+    },
+    {
+      "name": "sandbox.userns",
+      "status": "pass",
+      "detail": "bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime's sandbox uses"
+    },
+    {
+      "name": "secrets.store",
+      "status": "pass",
+      "detail": "0 secrets in /Users/new/.local/share/cua-171/t183/run3/user/.config/claude-secrets (0700, yours, each file 0600)"
+    },
+    {
+      "name": "secrets.project",
+      "status": "skip",
+      "detail": "no project secrets for /Users/new/Developer/GitHub/cua (/Users/new/.local/share/cua-171/t183/run3/user/.config/claude-secrets/projects/-Users-new-Developer-GitHub-cua); /secret KEY in a Claude Code session there, or cua secrets set KEY --project, stores the first"
+    },
+    {
+      "name": "repl.host",
+      "status": "pass",
+      "detail": "cua host (linux) on Node /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115). The profile listing (browser only): cua host (linux) on Node /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115)."
+    },
+    {
+      "name": "engine",
+      "status": "pass",
+      "detail": "cua's engine is selected (the default engine): sessions here run the pinned cua-engine 0.4.7 (linux-engine-v0.4.7) at /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/engine/linux/cua-engine, SHA-256 05b9cac46a266f70e280fad533f96f4b9dd5d725348b1ebf2217b9f0b16632cc, behind service cua (cua's own Linux service); device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or \"desktop\": \"dedicated\" in ~/.config/cua/engine.json, gives the agent the desktop); capabilities, from cua-engine started for this check and stopped: backend x11, build 3944622deb44, capture.desktop true, capture.window retained, desktop shared, input.background true, input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.4.7"
+    },
+    {
+      "name": "chrome.route",
+      "status": "blocked",
+      "detail": "this home has no Chrome registration: run `cua chrome register` (cua's own host, for the cua extension); install or load the cua extension in each Chrome profile you use (README, \"Chrome\") [chrome_not_registered]"
+    },
+    {
+      "name": "chrome.host.registered",
+      "status": "blocked",
+      "detail": "no native-messaging manifest for io.github.ssfskim.cua in /Users/new/.local/share/cua-171/t183/run3/user/.config/google-chrome: the cua extension cannot reach a host; run cua chrome register"
+    },
+    {
+      "name": "chrome.hosts.live",
+      "status": "blocked",
+      "detail": "no cua host is serving in /Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/chrome/b: open Chrome with the cua extension enabled in a profile"
+    },
+    {
+      "name": "maws.hosts",
+      "status": "skip",
+      "detail": "no cua process is connected to a MAWS backend (MAWS passes CUA_BROWSER_BACKENDS to its sessions' engines; cua serve connects then)"
+    },
+    {
+      "name": "agent.installed",
+      "status": "skip",
+      "detail": "this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.running",
+      "status": "skip",
+      "detail": "this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.enrolled",
+      "status": "skip",
+      "detail": "this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.console",
+      "status": "skip",
+      "detail": "this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.relay",
+      "status": "skip",
+      "detail": "this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    }
+  ],
+  "runtime": {
+    "release": "cua-linux-x64-e0.4.7-n24.22.0-s0.163.0-mb71dc1f8185d",
+    "root": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+    "paths": {
+      "moduleDir": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c/node_modules"
+    },
+    "parts": {
+      "schema": 1,
+      "platform": "linux",
+      "modules": {
+        "lock": "b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c"
+      },
+      "node": {
+        "version": "24.22.0"
+      },
+      "sandbox": {
+        "upstreamTag": "rust-v0.163.0"
+      },
+      "engine": {
+        "version": "0.4.7"
+      }
+    }
+  },
+  "engine": {
+    "selected": "cua",
+    "reason": "default",
+    "refused": null,
+    "preferred": {
+      "engine": "cua",
+      "reason": "default"
+    },
+    "service": "cua",
+    "runs": {
+      "path": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/engine/linux/cua-engine",
+      "source": "installed"
+    },
+    "installed": {
+      "path": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/engine/linux/cua-engine",
+      "exists": true,
+      "executable": true,
+      "sha256": "05b9cac46a266f70e280fad533f96f4b9dd5d725348b1ebf2217b9f0b16632cc",
+      "version": "0.4.7",
+      "build": "pinned",
+      "release": "linux-engine-v0.4.7",
+      "current": true
+    },
+    "pinned": {
+      "version": "0.4.7",
+      "release": "linux-engine-v0.4.7",
+      "sha256": "05b9cac46a266f70e280fad533f96f4b9dd5d725348b1ebf2217b9f0b16632cc"
+    },
+    "desktop": {
+      "mode": "shared",
+      "reason": "default"
+    },
+    "capabilities": {
+      "backend": "x11",
+      "build": "3944622deb44",
+      "capture": {
+        "desktop": true,
+        "window": "retained"
+      },
+      "desktop": "shared",
+      "input": {
+        "background": true,
+        "desktop": true
+      },
+      "text": {
+        "literal": true,
+        "paste": "verified"
+      },
+      "tree": "at_spi",
+      "version": "0.4.7"
+    },
+    "capabilitiesUnread": null
+  },
+  "retired": []
+}

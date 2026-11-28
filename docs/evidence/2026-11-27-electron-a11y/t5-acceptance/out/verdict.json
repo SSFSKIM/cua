@@ -1,0 +1,10 @@
+{
+ "status": "PASS",
+ "problems": [],
+ "refusal": {
+  "message": "the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine, which is 0.4.6, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs install --engine`",
+  "code": "engine_outdated",
+  "hint": "a `cua` from another checkout installs that checkout's engine, not this one's"
+ },
+ "direct046": "failed to parse command input: unknown field `tree_wanted`, expected one of `window`, `query`, `include_screenshot`"
+}

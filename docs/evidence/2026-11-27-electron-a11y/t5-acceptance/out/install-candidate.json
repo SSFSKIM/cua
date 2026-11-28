@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "release": "cua-linux-x64-e0.4.7-n24.22.0-s0.163.0-mb71dc1f8185d",
+  "changed": true,
+  "modules": {
+    "root": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+    "moduleDir": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/modules/b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c/node_modules",
+    "lock": "b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c",
+    "changed": true
+  },
+  "sandboxHelper": {
+    "path": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox",
+    "sha256": "da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344",
+    "changed": true
+  },
+  "node": {
+    "version": "24.22.0",
+    "root": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/node/24.22.0",
+    "node": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/node/24.22.0/bin/node",
+    "changed": true,
+    "activated": true,
+    "source": "download"
+  },
+  "pointer": {
+    "previous": null,
+    "current": "cua-linux-x64-e0.4.7-n24.22.0-s0.163.0-mb71dc1f8185d",
+    "changed": true
+  },
+  "engine": {
+    "path": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua/engine/linux/cua-engine",
+    "version": "0.4.7",
+    "release": "linux-engine-v0.4.7",
+    "sha256": "05b9cac46a266f70e280fad533f96f4b9dd5d725348b1ebf2217b9f0b16632cc",
+    "changed": true
+  },
+  "retired": [],
+  "sessions": {
+    "browser": true,
+    "computer": true,
+    "engine": "cua",
+    "why": {}
+  }
+}

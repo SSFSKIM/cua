@@ -1,0 +1,83 @@
+{
+ "driver": "linux-electron-a11y",
+ "cli": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs",
+ "home": "/Users/new/.local/share/cua-171/t183/run3/user/.local/share/cua",
+ "baseCli": null,
+ "baseHome": null,
+ "override": "/Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine",
+ "display": ":99",
+ "electron": "/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/node_modules/electron/dist/electron",
+ "scenarios": [
+  {
+   "scenario": "live1",
+   "checks": [
+    {
+     "what": "the session's IsEnabled and ScreenReaderEnabled are off before the launch",
+     "ok": true,
+     "detail": {
+      "IsEnabled": false,
+      "ScreenReaderEnabled": false
+     }
+    },
+    {
+     "what": "the session opened, its first cell answered",
+     "ok": false,
+     "detail": {
+      "exit": {
+       "code": 1,
+       "signal": null
+      },
+      "refusal": {
+       "message": "the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine, which is 0.4.6, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs install --engine`",
+       "code": "engine_outdated",
+       "hint": "a `cua` from another checkout installs that checkout's engine, not this one's"
+      },
+      "initialize": {
+       "ok": false,
+       "exit": {
+        "code": 1,
+        "signal": null
+       }
+      },
+      "stderr": [
+       "cua: the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine, which is 0.4.6, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs install --engine` [engine_outdated]",
+       "  a `cua` from another checkout installs that checkout's engine, not this one's"
+      ]
+     }
+    }
+   ],
+   "switches": {
+    "IsEnabled": false,
+    "ScreenReaderEnabled": false
+   },
+   "entry": "cua-t5-fixture-8ea28ec1.desktop",
+   "refused": {
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "refusal": {
+     "message": "the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine, which is 0.4.6, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs install --engine`",
+     "code": "engine_outdated",
+     "hint": "a `cua` from another checkout installs that checkout's engine, not this one's"
+    },
+    "initialize": {
+     "ok": false,
+     "exit": {
+      "code": 1,
+      "signal": null
+     }
+    },
+    "stderr": [
+     "cua: the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /Users/new/.local/share/cua-171/t183/run3/engine-046/cua-engine, which is 0.4.6, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run `node /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/228-t5/bin/cua.mjs install --engine` [engine_outdated]",
+     "  a `cua` from another checkout installs that checkout's engine, not this one's"
+    ]
+   },
+   "session": null,
+   "status": "FAIL"
+  }
+ ],
+ "preconditions": [],
+ "a11yBus": "unix:path=/Users/new/.local/share/cua-171/t183/run3/xdg-runtime/at-spi/bus_99,guid=26a1b11cacc1fa406dc613b46b0b33a8",
+ "status": "FAIL"
+}

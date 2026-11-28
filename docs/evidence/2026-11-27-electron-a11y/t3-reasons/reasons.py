@@ -9,17 +9,18 @@ service runs it (`cua-engine server --desktop dedicated --stats`). Third-party a
 with no network (`unshare --user --net`). The session's environment is `lib.Session.env`'s fixed list, which names
 none of `ACCESSIBILITY_ENABLED`, `GNOME_ACCESSIBILITY` and `QT_ACCESSIBILITY`.
 
-Every observation is made by the candidate (ENGINE) and by the base (MAIN, a build of the engine before task 3) on the
-same window, the candidate first, so the base's answer shows what changed: the candidate's answer less its
-`tree_unavailable` must equal the base's, key for key, and the field is the only difference. Observations ask for no
-screenshot, so the answers carry no file paths.
+Every observation is made by the candidate (ENGINE) and then replayed by the base (MAIN, a build of the engine before
+task 3) on the same window, in the same order, on a connection of its own: one base answer for each candidate answer,
+the screenshot included. Each candidate answer less its `tree_unavailable` must equal its base answer, key for key, so
+the field is the only difference. State reads ask for no picture; the screenshot asks for one, as `getScreenshot` does
+(`tree_wanted: false`, `include_screenshot: true`), and its generated file path is the only value normalized.
 
   off-the-bus   §G 3: the Electron fixture started by hand with both switches off and no variable. It is never on the
                 bus; the candidate's state read answers the X11 tree with `{reason: "no_provider"}`, on every read; a
-                screenshot (`tree_wanted: false`) gets no field. The registry is empty then.
+                screenshot (`tree_wanted: false`, with its picture) gets no field. The registry is empty then.
   off-the-bus-beside  the same, with gedit on the bus first: association names gedit's process, finds no application
                 of the fixture's, and the answer is the same.
-  asked        §G 4's field: the fixture with --disable-renderer-accessibility, `IsEnabled` on. The first observation
+  asked         §G 4's field: the fixture with --disable-renderer-accessibility, `IsEnabled` on. The first observation
                 asks, waits the bound, and is answered bare with `{reason: "asked"}`; the next two ask nothing, wait for
                 nothing, and have no field.
   gedit         a negative: gedit, on the bus with its tree. No field.
@@ -63,7 +64,7 @@ Engine = wait.Engine  # each request timed, its stats line and output kept
 
 
 def observe(engine, window, tree_wanted=True):
-    read = wait.observe(engine, window) if tree_wanted else rule.observe(engine, window, tree_wanted=False)
+    read = wait.observe(engine, window) if tree_wanted else rule.observe(engine, window, tree_wanted=False, screenshot=True)
     read['output'] = engine.last_output
     read['tree_unavailable'] = engine.last_output.get('tree_unavailable')
     return read
@@ -71,6 +72,14 @@ def observe(engine, window, tree_wanted=True):
 
 def without_field(output):
     return {k: v for k, v in (output or {}).items() if k != 'tree_unavailable'}
+
+
+def normalized(output):
+    """An answer as compared: each screenshot's generated file path replaced, and nothing else."""
+    output = dict(output or {})
+    if 'screenshots' in output:
+        output['screenshots'] = [{**s, 'filepath': '<generated>'} if 'filepath' in s else s for s in output['screenshots']]
+    return output
 
 
 def strip(read):
@@ -133,7 +142,8 @@ def run(label, enabled, argv_of, match, settle, body, out, extra, on_bus=None, c
                 base = Engine(session, monitor, MAIN)
                 row['base_engine'] = base.version
                 try:
-                    row['base_reads'] = [observe(base, row['window_ref']) for _ in range(row.get('base_observations', 1))]
+                    # the candidate's observations replayed, kind for kind, in their order
+                    row['base_reads'] = [observe(base, row['window_ref'], r['tree_wanted']) for r in row['reads']]
                 finally:
                     base.stop()
                 compare(row, checks)
@@ -160,14 +170,15 @@ def run(label, enabled, argv_of, match, settle, body, out, extra, on_bus=None, c
 
 
 def compare(row, checks):
-    """The candidate's state reads less their field against the base's, read for read (the first base read against the
-    candidate's first state read, and so on)."""
-    mine = [r for r in row['reads'] if r['tree_wanted']]
-    base = row['base_reads']
-    checks['base_answered'] = bool(base) and all(r['ok'] for r in base)
+    """Each candidate answer less its field against the base's answer to the same observation, one to one: every
+    observation, the screenshot included, its generated file path the only value normalized."""
+    mine, base = row['reads'], row.get('base_reads', [])
+    pairs = list(zip(mine, base))
+    row['parity'] = [without_field(normalized(m['output'])) == normalized(b['output']) for m, b in pairs]
+    checks['base_answered_every_observation'] = len(base) == len(mine) > 0 and all(r['ok'] for r in base)
+    checks['base_replayed_each_kind'] = all(m['tree_wanted'] == b['tree_wanted'] for m, b in pairs)
     checks['base_has_no_field'] = all(r['tree_unavailable'] is None for r in base)
-    checks['the_field_is_the_only_difference'] = len(base) <= len(mine) and all(
-        without_field(m['output']) == b['output'] for m, b in zip(mine, base))
+    checks['the_field_is_the_only_difference'] = len(base) == len(mine) and all(row['parity'])
 
 
 def electron_role(row):
@@ -181,7 +192,7 @@ def off_the_bus(out, n, beside=False):
         reads = [observe(engine, window), observe(engine, window, tree_wanted=False)]
         time.sleep(1.5)
         reads.append(observe(engine, window))
-        row['reads'], row['window_ref'], row['base_observations'] = reads, window, 2
+        row['reads'], row['window_ref'] = reads, window
         first, shot, again = reads
         checks.update({
             'role_is_electrons': electron_role(row),
@@ -189,7 +200,7 @@ def off_the_bus(out, n, beside=False):
             'answered_from_x11_one_node': all(r['source'] == 'x11' and r['nodes'] == 1 for r in reads),
             'state_reads_say_no_provider': first['tree_unavailable'] == NO_PROVIDER and again['tree_unavailable'] == NO_PROVIDER,
             'the_field_is_exactly_the_reason': all(set(r['tree_unavailable'] or {}) == {'reason'} for r in (first, again)),
-            'screenshot_has_no_field': shot['tree_unavailable'] is None and 'tree_unavailable' not in shot['output'],
+            'screenshot_has_its_picture_and_no_field': shot['screenshots'] == 1 and 'tree_unavailable' not in shot['output'],
             'no_request_and_no_toolkit_read': all(r['seen']['GetAttributes'] == 0 and r['seen']['ToolkitName'] == 0 for r in reads),
             'no_ask_and_no_wait': all(r['ask'] is None for r in reads),
         })

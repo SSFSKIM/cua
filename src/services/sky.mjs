@@ -58,7 +58,7 @@ import {parseReference} from '../secrets/reference.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
-  interventionKind, userIntervened, secretMayShow, secretsFromEnv,
+  interventionKind, userIntervened, secretMayShow, secretUnentered, secretsFromEnv,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -241,8 +241,8 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       const kind = vendorFailureKind(error);
       // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
       if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
-      // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
-      const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
+      // cua's engine recorded that nothing of the input was posted (secretUnentered), whatever the error's name.
+      const unentered = error?.name === 'SkyComputerUseError' && secretUnentered(error.meta);
       // Which warning a failure that may have entered part of the secret carries (secretMayShow): a password field that
       // may now show it (#414), or text not confirmed where it went, which every other such failure gets too.
       const mayShow = (method === 'type_text' && error?.name === 'SkyComputerUseError' ? secretMayShow(error.meta) : null) ?? 'unplaced';

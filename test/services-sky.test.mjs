@@ -104,10 +104,12 @@ class EngineError extends Error {
   constructor(errorName, message, meta = null) { super(message); this.name = 'SkyComputerUseError'; this.errorName = errorName; this.code = -10005; this.meta = meta; }
 }
 
-// cua's engine's input meta on an error: startedAt null while nothing was posted.
-const NOTHING_POSTED = {inputRoute: null, startedAt: null, endedAt: null, receivedAt: 990, hidIdleMs: 31000};
+// cua's engine's input meta on an error, with no record either way: startedAt null alone says nothing (#602).
+const UNRECORDED = {inputRoute: null, startedAt: null, endedAt: null, receivedAt: 990, hidIdleMs: 31000};
+// The engine's positive record that nothing of the input was posted (ruling 1260, `beforeInput`).
+const NOTHING_POSTED = {...UNRECORDED, beforeInput: true};
 
-test('an input error whose meta says nothing was posted answers that nothing was entered, whatever its name; any other keeps "may have been partly entered"', async () => {
+test('an input error whose meta records that nothing was posted answers that nothing was entered, whatever its name; any other keeps "may have been partly entered"', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const cases = [
     [setValue(REF('WORK_PASSWORD')), 'notImplemented'],
@@ -125,12 +127,48 @@ test('an input error whose meta says nothing was posted answers that nothing was
     assert.doesNotMatch(error.message, /partly entered/, name);
     assertValueFree(error);
   }
-  for (const meta of [{...NOTHING_POSTED, startedAt: 1000, endedAt: 1042}, null]) {
+  for (const meta of [{...UNRECORDED, startedAt: 1000, endedAt: 1042}, null]) {
     const {service} = harness({answer: () => { throw new EngineError('eventCreationFailed', `refused ${value}`, meta); }});
     const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
     assert.match(error.message, /may have been partly entered/, meta ? 'posted' : 'no meta: not known');
     assertValueFree(error);
   }
+});
+
+// #602 (ruling 1260): metas with no positive record that nothing was posted, each of which answers "may have been
+// entered", and the records the wrapper does take.
+const UNRECORDED_METAS = [
+  ['startedAt null alone (an older engine\'s reply)', UNRECORDED],
+  ['the record not the literal true', {...UNRECORDED, beforeInput: 'true'}],
+  ['the record 1', {...UNRECORDED, beforeInput: 1}],
+  ['an unparsed meta, a string', JSON.stringify(NOTHING_POSTED)],
+  ['an unparsed meta, an array', [NOTHING_POSTED]],
+  ['the record beside an input effect (#212)', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['focus', 'input']}}],
+  ['the record beside a value effect (#212)', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['value']}}],
+  ['the record beside an unparsed account', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: 'input'}}],
+  ['the record beside an account that is not an object', {...NOTHING_POSTED, interruption: 'inFlight'}],
+];
+const RECORDED_METAS = [
+  ['the record', NOTHING_POSTED],
+  ['the record after a focus click posted', {...UNRECORDED, inputRoute: '1', startedAt: 1000, endedAt: 1042, beforeInput: true}],
+  ['the record beside an account of preparation only (#212)', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['scroll', 'focusClick']}}],
+];
+
+test('#602: only the engine\'s record that nothing was posted answers "nothing was entered"; startedAt null alone, an unparsed meta and an entering effect answer "may have been entered"', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  for (const request of [typeText(REF('WORK_PASSWORD')), setValue(REF('WORK_PASSWORD'))]) {
+    for (const [label, meta] of [...UNRECORDED_METAS, ...RECORDED_METAS]) {
+      const unentered = RECORDED_METAS.some(([, recorded]) => recorded === meta);
+      const {service} = harness({answer: () => { throw new EngineError('eventCreationFailed', `refused ${value}`, meta); }});
+      const error = await rejection(service.handleRpc(request));
+      const name = `${request.method}: ${label}`;
+      assert.equal(error.code, 'secret_input_failed', name);
+      assert.match(error.message, unentered ? /nothing was entered/ : /may have been partly entered/, name);
+      assert.doesNotMatch(error.message, /screenshot|getAXState/i, name);
+      assertValueFree(error);
+    }
+  }
+
 });
 
 test('a concealed set_value stopped under one of cua\'s set_value names repeats the name, value-free, and says whether anything was entered', async () => {
@@ -145,9 +183,10 @@ test('a concealed set_value stopped under one of cua\'s set_value names repeats 
     assert.match(error.message, /nothing was entered/, name);
     assertValueFree(error);
   }
-  // A refused write, and a value refused after the focus click posted: named, and maybe entered.
+  // Without the engine's record that nothing was posted (a refused write; an older engine's refusal after its focus
+  // click): named, and maybe entered.
   for (const name of ['actionFailed', 'invalidNumber', 'clickUnconfirmed']) {
-    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, {...NOTHING_POSTED, inputRoute: '1', startedAt: 1000, endedAt: 1042}); }});
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, {...UNRECORDED, inputRoute: '1', startedAt: 1000, endedAt: 1042}); }});
     const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
     assert.match(error.message, new RegExp(`failed \\(${name}\\)`), name);
     assert.match(error.message, /may have been partly entered/, name);
@@ -158,7 +197,7 @@ test('a concealed set_value stopped under one of cua\'s set_value names repeats 
 test('#354: a concealed type_text that keyed and did not match repeats typeUnconfirmed, value-free, and says it may have been entered', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const unread = 'The text was typed, but the field does not match what was typed, so it is not confirmed and some or all of it may have gone in.';
-  const {service} = harness({answer: () => { throw new EngineError('typeUnconfirmed', `${unread} ${value}`, {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042}); }});
+  const {service} = harness({answer: () => { throw new EngineError('typeUnconfirmed', `${unread} ${value}`, {...UNRECORDED, inputRoute: "2'", startedAt: 1000, endedAt: 1042}); }});
   const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
   assert.equal(error.code, 'secret_input_failed');
   assert.match(error.message, /failed \(typeUnconfirmed\)/);
@@ -170,7 +209,7 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
   const value = VALUES['WORK_PASSWORD'];
   const warning = 'The password field may have stopped being one while the secret was typed, and may now show it: do not capture the screen or read the app\'s accessibility state; put it right with setValue.';
   const native = `The text was typed, but the password field turned into another kind of field (native-only-sentence) ${value}`;
-  const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
+  const posted = {...UNRECORDED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
   const record = reason => ({confirmed: false, reason, secure: true, concealed: true, snapshotMs: 1.5});
   const changed = 'Computer Use server error -10016: The user changed \'/Applications/Safari.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
   const hideFirst = 'the user changed the app; ask the user to hide or clear the password field, before any setValue;';
@@ -206,7 +245,7 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     if (name === 'userIntervened') {
       // The review of f35a42b8..cbce12e2 (P1): a field that may show the secret is never re-queried first; the one
       // instruction is to have the user hide or clear it. Nothing entered, the re-query instruction stays.
-      assert.equal(error.message.includes('re-query its state (getAXState)'), meta.startedAt === null, label);
+      assert.equal(error.message.includes('re-query its state (getAXState)'), meta.beforeInput === true, label);
       assert.equal(error.message.includes(hideFirst), warned, label);
     }
     assert.doesNotMatch(error.message, /native-only-sentence|turned into|Safari|noLongerSecure|lengthMismatch|lengthUnreadable/, `${label}: nothing of the native error or the reason`);
@@ -221,7 +260,7 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
 
 test('ruling 1247 (d): no answer after a secret\'s first key may have posted advises observing the app, on any branch', async () => {
   const value = VALUES['WORK_PASSWORD'];
-  const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
+  const posted = {...UNRECORDED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
   const record = (reason, extra = {}) => ({confirmed: false, reason, concealed: true, snapshotMs: 1.5, ...extra});
   const changed = 'Computer Use server error -10016: The user changed \'/Applications/Finder.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
   const still = 'Computer Use server error -10016: The user is still interacting with \'/Applications/Finder.app\'. Wait 5 seconds and retry.';
@@ -237,6 +276,12 @@ test('ruling 1247 (d): no answer after a secret\'s first key may have posted adv
     ['userIntervened changed, the vendor', engine('userIntervened', null, changed)],
     ['userIntervened still interacting', engine('userIntervened', posted, still)],
     ['userIntervened, another sentence', engine('userIntervened', posted)],
+    // #602: no positive record that nothing was posted, so entry is possible on every one of them.
+    ...UNRECORDED_METAS.flatMap(([label, meta]) => [
+      [`userIntervened changed, ${label}`, engine('userIntervened', meta, changed)],
+      [`eventCreationFailed, ${label}`, engine('eventCreationFailed', meta)],
+    ]),
+    ['userIntervened changed, unrecorded, a password field', engine('userIntervened', {...UNRECORDED, typeReadback: record('noLongerSecure', {secure: true})}, changed)],
     ['the deadline at a key (keysDeadlinePassed)', engine('keysDeadlinePassed', posted)],
     ['the deadline (timeoutReached)', engine('timeoutReached', posted)],
     ['inputSourceChanged', engine('inputSourceChanged', posted)],
@@ -264,7 +309,10 @@ test('userIntervened after substitution says which of its two sentences the mode
     // cua's engine: the pre-action refusals (nothing posted) and the in-flight stop (posted); the vendor's, no meta.
     {message: still, meta: NOTHING_POSTED, wait: true, entered: false},
     {message: changed, meta: NOTHING_POSTED, wait: false, entered: false},
-    {message: changed, meta: {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042, entered: 4}, wait: false, entered: true},
+    {message: changed, meta: {...UNRECORDED, inputRoute: "2'", startedAt: 1000, endedAt: 1042, entered: 4}, wait: false, entered: true},
+    // #602: a stop before the first key is "changed" as one between keys is; only the record tells them apart.
+    ...UNRECORDED_METAS.map(([, meta]) => ({message: changed, meta, wait: false, entered: true})),
+    ...RECORDED_METAS.map(([, meta]) => ({message: changed, meta, wait: false, entered: false})),
     {message: still, meta: null, wait: true, entered: false},
     {message: changed, meta: null, wait: false, entered: true},
   ];
@@ -272,7 +320,7 @@ test('userIntervened after substitution says which of its two sentences the mode
     for (const request of [typeText(REF('WORK_PASSWORD')), setValue(REF('WORK_PASSWORD'))]) {
       const {service} = harness({answer: () => { const error = new EngineError('userIntervened', message, meta); error.code = -10016; throw error; }});
       const error = await rejection(service.handleRpc(request));
-      const label = `${request.method} ${wait ? 'still' : 'changed'} ${meta ? (meta.startedAt === null ? 'unposted' : 'posted') : 'vendor'}`;
+      const label = `${request.method} ${wait ? 'still' : 'changed'} ${meta ? JSON.stringify(meta) : 'vendor'}`;
       assert.equal(error.code, 'secret_input_failed', label);
       assert.match(error.message, /\(userIntervened\)/, label);
       if (wait) {

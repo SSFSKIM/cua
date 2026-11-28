@@ -96,19 +96,32 @@ const MAY_SHOW = {
   unplaced: 'It may show where it went: do not capture the screen or read the app\'s accessibility state; ask the person to check, and do not enter it again. ',
 };
 
+// Ruling 1260 (#602): nothing was entered only on cua's macOS engine's positive record that the request stopped before
+// any of its input went out (its input meta's `beforeInput: true`: no key, no ⌘V or Return, no value write), and only
+// when the meta's interruption account (#212), if it has one, names neither the value's write nor the action's own
+// input. A null `startedAt` alone, a meta without the record, one that is not a plain object and the vendor's or an
+// older engine's reply all answer "may have been entered".
+export const secretUnentered = meta => {
+  if (!isPlainObject(meta) || meta.beforeInput !== true) return false;
+  if (meta.interruption === undefined) return true;
+  const effects = isPlainObject(meta.interruption) ? meta.interruption.effects : undefined;
+  return Array.isArray(effects) && !effects.some(effect => effect === 'value' || effect === 'input');
+};
+
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text, and
 // the warning `mayShow` names, if any (the sky service names one for every failure that may have entered part of it).
 export const inputFailed = (what, label, kind, mayShow = null) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. ${MAY_SHOW[mayShow] ?? ''}The runtime's error is withheld because it can contain the secret`);
-// The same failure when the runtime reports nothing posted (cua's engine: the error's input meta with startedAt null).
+// The same failure when the runtime records that nothing was posted (secretUnentered).
 export const inputFailedUnentered = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read, and ${NOTHING_ENTERED}. The runtime's error is withheld because it can contain the secret`);
 
 // userIntervened (−10016) carries one of two sentences that ask the model for different things (the vendor's, which cua's
 // engine keeps): wait and retry while the user is still at the app, or re-query its state after the user changed it.
 // The wrapper withholds the runtime's text, so it repeats which one with a fixed sentence of its own. "Still interacting"
-// is always a refusal before the action on either engine, so nothing was entered; "changed" was entered in part only
-// when the runtime does not say nothing was posted (cua's engine stops a typed sequence in flight; the vendor's meta
-// says nothing either way). Once entered, the re-query becomes the user's check (ruling 1247, d). Never a count of what
-// was entered, which would tell the secret's length.
+// is always a refusal before the action on either engine, so nothing was entered; "changed" was entered in part unless
+// the runtime records that nothing was posted (secretUnentered: cua's engine's refusal before the action, or a stop
+// before the first key, which is "changed" as a stop between keys is; the vendor's meta says nothing either way). Once
+// entered, the re-query becomes the user's check (ruling 1247, d). Never a count of what was entered, which would tell
+// the secret's length.
 const INTERVENED = {
   stillInteracting: 'the user is still interacting with the app; wait 5 seconds and retry',
   userChanged: 'the user changed the app; re-query its state (getAXState) before sending more actions',

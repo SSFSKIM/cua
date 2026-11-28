@@ -22,7 +22,7 @@
 // the sandbox's write roots (`writeRoots`: the session's run directory and temp and what the call's policy makes
 // writable, by real path): nothing a cell or the worker can write is ever launched outside the sandbox. The scoped
 // preflight refuses a layout whose applications directories overlap a write root (src/runtime/sandbox.mjs).
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {realpathSync, statSync} from 'node:fs';
 import {isAbsolute, join, relative} from 'node:path';
 
@@ -49,14 +49,26 @@ export function runOpen(args) {
   });
 }
 
-// The Linux boundary: `gio launch <entry>` in a new session (`detached`), with `env`; resolves when gio has asked for
-// the launch (it exits then; the application lives on outside cua's process tree), rejects with gio's last line.
-export function runGioLaunch(path, env) {
+// The Linux boundary: `gio launch <entry>` in a new session (`detached`), with `env`; resolves when gio exits having
+// asked for the launch (the application lives on outside cua's process tree), rejects with how gio ended.
+// The application inherits gio's stdin, stdout and stderr and most keep them open, so all three are /dev/null, as the
+// engine's own launch_app gives them (#598): a pipe to cua held the answer until the timeout and, closed, broke the
+// application's next write; a file would take its output for its whole life. gio's own words go with them (it ends 1
+// on every failure), and only how it ended is told: launch_app launches only the entries list_apps could parse.
+export function runGioLaunch(path, env, {gio = GIO, timeoutMs = OPEN_TIMEOUT_MS} = {}) {
   return new Promise((resolve, reject) => {
-    execFile(GIO, ['launch', path], {timeout: OPEN_TIMEOUT_MS, env, detached: true}, (error, _stdout, stderr) => {
-      if (error) reject(new Error(String(stderr).trim().split('\n').at(-1) || error.message));
+    const child = spawn(gio, ['launch', path], {env, detached: true, stdio: 'ignore'});
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const settle = (error, code, signal) => {
+      clearTimeout(timer);
+      if (error) reject(error);
+      else if (timedOut) reject(new Error(`gio launch ${path} did not finish within ${timeoutMs} ms`));
+      else if (code !== 0) reject(new Error(`gio launch ${path} ${signal ? `was ended by ${signal}` : `exited with status ${code}`}`));
       else resolve();
-    });
+    };
+    child.once('error', error => settle(error));
+    child.once('exit', (code, signal) => settle(null, code, signal));
   });
 }
 

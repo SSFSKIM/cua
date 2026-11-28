@@ -114,8 +114,10 @@ const PATH_ONLY = {PATH: '/usr/bin:/bin'};
 test('fake gio cleanup: a record that is empty, not a positive pid, the runner itself or a process the fake did not start is never signalled', async t => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-fake-gio-')));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
-  const ours = spawn('/bin/sh', ['-c', 'sleep 30', join(dir, 'app')], {stdio: 'ignore'});
-  const stranger = spawn('/bin/sh', ['-c', 'sleep 30', join(tmpdir(), 'cua-not-the-fake')], {stdio: 'ignore'});
+  // A loop, not a lone command: macOS's sh (bash) would exec a lone `sleep` in its place, losing the argv that names dir.
+  const loop = 'while :; do sleep 1; done';
+  const ours = spawn('/bin/sh', ['-c', loop, join(dir, 'app')], {stdio: 'ignore'});
+  const stranger = spawn('/bin/sh', ['-c', loop, join(tmpdir(), 'cua-not-the-fake')], {stdio: 'ignore'});
   t.after(() => { ours.kill('SIGKILL'); stranger.kill('SIGKILL'); });
   await new Promise(resolve => setTimeout(resolve, 100));
   const records = {'empty.pid': '', 'zero.pid': '0', 'negative.pid': '-1', 'partial.pid': '12ab', 'runner.pid': String(process.pid),

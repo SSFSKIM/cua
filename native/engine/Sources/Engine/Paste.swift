@@ -592,17 +592,21 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
       keyed = true
     }
     return try withoutActuallyEscaping(events) { events in
+      try withoutActuallyEscaping(remainingMs) { remainingMs in
       var posted = false
       var gated: Error?
       if let outcome = try deliver({
         if let transport {
           do { try transport.gate(isReturn) } catch { gated = error; return }
+          // A gate's reads take time: past the request's deadline nothing is posted after it (ruling 1275).
+          if remainingMs() <= 0 { gated = pasteDeadlineReached; return }
         }
         posted = meta.posting(events)
         if posted { anyPosted = true }
       }) { meta.delivery = outcome }
       if let gated { throw gated }
       return posted
+      }
     }
   }
   // A Return before a later line is settled (its effect waited for) before that line's baseline; one after the last
@@ -872,8 +876,8 @@ extension Engine {
                               baseline: baselineWait(selection: selection, pointerPending: activationClickPending || pointerPending()), reads: reads,
                               remainingMs: { Double(context.deadline - unixMilliseconds()) })
       readback = made
-      // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
-      if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
+      // #359's selection gone, or the latch (ruling 1275): nothing is pasted and the pasteboard is never touched.
+      if made.refusesTyping { throw made.refusal(pasted: true) }
     }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() },
        posted: { readback?.keyPosted(at: reads.now()) },
        transport: reads.effect == nil ? nil : PasteTransport(sample: { readback?.transportHold(.effect($0), application: target.application) },

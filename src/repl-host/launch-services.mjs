@@ -22,8 +22,9 @@
 // the sandbox's write roots (`writeRoots`: the session's run directory and temp and what the call's policy makes
 // writable, by real path): nothing a cell or the worker can write is ever launched outside the sandbox. The scoped
 // preflight refuses a layout whose applications directories overlap a write root (src/runtime/sandbox.mjs).
-import {execFile} from 'node:child_process';
-import {realpathSync, statSync} from 'node:fs';
+import {execFile, spawn} from 'node:child_process';
+import {closeSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {isAbsolute, join, relative} from 'node:path';
 
 export const PATH_NOT_ABSOLUTE_SENTENCE = 'LaunchServices application path must be absolute';
@@ -49,14 +50,57 @@ export function runOpen(args) {
   });
 }
 
-// The Linux boundary: `gio launch <entry>` in a new session (`detached`), with `env`; resolves when gio has asked for
-// the launch (it exits then; the application lives on outside cua's process tree), rejects with gio's last line.
-export function runGioLaunch(path, env) {
+// gio's stderr: a private file, unlinked before gio starts, opened once to write (gio's) and once to read (cua's).
+function unlinkedFile() {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-gio-'));
+  try {
+    const path = join(dir, 'stderr');
+    const write = openSync(path, 'wx', 0o600);
+    try {
+      return {write, read: openSync(path, 'r')};
+    } catch (error) {
+      closeSync(write);
+      throw error;
+    }
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+}
+
+// The Linux boundary: `gio launch <entry>` in a new session (`detached`), with `env`; resolves when gio exits having
+// asked for the launch (the application lives on outside cua's process tree), rejects with gio's last line.
+// The application inherits gio's stdin, stdout and stderr and most keep them open, so none is a pipe to cua (#598): one
+// would hold the answer until the timeout, and closing it would break the application's next write. Stdin and stdout
+// are /dev/null; stderr is the unlinked file, which gio's diagnostics are read back from once it has exited, and which
+// the application writes on into, unread, until it exits.
+export function runGioLaunch(path, env, {gio = GIO, timeoutMs = OPEN_TIMEOUT_MS} = {}) {
   return new Promise((resolve, reject) => {
-    execFile(GIO, ['launch', path], {timeout: OPEN_TIMEOUT_MS, env, detached: true}, (error, _stdout, stderr) => {
-      if (error) reject(new Error(String(stderr).trim().split('\n').at(-1) || error.message));
+    const stderr = unlinkedFile();
+    let child;
+    try {
+      child = spawn(gio, ['launch', path], {env, detached: true, stdio: ['ignore', 'ignore', stderr.write]});
+    } catch (error) {
+      closeSync(stderr.read);
+      throw error;
+    } finally {
+      closeSync(stderr.write);
+    }
+    let settled = false;
+    const timer = setTimeout(() => child.kill(), timeoutMs);
+    // On gio's exit, not on its streams' close: the application holds those.
+    const settle = (error, code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const failed = !error && code !== 0;
+      const said = failed ? readFileSync(stderr.read, 'utf8').trim().split('\n').at(-1) : '';
+      closeSync(stderr.read);
+      if (error) reject(error);
+      else if (failed) reject(new Error(said || `Command failed: ${gio} launch ${path}`));
       else resolve();
-    });
+    };
+    child.once('error', error => settle(error));
+    child.once('exit', code => settle(null, code));
   });
 }
 

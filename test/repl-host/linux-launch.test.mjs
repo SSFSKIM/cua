@@ -5,10 +5,10 @@
 // nothing a cell can write (its run directory, its temp) is ever launched unconfined.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {LINUX_ENTRY_REFUSED_PREFIX, LINUX_LAUNCH_FAILED_PREFIX, launchServicesAction} from '../../src/repl-host/launch-services.mjs';
+import {LINUX_ENTRY_REFUSED_PREFIX, LINUX_LAUNCH_FAILED_PREFIX, launchServicesAction, runGioLaunch} from '../../src/repl-host/launch-services.mjs';
 
 function desktop(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-launch-')));
@@ -79,4 +79,59 @@ test('Linux: an entry whose real path lies inside a sandbox write root is refuse
   for (const roots of [[run], [linkedRoot]]) assert.match(await refused(planted, roots) ?? '', new RegExp(`^${LINUX_ENTRY_REFUSED_PREFIX}.*writ`), String(roots));
   assert.equal(await refused(legit, [run]), null);
   assert.deepEqual(calls, [legit], 'the planted entry never reached gio');
+});
+
+// The gio boundary itself, against a fake `gio` (#598): `gio launch` spawns the application with its own stdin, stdout
+// and stderr, and an application that keeps them open (most do) must not hold the launch until the timeout.
+function fakeGio(t, body) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-fake-gio-')));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const gio = join(dir, 'gio');
+  writeFileSync(gio, `#!/bin/sh\n${body(dir)}\n`);
+  chmodSync(gio, 0o755);
+  return {dir, gio};
+}
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const PATH_ONLY = {PATH: '/usr/bin:/bin'};
+const sessionOf = stat => readFileSync(stat, 'utf8').split(') ')[1].split(' ')[3];
+
+test('gio: the launch answers once gio has launched the application, which keeps its output open forever and is attached to none of cua\'s pipes', async t => {
+  // The application writes to its stdout and stderr every 50 ms and never closes them; gio exits once it is started.
+  const {dir, gio} = fakeGio(t, dir => `sh -c 'while :; do echo out; echo err >&2; sleep 0.05; done' &\necho $! > ${dir}/app.pid\nexit 0`);
+  const started = performance.now();
+  await runGioLaunch('/usr/share/applications/held.desktop', {...PATH_ONLY, MARK: 'desktop'}, {gio});
+  const elapsed = performance.now() - started;
+  const app = Number(readFileSync(join(dir, 'app.pid'), 'utf8'));
+  t.after(() => { try { process.kill(app, 'SIGKILL'); } catch {} });
+  t.diagnostic(`launch answered in ${elapsed.toFixed(0)} ms`);
+  assert.ok(elapsed < 2000, `answered in ${elapsed.toFixed(0)} ms, not at gio's 30 s timeout`);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.ok(alive(app), 'the application lives on, writing its output, after the launch answered');
+  if (existsSync(`/proc/${app}`)) {
+    for (const fd of [0, 1, 2]) assert.doesNotMatch(readlinkSync(`/proc/${app}/fd/${fd}`), /^(pipe|socket):/, `the application's fd ${fd} is none of cua's pipes`);
+    assert.notEqual(sessionOf(`/proc/${app}/stat`), sessionOf('/proc/self/stat'), 'gio, and the application with it, runs in a session of its own');
+    const names = readFileSync(`/proc/${app}/environ`, 'utf8').split('\0').filter(Boolean).map(kv => kv.split('=')[0]);
+    assert.deepEqual(names.filter(name => !['PWD', 'SHLVL', '_'].includes(name)).sort(), ['MARK', 'PATH'], 'gio runs with the environment it is given, nothing of cua\'s');
+  }
+});
+
+test('gio: a failed launch is answered with the last line gio printed, through launch_app\'s sentence', async t => {
+  const {gio} = fakeGio(t, () => `echo 'gio: some context' >&2\necho "gio: file://$2: Failed to execute child process" >&2\nexit 2`);
+  await assert.rejects(runGioLaunch('/usr/share/applications/broken.desktop', PATH_ONLY, {gio}),
+    error => error.message === 'gio: file:///usr/share/applications/broken.desktop: Failed to execute child process');
+  const d = desktop(t);
+  const path = d.entry(join(d.system, 'applications'), 'broken.desktop');
+  await assert.rejects(launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', env: d.env, launch: (entry, env) => runGioLaunch(entry, env, {gio})}),
+    error => error.message === `${LINUX_LAUNCH_FAILED_PREFIX}gio: file://${path}: Failed to execute child process`);
+});
+
+test('gio: a failure gio printed nothing for, a gio that does not exist, and a gio that hangs are each answered', async t => {
+  const silent = fakeGio(t, () => 'exit 1').gio;
+  await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: silent}), error => error.message === `Command failed: ${silent} launch /a.desktop`);
+  await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: join(tmpdir(), 'cua-no-such-gio')}), /ENOENT/);
+  const {dir, gio: hung} = fakeGio(t, dir => `echo $$ > ${dir}/gio.pid\nexec sleep 600`);
+  const started = performance.now();
+  await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: hung, timeoutMs: 300}), error => error.message === `Command failed: ${hung} launch /a.desktop`);
+  assert.ok(performance.now() - started < 2000, 'answered at its timeout');
+  assert.equal(alive(Number(readFileSync(join(dir, 'gio.pid'), 'utf8'))), false, 'the hung gio was stopped');
 });

@@ -134,6 +134,21 @@ session's to add on `docs/117-progress`).
   install and the first approve (ruling 1148). `scripts/accept/maws-features.mjs`'s literalVendor step assumed the
   default meant the vendor's host and breaks after the flip on a Mac with an approved engine (fixed under 1149: it
   pins the vendor engine and checks its attestation).
+- 2026-11-28, the full split C on 0.3.3 (46165236186), as measured (ruling 1278):
+  - On image macos27 20261123.0387.2, the first Korean composition in a fresh Chromium field failed on both engines,
+    whichever lane ran first. Every failed sample of chrome and electron korean/pressKey.rk read `ㄱ` (sha256
+    `fcae0b0f…`): the k's ㅏ never joined.
+    - Vendor first in runs 1 and 3: the vendor failed both cells in both runs.
+    - cua first in run 2: cua failed both cells.
+    - 6 of 6 first-lane samples on the two web fields failed, and 0 of 6 second-lane samples. TextEdit's pressKey.rk
+      passed all 6.
+    - C's base, on image 20261104, had one vendor first-lane failure (electron, run 1).
+    - Both lanes share the Chrome for Testing and Electron fixture processes. press_key's path was unchanged since the
+      proof build.
+  - cua's two slow typeText.replace samples (chrome 407.7 ms, textedit 376.8 ms) both fell in run 2, the cua-first run.
+    They made chrome's p95 miss.
+  - concurrent.sheet@electron was invalid on all 6 samples: R3's positive control, posted at the run's end, went to the
+    quit pid that electron/background/launch@finder left. The proof run had no launch row.
 
 ## Decision Log
 
@@ -327,6 +342,49 @@ session's to add on `docs/117-progress`).
     scripts check only the error code `secret_input_failed` and that the message leaks nothing.
   - The merged engine is 0.3.1: #601's fix plus feat's M5 engine changes. The proof run 46095539139 tests that combined
     engine, not #601's main tree alone.
+- 2026-11-28, ruling 1278: the full split C on engine 0.3.3 (46165236186 @ 4a0a82b13, after #611 merged into feat as
+  ruling 1277 allowed) is the record. Its evidence is docs/evidence/2026-11-28-m5-sitting-c-full-0.3.3 (8f0f186c1),
+  verdict FAIL. What follows from it:
+  - (a) R3's positive control is posted after the input sections and before the launch rows (7c11a0925). Posted at
+    the run's end, it went to the Electron fixture's quit pid, and every concurrent.sheet@electron sample was invalid.
+  - (b) A warm-up before the judged rows, symmetric on both lanes and recorded:
+    - one typeText into each venue, and one Korean composition in each web field;
+    - each field left empty through the neutral path (panel-ax, as in 1229(b)), never through the engine under test.
+    It must not hide what was seen. The parity record states the first-lane effect as measured (Surprises & Discoveries,
+    2026-11-28).
+  - (c) SPEED_EXTRA also times chrome typeText.replace, and keeps textedit's (0e6df4463). The judging is fixed before
+    the data, as in 1232: both rows are judged on their n=30 samples alone.
+    - textedit stays #593 unless its n=30 is worse than C's n=30 (cua 300.7/442 against the vendor's 304.9/406).
+    - "Worse" means cua's median or p95, as a ratio to the vendor's of the same samples, above the bound's ratio
+      (0.986 for the median, 1.089 for p95). It is departures.json's bound, read by departures.mjs
+      acceptanceExceeded. A row that exceeds it becomes the owner's, with its ratios.
+    - chrome either passes or becomes an owner question, with its numbers.
+  - (d) One filtered split over base 46165236186, with speed_extra=true, on the cells:
+    textedit/concurrent.sheet@electron, chrome/korean/pressKey.rk, electron/korean/pressKey.rk,
+    textedit/midSwitch/typeText.long, and chrome typeText.replace's frontmost cell.
+    - If pressKey.rk still follows the first lane after the warm-up, the per-run, per-lane table goes to design before
+      any declaration.
+  - (a) to (c) are reviewed before (d) is dispatched. Design sees the dispatch plan and its projection first.
+  - jobs-check's last judged sitting C orders evidence directories of one date by the run id their records name
+    (969c660a3): the name "full-0.3.3" sorts before the earlier "proof-587".
+- 2026-11-28, ruling 1277 and design's rule for the full split: #611 (#600's paste transport, 7147de812) merges into feat
+  (4a0a82b13, engine 0.3.3), and the full split C runs on it.
+  - electron paste.replace and textedit paste.replace passed only at n=30 before. If they miss again at n=3, the answer
+    is a filtered n=30 re-measure on that build, not a declaration. In the full split they beat the vendor at n=3, so
+    none was needed.
+  - textedit typeText.replace stays the owner-accepted miss (#593) unless it gets worse than C's n=30 numbers. 1278
+    fixes what "worse" means.
+  - A row that passed before and now misses is reported with its numbers before anything is declared. That row was
+    chrome typeText.replace.
+- 2026-11-28, rulings 1260 and 1262 (#212, main's 1258 P2): the secret wrapper says "nothing was entered" only on the
+  engine's positive record, never inferred from a null actionInterval.
+  - No engine change was made on feat. The P2 was superseded by main's ticket.
+  - #607/#602's `beforeInput` mark (merged with main 96d71cfc5, eb4f8dc61, engine 0.3.2) is that record.
+- 2026-11-28, ruling 1264: the hosted TCC writer retries on "database is locked" under a busy timeout (ef1db4e03).
+  Proof run 46095539139's run job 2 had stopped in setup on that error.
+- 2026-11-28, ruling 1269: a drift test keeps `InputEffect`'s Swift cases equal to the JavaScript reader's set
+  (58ef5b5fd). It was hardened in 454d963a9 and 1e7e6eeb8: the parser fails closed on a raw or multi-line Swift string
+  in the enum.
 - 2026-11-27, ruling 1248: how sitting C proves #587's engine fix and then the flip.
   - **The problem.** The #587/#590 fix changes cua's engine build. jobs-check (1230) holds a filtered rerun to the base's
     build (0.3.0, 2de28fcc909d7577). That rule matters, because the fix could move any of the base's other ~410 cells,

@@ -105,10 +105,11 @@ const MAY_SHOW = {
 // a plain object, an unknown phase or effect, effects not an array) answers "may have been entered"; an input or value
 // effect always does.
 const INTERRUPTION_PHASES = ['beforeAction', 'inFlight'];
-// The engine's `InputEffect`s other than `value` and `input` (native/engine/Sources/Engine/Intervention.swift,
-// feat/117-m5): the scroll into view, the background activation, its click, the focus write, the focus fallback click,
-// and a held activation's end.
-const PREPARATION_EFFECTS = ['scroll', 'activation', 'activationClick', 'focus', 'focusClick', 'activationRelease'];
+// The engine's `InputEffect`s other than `value` and `input` (native/engine/Sources/Engine/Intervention.swift; the
+// two are ENTERING_EFFECTS, ./engine/interruption.mjs): the scroll into view, the background activation, its click, the
+// focus write, the focus fallback click, and a held activation's end. Ruling 1269: a test parses the enum and fails on
+// a case that is neither, so an effect the engine gains is classified here before it can count.
+export const PREPARATION_EFFECTS = Object.freeze(['scroll', 'activation', 'activationClick', 'focus', 'focusClick', 'activationRelease']);
 export const secretUnentered = meta => {
   if (!isPlainObject(meta) || meta.beforeInput !== true) return false;
   if (!Object.hasOwn(meta, 'interruption')) return true;

@@ -4,12 +4,14 @@
 // scripts/probe-secrets.mjs (opt-in). The macOS shapes are tested with platform darwin, the Linux one with linux.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {symlinkSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {createSkyService, isCuaEngineService, skyServiceFromEnv} from '../src/services/sky.mjs';
+import {PREPARATION_EFFECTS} from '../src/services/secret-input.mjs';
+import {EFFECT_PHRASES, ENTERING_EFFECTS} from '../src/services/engine/interruption.mjs';
 import {SecretStoreError} from '../src/secrets/store.mjs';
 
 const VALUES = {'WORK_PASSWORD': 'sentinel-Value-1f9c', 'OTHER_LABEL': 'sentinel-Other-77ab'};
@@ -288,6 +290,14 @@ test('ruling 1247 (d): no answer after a secret\'s first key may have posted adv
     ['userIntervened changed, the account: stopped after input', engine('userIntervened', {...posted, interruption: {phase: 'inFlight', effects: ['focus', 'input']}}, changed)],
     ['userIntervened changed, the account: stopped part-way, a password field', engine('userIntervened',
       {...posted, typeReadback: record('noLongerSecure', {secure: true}), interruption: {phase: 'inFlight', effects: []}}, changed)],
+    // #212's guard stopping keyText before its first key, without the engine's record (an older engine): the keyed route
+    // with nothing posted, and route 3 after its activation click; with the record but from the vendor's backend.
+    ['userIntervened changed, #212 stop before the first key, no record', engine('userIntervened',
+      {...UNRECORDED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}, changed)],
+    ['userIntervened changed, #212 stop after an activation click, no record', engine('userIntervened',
+      {...posted, inputRoute: '3', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}, changed)],
+    ['the vendor backend: userIntervened changed, #212 stop before the first key, the record', engine('userIntervened',
+      {...NOTHING_POSTED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}, changed), {cuaEngine: false}],
     ['userIntervened changed, the vendor', engine('userIntervened', null, changed)],
     ['userIntervened still interacting', engine('userIntervened', posted, still)],
     ['userIntervened, another sentence', engine('userIntervened', posted)],
@@ -405,6 +415,54 @@ test('P2-4: the record is read only from cua\'s engine as the selected backend, 
   assert.equal(isCuaEngineService(join(dir, 'service.mjs')), true, 'a link to it');
   for (const other of [join(dir, 'vendor.mjs'), join(dir, 'missing.mjs'), 'src/services/engine/service.mjs', undefined, '']) {
     assert.equal(isCuaEngineService(other), false, String(other));
+  }
+});
+
+// Ruling 1269: secretUnentered's allowlist and the engine's InputEffect stay in step. Every case of the Swift enum is a
+// preparation step (PREPARATION_EFFECTS) or marked as entry (ENTERING_EFFECTS), never both, and neither list names a
+// case the engine lacks; so an effect the engine gains fails here until it is classified.
+test('ruling 1269: every InputEffect case of the engine is a preparation step or marked as entry, parsed from the Swift source', () => {
+  const swift = readFileSync(fileURLToPath(new URL('../native/engine/Sources/Engine/Intervention.swift', import.meta.url)), 'utf8');
+  const body = swift.match(/^enum InputEffect: String, CaseIterable \{\n([\s\S]*?)^\}/m)?.[1];
+  assert.ok(body, 'InputEffect found in Intervention.swift');
+  const cases = [...body.matchAll(/^ {2}case ([\w, ]+)$/gm)].flatMap(([, names]) => names.split(',').map(name => name.trim()));
+  assert.ok(cases.length > 0, 'its cases parsed');
+  for (const effect of cases) {
+    const preparation = PREPARATION_EFFECTS.includes(effect);
+    const entry = ENTERING_EFFECTS.includes(effect);
+    assert.ok(preparation || entry, `${effect}: neither a preparation step (PREPARATION_EFFECTS) nor marked as entry (ENTERING_EFFECTS)`);
+    assert.ok(!(preparation && entry), `${effect}: both a preparation step and entry`);
+  }
+  for (const effect of [...PREPARATION_EFFECTS, ...ENTERING_EFFECTS]) assert.ok(cases.includes(effect), `${effect}: not an InputEffect case`);
+  assert.deepEqual(Object.keys(EFFECT_PHRASES), cases, 'each case has its phrase, in the engine\'s order');
+});
+
+// #212 beside #602: type_text's in-flight guard stopping keyText before its first key answers "user changed" part-way,
+// as a stop between keys does, and only the engine's record tells them apart: with it nothing was entered and the
+// re-query stays; without it (an older engine) or from the vendor's backend the secret may have been entered, and the
+// user is asked to check with no advice to observe. The metas are the engine's: the keyed route with nothing posted, and
+// route 3 after its forced activation's click, which stamps the interval.
+test('#212\'s stop before the first key says nothing was entered only on cua\'s engine\'s record', async () => {
+  const stops = [
+    ['the keyed route, nothing posted', {...UNRECORDED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}],
+    ['route 3 after its activation click', {...UNRECORDED, inputRoute: '3', startedAt: 1000, endedAt: 1004,
+      interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}],
+  ];
+  for (const [label, unrecorded] of stops) {
+    for (const [backend, meta, options] of [['the record', {...unrecorded, beforeInput: true}, {}], ['no record', unrecorded, {}],
+      ['the vendor backend', {...unrecorded, beforeInput: true}, {cuaEngine: false}]]) {
+      const at = `${label}, ${backend}`;
+      const error = await rejection(harness({answer: failing('userIntervened', meta, CHANGED), ...options}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+      if (backend === 'the record') {
+        assert.equal(error.code, 'secret_input_failed', at);
+        assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions; nothing was entered; it was stopped part-way, and /, at);
+        assert.doesNotMatch(error.message, /may have been partly entered|ask the user|screenshot/i, at);
+        assertValueFree(error);
+      } else {
+        mayHaveEntered(error, at);
+        assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went/, at);
+      }
+    }
   }
 });
 

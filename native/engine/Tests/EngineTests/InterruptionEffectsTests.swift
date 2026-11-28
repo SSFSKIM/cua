@@ -186,6 +186,52 @@ final class InterruptionEffectsTests: XCTestCase {
     XCTAssertEqual(other.message, "The element did not accept the value.")
     XCTAssertNil((other.wire["meta"] as? [String: Any])?["interruption"])
   }
+
+  /// #602 beside #212: type_text's in-flight guard stopping keyText before its first key answers `userChanged` part-way,
+  /// as a stop between keys does, and only the record `beforeInput: true`, carried beside the account, tells the two
+  /// apart; whatever preparation posted first (here a forced activation's click) is named in the account and leaves the
+  /// record. Engine.execute's restatement, which adds a request's ended activation, keeps the record.
+  func testKeyTextsGuardStopBeforeTheFirstKeyCarriesTheRecordBesideTheAccount() {
+    let units = [TypedUnit](repeating: TypedUnit(press: KeyPress(keyCode: 0, modifiers: []), text: [0x61], consumed: 1), count: 2)
+    for activated in [false, true] {
+      let label = activated ? "after an activation click" : "nothing posted"
+      var latest: AttributedEvent?
+      let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
+      var metadata = meta()
+      if activated { XCTAssertTrue(metadata.posting(as: .activationClick) { true }, label) }
+      latest = AttributedEvent(sequence: 1, at: 11)
+      var keys = 0
+      var caught: Error?
+      XCTAssertThrowsError(try keyText(units, concealed: true, checkSource: { _, _ in }, checkIntervention: guarding.checkInFlight,
+                                       post: { _ in keys += 1; return true }, pause: {}, meta: &metadata), label) { caught = $0 }
+      XCTAssertEqual(keys, 0, label)
+      guard let caught else { continue }
+      let answer = answered(caught, metadata)
+      XCTAssertEqual(answer.phase, "inFlight", label)
+      XCTAssertEqual(answer.effects, activated ? ["activationClick"] : [], label)
+      let wrapped = withMeta(caught as! EngineError, metadata)
+      XCTAssertEqual((wrapped.wire["meta"] as? [String: Any])?["beforeInput"] as? Bool, true, label)
+      let restated = wrapped.interrupted(adding: [.activationRelease]).wire["meta"] as? [String: Any]
+      XCTAssertEqual(restated?["beforeInput"] as? Bool, true, "\(label): kept by the restatement")
+      XCTAssertEqual((restated?["interruption"] as? [String: Any])?["effects"] as? [String],
+                     (activated ? ["activationClick"] : []) + ["activationRelease"], label)
+    }
+
+    // The same guard after the first unit's keys: the account names the input, and there is no record.
+    var latest: AttributedEvent?
+    let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
+    var metadata = meta()
+    var checks = 0
+    var caught: Error?
+    XCTAssertThrowsError(try keyText(units, concealed: true, checkSource: { _, _ in },
+                                     checkIntervention: { checks += 1; if checks == 2 { latest = AttributedEvent(sequence: 1, at: 11) }; try guarding.checkInFlight() },
+                                     post: { _ in true }, pause: {}, meta: &metadata)) { caught = $0 }
+    guard let caught else { return }
+    let answer = answered(caught, metadata)
+    XCTAssertEqual(answer.phase, "inFlight")
+    XCTAssertEqual(answer.effects, ["input"])
+    XCTAssertNil((withMeta(caught as! EngineError, metadata).wire["meta"] as? [String: Any])?["beforeInput"], "a key was posted")
+  }
 }
 
 // The reported incident's shape (#212): a save sheet open, set_value on its name field, a user event at each point of

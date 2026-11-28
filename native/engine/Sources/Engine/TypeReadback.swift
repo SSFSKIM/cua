@@ -526,15 +526,15 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
                                waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>? = nil) -> ReadbackPlan<Element> {
   let retry = retry ?? ReadbackRetry(reads: reads, retries: 0)
   let field: Element, found: ReadbackLookup, classified: Bool, foundRole: String?
-  // Under select_text's range, a field that cannot be placed types nothing, as a range gone does (#587: P2-6, ruling
-  // 1247 e): no field found, a password field the marker route could not vouch for, an element that is no text field.
+  // Under select_text's range, a field that cannot hold the range types nothing, as a range gone does (#587: P2-6,
+  // rulings 1247 e and 1249): no field found, a closed claim, a changed role, an element that is no text field.
   let selecting: Bool
   if case .selection? = baseline { selecting = true } else { selecting = false }
   switch reads.focused() {
   case nil: return .refused(selecting ? .selectionChanged : .noFocusedElement)
   case .closed(let reason, let password)?:  // the marker route's classification: nothing more is read
     if password { secure = true }
-    return .refused(password && selecting ? .selectionChanged : reason)
+    return .refused(selecting ? .selectionChanged : reason)
   case .field(let element, let by, let password, let role)?: (field, found, classified, foundRole) = (element, by, password, role)
   }
   if classified {
@@ -545,20 +545,26 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
   guard case .value(let role) = retry.read(.role, once: classified, { reads.role(field) }) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
   retry.saw(subrole: subrole)
+  // A field the walk or the marker route found by its role is held to it before anything else (ruling 1249): another
+  // role now is a changed field, becameSecure when it reads as a password field's, and under select_text's range
+  // nothing is typed. A field it took for a password field is held to being one below (noLongerSecure, #414); the
+  // application's own focus names no role to compare.
+  if let foundRole, !classified, role != foundRole {
+    if selecting { return .refused(.selectionChanged) }
+    let secureNow = role == "AXSecureTextField" || subrole == .value("AXSecureTextField")
+    return .refused(secureNow ? .becameSecure : .fieldChanged)
+  }
   if classified, !readbackPasswordField(role: role, subrole: subrole) { return .refused(.noLongerSecure) }
   if readbackSecure(role: role, subrole: subrole) {
     // #414: a password field is confirmed by its length; any other element closed is refused unread, as before.
-    guard readbackPasswordField(role: role, subrole: subrole) else { return .refused(.secure) }
+    guard readbackPasswordField(role: role, subrole: subrole) else { return .refused(selecting ? .selectionChanged : .secure) }
     secure = true
     return readbackLengthSnapshot(field: field, role: role, returnIsText: readbackReturnIsText(role: role, subrole: subrole), found: found,
                                   reads: reads, settle: &settle, baseline: baseline, waited: &waited)
   }
-  // A field the walk or the marker route found by a text-entry role that now reads another role changed (ruling 1247, c);
-  // only the application's own focus can name an element that is no text field (#587).
-  guard typeReadbackTextRoles.contains(role) else {
-    if foundRole != nil { return .refused(.fieldChanged) }
-    return selecting ? .refused(.selectionChanged) : .unread(.notTextField)
-  }
+  // Only the application's own focus reaches here with an element that is no text field (#587); under select_text's range
+  // it cannot hold the range, so nothing is typed.
+  guard typeReadbackTextRoles.contains(role) else { return selecting ? .refused(.selectionChanged) : .unread(.notTextField) }
   if let baseline {
     var closed: TypeReadbackReason?
     let goal: RangeGoal<NSRange>

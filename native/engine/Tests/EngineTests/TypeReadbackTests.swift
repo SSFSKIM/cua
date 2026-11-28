@@ -966,23 +966,68 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  /// Ruling 1247 (c): a field the walk or the marker route found by a text-entry role whose snapshot reads another role
-  /// changed: fieldChanged, never notTextField; the application's own focus is not compared.
+  /// Rulings 1247 (c) and 1249 (1): a field the walk or the marker route found by its role is held to that role before
+  /// anything else is read: another text-entry role, or no text field's, is fieldChanged and its value never read; a
+  /// password field's role or subrole is becameSecure, with no length confirmation. The application's own focus is not
+  /// compared.
   func testAFieldFoundByItsRoleThatReadsAnotherRoleChanged() {
+    let cases: [(found: String, role: String, subrole: ReadbackSubrole, reason: String)] = [
+      ("AXTextField", "AXTextArea", .absent, "fieldChanged"),
+      ("AXTextField", "AXGroup", .absent, "fieldChanged"),
+      ("AXTextField", "AXSecureTextField", .absent, "becameSecure"),
+      ("AXTextArea", "AXTextField", .value("AXSecureTextField"), "becameSecure"),
+    ]
     for by in [ReadbackLookup.walk, .marker] {
-      let field = FakeField(value: nil, range: nil)
-      field.role = "AXGroup"
-      var reads = FakeApp(field).reads
-      reads.focused = { .field(field, by: by, role: "AXTextField") }
-      var meta = meta()
-      XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
-                                               post: { _ in true }, pause: {}, meta: &meta), "\(by)")
-      XCTAssertEqual(record(meta)["reason"] as? String, "fieldChanged", "\(by)")
-      XCTAssertNil(meta.note, "\(by)")
+      for (found, role, subrole, reason) in cases {
+        let label = "\(by) \(found) → \(role)"
+        let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+        field.role = role
+        field.subrole = subrole
+        var reads = FakeApp(field).reads
+        reads.focused = { field.calls.append("focused"); return .field(field, by: by, role: found) }
+        var meta = meta()
+        XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+                                                 post: { _ in true }, pause: {}, meta: &meta), label)
+        XCTAssertEqual(record(meta)["reason"] as? String, reason, label)
+        XCTAssertNil(record(meta)["secure"], "\(label): never taken for a password field to confirm")
+        XCTAssertNil(meta.note, label)
+        XCTAssertEqual(field.calls, ["focused", "role", "subrole"], "\(label): no value, range or length read")
+      }
     }
     let direct = FakeField(value: nil, range: nil)
     direct.role = "AXGroup"
     XCTAssertNil(type("abc", into: FakeApp(direct)).0, "the application's focus: no text field, typed with the note")
+  }
+
+  /// Ruling 1249 (2): under select_text's range the range comes first: a field found by its role that now reads another
+  /// role, of any kind, types nothing (`selectionChanged`), as does a closed claim.
+  func testUnderSelectTextsRangeAChangedRoleTypesNothing() {
+    for (role, subrole) in [("AXGroup", ReadbackSubrole.absent), ("AXTextArea", .absent), ("AXSecureTextField", .absent),
+                            ("AXTextField", .value("AXSecureTextField"))] {
+      let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
+      field.role = role
+      field.subrole = subrole
+      var reads = FakeApp(field).reads
+      reads.focused = { .field(field, by: .walk, role: role == "AXTextField" ? "AXTextArea" : "AXTextField") }
+      var posted = 0
+      var meta = meta()
+      XCTAssertThrowsError(try keyTextReadBack(units("xyz"), concealed: false, baseline: .selection(NSRange(location: 0, length: 3)), reads: reads,
+                                               checkSource: { _, _ in }, checkIntervention: {}, post: { _ in posted += 1; return true },
+                                               pause: {}, meta: &meta), role) {
+        XCTAssertTrue(($0 as? EngineError)?.message.hasPrefix("Nothing was typed") ?? false, role)
+      }
+      XCTAssertEqual(posted, 0, role)
+      XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged", role)
+    }
+    var closed = FakeApp(nil).reads
+    closed.focused = { .closed(.secure) }
+    var posted = 0
+    var meta = meta()
+    XCTAssertThrowsError(try keyTextReadBack(units("xyz"), concealed: false, baseline: .selection(NSRange(location: 0, length: 3)), reads: closed,
+                                             checkSource: { _, _ in }, checkIntervention: {}, post: { _ in posted += 1; return true },
+                                             pause: {}, meta: &meta))
+    XCTAssertEqual(posted, 0, "a closed claim")
+    XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged")
   }
 
   /// What stays `typeUnconfirmed`, with no note: a text field that reads otherwise, and a password field's reasons.

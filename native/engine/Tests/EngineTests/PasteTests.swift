@@ -1538,9 +1538,11 @@ final class PasteOperationTests: XCTestCase {
 @discardableResult
 private func typeByPaste(_ engine: Engine, _ text: String, _ target: PasteTarget, _ context: ExecutionContext,
                          field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), selection: NSRange? = nil,
-                         noFocus: Bool = false, meta: inout InputMeta) throws -> String? {
-  try engine.typeTextByPaste(text, target, context, selection: selection, settle: { false }, pointerPending: { false },
-                             reads: FakeApp(noFocus ? nil : field).reads, meta: &meta)
+                         noFocus: Bool = false, foundRole: String? = nil, meta: inout InputMeta) throws -> String? {
+  var reads = FakeApp(noFocus ? nil : field).reads
+  if let foundRole { reads.focused = { .field(field, by: .walk, role: foundRole) } }  // found by the walk, by its role
+  return try engine.typeTextByPaste(text, target, context, selection: selection, settle: { false }, pointerPending: { false },
+                                    reads: reads, meta: &meta)
 }
 
 final class PasteActivationTests: XCTestCase {
@@ -1739,7 +1741,8 @@ extension PasteActivationTests {
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
-                             field given: FakeField? = nil, selection: NSRange? = nil, noFocus: Bool = false, thrown: ((Error) -> Void)? = nil,
+                             field given: FakeField? = nil, selection: NSRange? = nil, noFocus: Bool = false, foundRole: String? = nil,
+                             thrown: ((Error) -> Void)? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     let field = given ?? FakeField(value: "", range: NSRange(location: 0, length: 0))
     var system = seam.system
@@ -1768,7 +1771,9 @@ extension PasteActivationTests {
     var meta = InputMeta(context)
     var entered = 0
     if typed, let thrown {
-      do { try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, noFocus: noFocus, meta: &meta) } catch { thrown(error) }
+      do {
+        try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, noFocus: noFocus, foundRole: foundRole, meta: &meta)
+      } catch { thrown(error) }
     } else if typed {
       try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
       if given == nil { XCTAssertEqual(meta.typeReadback?.confirmed, true, "read back") }
@@ -1796,9 +1801,10 @@ extension PasteActivationTests {
 
   /// P2-6 on the paste route: a focused element that is not a text field under select_text's range pastes nothing
   /// (`selectionChanged`), the pasteboard untouched.
-  /// Ruling 1247 (e) as well: no focused element found under select_text's range pastes nothing.
+  /// Ruling 1247 (e) as well: no focused element found under select_text's range pastes nothing; and ruling 1249 (2): an
+  /// editor the walk found by its role that now reads AXGroup pastes nothing either.
   func testTypeTextsPasteRouteIntoANonTextFieldUnderSelectTextsRangePastesNothing() throws {
-    for noFocus in [false, true] {
+    for (noFocus, foundRole) in [(false, nil), (true, nil), (false, "AXTextField")] as [(Bool, String?)] {
       let seam = GuardSeam(frontmost: user)
       seam.targetAbove = false
       let pasteboard = TestPasteboard()
@@ -1809,7 +1815,7 @@ extension PasteActivationTests {
       var keys = 0
       let meta = try pasteToItsEnd("Documents", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
                                    onKeyDown: { _ in keys += 1 }, field: row, selection: NSRange(location: 0, length: 3), noFocus: noFocus,
-                                   thrown: { error = $0 })
+                                   foundRole: foundRole, thrown: { error = $0 })
       XCTAssertTrue((error as? EngineError)?.message.hasPrefix("Nothing was typed") ?? false, "noFocus \(noFocus): \(String(describing: error))")
       XCTAssertEqual(keys, 0, "noFocus \(noFocus): no ⌘V")
       XCTAssertEqual(pasteboard.strings(), ["the owner's"], "noFocus \(noFocus)")

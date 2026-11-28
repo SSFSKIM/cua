@@ -1660,12 +1660,14 @@ final class SecureTypeReadbackTests: XCTestCase {
   }
 
   /// A field that stops being a password field while it is polled (a page's show-password toggle) is read no further:
-  /// noLongerSecure; one whose request fails or whose role cannot be read, fieldUnreadable; another password role,
-  /// fieldChanged. Each ends at that read.
+  /// noLongerSecure; one whose request fails or whose role cannot be read, fieldUnreadable; another role still secure,
+  /// fieldChanged (R1, ruling 1250). Each ends at that read.
   func testAFieldThatChangesWhileItIsPolledIsReadNoFurther() {
     let cases: [(String, (StubPasswordApp) -> Void, String)] = [
       ("shown as text", { $0.subrole = nil }, "noLongerSecure"),
-      ("another role", { $0.role = "AXGroup" }, "noLongerSecure"),
+      // R1 (ruling 1250): still secure by its subrole, another role: a changed field.
+      ("another role, still secure", { $0.role = "AXGroup" }, "fieldChanged"),
+      ("another role, open", { $0.role = "AXGroup"; $0.subrole = nil }, "noLongerSecure"),
       ("the request fails", { $0.batchFails = true }, "fieldUnreadable"),
       ("the role unreadable", { $0.role = nil }, "fieldUnreadable"),
       ("the secure role instead", { $0.role = "AXSecureTextField"; $0.subrole = nil }, "fieldChanged"),

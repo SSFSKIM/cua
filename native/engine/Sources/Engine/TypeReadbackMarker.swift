@@ -117,7 +117,8 @@ func readbackClass(_ read: AttributeRead?) -> ReadbackClass {
 /// classification, its AXParent and AXFocused, whether the app's process serves it, and element identity.
 struct ReadbackMarkerReads<Element> {
   var marked: (Element) -> Element?
-  var classify: (Element) -> ReadbackClass
+  /// The class and the subrole of the same reply (R1's baseline, ruling 1250).
+  var classify: (Element) -> (ReadbackClass, ReadbackSubrole)
   var parent: (Element) -> ReadbackWalkRead<Element>
   var isFocused: (Element) -> ReadbackWalkRead<Bool>
   var owned: (Element) -> Bool
@@ -135,21 +136,22 @@ struct ReadbackMarkerReads<Element> {
 /// field; any other role (the AXStaticText) is climbed by one AXParent, at most `typeReadbackMarkerFieldHops`. The field
 /// is claimed only when it reads AXFocused true and lies under that web area (`readbackUnder`).
 func readbackMarkedField<Element>(window: Element, walk: ReadbackFocusWalk<Element>, marker: ReadbackMarkerReads<Element>) -> ReadbackFound<Element>? {
-  guard let webArea = readbackWebArea(window, walk, owned: marker.owned), marker.classify(webArea) == .open("AXWebArea"),
+  guard let webArea = readbackWebArea(window, walk, owned: marker.owned), marker.classify(webArea).0 == .open("AXWebArea"),
         var element = marker.marked(webArea) else { return nil }
   var hops = 0
   while true {
     guard marker.owned(element) else { return nil }
-    switch marker.classify(element) {
+    let (kind, subrole) = marker.classify(element)
+    switch kind {
     case .closed(let reason): return .closed(reason)
     case .password(let role):
       guard case .value(true) = marker.isFocused(element), readbackUnder(element, webArea, marker) else {
         return .closed(.fieldUnreadable, secure: true)
       }
-      return .field(element, by: .marker, password: true, role: role)
+      return .field(element, by: .marker, identity: ReadbackIdentity(role: role, subrole: subrole, secure: true))
     case .open(let role) where typeReadbackTextRoles.contains(role):
       guard case .value(true) = marker.isFocused(element), readbackUnder(element, webArea, marker) else { return nil }
-      return .field(element, by: .marker, role: role)
+      return .field(element, by: .marker, identity: ReadbackIdentity(role: role, subrole: subrole, secure: false))
     case .open(let role) where role == "AXWebArea": return nil
     case .open:
       guard hops < typeReadbackMarkerFieldHops, case .value(let parent) = marker.parent(element) else { return nil }

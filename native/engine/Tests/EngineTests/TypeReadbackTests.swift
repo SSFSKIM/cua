@@ -63,6 +63,10 @@ final class FakeField {
   var failWhen: ((String) -> Bool)?
   /// How long each role read takes on the fake app's clock (a classification that takes time of its own).
   var roleReadMs: Double = 0
+  /// Ruling 1250's table: run at every classification read, a role read ("role") or a length batch ("batch"), before it
+  /// answers, so a test can change the field at exactly one classification point.
+  var onClassify: ((FakeField, String) -> Void)?
+  func count(_ call: String) -> Int { calls.filter { $0 == call }.count }
   var afterFailing: (FakeField, String) -> Void = { _, _ in }
   private(set) var lastError: Int32?
 
@@ -135,6 +139,7 @@ final class FakeField {
   /// "batch", never as a value or range read, its count the value as shown (late like a value read), its range the
   /// reported one; the states before typing and the change after reads count it as a value read.
   func readLength() -> AttributeRead? {
+    onClassify?(self, "batch")
     calls.append("batch")
     valueReads += 1
     if !delivered, !statesBeforeTyping.isEmpty { (value, range) = statesBeforeTyping.removeFirst(); shown = value }
@@ -178,7 +183,7 @@ final class FakeApp {
                   },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  role: { self.clock += $0.roleReadMs; $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
+                  role: { $0.onClassify?($0, "role"); self.clock += $0.roleReadMs; $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
@@ -538,7 +543,7 @@ final class TypeReadbackTests: XCTestCase {
                                      primaryWindow: { node in log.append("window"); return node.focusedWindow ?? node.mainWindow },
                                      walk: walkReads({ log.append($0) }, clock: { clock }, tick: { clock += msPerNode }))
     // The application's focus names a field `.focus`; the walk's claim is `.walk` (#414's P1-2).
-    guard case .field(let field, let by, _, _)? = found, by != .marker else { return nil }
+    guard case .field(let field, let by, _)? = found, by != .marker else { return nil }
     return field
   }
 
@@ -966,68 +971,259 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  /// Rulings 1247 (c) and 1249 (1): a field the walk or the marker route found by its role is held to that role before
-  /// anything else is read: another text-entry role, or no text field's, is fieldChanged and its value never read; a
-  /// password field's role or subrole is becameSecure, with no length confirmation. The application's own focus is not
-  /// compared.
-  func testAFieldFoundByItsRoleThatReadsAnotherRoleChanged() {
-    let cases: [(found: String, role: String, subrole: ReadbackSubrole, reason: String)] = [
-      ("AXTextField", "AXTextArea", .absent, "fieldChanged"),
-      ("AXTextField", "AXGroup", .absent, "fieldChanged"),
-      ("AXTextField", "AXSecureTextField", .absent, "becameSecure"),
-      ("AXTextArea", "AXTextField", .value("AXSecureTextField"), "becameSecure"),
-    ]
-    for by in [ReadbackLookup.walk, .marker] {
-      for (found, role, subrole, reason) in cases {
-        let label = "\(by) \(found) → \(role)"
-        let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
-        field.role = role
-        field.subrole = subrole
-        var reads = FakeApp(field).reads
-        reads.focused = { field.calls.append("focused"); return .field(field, by: by, role: found) }
-        var meta = meta()
-        XCTAssertThrowsError(try keyTextReadBack(units("abc"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
-                                                 post: { _ in true }, pause: {}, meta: &meta), label)
-        XCTAssertEqual(record(meta)["reason"] as? String, reason, label)
-        XCTAssertNil(record(meta)["secure"], "\(label): never taken for a password field to confirm")
-        XCTAssertNil(meta.note, label)
-        XCTAssertEqual(field.calls, ["focused", "role", "subrole"], "\(label): no value, range or length read")
-      }
-    }
-    let direct = FakeField(value: nil, range: nil)
-    direct.role = "AXGroup"
-    XCTAssertNil(type("abc", into: FakeApp(direct)).0, "the application's focus: no text field, typed with the note")
+  // MARK: R1 and R2 (ruling 1250)
+
+  /// The walk's claim: its role alone, secure by it.
+  private func walkClaim(_ role: String) -> ReadbackIdentity {
+    ReadbackIdentity(role: role, subrole: nil, secure: readbackPasswordField(role: role, subrole: .absent))
   }
 
-  /// Ruling 1249 (2): under select_text's range the range comes first: a field found by its role that now reads another
-  /// role, of any kind, types nothing (`selectionChanged`), as does a closed claim.
-  func testUnderSelectTextsRangeAChangedRoleTypesNothing() {
-    for (role, subrole) in [("AXGroup", ReadbackSubrole.absent), ("AXTextArea", .absent), ("AXSecureTextField", .absent),
-                            ("AXTextField", .value("AXSecureTextField"))] {
-      let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
-      field.role = role
-      field.subrole = subrole
-      var reads = FakeApp(field).reads
-      reads.focused = { .field(field, by: .walk, role: role == "AXTextField" ? "AXTextArea" : "AXTextField") }
-      var posted = 0
-      var meta = meta()
-      XCTAssertThrowsError(try keyTextReadBack(units("xyz"), concealed: false, baseline: .selection(NSRange(location: 0, length: 3)), reads: reads,
-                                               checkSource: { _, _ in }, checkIntervention: {}, post: { _ in posted += 1; return true },
-                                               pause: {}, meta: &meta), role) {
-        XCTAssertTrue(($0 as? EngineError)?.message.hasPrefix("Nothing was typed") ?? false, role)
-      }
-      XCTAssertEqual(posted, 0, role)
-      XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged", role)
+  /// The marker route's claim: its role and subrole, read in one reply.
+  private func markerClaim(_ role: String, _ subrole: ReadbackSubrole = .absent) -> ReadbackIdentity {
+    ReadbackIdentity(role: role, subrole: subrole, secure: readbackSecure(role: role, subrole: subrole))
+  }
+
+  /// A point where the read-back classifies the field again (or decides to post), as the table drives it.
+  private struct ClassifyPoint {
+    let name: String
+    /// A password field's point (the baseline AXSecureTextField), else a text field's (AXTextField).
+    var secure = false
+    /// Before the snapshot answers, so under select_text's range anything but proceeding types nothing.
+    var snapshot = true
+    var claim: ReadbackIdentity? = nil
+    var settle = false
+    var stable = false
+    var concealed = false
+    var text = "c"
+    /// What a run that goes through posts: its key-downs.
+    var keys = 1
+    /// Before the change: the field's set-up (a read that fails once first, a field that drops the text).
+    var prepare: (FakeField) -> Void = { _ in }
+    /// Whether this classification read is the point's (called at every one, in order, until it says so).
+    let at: () -> (FakeField, String) -> Bool
+  }
+
+  /// A transition of (role, subrole, open|secure) applied at the point, or a read that fails from there on.
+  private struct Transition {
+    let name: String
+    var role: String? = nil
+    var subrole: ReadbackSubrole? = nil
+    var fails = false
+  }
+
+  private func classifyPoints() -> [ClassifyPoint] {
+    func nth(_ kind: String, _ n: Int, where condition: @escaping (FakeField) -> Bool = { _ in true }) -> () -> (FakeField, String) -> Bool {
+      { var seen = 0; return { field, read in
+        guard read == kind, condition(field) else { return false }
+        seen += 1
+        return seen == n
+      } }
     }
-    var closed = FakeApp(nil).reads
-    closed.focused = { .closed(.secure) }
-    var posted = 0
-    var meta = meta()
-    XCTAssertThrowsError(try keyTextReadBack(units("xyz"), concealed: false, baseline: .selection(NSRange(location: 0, length: 3)), reads: closed,
-                                             checkSource: { _, _ in }, checkIntervention: {}, post: { _ in posted += 1; return true },
-                                             pause: {}, meta: &meta))
-    XCTAssertEqual(posted, 0, "a closed claim")
-    XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged")
+    let afterValue: (FakeField) -> Bool = { $0.count("value") >= 1 && !$0.delivered }
+    let afterSnapshotRange: (FakeField) -> Bool = { field in
+      guard !field.delivered, let value = field.calls.lastIndex(of: "value") else { return false }
+      return field.calls[value...].contains("range")
+    }
+    return [
+      // A text field's: the snapshot's first read against the lookup's, #359's wait, a value read's retry, the settle,
+      // a settle read's retry, the final poll, a poll read's retry, a checkpoint's poll before a Tab.
+      ClassifyPoint(name: "lookup (walk) → snapshot", claim: walkClaim("AXTextField"), at: nth("role", 1)),
+      ClassifyPoint(name: "lookup (marker) → snapshot", claim: markerClaim("AXTextField"), at: nth("role", 1)),
+      ClassifyPoint(name: "#359's wait", stable: true, at: nth("role", 2, where: { $0.count("value") == 0 })),
+      ClassifyPoint(name: "a snapshot read's retry", prepare: { $0.failing["value"] = 1 }, at: nth("role", 1, where: afterValue)),
+      ClassifyPoint(name: "the settle", settle: true, at: nth("role", 1, where: afterSnapshotRange)),
+      ClassifyPoint(name: "a settle read's retry", settle: true, prepare: { field in
+        var values = 0
+        field.failWhen = { name in
+          guard name == "value" else { return false }
+          values += 1
+          return values == 2
+        }
+      }, at: nth("role", 1, where: { $0.count("value") >= 2 && !$0.delivered })),
+      ClassifyPoint(name: "the final poll", snapshot: false, at: nth("role", 1, where: { $0.delivered })),
+      ClassifyPoint(name: "a poll read's retry", snapshot: false, prepare: { $0.failingAfterTyping["role"] = 1 },
+                    at: nth("role", 2, where: { $0.delivered })),
+      ClassifyPoint(name: "a checkpoint's poll", snapshot: false, text: "c\t", keys: 2, at: nth("role", 1, where: { $0.delivered })),
+      // A password field's: the snapshot's first read against the lookup's, the wait's batch, the snapshot's batch, the
+      // settle's batch, the poll's batch, a concealed request's final batch.
+      ClassifyPoint(name: "password: lookup (walk) → snapshot", secure: true, claim: walkClaim("AXSecureTextField"), at: nth("role", 1)),
+      ClassifyPoint(name: "password: lookup (marker) → snapshot", secure: true, claim: markerClaim("AXSecureTextField"), at: nth("role", 1)),
+      ClassifyPoint(name: "password: #359's wait", secure: true, stable: true, at: nth("batch", 1)),
+      ClassifyPoint(name: "password: the snapshot's batch", secure: true, at: nth("batch", 1)),
+      ClassifyPoint(name: "password: the settle", secure: true, settle: true, at: nth("batch", 2)),
+      ClassifyPoint(name: "password: the poll", secure: true, snapshot: false, at: nth("batch", 1, where: { $0.delivered })),
+      ClassifyPoint(name: "password: the final batch", secure: true, snapshot: false, concealed: true,
+                    prepare: { $0.transform = { _ in "" } }, at: nth("batch", 1, where: { $0.delivered && $0.calls.last == "focused" })),
+    ]
+  }
+
+  /// What the transition answers at a point, with nothing pending: nil for a success.
+  private func expected(_ point: ClassifyPoint, _ transition: Transition) -> String? {
+    let lookup = point.claim != nil, walk = point.claim?.subrole == nil && lookup
+    switch transition.name {
+    case "unchanged": return point.concealed ? "lengthMismatch" : nil
+    case "a read that fails": return lookup ? "roleUnreadable" : "fieldUnreadable"
+    case "open → secure by subrole", "a subrole change while open", "a subrole change while secure":
+      return walk ? (point.concealed ? "lengthMismatch" : nil) : transition.name.hasPrefix("open") ? "becameSecure" : "fieldChanged"
+    case "open → secure by role": return "becameSecure"
+    case "secure → open": return "noLongerSecure"
+    default: return "fieldChanged"
+    }
+  }
+
+  /// Rulings 1250's proof: every point where the read-back classifies the field again, × every transition of (role,
+  /// subrole, open|secure), × select_text's range pending or not. R1: any transition ends the read-back with its
+  /// reason, the walk's first subrole excepted. R2: under the range, every answer of the snapshot but proceeding is
+  /// selectionChanged with no key posted. Each run asserts its outcome and the keys posted (the keyed route posts no ⌘V;
+  /// PasteActivationTests runs the snapshot's points on the paste route).
+  func testEveryClassificationPointHoldsTheFieldToItsBaseline() {
+    let open: [Transition] = [
+      Transition(name: "unchanged"),
+      Transition(name: "text → text", role: "AXTextArea"),
+      Transition(name: "text → non-text", role: "AXGroup"),
+      Transition(name: "open → secure by role", role: "AXSecureTextField"),
+      Transition(name: "open → secure by subrole", subrole: .value("AXSecureTextField")),
+      Transition(name: "a subrole change while open", subrole: .value("AXSearchField")),
+      Transition(name: "a read that fails", fails: true),
+    ]
+    let secure: [Transition] = [
+      Transition(name: "unchanged"),
+      Transition(name: "secure → open", role: "AXTextField"),
+      Transition(name: "secure → secure, another role", role: "AXTextField", subrole: .value("AXSecureTextField")),
+      Transition(name: "a subrole change while secure", subrole: .value("AXSearchField")),
+      Transition(name: "a read that fails", fails: true),
+    ]
+    var runs = 0
+    for point in classifyPoints() {
+      for transition in point.secure ? secure : open {
+        for selecting in [false, true] {
+          let label = "\(point.name) × \(transition.name) × \(selecting ? "select_text's range pending" : "nothing pending")"
+          let field = FakeField(value: "ab", range: NSRange(location: selecting ? 0 : 2, length: selecting ? 2 : 0))
+          field.role = point.secure ? "AXSecureTextField" : "AXTextField"
+          field.returnInserts = false
+          point.prepare(field)
+          let at = point.at()
+          var applied = false
+          field.onClassify = { field, read in
+            guard !applied, at(field, read) else { return }
+            applied = true
+            if let role = transition.role { field.role = role }
+            if let subrole = transition.subrole { field.subrole = subrole }
+            if transition.fails {
+              field.failing["role"] = .max
+              field.failingAfterTyping["role"] = .max
+              field.batchFails = true
+            }
+          }
+          let app = FakeApp(field)
+          var reads = app.reads
+          if let claim = point.claim { reads.focused = { .field(field, by: claim.subrole == nil ? .walk : .marker, identity: claim) } }
+          var keys = 0
+          var meta = meta()
+          var thrown: EngineError?
+          do {
+            try keyTextReadBack(units(point.text), concealed: point.concealed, settle: point.settle,
+                                baseline: selecting ? .selection(NSRange(location: 0, length: 2)) : point.stable ? .stable : nil, reads: reads,
+                                checkSource: { _, _ in }, checkIntervention: {}, post: { event in
+                                  guard event.kind == .down else { return true }
+                                  keys += 1
+                                  if let text = event.text { field.deliver(text) }
+                                  return true
+                                }, pause: {}, meta: &meta)
+          } catch {
+            thrown = error as? EngineError
+          }
+          runs += 1
+          // The change was made at its point, wherever that point is reached (a password field under the range is not read).
+          if transition.name != "unchanged", !(selecting && point.secure) { XCTAssertTrue(applied, "\(label): reached") }
+          let reason = thrown == nil ? nil : meta.typeReadback?.reason?.rawValue
+          // R2: under the range a password field is never typed into, and nothing before the snapshot's proceeding is.
+          let stopped = selecting && (point.secure || (point.snapshot && expected(point, transition) != nil)
+                                      || (point.claim?.subrole == nil && point.claim != nil && transition.name == "open → secure by subrole"))
+          if stopped {
+            XCTAssertEqual(reason, "selectionChanged", label)
+            XCTAssertEqual(keys, 0, "\(label): nothing posted")
+            continue
+          }
+          XCTAssertEqual(reason, expected(point, transition), label)
+          let stoppedBeforeTab = point.text.hasSuffix("\t") && reason != nil
+          XCTAssertEqual(keys, stoppedBeforeTab ? 1 : point.keys, "\(label): keys posted")
+        }
+      }
+    }
+    XCTAssertEqual(runs, 9 * 7 * 2 + 7 * 5 * 2, "points × transitions × pending")
+  }
+
+  /// Round 4 (a), (b) and (c), by name. (a) A field the marker route took for a password field by its subrole whose
+  /// snapshot reads another text role, still secure: fieldChanged, never confirmed by its length against the new role.
+  /// (b) A field the marker route found open whose snapshot reads the same role with a password field's subrole:
+  /// becameSecure, never confirmed by its length. (c) Under select_text's range, #359's wait seeing AXGroup: nothing
+  /// typed.
+  func testRoundFoursCases() {
+    func run(_ field: FakeField, claim: ReadbackIdentity?, baseline: BaselineWait? = nil) -> (String?, Int, InputMeta) {
+      var reads = FakeApp(field).reads
+      if let claim { reads.focused = { field.calls.append("focused"); return .field(field, by: .marker, identity: claim) } }
+      var keys = 0
+      var meta = meta()
+      let error = { () -> Error? in
+        do {
+          try keyTextReadBack(units("c"), concealed: false, baseline: baseline, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+                              post: { event in
+                                if event.kind == .down { keys += 1; if let text = event.text { field.deliver(text) } }
+                                return true
+                              }, pause: {}, meta: &meta)
+          return nil
+        } catch { return error }
+      }()
+      return (error == nil ? nil : meta.typeReadback?.reason?.rawValue, keys, meta)
+    }
+    let a = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    a.role = "AXTextArea"
+    a.subrole = .value("AXSecureTextField")
+    let (aReason, _, aMeta) = run(a, claim: markerClaim("AXTextField", .value("AXSecureTextField")))
+    XCTAssertEqual(aReason, "fieldChanged")
+    XCTAssertNil(aMeta.note, "no length confirmation")
+    XCTAssertFalse(a.calls.contains("batch"))
+
+    let b = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    b.role = "AXTextField"
+    b.subrole = .value("AXSecureTextField")
+    let (bReason, _, bMeta) = run(b, claim: markerClaim("AXTextField"))
+    XCTAssertEqual(bReason, "becameSecure")
+    XCTAssertNil(bMeta.note)
+    XCTAssertFalse(b.calls.contains("batch"))
+
+    let c = FakeField(value: "ab", range: NSRange(location: 0, length: 2))
+    c.role = "AXTextField"
+    c.onClassify = { field, read in if read == "role", field.count("role") == 1 { field.role = "AXGroup" } }
+    let (cReason, cKeys, _) = run(c, claim: markerClaim("AXTextField"), baseline: .selection(NSRange(location: 0, length: 2)))
+    XCTAssertEqual(cReason, "selectionChanged")
+    XCTAssertEqual(cKeys, 0)
+  }
+
+  /// R1's one comparison, by itself: what each component the baseline read decides, and what it never read does not.
+  func testTheClassificationComparison() {
+    let open = markerClaim("AXTextField"), password = markerClaim("AXSecureTextField"), walked = walkClaim("AXTextField")
+    XCTAssertEqual(readbackClassify(open, role: "AXTextField", subrole: .absent), .same(open))
+    XCTAssertEqual(readbackClassify(open, role: nil, subrole: .absent), .unreadable(.role))
+    XCTAssertEqual(readbackClassify(open, role: "AXTextField", subrole: .failed), .unreadable(.subrole), "an open field's failed subrole")
+    XCTAssertEqual(readbackClassify(open, role: "AXSecureTextField", subrole: .failed), .changed(.becameSecure), "a role seen changed")
+    XCTAssertEqual(readbackClassify(open, role: "AXGroup", subrole: .failed), .changed(.fieldChanged))
+    XCTAssertEqual(readbackClassify(password, role: "AXSecureTextField", subrole: .failed), .same(password), "a password field reads on")
+    XCTAssertEqual(readbackClassify(password, role: "AXSecureTextField", subrole: .failed, presumeSecure: false), .same(password),
+                   "AXSecureTextField is secure whatever its subrole did")
+    let bySubrole = markerClaim("AXTextField", .value("AXSecureTextField"))
+    XCTAssertEqual(readbackClassify(bySubrole, role: "AXTextField", subrole: .failed), .same(bySubrole), "presumed a password field still")
+    XCTAssertEqual(readbackClassify(bySubrole, role: "AXTextField", subrole: .failed, presumeSecure: false), .unreadable(.subrole),
+                   "where the reason is decided, the presumption is not taken")
+    XCTAssertEqual(readbackClassify(password, role: "AXStaticText", subrole: .absent), .changed(.noLongerSecure))
+    XCTAssertEqual(readbackClassify(walked, role: "AXTextField", subrole: .value("AXSecureTextField")),
+                   .same(ReadbackIdentity(role: "AXTextField", subrole: .value("AXSecureTextField"), secure: true)), "the walk's first subrole")
+    XCTAssertEqual(readbackClassify(walked, role: "AXTextArea", subrole: .absent), .changed(.fieldChanged))
+    let presumed = ReadbackIdentity(role: "AXTextField", subrole: .failed, secure: true)
+    XCTAssertEqual(readbackClassify(presumed, role: "AXTextField", subrole: .value("AXSecureTextField")),
+                   .same(ReadbackIdentity(role: "AXTextField", subrole: .value("AXSecureTextField"), secure: true)))
+    XCTAssertEqual(readbackClassify(presumed, role: "AXTextField", subrole: .absent), .changed(.noLongerSecure))
   }
 
   /// What stays `typeUnconfirmed`, with no note: a text field that reads otherwise, and a password field's reasons.
@@ -1050,7 +1246,7 @@ final class TypeReadbackTests: XCTestCase {
     let shown = FakeField(value: "", range: NSRange(location: 0, length: 0))
     shown.role = "AXTextField"
     var claimed = FakeApp(shown).reads
-    claimed.focused = { .field(shown, by: .walk, password: true) }
+    claimed.focused = { .field(shown, by: .marker, identity: ReadbackIdentity(role: "AXTextField", subrole: .value("AXSecureTextField"), secure: true)) }
     for (name, reads, reason) in [("secure", FakeApp(secure).reads, "secure"), ("becameSecure", FakeApp(turning).reads, "becameSecure"),
                                   ("noLongerSecure", claimed, "noLongerSecure")] {
       var meta = meta()
@@ -1174,7 +1370,7 @@ final class TypeReadbackTests: XCTestCase {
     field.role = "AXSecureTextField"
     field.failing["role"] = 1
     var reads = FakeApp(field).reads
-    reads.focused = { field.calls.append("focused"); return .field(field, by: .walk, password: true) }
+    reads.focused = { field.calls.append("focused"); return .field(field, by: .walk, identity: self.walkClaim("AXSecureTextField")) }
     var meta = meta()
     XCTAssertThrowsError(try keyTextReadBack(units("pass"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
                                              post: { _ in true }, pause: {}, meta: &meta)) {

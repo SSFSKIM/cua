@@ -1538,9 +1538,10 @@ final class PasteOperationTests: XCTestCase {
 @discardableResult
 private func typeByPaste(_ engine: Engine, _ text: String, _ target: PasteTarget, _ context: ExecutionContext,
                          field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), selection: NSRange? = nil,
-                         noFocus: Bool = false, foundRole: String? = nil, meta: inout InputMeta) throws -> String? {
+                         noFocus: Bool = false, claim: ReadbackIdentity? = nil, meta: inout InputMeta) throws -> String? {
   var reads = FakeApp(noFocus ? nil : field).reads
-  if let foundRole { reads.focused = { .field(field, by: .walk, role: foundRole) } }  // found by the walk, by its role
+  // Found by the walk (its role alone) or the marker route (its role and subrole), which classified it.
+  if let claim { reads.focused = { .field(field, by: claim.subrole == nil ? .walk : .marker, identity: claim) } }
   return try engine.typeTextByPaste(text, target, context, selection: selection, settle: { false }, pointerPending: { false },
                                     reads: reads, meta: &meta)
 }
@@ -1741,7 +1742,7 @@ extension PasteActivationTests {
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
-                             field given: FakeField? = nil, selection: NSRange? = nil, noFocus: Bool = false, foundRole: String? = nil,
+                             field given: FakeField? = nil, selection: NSRange? = nil, noFocus: Bool = false, claim: ReadbackIdentity? = nil,
                              thrown: ((Error) -> Void)? = nil,
                              before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     let field = given ?? FakeField(value: "", range: NSRange(location: 0, length: 0))
@@ -1772,7 +1773,7 @@ extension PasteActivationTests {
     var entered = 0
     if typed, let thrown {
       do {
-        try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, noFocus: noFocus, foundRole: foundRole, meta: &meta)
+        try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, noFocus: noFocus, claim: claim, meta: &meta)
       } catch { thrown(error) }
     } else if typed {
       try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
@@ -1804,7 +1805,8 @@ extension PasteActivationTests {
   /// Ruling 1247 (e) as well: no focused element found under select_text's range pastes nothing; and ruling 1249 (2): an
   /// editor the walk found by its role that now reads AXGroup pastes nothing either.
   func testTypeTextsPasteRouteIntoANonTextFieldUnderSelectTextsRangePastesNothing() throws {
-    for (noFocus, foundRole) in [(false, nil), (true, nil), (false, "AXTextField")] as [(Bool, String?)] {
+    let walked = ReadbackIdentity(role: "AXTextField", subrole: nil, secure: false)
+    for (noFocus, claim) in [(false, nil), (true, nil), (false, walked)] as [(Bool, ReadbackIdentity?)] {
       let seam = GuardSeam(frontmost: user)
       seam.targetAbove = false
       let pasteboard = TestPasteboard()
@@ -1815,12 +1817,82 @@ extension PasteActivationTests {
       var keys = 0
       let meta = try pasteToItsEnd("Documents", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
                                    onKeyDown: { _ in keys += 1 }, field: row, selection: NSRange(location: 0, length: 3), noFocus: noFocus,
-                                   foundRole: foundRole, thrown: { error = $0 })
+                                   claim: claim, thrown: { error = $0 })
       XCTAssertTrue((error as? EngineError)?.message.hasPrefix("Nothing was typed") ?? false, "noFocus \(noFocus): \(String(describing: error))")
       XCTAssertEqual(keys, 0, "noFocus \(noFocus): no ⌘V")
       XCTAssertEqual(pasteboard.strings(), ["the owner's"], "noFocus \(noFocus)")
       XCTAssertEqual(meta.typeReadback?.reason, .selectionChanged, "noFocus \(noFocus)")
     }
+  }
+
+  /// Ruling 1250 on the paste route: the snapshot's classification points (the lookup's against the snapshot's first
+  /// read, #359's wait, a value read's retry) × every transition of a text field × select_text's range pending or not.
+  /// R2: under the range, every answer but proceeding pastes nothing (no ⌘V, the pasteboard untouched); with nothing
+  /// pending, the text is pasted (one ⌘V) and the answer is R1's.
+  func testTypeTextsPasteRouteHoldsTheSnapshotsClassificationAndTheRange() throws {
+    let walked = ReadbackIdentity(role: "AXTextField", subrole: nil, secure: false)
+    let marked = ReadbackIdentity(role: "AXTextField", subrole: .absent, secure: false)
+    // (name, claim, prepare, the classification read that is the point's: its role read's number and whether before any
+    // value read), the wait only under the range.
+    let points: [(String, ReadbackIdentity?, (FakeField) -> Void, (FakeField) -> Bool, Bool)] = [
+      ("lookup (walk) → snapshot", walked, { _ in }, { $0.count("role") == 0 }, false),
+      ("lookup (marker) → snapshot", marked, { _ in }, { $0.count("role") == 0 }, false),
+      ("#359's wait", nil, { _ in }, { $0.count("role") == 1 && $0.count("value") == 0 }, true),
+      ("a snapshot read's retry", nil, { $0.failing["value"] = 1 }, { $0.count("value") >= 1 }, false),
+    ]
+    let transitions: [(String, String?, ReadbackSubrole?, Bool, String?)] = [
+      ("unchanged", nil, nil, false, nil),
+      ("text → text", "AXTextArea", nil, false, "fieldChanged"),
+      ("text → non-text", "AXGroup", nil, false, "fieldChanged"),
+      ("open → secure by role", "AXSecureTextField", nil, false, "becameSecure"),
+      ("open → secure by subrole", nil, .value("AXSecureTextField"), false, "becameSecure"),
+      ("a subrole change while open", nil, .value("AXSearchField"), false, "fieldChanged"),
+      ("a read that fails", nil, nil, true, "fieldUnreadable"),
+    ]
+    var runs = 0
+    for (point, claim, prepare, at, onlyPending) in points {
+      for (transition, role, subrole, fails, reason) in transitions {
+        for selecting in onlyPending ? [true] : [false, true] {
+          let label = "\(point) × \(transition) × \(selecting ? "pending" : "nothing pending")"
+          let seam = GuardSeam(frontmost: user)
+          seam.targetAbove = false
+          let pasteboard = TestPasteboard()
+          pasteboard.userCopies("the owner's")
+          let field = FakeField(value: "ab", range: NSRange(location: selecting ? 0 : 2, length: selecting ? 2 : 0))
+          field.role = "AXTextField"
+          prepare(field)
+          var applied = false
+          field.onClassify = { field, read in
+            guard !applied, read == "role", at(field) else { return }
+            applied = true
+            if let role { field.role = role }
+            if let subrole { field.subrole = subrole }
+            if fails { field.failing["role"] = .max; field.failingAfterTyping["role"] = .max }
+          }
+          var error: Error?
+          var commandVs = 0
+          let meta = try pasteToItsEnd("c", typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                       onKeyDown: { if $0 == 0x09 { commandVs += 1 } }, field: field,
+                                       selection: selecting ? NSRange(location: 0, length: 2) : nil, claim: claim, thrown: { error = $0 })
+          runs += 1
+          var wanted = reason
+          // The walk read no subrole: the first one it is given is the baseline's, so a password field's is no transition,
+          // and the field is then confirmed by its length.
+          if claim?.subrole == nil, claim != nil, subrole != nil { wanted = nil }
+          if fails, claim != nil { wanted = "roleUnreadable" }  // the snapshot's first role read, retried, then refused
+          let lengthPath = claim?.subrole == nil && claim != nil && subrole == .value("AXSecureTextField")
+          if selecting, wanted != nil || lengthPath {
+            XCTAssertEqual(meta.typeReadback?.reason, .selectionChanged, label)
+            XCTAssertEqual(commandVs, 0, "\(label): no ⌘V")
+            XCTAssertEqual(pasteboard.strings(), ["the owner's"], "\(label): the pasteboard untouched")
+            continue
+          }
+          XCTAssertEqual(error == nil ? nil : meta.typeReadback?.reason?.rawValue, wanted, label)
+          XCTAssertEqual(commandVs, 1, "\(label): pasted")
+        }
+      }
+    }
+    XCTAssertEqual(runs, 3 * 7 * 2 + 7)
   }
 
   /// #590 on the paste route: a read after the ⌘V that keeps failing is timed from that ⌘V, the paste's last key.

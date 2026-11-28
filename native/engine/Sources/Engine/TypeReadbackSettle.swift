@@ -24,14 +24,14 @@ struct ReadbackSettle: Equatable {
 /// Typing still follows the snapshot, so a later snapshot cannot make a success false: it only lets the expected value
 /// include an earlier key's effect that had not shown yet.
 /// `retry`, when given, reads again a read that failed (#590).
-func readbackSettle<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, before: inout String, range: inout NSRange,
+func readbackSettle<Element>(_ field: Element, identity: ReadbackIdentity, reads: ReadbackReads<Element>, before: inout String, range: inout NSRange,
                              record: inout ReadbackSettle, retry: ReadbackRetry<Element>? = nil) -> TypeReadbackReason? {
   let retry = retry ?? ReadbackRetry(reads: reads, retries: 0)
-  let recheck = { retry.fieldClosed(field, role: role, retrying: false) }
+  let recheck = { retry.fieldClosed(field, identity: identity, retrying: false) }
   let started = reads.now()
   while reads.now() - started + typeReadbackSettleIntervalMs <= typeReadbackSettleCapMs {
     reads.sleep(typeReadbackSettleIntervalMs)
-    if let closed = retry.fieldClosed(field, role: role) { return closed }
+    if let closed = retry.fieldClosed(field, identity: identity) { return closed }
     let value: String, next: NSRange
     switch retry.read(.value, recheck: recheck, { reads.value(field) }) {
     case .value(let read): value = read
@@ -185,31 +185,34 @@ final class ReadbackRetry<Element> {
     if case .value(let found) = subrole { classified.subrole = found }
   }
 
-  /// Why the snapshotted field is read no further (`readbackFieldClosed`), its role and subrole read again, a failed read
-  /// of either retried when `retrying`. A role that names a password field or differs from the snapshot's is the end
-  /// whatever its subrole reads (P1-4); only a role read that failed, or the snapshot's role with a subrole read that
-  /// failed, is tried again, and once no retry is left it is `fieldUnreadable`.
-  func fieldClosed(_ field: Element, role: String, retrying: Bool = true) -> TypeReadbackReason? {
+  /// Why the snapshotted field is read no further: its role and subrole read again and classified against the baseline
+  /// by R1's one comparison (`readbackClassify`), a read that failed tried again when `retrying`, and `fieldUnreadable`
+  /// once no retry is left. A role read that failed reads no subrole.
+  func fieldClosed(_ field: Element, identity: ReadbackIdentity, retrying: Bool = true) -> TypeReadbackReason? {
     var retries = 0
     while true {
-      let seenRole = reads.role(field)
-      if let seenRole {
+      let check: ReadbackClassCheck
+      if let seenRole = reads.role(field) {
         classified.role = seenRole
-        if seenRole == "AXSecureTextField" { return .becameSecure }
-        if seenRole != role { return .fieldChanged }
         let subrole = reads.subrole(field)
-        if subrole != .failed {
-          saw(subrole: subrole)
-          if retries > 0 { recovered += 1 }
-          return readbackFieldClosed(role: role, seenRole: seenRole, subrole: subrole)
+        saw(subrole: subrole)
+        check = readbackClassify(identity, role: seenRole, subrole: subrole)
+      } else {
+        check = .unreadable(.role)
+      }
+      switch check {
+      case .same:
+        if retries > 0 { recovered += 1 }
+        return nil
+      case .changed(let why): return why
+      case .unreadable(let name):
+        let error = reads.lastError()
+        guard retrying, again(retries) else {
+          failed(name, error: error, retries: retries)
+          return .fieldUnreadable
         }
+        retries += 1
       }
-      let error = reads.lastError()
-      guard retrying, again(retries) else {
-        failed(seenRole == nil ? .role : .subrole, error: error, retries: retries)
-        return .fieldUnreadable
-      }
-      retries += 1
     }
   }
 

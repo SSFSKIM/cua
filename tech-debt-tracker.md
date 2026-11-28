@@ -614,3 +614,7 @@
 - **summary.mjs's frame-split exemption trusts any `meta.reruns` entry whose job id and attempt match** (#506, review of 728a38227, 2026-11-27; P3). It doesn't check that the entry's filter names this cell, and it doesn't reject an empty identity. Only combine writes `evidence`, and the proof and full runs have no reruns. Fix if reruns return: require a well-formed job identity and a filter naming the exact section and id.
 
 - **`test/cursor-sitting/recording.test.mjs` "a recorder that ignores its terminal…" failed once under the focused suites' load** (2026-11-27; P3 flake). `assert.ok(recorder > 0)` failed at :187, and the file passes 15/15 alone. No #506 change touches cursor-sitting. Fix: find the process-spawn timing the assertion races under load.
+
+- **A frontmost-only proof run cannot pass** (#506, review of 66404dbfb, 2026-11-27; P3). summary.mjs:599 applies the full matrix's "not interfering: a background row judged on cua" coverage to any proof, so e.g. `compare --proof electron/frontmost/click.point` exits NO VERDICT. #587's proof holds background cells. Fix: scope background coverage to proofs that select a background cell.
+
+- **A save-sheet-only proof run claims the sitting's Acceptances 3, 4 and 7** (#506, review of daec17c36, 2026-11-27; P3). plan.mjs:267 sizes the claim by the matrix proof cells, which exclude the external save-sheet cell. No planned run is save-sheet-only. Fix: scope the sitting's claim to the selected filter.

@@ -1628,19 +1628,20 @@ row is `skip`.
 
 ### Known limitations (cua's engine)
 
-- **Electron** (#228). An Electron app started with `launch_app` has its accessibility bridge on, so it shows its tree.
-  One the person started may not. When cua reads such a window and finds the window alone, it asks the app to turn
-  its accessibility on and waits up to 2 s for the elements, so that read can take longer than later ones, and the
-  elements come with it when they arrive in time. A screenshot never asks, and cua adds no flag to any command line.
-  Two answers, at the end of the observation, say it did not work out:
+- **Electron** (#228). Three things, in order. A fresh `launch_app` puts an Electron app on the accessibility bus, and
+  there it shows only its window until its accessibility is turned on. A read of such a window that finds the window
+  alone asks the app to turn its accessibility on; once the app answers, cua waits up to 2 s for the elements, so that
+  read can take longer than later ones, and the elements come with it when they arrive in time. A screenshot never
+  asks, cua adds no flag to any command line, and only Electron's windows are asked: Chrome, CEF apps and NW.js are read
+  as before. Two answers, at the end of the observation, say there is still no tree:
   `No accessibility tree: <app>, an Electron app by its window's role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.`
   (an app that is not on the bus cannot be reached from outside; starting it again with `launch_app` is a remedy), and
   `No accessibility tree yet: <app> was asked to turn its accessibility on and has not shown its elements; observe again.`
-  (the wait ended with the window still bare). Only Electron's windows are asked: Chrome, CEF apps and NW.js are read
-  as before. **What it costs the app.** An Electron app cua has asked keeps accessibility on until it exits, so it does
-  more work when its page changes and one that asks for its accessibility features sees them on. In an Electron 37 or
-  later app, Orca started after cua asked gets a lesser mode (no inline text boxes, no screen-reader flag) until the
-  app is restarted, which resolves it; Orca already running when cua asks is not affected.
+  (the wait ended with the window still bare). **What it costs the app.** Where cua's request turned accessibility on,
+  it stays on until the app exits, so the app does more work when its page changes, and one that asks for its
+  accessibility features sees them on. In an Electron 37 or later app, Orca started after that request gets a lesser
+  mode (no inline text boxes, no screen-reader flag) until the app is restarted, which resolves it; Orca already running
+  when cua asks is not affected.
 - **GTK 4 needs `dedicated` mode for input.** Clicks at coordinates, keys, text, scroll, move and drag are refused in
   `shared` mode with `<App> does not accept background input; use a dedicated desktop or activate the window first`.
   Element actions work in both modes.

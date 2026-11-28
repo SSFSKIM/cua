@@ -23,7 +23,7 @@
 // writable, by real path): nothing a cell or the worker can write is ever launched outside the sandbox. The scoped
 // preflight refuses a layout whose applications directories overlap a write root (src/runtime/sandbox.mjs).
 import {execFile, spawn} from 'node:child_process';
-import {accessSync, constants, realpathSync, statSync} from 'node:fs';
+import {realpathSync, statSync} from 'node:fs';
 import {isAbsolute, join, relative} from 'node:path';
 
 export const PATH_NOT_ABSOLUTE_SENTENCE = 'LaunchServices application path must be absolute';
@@ -53,8 +53,8 @@ export function runOpen(args) {
 // asked for the launch (the application lives on outside cua's process tree), rejects with how gio ended.
 // The application inherits gio's stdin, stdout and stderr and most keep them open, so all three are /dev/null, as the
 // engine's own launch_app gives them (#598): a pipe to cua held the answer until the timeout and, closed, broke the
-// application's next write; a file would take its output for its whole life. gio's own words go with them: it ends 1
-// on every failure, and launchLinux names the usual ones (the entry missing or unreadable) before gio runs.
+// application's next write; a file would take its output for its whole life. gio's own words go with them (it ends 1
+// on every failure), and only how it ended is told: launch_app launches only the entries list_apps could parse.
 export function runGioLaunch(path, env, {gio = GIO, timeoutMs = OPEN_TIMEOUT_MS} = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(gio, ['launch', path], {env, detached: true, stdio: 'ignore'});
@@ -94,18 +94,10 @@ async function launchLinux(message, {launch, env, writeRoots}) {
   if (path === null || message.bundle_identifier != null) throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}anything but a desktop entry's path on Linux`);
   if (typeof path !== 'string' || !isAbsolute(path)) throw new Error(PATH_NOT_ABSOLUTE_SENTENCE);
   const real = realOrNull(path);
-  // An entry where launch_app looks says why it is not launched; one elsewhere is refused without saying whether it exists.
-  if (real === null && [...xdgApplicationRoots(env), ...xdgApplicationDirs(env)].some(dir => within(path, dir)))
-    throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it does not exist`);
   if (real === null || !isFile(real) || !real.endsWith('.desktop') || !xdgApplicationDirs(env).some(dir => within(real, dir)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: only a desktop entry in an XDG applications directory is launched`);
   if (writeRoots.map(root => realOrNull(root) ?? root).some(root => within(real, root)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it lies where the sandbox lets JavaScript write, so it is not launched outside it`);
-  try {
-    accessSync(real, constants.R_OK);
-  } catch (error) {
-    throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it cannot be read (${error.code})`);
-  }
   const desktopEnv = Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === 'string').map(name => [name, env[name]]));
   try {
     await launch(real, desktopEnv);

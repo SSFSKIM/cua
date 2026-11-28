@@ -3,6 +3,7 @@
 // sky wrapper asks the supervisor, outside the sandbox, to launch the desktop entry (`gio launch`, in its own session).
 // The supervisor launches only a desktop entry that lies in an XDG applications directory of its own environment, so
 // nothing a cell can write (its run directory, its temp) is ever launched unconfined.
+import {execFileSync, spawn} from 'node:child_process';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -83,12 +84,21 @@ test('Linux: an entry whose real path lies inside a sandbox write root is refuse
 
 // The gio boundary itself, against a fake `gio` (#598): `gio launch` spawns the application with its own stdin, stdout
 // and stderr, and an application that keeps them open (most do) must not hold the launch until the timeout. `body` is
-// shell source; `$here` is the fake's directory, where a process it starts records its pid in a `*.pid` file, and every
-// process so recorded is stopped when the test ends, whatever the test did.
+// shell source; `$here` is the fake's directory, where a process it starts records its pid in a `*.pid` file and names
+// the directory in its command line, and every process so recorded is stopped when the test ends, whatever the test did.
+const commandLineOf = pid => { try { return execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'}); } catch { return ''; } };
+function stopRecorded(dir, kill = (pid, signal) => process.kill(pid, signal)) {
+  for (const name of readdirSync(dir).filter(name => name.endsWith('.pid'))) {
+    const record = readFileSync(join(dir, name), 'utf8').trim();
+    const pid = /^[1-9][0-9]*$/.test(record) ? Number(record) : 0;
+    if (pid === 0 || pid === process.pid || pid === process.ppid || !commandLineOf(pid).includes(dir)) continue;
+    try { kill(pid, 'SIGKILL'); } catch {}
+  }
+}
 function fakeGio(t, body) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-fake-gio-')));
   t.after(() => {
-    for (const name of readdirSync(dir).filter(name => name.endsWith('.pid'))) try { process.kill(Number(readFileSync(join(dir, name), 'utf8')), 'SIGKILL'); } catch {}
+    stopRecorded(dir);
     rmSync(dir, {recursive: true, force: true});
   });
   const gio = join(dir, 'gio');
@@ -98,11 +108,28 @@ function fakeGio(t, body) {
 }
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const PATH_ONLY = {PATH: '/usr/bin:/bin'};
+
+// The cleanup trusts no record: a fake that died mid-write leaves an empty or partial one, and `kill(0)` would stop the
+// runner's own process group. Only a positive pid whose command line names the fake's directory is signalled.
+test('fake gio cleanup: a record that is empty, not a positive pid, the runner itself or a process the fake did not start is never signalled', async t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-fake-gio-')));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const ours = spawn('/bin/sh', ['-c', 'sleep 30', join(dir, 'app')], {stdio: 'ignore'});
+  const stranger = spawn('/bin/sh', ['-c', 'sleep 30', join(tmpdir(), 'cua-not-the-fake')], {stdio: 'ignore'});
+  t.after(() => { ours.kill('SIGKILL'); stranger.kill('SIGKILL'); });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const records = {'empty.pid': '', 'zero.pid': '0', 'negative.pid': '-1', 'partial.pid': '12ab', 'runner.pid': String(process.pid),
+    'parent.pid': String(process.ppid), 'stranger.pid': String(stranger.pid), 'ours.pid': `${ours.pid}\n`};
+  for (const [name, record] of Object.entries(records)) writeFileSync(join(dir, name), record);
+  const signalled = [];
+  stopRecorded(dir, (pid, signal) => signalled.push([pid, signal]));
+  assert.deepEqual(signalled, [[ours.pid, 'SIGKILL']]);
+});
 const sessionOf = stat => readFileSync(stat, 'utf8').split(') ')[1].split(' ')[3];
 
 test('gio: the launch answers once gio has launched the application, which keeps its output open forever on /dev/null', async t => {
   // The application writes to its stdout and stderr every 50 ms and never closes them; gio exits once it is started.
-  const {dir, gio} = fakeGio(t, `sh -c 'while :; do echo out; echo err >&2; sleep 0.05; done' &\necho $! > "$here/app.pid"\nexit 0`);
+  const {dir, gio} = fakeGio(t, `sh -c 'while :; do echo out; echo err >&2; sleep 0.05; done' "$here/app" &\necho $! > "$here/app.pid"\nexit 0`);
   // The supervisor's temp directory is the session's, which scoped cells may write: the launch leaves nothing in it.
   const temp = realpathSync(mkdtempSync(join(tmpdir(), 'cua-launch-temp-')));
   t.after(() => rmSync(temp, {recursive: true, force: true}));
@@ -145,29 +172,9 @@ test('gio: a gio ended by a signal, a gio that does not exist, and a gio that ha
   const killed = fakeGio(t, 'kill -TERM $$').gio;
   await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: killed}), error => error.message === 'gio launch /a.desktop was ended by SIGTERM');
   await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: join(tmpdir(), 'cua-no-such-gio')}), /ENOENT/);
-  const {dir, gio: hung} = fakeGio(t, `echo $$ > "$here/gio.pid"\nexec sleep 600`);
+  const {dir, gio: hung} = fakeGio(t, `echo $$ > "$here/gio.pid"\nexec sh -c 'while :; do sleep 1; done' "$here/hung"`);
   const started = performance.now();
   await assert.rejects(runGioLaunch('/a.desktop', PATH_ONLY, {gio: hung, timeoutMs: 300}), error => error.message === 'gio launch /a.desktop did not finish within 300 ms');
   assert.ok(performance.now() - started < 2000, 'answered at its timeout');
   assert.equal(alive(Number(readFileSync(join(dir, 'gio.pid'), 'utf8'))), false, 'the hung gio was stopped');
-});
-
-// The failures gio's words would have named are named before gio runs, for an entry where launch_app looks (only there:
-// an entry elsewhere is refused without saying whether it exists).
-test('Linux: a desktop entry that is missing or unreadable in an XDG applications directory is refused with its reason, before gio runs', async t => {
-  const d = desktop(t);
-  const applications = join(d.system, 'applications');
-  const calls = [];
-  const launch = async path => { calls.push(path); };
-  const answer = async path => { try { await launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', launch, env: d.env}); return null; } catch (error) { return error.message; } };
-  const absent = join(applications, 'absent.desktop');
-  assert.equal(await answer(absent), `${LINUX_ENTRY_REFUSED_PREFIX}${absent}: it does not exist`);
-  const elsewhere = join(d.root, 'run', 's', 'absent.desktop');
-  assert.equal(await answer(elsewhere), `${LINUX_ENTRY_REFUSED_PREFIX}${elsewhere}: only a desktop entry in an XDG applications directory is launched`);
-  if (process.getuid?.() !== 0) {
-    const unreadable = d.entry(applications, 'unreadable.desktop');
-    chmodSync(unreadable, 0);
-    assert.equal(await answer(unreadable), `${LINUX_ENTRY_REFUSED_PREFIX}${unreadable}: it cannot be read (EACCES)`);
-  }
-  assert.deepEqual(calls, [], 'nothing refused reached gio');
 });

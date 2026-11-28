@@ -38,16 +38,30 @@
 //       the elements that matched (nothing is written unless exactly one did), `settable` whether AXValue is settable
 //       there, `write` the AXError of the write (0 is success, null when not attempted), `readBack` the value's length
 //       read back (null when unread), never the value.
+//   panel-ax caret <pid> <x,y,w,h> <role> <name>
+//   panel-ax strip <pid> <x,y,w,h> <role> <name> <length> <digest>
+//       TextEdit's document kept around the warm-up's typing (ruling 1278 (b)): it is the scene's fixed text, so it is
+//       never emptied. The field found as `empty` finds it. `caret` writes its AXSelectedTextRange at its start and
+//       reads its value's length (UTF-16 units) and SHA-256 digest (hex, of its UTF-8) -> {"trusted", "found",
+//       "windows", "kind", "windowMatches", "count", "walked", "write", "caret": {"location", "length"} | null,
+//       "length", "digest"}. `strip` takes those two: when the field reads its own text (the digest's, `length` units)
+//       with something before it, that much is selected from the start and AXSelectedText written "", then the value
+//       read back up to 4 times 250 ms apart until its digest is the one given; nothing is written when the field does
+//       not end with its own text (`refused` "other"), reads shorter ("shorter") or is unread ("unread"), nor when it
+//       reads its own text alone (`removed` 0, `restored` true). -> {..., "removed", "select", "write", "readBack",
+//       "reads", "restored", "refused"?}: `select` and `write` the AXErrors (null when not attempted), `readBack` the
+//       length read back. A digest only, never the value.
 //   panel-ax raise <pid> <x,y,w,h>
 //       That top-level window (never a sheet) raised: its AXRaise action (ruling 1221, H2: a background row's user
 //       window that its activation left under another, ../repl-parity/scenes-mac.mjs activateScene `top`).
 //       -> {"trusted", "found", "windows", "kind", "raised"}: the AXError of the action (0 is success, null when no
 //       top-level window was at the bounds).
 // Numbers and booleans only: a title is compared inside, never printed.
-// Hosted only (rulings 1188, 1195, 1221 and 1229(b)): move, cancel, empty and raise act on another app's windows, and element serves only a
+// Hosted only (rulings 1188, 1195, 1221, 1229(b) and 1278 (b)): move, cancel, empty, caret, strip and raise act on another app's windows, and element serves only a
 // hosted fallback, so each refuses off a GitHub-hosted runner here, before any Accessibility call, however the binary was run (exit 3). It never asks for a grant: an
 // untrusted process answers {"trusted": false} and touches nothing.
 import ApplicationServices
+import CryptoKit
 import Foundation
 
 func emit(_ object: [String: Any]) {
@@ -55,10 +69,13 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 4, ["move", "cancel", "element", "empty", "raise"].contains(args[1]), let pid = Int32(args[2]),
-      args.count == (["cancel", "raise"].contains(args[1]) ? 4 : args[1] == "empty" ? 6 : 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
-      args[1] != "element" || ["focused", "search", "name"].contains(args[4]) else {
-  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax empty <pid> <x,y,w,h> <role> <name> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
+// The verbs that write into one text field of one top-level window, and their argument counts.
+let fieldVerbs = ["empty": 6, "caret": 6, "strip": 8]
+guard args.count >= 4, ["move", "cancel", "element", "empty", "caret", "strip", "raise"].contains(args[1]), let pid = Int32(args[2]),
+      args.count == (["cancel", "raise"].contains(args[1]) ? 4 : fieldVerbs[args[1]] ?? 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
+      args[1] != "element" || ["focused", "search", "name"].contains(args[4]),
+      args[1] != "strip" || ((Int(args[6]).map { $0 >= 0 } ?? false) && args[7].count == 64) else {
+  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax empty|caret <pid> <x,y,w,h> <role> <name> | panel-ax strip <pid> <x,y,w,h> <role> <name> <length> <digest> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
   exit(64)
 }
 if ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
@@ -97,11 +114,11 @@ func near(_ a: CGRect, _ b: CGRect) -> Bool {
 guard let bounds = rect(args[3]) else { emit(["trusted": true, "found": false, "failed": "bounds"]); exit(64) }
 let windows = (read(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
 let atBounds = { (w: AXUIElement) -> Bool in frame(w).map { near($0, bounds) } ?? false }
-// `empty`, the one write into a window's contents, needs exactly one of the app's top-level windows at the bounds, so a
-// same-app window within the tolerance is never the one written: its target and its count come from one scan, so a
-// window whose frame moved between two scans cannot be the one written. The other commands take the first match, in
-// one scan of their own.
-let emptyMatches: [AXUIElement]? = args[1] == "empty" ? windows.filter(atBounds) : nil
+// `empty`, `caret` and `strip`, the writes into a window's contents, need exactly one of the app's top-level windows at
+// the bounds, so a same-app window within the tolerance is never the one written: its target and its count come from
+// one scan, so a window whose frame moved between two scans cannot be the one written. The other commands take the
+// first match, in one scan of their own.
+let emptyMatches: [AXUIElement]? = fieldVerbs[args[1]] != nil ? windows.filter(atBounds) : nil
 let topLevel: AXUIElement? = emptyMatches.map { $0.first } ?? windows.first(where: atBounds)
 // A Save sheet has a window of its own in the window list but is an AXSheet child of its document in AX
 // (scripts/cursor-sitting/ax-state.swift reads it so): with no top-level window at the bounds, the sheet at them, by
@@ -164,7 +181,15 @@ func walk(_ root: AXUIElement, _ matches: (AXUIElement) -> Bool) -> AXUIElement?
   return nil
 }
 
-if args[1] == "empty" {
+func digest(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+func value(_ e: AXUIElement) -> String? { read(e, kAXValueAttribute) as? String }
+func writeRange(_ e: AXUIElement, _ location: Int, _ length: Int) -> Int? {
+  var range = CFRange(location: location, length: length)
+  guard let wire = AXValueCreate(.cfRange, &range) else { return nil }
+  return Int(AXUIElementSetAttributeValue(e, kAXSelectedTextRangeAttribute as CFString, wire).rawValue)
+}
+
+if fieldVerbs[args[1]] != nil {
   let wanted = args[5]
   let named = { (e: AXUIElement) -> Bool in [kAXIdentifierAttribute, kAXDescriptionAttribute, kAXTitleAttribute].contains { (read(e, $0) as? String) == wanted } }
   var matches: [AXUIElement] = []
@@ -173,8 +198,46 @@ if args[1] == "empty" {
   answer["windowMatches"] = windowMatches
   if windowMatches == 1, let topLevel { _ = walk(topLevel, { e in if role(e) == args[4] && named(e) { matches.append(e) }; return false }) }
   answer["count"] = windowMatches == 1 ? matches.count as Any : NSNull(); answer["walked"] = walked
+  let field: AXUIElement? = windowMatches == 1 && matches.count == 1 ? matches.first : nil
+  if args[1] == "caret" {
+    answer["write"] = NSNull(); answer["caret"] = NSNull(); answer["length"] = NSNull(); answer["digest"] = NSNull()
+    if let field {
+      answer["write"] = writeRange(field, 0, 0).map { $0 as Any } ?? NSNull()
+      if let range = axValue(read(field, kAXSelectedTextRangeAttribute), .cfRange, CFRange()) { answer["caret"] = ["location": range.location, "length": range.length] }
+      if let text = value(field) { answer["length"] = text.utf16.count; answer["digest"] = digest(text) }
+    }
+    emit(answer)
+    exit(0)
+  }
+  if args[1] == "strip" {
+    let length = Int(args[6])!, own = args[7]
+    answer["removed"] = NSNull(); answer["select"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0; answer["restored"] = false
+    if let field {
+      if let text = value(field) {
+        let units = Array(text.utf16), extra = units.count - length
+        if extra < 0 { answer["refused"] = "shorter" }
+        else if digest(String(decoding: units[extra...], as: UTF16.self)) != own { answer["refused"] = "other" }
+        else if extra == 0 { answer["removed"] = 0; answer["restored"] = true; answer["readBack"] = units.count }
+        else {
+          answer["removed"] = extra
+          answer["select"] = writeRange(field, 0, extra).map { $0 as Any } ?? NSNull()
+          answer["write"] = Int(AXUIElementSetAttributeValue(field, kAXSelectedTextAttribute as CFString, "" as CFString).rawValue)
+          var now: String? = nil, reads = 0
+          while reads < 4, now.map({ digest($0) != own }) ?? true {
+            if reads > 0 { usleep(250_000) }
+            now = value(field)
+            reads += 1
+          }
+          answer["readBack"] = now.map { $0.utf16.count as Any } ?? NSNull(); answer["reads"] = reads
+          answer["restored"] = now.map { digest($0) == own } ?? false
+        }
+      } else { answer["refused"] = "unread" }
+    }
+    emit(answer)
+    exit(0)
+  }
   answer["settable"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0
-  if windowMatches == 1, matches.count == 1, let field = matches.first {
+  if let field {
     var settable: DarwinBoolean = false
     if AXUIElementIsAttributeSettable(field, kAXValueAttribute as CFString, &settable) == .success { answer["settable"] = settable.boolValue }
     answer["write"] = Int(AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "" as CFString).rawValue)

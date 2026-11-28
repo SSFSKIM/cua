@@ -169,25 +169,30 @@ test('panel element: the focused element\'s or the search field\'s frame read by
 // count on its answer; the other commands keep their first-match lookup. The review of the 1248 round: the window
 // written and the windows counted come from one frame scan, so geometry moving between two scans cannot make the
 // window written another than the one counted unique; the other commands make no second scan.
-test('the AX helper\'s empty writes only with exactly one window at the bounds, its target and its count from one scan, and says how many it found', () => {
+// Ruling 1278 (b): `caret` and `strip`, TextEdit's document kept around the warm-up's typing, write into a window's
+// contents too, so they find their one window as `empty` does.
+test('the AX helper\'s field writes (empty, caret, strip) write only with exactly one window at the bounds, its target and its count from one scan, and say how many they found', () => {
   const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
-  const verb = source.slice(source.indexOf('if args[1] == "empty" {'), source.indexOf('if args[1] == "element" {'));
+  const verb = source.slice(source.indexOf('if fieldVerbs[args[1]] != nil {'), source.indexOf('if args[1] == "element" {'));
   const scans = [...source.matchAll(/windows\.(first|filter)\(where: atBounds\)|windows\.filter\(atBounds\)/g)].map(m => m[0]);
-  assert.deepEqual(scans, ['windows.filter(atBounds)', 'windows.first(where: atBounds)'], 'one scan per verb: empty\'s list, or the others\' first match');
-  assert.match(source, /let emptyMatches: \[AXUIElement\]\? = args\[1\] == "empty" \? windows\.filter\(atBounds\) : nil/);
+  assert.deepEqual(scans, ['windows.filter(atBounds)', 'windows.first(where: atBounds)'], 'one scan per verb: the field verbs\' list, or the others\' first match');
+  assert.match(source, /let fieldVerbs = \["empty": 6, "caret": 6, "strip": 8\]/);
+  assert.match(source, /let emptyMatches: \[AXUIElement\]\? = fieldVerbs\[args\[1\]\] != nil \? windows\.filter\(atBounds\) : nil/);
   assert.match(source, /let topLevel: AXUIElement\? = emptyMatches\.map \{ \$0\.first \} \?\? windows\.first\(where: atBounds\)/);
   assert.doesNotMatch(source, /near\(\$0, bounds\)[^\n]*\.count/, 'no count from a scan of its own');
   assert.match(verb, /let windowMatches = emptyMatches\?\.count \?\? 0/);
   assert.match(verb, /answer\["windowMatches"\] = windowMatches/);
   assert.match(verb, /if windowMatches == 1, let topLevel \{/, 'the walk, and so the write, only under exactly one window');
+  assert.match(verb, /let field: AXUIElement\? = windowMatches == 1 && matches\.count == 1 \? matches\.first : nil/, 'every field verb writes only its one field');
 });
 
-test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere in it', () => {
+test('the AX helper\'s move writes AXPosition alone: no write of AXSize anywhere in it; its field writes write only "" or a selection', () => {
   const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
   const writes = [...source.matchAll(/AXUIElementSetAttributeValue\(\s*\w+\s*,\s*(\w+)[^,]*,\s*([^)]+)\)/g)].map(m => [m[1], m[2].trim()]);
-  // The one other write is `empty`'s (ruling 1229(b)): a text field's AXValue, and only ever "".
-  assert.deepEqual([...new Set(writes.map(w => w[0]))], ['kAXPositionAttribute', 'kAXValueAttribute']);
-  assert.deepEqual(writes.filter(w => w[0] === 'kAXValueAttribute').map(w => w[1]), ['"" as CFString']);
+  // The others: `empty`'s (ruling 1229(b)), a text field's AXValue, and `strip`'s (ruling 1278 (b)), its selected text,
+  // each only ever ""; and the selection `caret` and `strip` make.
+  assert.deepEqual([...new Set(writes.map(w => w[0]))], ['kAXPositionAttribute', 'kAXSelectedTextRangeAttribute', 'kAXSelectedTextAttribute', 'kAXValueAttribute']);
+  assert.deepEqual(writes.filter(w => ['kAXValueAttribute', 'kAXSelectedTextAttribute'].includes(w[0])).map(w => w[1]), ['"" as CFString', '"" as CFString']);
 });
 
 // Pilot C-4: the focused element's reading names it (role, subrole, AXIdentifier), whether or not it lies in the panel.
@@ -276,5 +281,67 @@ test('field-empty off a GitHub-hosted runner: refused before anything is read or
   await withScenes(async dir => {
     const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), windows: () => assert.fail('nothing read')};
     assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {emptied: false, refused: MOVE_REFUSED_OFF_HOSTED});
+  });
+});
+
+// ---- the warm-up's neutral path (ruling 1278 (b)): Chrome's field emptied as the others are, TextEdit's document kept --
+
+// Chrome's typing field, the page's textarea by its aria-label, as emptyField finds it (./plan.mjs TEXT_FIELDS).
+const CHROME = {pid: 500, window: {number: 30}};
+const PAGE = {ownerPid: 500, ownerName: 'Google Chrome for Testing', ownerBundleId: 'com.google.chrome.for.testing', layer: 0, number: 30, bounds: rect(80, 60, 1000, 760)};
+const withWebScenes = async body => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'field-warm-'));
+  try { writeState(dir, {scenes: {textedit: TEXTEDIT, chrome: CHROME}}); return await body(dir); } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+};
+const DIGEST = 'a'.repeat(64);
+
+test('field-empty names Chrome\'s field too: the page\'s textarea by its aria-label, the same write and read-back', async () => {
+  await withWebScenes(async dir => {
+    const asked = [];
+    const io = {...HOSTED, windows: () => [DOCUMENT, PAGE],
+      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 40, settable: true, write: 0, readBack: 0, reads: 1}; }};
+    const out = await main(['field-empty', '--run', dir, '--scene', 'chrome'], {io});
+    assert.deepEqual(asked, [['empty', '500', '80,60,1000,760', 'AXTextArea', 'Scene notes']]);
+    assert.deepEqual(out.answer, {emptied: true, count: 1, settable: true, write: 0, readBack: 0, reads: 1});
+  });
+});
+
+test('field-caret: the caret put at the field\'s start by the AX helper, its length and digest read with it for the strip to check against', async () => {
+  await withWebScenes(async dir => {
+    const asked = [];
+    const helper = answer => ({...HOSTED, windows: () => [DOCUMENT, PAGE],
+      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST, ...answer}; }});
+    const out = await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: helper()});
+    assert.deepEqual(asked, [['caret', '300', '213,78,507,877', 'AXTextArea', 'First Text View']]);
+    assert.deepEqual(out.answer, {placed: true, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST});
+    const answerOf = async answer => (await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: helper(answer)})).answer;
+    assert.deepEqual(await answerOf({write: -25200, caret: {location: 40, length: 0}}),
+      {placed: false, count: 1, write: -25200, caret: {location: 40, length: 0}, length: 512, digest: DIGEST, reason: 'the caret read back at 40 (length 0) after the write (AXError -25200), not at the field\'s start'});
+    assert.equal((await answerOf({length: null, digest: null})).reason, 'the field\'s value was unread');
+    assert.equal((await answerOf({count: 2, write: null, caret: null, length: null, digest: null})).reason, 'Accessibility lists 2 matching fields in the window: which one is the field cannot be told');
+    assert.deepEqual(await answerOf({digest: 'not a digest'}), {placed: false, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512, digest: null, reason: 'the field\'s value was unread'});
+  });
+});
+
+test('field-strip: what was typed before the field\'s own text removed by the AX helper, the field read back as it was by its digest', async () => {
+  await withWebScenes(async dir => {
+    const asked = [];
+    const helper = answer => ({...HOSTED, windows: () => [DOCUMENT, PAGE],
+      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, removed: 7, select: 0, write: 0, readBack: 512, reads: 1, restored: true, ...answer}; }});
+    const out = await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: helper()});
+    assert.deepEqual(asked, [['strip', '300', '213,78,507,877', 'AXTextArea', 'First Text View', '512', DIGEST]]);
+    assert.deepEqual(out.answer, {restored: true, count: 1, removed: 7, select: 0, write: 0, readBack: 512, reads: 1});
+    const answerOf = async answer => (await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: helper(answer)})).answer;
+    assert.deepEqual(await answerOf({removed: 0, select: null, write: null, readBack: 512, reads: 0, restored: true}), {restored: true, count: 1, removed: 0, select: null, write: null, readBack: 512, reads: 0});
+    assert.equal((await answerOf({removed: null, select: null, write: null, readBack: null, reads: 0, restored: false, refused: 'other'})).reason,
+      'the field did not read as its own text with the typing before it: nothing was removed');
+    assert.equal((await answerOf({removed: null, select: null, write: null, readBack: null, reads: 0, restored: false, refused: 'shorter'})).reason,
+      'the field read shorter than its own text: nothing was removed');
+    assert.equal((await answerOf({restored: false, readBack: 509, reads: 4, write: -25205})).reason, 'the field did not read back as its own text after the removal (509 characters, AXError -25205)');
+    await assert.rejects(main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', 'abc'], {io: helper()}), /--digest takes the field-caret answer's digest/);
+    await assert.rejects(main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '-1', '--digest', DIGEST], {io: helper()}), /--length takes the field-caret answer's length/);
+    const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), windows: () => assert.fail('nothing read')};
+    assert.deepEqual((await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: off})).answer, {restored: false, refused: MOVE_REFUSED_OFF_HOSTED});
+    assert.deepEqual((await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {placed: false, refused: MOVE_REFUSED_OFF_HOSTED});
   });
 });

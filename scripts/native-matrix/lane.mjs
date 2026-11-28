@@ -227,6 +227,10 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         case 'document': return {answer: {ok: true, number: Number(args[args.indexOf('--window') + 1]), found: true, document: false, edited: true, editedFrom: 'window'}, at};
         case 'focused-text': return {answer: {ok: true, role: 'AXTextArea', characters: 0, selected: {location: 0, length: 0}, failed: [], errors: {}}, at};
         case 'field-empty': return {answer: {emptied: true, count: 1, settable: true, write: 0, readBack: 0, reads: 1}, at};
+        // TextEdit's document kept around the warm-up's typing (ruling 1278 (b)): the caret at its start, then what was
+        // typed before its text removed and the document read back as it was.
+        case 'field-caret': return {answer: {placed: true, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512, digest: sha256Hex('dry document')}, at};
+        case 'field-strip': return {answer: {restored: true, count: 1, removed: 7, select: 0, write: 0, readBack: 512, reads: 1}, at};
         case 'field-frame': return {answer: {ok: true, window: {width: 800, height: 600}, field: {x: 8, y: 160, width: 504, height: 131}}, at};
         default: return {};
       }

@@ -107,21 +107,25 @@ const A11Y_ENABLED = ['--dest=org.a11y.Bus', '/org/a11y/bus'];
 export const A11Y_ENABLE_COMMAND = `dbus-send --session --print-reply ${A11Y_ENABLED.join(' ')} org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true`;
 
 // Whether org.a11y.Status IsEnabled is true: Qt 6 registers its tree on the bus only when it is (or ScreenReaderEnabled,
-// or QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1) at the application's start (#171 M0.4's matrix). Asked only once the bus row
-// found AT-SPI; reading it starts an activatable launcher, as any client's first use does.
+// or QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1) at the application's start (#171 M0.4's matrix). So does Chromium's bridge
+// (Electron, Chrome) unless ACCESSIBILITY_ENABLED, GNOME_ACCESSIBILITY or QT_ACCESSIBILITY is 1 at its start (#228's
+// pre-flight, A and E4): launch_app sets the first for what it starts, and a Debian or Ubuntu X session exports the
+// last, so the row speaks of the Chromium applications started otherwise. Asked only once the bus row found AT-SPI;
+// reading it starts an activatable launcher, as any client's first use does.
 async function enabledCheck(env, exec, findTool, bus) {
   if (bus.status !== 'pass') return result('accessibility.enabled', 'skip', 'no AT-SPI bus to ask (see accessibility.bus)');
   const address = sessionBusAddress(env);
   const run = await exec(findTool('dbus-send'), ['--session', '--print-reply', ...A11Y_ENABLED, 'org.freedesktop.DBus.Properties.Get', 'string:org.a11y.Status', 'string:IsEnabled'],
     {env: {DBUS_SESSION_BUS_ADDRESS: address, ...(env.HOME ? {HOME: env.HOME} : {})}});
   const value = run.code === 0 ? /variant\s+boolean\s+(true|false)\b/.exec(run.stdout)?.[1] : undefined;
-  if (value === 'true') return result('accessibility.enabled', 'pass', `org.a11y.Status IsEnabled is true on the session bus at ${address}, so Qt applications put their accessibility trees on the bus`);
+  if (value === 'true') return result('accessibility.enabled', 'pass', `org.a11y.Status IsEnabled is true on the session bus at ${address}, so Qt applications put their accessibility trees on the bus `
+    + 'and Chromium applications (Electron apps, Chrome) join it as they start');
   const turnOn = `turn it on with ${A11Y_ENABLE_COMMAND}, then restart those applications`;
   if (value === 'false')
-    return result('accessibility.enabled', 'warn', `org.a11y.Status IsEnabled is false on the session bus at ${address}, so a Qt 6 application started now puts no accessibility tree on the bus `
-      + `(cua sees its windows without their elements): ${turnOn}`);
+    return result('accessibility.enabled', 'warn', `org.a11y.Status IsEnabled is false on the session bus at ${address}, so a Qt 6 application started now puts no accessibility tree on the bus, `
+      + `and neither does a Chromium one (an Electron app, Chrome) not started by launch_app, outside a Debian or Ubuntu X session (cua sees their windows without their elements): ${turnOn}`);
   return result('accessibility.enabled', 'warn', `org.a11y.Status IsEnabled could not be read on the session bus at ${address} (${lastLine(run.code === 0 ? run.stdout : run.stderr)}), `
-    + `so whether Qt 6 applications put their accessibility trees on the bus is unknown: ${turnOn}`);
+    + `so whether Qt 6 and Chromium applications put their accessibility trees on the bus is unknown: ${turnOn}`);
 }
 
 // The remedy where the kernel refuses unprivileged user namespaces: lift Ubuntu's AppArmor restriction, or let

@@ -116,7 +116,7 @@ test('on Linux the scratch home copies the source\'s own parts and resolves to i
   const {release, root} = fakeModuleTree(source.dir, host);
   writePointer(source.dir, release);
   fakeManagedNode(source.dir, host);
-  fakeInstalledEngine(source.dir, '0.4.5');
+  fakeInstalledEngine(source.dir, '0.4.7');
   mkdirSync(join(source.dir, 'sandbox', 'rust-v0.163.0'), {recursive: true});
   writeFileSync(join(source.dir, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox'), 'helper fixture');
   mkdirSync(join(source.dir, 'runtimes', '26.928.40906-linux-x64'), {recursive: true});

@@ -583,7 +583,7 @@ test('a body read only in part is logged as not complete, with the bytes it gave
 });
 
 const ASSETS = [{url: 'https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz', length: 3}, {url: 'https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz', length: 5},
-  {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.6/cua-engine-0.4.6-linux-x64'}];
+  {url: 'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.7/cua-engine-0.4.7-linux-x64'}];
 const fetched = (o = {}) => ASSETS.map(a => ({url: a.url, answered: a.url, status: 200, bytes: a.length ?? 9, complete: true, error: null, ...o[a.url]}));
 const DEB = {url: 'https://persistent.oaistatic.com/codex-app-prod/chatgpt_26.928.40906_amd64.deb', length: 474898954};
 
@@ -599,7 +599,7 @@ test('negative control: a log with the deb\'s URL, a missing asset, an extra or 
   assert.match(judged([...fetched(), fetched()[0]]), /pngjs-7\.0\.0\.tgz was asked for 2 times/);
   assert.match(judged([...fetched(), {url: 'https://example.com/other', answered: 'https://example.com/other', status: 200, bytes: 1, complete: true, error: null}]), /https:\/\/example\.com\/other is no pinned asset/);
   assert.match(judged(fetched({[ASSETS[1].url]: {bytes: 4}})), /node-v24\.22\.0-linux-x64\.tar\.gz gave 4 bytes, not its pinned 5/);
-  assert.match(judged(fetched({[ASSETS[2].url]: {complete: false}})), /cua-engine-0\.4\.6-linux-x64 was not read whole/);
+  assert.match(judged(fetched({[ASSETS[2].url]: {complete: false}})), /cua-engine-0\.4\.7-linux-x64 was not read whole/);
   assert.match(judged(fetched({[ASSETS[0].url]: {status: 404}})), /answered 404/);
   assert.match(judged(null), /no fetch log/);
   assert.match(judged([], []), /the pinned assets are unknown/);
@@ -745,8 +745,8 @@ test('the refusals\' literals: each vendor source, the install\'s ending, and an
     `CUA_NATIVE_ENGINE=vendor and "engine": "vendor" in ${SETTINGS} select the vendor's engine, ${tail}unset CUA_NATIVE_ENGINE and remove "engine" from ${SETTINGS}, then run \`${INSTALLER_13} --engine\``);
   assert.equal(retiredMessage({sources: ['variable'], settings: SETTINGS, installer: INSTALLER_13, after: 'install'}),
     `CUA_NATIVE_ENGINE=vendor selects the vendor's engine, ${tail}unset CUA_NATIVE_ENGINE; the install otherwise completed`);
-  assert.equal(outdatedOverrideMessage({path: '/r/outdated/cua-engine', version: '0.4.4', minimum: '0.4.5', installer: INSTALLER_13}),
-    `the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /r/outdated/cua-engine, which is 0.4.4, older than 0.4.5, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run \`${INSTALLER_13} --engine\``);
+  assert.equal(outdatedOverrideMessage({path: '/r/outdated/cua-engine', version: '0.4.4', minimum: '0.4.7', installer: INSTALLER_13}),
+    `the default engine (cua) selects cua's own engine, and CUA_LINUX_ENGINE_BIN names /r/outdated/cua-engine, which is 0.4.4, older than 0.4.7, which this cua needs: unset CUA_LINUX_ENGINE_BIN, then run \`${INSTALLER_13} --engine\``);
   assert.equal(ENGINE_HINT_LITERAL, 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s');
   assert.equal(OUTDATED_ENGINE.version, '0.4.4');
   assert.deepEqual(Object.keys(OUTDATED_ENGINE.assets), ['x64', 'arm64']);
@@ -981,7 +981,7 @@ test('negative control: a copy named by install or by doctor, in a field or anyw
 });
 
 test('E0\'s home: no runtimes/, no line naming a vendor release, doctor\'s retired empty with no runtime.retired row', () => {
-  assert.deepEqual(emptyHomeProblems({runtimes: 'ENOENT', out: 'installed cua\'s Linux engine 0.4.6', doctor: {retired: [], checks: [row('display')]}}), []);
+  assert.deepEqual(emptyHomeProblems({runtimes: 'ENOENT', out: 'installed cua\'s Linux engine 0.4.7', doctor: {retired: [], checks: [row('display')]}}), []);
 });
 
 test('negative control: a runtimes/ made, a line naming the vendor\'s release, a runtime.retired row, a retired entry or no doctor fails E0\'s home', () => {

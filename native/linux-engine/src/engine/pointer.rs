@@ -410,12 +410,44 @@ pub(super) fn drop_confirming(
     (judged.after_outlasted(applied.is_some()), applied)
 }
 
+/// What the after-release watch does with a drag's drop once its release is known (`released`: the watch's
+/// `released_with_take`, None when the release never went up, as when the checked tail motion or the button release
+/// failed) and what confirms it (`confirming`): handed over to watch for Chrome's activation request (or a late take
+/// after a release with none), pending unconfirmed at once (`late_pending`, the reply's notice), or done with nothing
+/// to say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AfterRelease {
+    HandedOver,
+    Pending,
+    Done,
+}
+
+impl AfterRelease {
+    pub(super) fn of(released: Option<bool>, confirming: super::handle::Confirming) -> AfterRelease {
+        match (released, confirming) {
+            (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => AfterRelease::HandedOver,
+            (Some(true), confirming) if confirming.unconfirmed() => AfterRelease::Pending,
+            _ => AfterRelease::Done,
+        }
+    }
+
+    /// The cause a drop's `release_sync.unconfirmed` names (`gate_record`, #580): the one [`drop_confirming`] applied
+    /// (`applied`), only on a drop whose unconfirmed answer the release queued. A release that failed queues no notice,
+    /// and its reply is its error, so its record names no cause.
+    pub(super) fn recorded(
+        self,
+        applied: Option<crate::release_sync::Unconfirm>,
+    ) -> Option<crate::release_sync::Unconfirm> {
+        applied.filter(|_| self == AfterRelease::Pending)
+    }
+}
+
 /// The `release_sync` record (`--stats`) of a drop whose take was seen: how the gate decided (`read`), the step it ran
 /// (`synced`, past the path's end when it opened or the path overran, inside the floor otherwise), and where the path
 /// ended. Its `unconfirm_outlasted` is option (c)'s own word, as 0.4.4 recorded it: the gate open and option (c)'s
 /// switch (`unconfirm_outlasted`) on, whatever the tail dropped. Its `unconfirmed` is null here; it is named once the
 /// drop's confirmation is decided, and only on a drop that cause turned into `Confirming::Outlasted`
-/// ([`drop_confirming`], #580).
+/// ([`drop_confirming`]) and whose release queued that answer ([`AfterRelease::recorded`], #580).
 pub(super) fn gate_record(
     read: GateRead,
     synced: Option<&crate::release_sync::Synced>,
@@ -1715,8 +1747,11 @@ impl Engine {
                     cursor = Some(Some(held && (settled == Some(true) || !drop_settle)));
                 }
                 let (confirming, unconfirmed) = drop_confirming(confirm, supported, cursor, extended_take, unconfirmed);
-                // the cause, on the record of a drop it answered unconfirmed (`gate_record`, #580)
-                if let (Some(cause), Some(record)) = (unconfirmed, self.extra.get_mut("release_sync")) {
+                let disposition = AfterRelease::of(released, confirming);
+                // the cause, on the record of a drop whose unconfirmed answer the release queued (`gate_record`, #580)
+                if let (Some(cause), Some(record)) =
+                    (disposition.recorded(unconfirmed), self.extra.get_mut("release_sync"))
+                {
                     record["unconfirmed"] = json!(cause.name());
                 }
                 // ruling 837: a drop handed to Chrome's activation though its Electron source's settle failed
@@ -1759,19 +1794,19 @@ impl Engine {
                     x.get_window(window)
                         .map_or_else(|_| format!("window {window}"), |w| w.app)
                 };
-                match (released, confirming) {
-                    (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => {
+                match disposition {
+                    AfterRelease::HandedOver => {
                         let mut after = after.handed_over(app(&mut self.x));
                         after.settle_failed = settle_failed_activation;
                         self.late_watch = Some(after);
                     }
-                    (Some(true), confirming) if confirming.unconfirmed() => {
+                    AfterRelease::Pending => {
                         after.done();
                         self.inputs.end_watched(&mut self.x);
                         let end = confirming.unconfirmed_end(settle.as_ref());
                         self.late_pending = Some((app(&mut self.x), end));
                     }
-                    _ => {
+                    AfterRelease::Done => {
                         after.done();
                         self.inputs.end_watched(&mut self.x);
                     }
@@ -2457,6 +2492,56 @@ mod tests {
         assert_eq!(
             drop_confirming(None, true, Some(Some(true)), false, unconfirmed),
             (Confirming::Cursor(true), None)
+        );
+    }
+
+    /// #580 (the review of task 176): a drop the gate opened on with option (c) on, Chrome's activation request its only
+    /// confirmation, is `Confirming::Outlasted`, but its record names the cause only when the release went up with
+    /// the take and queued the notice. A release that failed (the named window gone before the checked tail motion or
+    /// the button release) queues none, its reply is the X11 error, and its record names no cause; nor does a drop
+    /// handed over to the activation's watch.
+    #[test]
+    fn a_failed_release_records_no_cause_and_a_queued_notice_does() {
+        use super::super::handle::Confirming;
+        use crate::release_sync::{Form, Schedule, Synced, Unconfirm};
+        let open = GateRead {
+            open: true,
+            keepalives: 0,
+            last_spaced: false,
+            overran: false,
+            last_step_after_take_ms: Some(420.0),
+        };
+        let tail = |visits_dropped| Synced {
+            form: Form::Tail,
+            schedule: Schedule::AfterPath,
+            motions: 4 - 2 * visits_dropped,
+            visits_dropped,
+            added: Duration::from_millis(24),
+            past_floor: Some(Duration::from_millis(80)),
+        };
+        let chrome = Some(18_874_370);
+        for (dropped, cause) in [(0, Unconfirm::Outlasted), (1, Unconfirm::VisitDropped)] {
+            let unconfirmed = unconfirmed_at_gate(Some(open), true, Some(&tail(dropped)));
+            let (confirming, applied) = drop_confirming(chrome, true, None, false, unconfirmed);
+            assert_eq!((confirming, applied), (Confirming::Outlasted, Some(cause)));
+            let failed = AfterRelease::of(None, confirming);
+            assert_eq!(failed, AfterRelease::Done, "a failed release queues nothing");
+            assert_eq!(
+                failed.recorded(applied),
+                None,
+                "{cause:?}: a failed release names no cause"
+            );
+            let queued = AfterRelease::of(Some(true), confirming);
+            assert_eq!(queued, AfterRelease::Pending);
+            assert_eq!(queued.recorded(applied), Some(cause));
+        }
+        // a drop the activation's watch takes over: no cause, whatever was offered
+        let handed = AfterRelease::of(Some(true), Confirming::Activation(18_874_370));
+        assert_eq!(handed, AfterRelease::HandedOver);
+        assert_eq!(handed.recorded(Some(Unconfirm::VisitDropped)), None);
+        assert_eq!(
+            AfterRelease::of(Some(false), Confirming::Outlasted),
+            AfterRelease::HandedOver
         );
     }
 

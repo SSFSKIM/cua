@@ -197,11 +197,13 @@ fn one_document_with_children_is_a_page_wherever_it_is() {
 }
 
 /// One read the scripted frame gives: how long it takes, its tree (None: the frame's role failed) or an error, its
-/// failed nodes, and whether it completes only after the deadline (its processing overran it).
+/// failed nodes and failed child listings, and whether it completes only after the deadline (its processing overran
+/// it).
 struct Read {
     length: Duration,
     tree: Result<Option<AxNode>, &'static str>,
     failed: u32,
+    listings_failed: u32,
     late: bool,
 }
 
@@ -226,6 +228,7 @@ impl Scripted {
                     length: Duration::from_millis(ms),
                     tree: read.map(|t| t.map(recorded)),
                     failed: 0,
+                    listings_failed: 0,
                     late: false,
                 })
                 .collect(),
@@ -235,6 +238,11 @@ impl Scripted {
 
     fn failing(mut self, read: usize, failed: u32) -> Scripted {
         self.reads[read].failed = failed;
+        self
+    }
+
+    fn listing_failed(mut self, read: usize) -> Scripted {
+        self.reads[read].listings_failed = 1;
         self
     }
 
@@ -265,6 +273,7 @@ impl Frame for Scripted {
         }
         let mut stats = ReadStats::default();
         stats.truncated.failed = read.failed;
+        stats.listings_failed = read.listings_failed;
         match read.tree {
             Ok(tree) => Ok(Some((tree, stats))),
             Err(error) => Err(anyhow::anyhow!(error)),
@@ -293,6 +302,23 @@ fn a_read_that_lost_nodes_waits_on() {
     let mut frame = Scripted::new(vec![(1, Ok(Some(BASE_WINDOW))), (1, Ok(Some(FIXTURE_PAGE)))]).failing(0, 1);
     let waited = wait(&mut frame, bare(), ReadStats::default());
     assert_eq!((waited.summary.end, waited.summary.reads), (End::Page, 2));
+}
+
+/// Fix wave 2: a `GetChildren` that failed leaves its node with no children, so the panel that holds the document can
+/// read as empty while the window's controls read whole: that read tells nothing yet, and the next has the page.
+#[test]
+fn a_read_whose_child_listing_failed_waits_on_for_the_page() {
+    let mut frame = Scripted::new(vec![(1, Ok(Some(BASE_WINDOW))), (1, Ok(Some(FIXTURE_PAGE)))]).listing_failed(0);
+    let waited = wait(&mut frame, bare(), ReadStats::default());
+    assert_eq!((waited.summary.end, waited.summary.reads), (End::Page, 2));
+    assert_eq!(waited.tree, recorded(FIXTURE_PAGE));
+    // and at the bound it is answered as views, not as a window with no page
+    let mut stays = Scripted::new((0..200).map(|_| (1, Ok(Some(BASE_WINDOW)))).collect()).listing_failed(0);
+    for read in 1..stays.reads.len() {
+        stays.reads[read].listings_failed = 1;
+    }
+    let waited = wait(&mut stays, bare(), ReadStats::default());
+    assert_eq!((waited.summary.end, waited.summary.shape), (End::Bound, Shape::Views));
 }
 
 #[test]

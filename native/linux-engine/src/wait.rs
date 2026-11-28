@@ -10,12 +10,17 @@
 //! - on a page: a `document web` with children;
 //! - promptly on a window with no page: no `document web`, something beyond panels (a control), and no node lost;
 //! - at the bound, with the last whole read: the frame still alone, a page that has not come, or views that tell
-//!   nothing yet (panels alone, or a read that lost a node whose role failed).
+//!   nothing yet (panels alone, or a read that lost a subtree: a node whose role or child listing failed).
 //!
 //! The bound is wall time and covers the reads themselves: each read is made by the bound's deadline, and a read the
 //! deadline cuts, or whose tree is built only after it, is abandoned for the read before it ([`Frame::read_by`]). On
 //! cua's own association routes each read is the answer only once its association is confirmed again
 //! (`engine.rs`, `confirmed_by`).
+//!
+//! What the bound covers: the pauses, and every call on the accessibility bus, the confirmation's included. It does not
+//! cover the X server's own replies (the window's properties the confirmation reads again), which block unbounded
+//! everywhere in the engine, the first read's association included; a server grabbed by another client stalls every
+//! observation, not this wait alone (`tech-debt-tracker.md`, #228 T2 review).
 
 use std::time::{Duration, Instant};
 
@@ -40,7 +45,7 @@ pub enum Shape {
     Page,
     /// Content, and no `document web`: a window with no page.
     NoPage,
-    /// Views and nothing that tells yet: panels alone, or a read that lost nodes whose role failed.
+    /// Views and nothing that tells yet: panels alone, or a read that lost a subtree ([`lost`]).
     Views,
 }
 
@@ -62,12 +67,12 @@ const DOCUMENT: &str = "document web";
 /// and these say nothing of what a window shows until something else is among them.
 const STRUCTURE: [&str; 5] = ["panel", "filler", "redundant object", "unknown", "section"];
 
-/// What a read of the frame (`tree`, its root the frame, with `failed` nodes whose role failed and which the read left
-/// out with their subtrees) shows:
+/// What a read of the frame (`tree`, its root the frame) shows, `lost` the places where the read may have lost a
+/// subtree ([`lost`]):
 /// - one `document web` with children anywhere in it is a page, and an empty one a page still to come;
 /// - with no document, a window with no page only when the read lost nothing and has something beyond structure (a
-///   control, text): panels alone, or a read with a failed node (which may have been the document), tell nothing yet.
-pub fn shape(tree: &AxNode, failed: u32) -> Shape {
+///   control, text): panels alone, or a read that lost a subtree (which may have held the document), tell nothing yet.
+pub fn shape(tree: &AxNode, lost: u32) -> Shape {
     if tree.children.is_empty() {
         return Shape::Bare;
     }
@@ -84,11 +89,18 @@ pub fn shape(tree: &AxNode, failed: u32) -> Shape {
         }
         stack.extend(&node.children);
     }
-    match (document, failed == 0 && beyond_structure) {
+    match (document, lost == 0 && beyond_structure) {
         (true, _) => Shape::Pending,
         (false, true) => Shape::NoPage,
         (false, false) => Shape::Views,
     }
+}
+
+/// Where a read may have lost a subtree: a node whose role failed, which the read leaves out with its subtree, and a
+/// node whose `GetChildren` failed, which it shows with no children (fix wave 2). Neither changes the tree the engine
+/// answers; the wait only takes such a read for one that tells nothing yet.
+pub fn lost(stats: &ReadStats) -> u32 {
+    stats.truncated.failed + stats.listings_failed
 }
 
 /// Why the wait ended.
@@ -186,7 +198,7 @@ pub fn wait(frame: &mut impl Frame, tree: AxNode, stats: ReadStats) -> Waited {
             Ok(Some(_)) if frame.now() > deadline => break End::Bound,
             Ok(Some((Some(read), read_stats))) => {
                 (tree, stats) = (read, read_stats);
-                let found = shape(&tree, stats.truncated.failed);
+                let found = shape(&tree, lost(&stats));
                 if found != Shape::Bare && content_after.is_none() {
                     content_after = Some(frame.now() - started);
                 }
@@ -202,7 +214,7 @@ pub fn wait(frame: &mut impl Frame, tree: AxNode, stats: ReadStats) -> Waited {
     };
     let summary = Summary {
         end,
-        shape: shape(&tree, stats.truncated.failed),
+        shape: shape(&tree, lost(&stats)),
         reads,
         took: frame.now() - started,
         content_after,

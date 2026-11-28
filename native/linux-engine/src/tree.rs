@@ -150,6 +150,10 @@ pub struct ReadStats {
     pub tables_sampled: u32,
     pub tables_listed: u32,
     pub hit_tests: u32,
+    /// Admitted nodes whose `GetChildren` failed (an error, or a reply that is not a list), which the tree shows with
+    /// no children, as the vendor's read does. Not a cut and not reported: the wait reads it as a read that may have
+    /// lost a subtree (`wait::shape`; #228 T2, fix wave 2).
+    pub listings_failed: u32,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -331,6 +335,8 @@ struct Data {
     action_names: Vec<Option<Option<String>>>,
     child_count: Option<Option<i32>>,
     children: Option<Vec<ObjRef>>,
+    /// Whether `GetChildren` failed, its children then read as none (`ReadStats::listings_failed`).
+    children_failed: bool,
 }
 
 impl Data {
@@ -353,7 +359,10 @@ impl Data {
                 }
             }
             Field::ChildCount => self.child_count = Some(child_count_of(result)),
-            Field::Children => self.children = Some(children_of(result)),
+            Field::Children => {
+                self.children_failed = !matches!(result, Ok(values) if matches!(values.first(), Some(Value::Array(_))));
+                self.children = Some(children_of(result));
+            }
             Field::Extents | Field::AtPoint(..) => debug_assert!(false, "not a node field"),
         }
     }
@@ -841,9 +850,12 @@ impl Frontier {
         };
         let mut admitted = vec![false; self.nodes.len()];
         let mut counter = 0;
+        // read before the build, which takes each admitted node's data
+        let listing_failed: Vec<bool> = self.nodes.iter().map(|n| n.data.children_failed).collect();
         let tree = self.build_node(0, &mut counter, &mut admitted, &mut stats.truncated);
         stats.admitted = counter;
         for (i, node) in self.nodes.iter().enumerate() {
+            stats.listings_failed += (admitted[i] && listing_failed[i] && !node.data.role_failed()) as u32;
             stats.wasted_calls += match (admitted[i], node.data.role_failed()) {
                 (false, _) => node.calls as u64,
                 (true, true) => node.calls.saturating_sub(1) as u64,

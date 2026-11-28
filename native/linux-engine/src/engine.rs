@@ -386,8 +386,9 @@ impl crate::wait::Frame for FrameApp<'_> {
     }
 
     /// The frame read by `deadline`, kept only once its association is confirmed again by it (`confirmed_by`): on
-    /// cua's own routes (same-title duplicates, the caption) the whole association runs again, its calls ending by the
-    /// deadline (`Bus::by`); the vendor's own match is confirmed by nothing, as for the first read.
+    /// cua's own routes (same-title duplicates, the caption) the whole association runs again, its calls on the
+    /// accessibility bus ending by the deadline (`Bus::by`); its X server replies are unbounded, as everywhere in the
+    /// engine (`tech-debt-tracker.md`). The vendor's own match is confirmed by nothing, as for the first read.
     fn read_by(&mut self, deadline: Instant) -> Result<Option<(Option<tree::AxNode>, tree::ReadStats)>> {
         let (associated, calls) = (self.associated, self.engine.cfg.window);
         let read = self

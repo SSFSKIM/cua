@@ -133,6 +133,8 @@ pub(crate) struct Fake {
     children: Vec<String>,
     child_count: i32,
     table: bool,
+    /// `GetChildren` answers an error (the object went away meanwhile, or its provider failed the call).
+    children_fail: bool,
 }
 
 /// A fake bus: a reply becomes available only when the engine waits, and a wait answers everything sent before
@@ -200,6 +202,9 @@ impl FakeBus {
             Field::NActions => vec![var(Value::I32(o.actions.as_ref().map_or(0, |a| a.len() as i32)))],
             Field::ActionName(n) => vec![s(o.actions.as_ref().unwrap()[n as usize])],
             Field::ChildCount => vec![var(Value::I32(o.child_count))],
+            Field::Children if o.children_fail => {
+                return Err("D-Bus org.a11y.atspi.Accessible.GetChildren failed: defunct".into());
+            }
             Field::Children => vec![Value::Array(
                 o.children
                     .iter()
@@ -648,6 +653,23 @@ fn depth_is_limited_to_63_below_the_root() {
         !bus.calls.iter().any(|(p, _)| p == "/64"),
         "no call for a node deeper than 63"
     );
+}
+
+/// #228 T2 fix wave 2: a `GetChildren` that fails leaves its node with no children, as the vendor's read does, and the
+/// read says it happened (`ReadStats::listings_failed`, which the wait reads), with the tree and its cuts unchanged.
+#[test]
+fn a_child_listing_that_fails_is_counted_and_the_tree_is_the_vendors() {
+    let mut objects = mixed();
+    objects.get_mut("/0").unwrap().children_fail = true;
+    let (expected, _) = vendor(objects.clone(), None);
+    let mut bus = FakeBus::new(objects.clone(), WINDOW);
+    let (got, stats) = read(&mut bus, &root(), WINDOW).unwrap();
+    assert_eq!(got, expected);
+    assert!(got.unwrap().children.is_empty());
+    assert_eq!(stats.listings_failed, 1);
+    assert_eq!(stats.truncated, vendor_cut(objects, None), "not a cut");
+    let mut whole = FakeBus::new(mixed(), WINDOW);
+    assert_eq!(read(&mut whole, &root(), WINDOW).unwrap().1.listings_failed, 0);
 }
 
 #[test]

@@ -1,0 +1,12 @@
+{
+  "about": "Known capability differences no matrix cell exercises, for the report's 'What changes for a user' section alone (./capability-notes.mjs). Report text, never a declaration: the judge never reads this file, so no entry reaches a verdict, a list or a rejudge comparison. A difference a cell does exercise is declared in departures.json instead.",
+  "notes": [
+    {
+      "ticket": "#597",
+      "priority": "P3",
+      "status": "deferred",
+      "ruling": "1247",
+      "text": "type_text with no focused element: cua answers typeUnconfirmed (noFocusedElement) where the vendor answers ok: cua does not vouch for typing it cannot place"
+    }
+  ]
+}

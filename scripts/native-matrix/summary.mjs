@@ -79,6 +79,7 @@
 import {stats} from '../native-baseline/summary.mjs';
 import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeRemeasured, judgeSpeed, remeasuredStats, runOf} from './cell-verdict.mjs';
+import {noteLine, readCapabilityNotes} from './capability-notes.mjs';
 import {composingRetriesOf, renderComposingRetries} from './composing-retries.mjs';
 import {acceptedMissProblems, departureProblems, readAcceptedMisses, readDepartures, usableAcceptedMisses, usableDepartures, vendorAnsweredOk} from './departures.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
@@ -843,7 +844,8 @@ function renderRemeasurement(j) {
   return [`Only the ${re.length} op${re.length === 1 ? '' : 's'} that missed in the base ${re.length === 1 ? 'was' : 'were'} re-measured, at n = ${counts.join(' or ')} (the speed-extra cell, ${perLane.join(' or ')} samples a lane in each of run${runs.length === 1 ? '' : 's'} ${runs.join(', ')}), and ${re.length === 1 ? 'is' : 'are'} judged on the re-measurement alone; the other ${others.length} ops (${others.filter(s => s.beat === true).length} of them beating the vendor) rest on the full runs' samples, n = ${ns.join(' or ')} a side. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss (rulings 1232, 1240).`, ''];
 }
 
-export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
+// `notes`: the known capability differences no cell exercises (./capability-notes.mjs), printed, never judged.
+export function renderSummary(j, {title = 'Native matrix summary', notes = readCapabilityNotes()} = {}) {
   const apart = [j.departures.length && `${j.departures.length} declared departure${j.departures.length === 1 ? '' : 's'}: What changes for a user`,
     j.shared.length && `${j.shared.length} shared limit${j.shared.length === 1 ? '' : 's'}: Shared limits (vendor has them too)`].filter(Boolean);
   const departures = apart.length ? ` (${apart.join('; ')})` : '';
@@ -971,6 +973,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   for (const o of j.oracleDepartures ?? []) out.push(`- ${o.section} ${o.id}: judged against ruling 1119's oracle ${o.expected} on each engine (ruling 1219): cua read it in ${o.cuaRight} sample(s), the vendor composed otherwise in ${o.vendorWrong}; a declared departure where cua is right, the vendor's own failure and no cua block`);
   if (!j.departures.length && !j.honest.length && !j.oracleDepartures?.length) out.push('No declared departure was observed in these runs.');
   out.push('');
+  if (notes.length) out.push('Known capability differences no matrix cell exercises (report text, never judged):', '', ...notes.map(noteLine), '');
 
   if (j.shared.length) {
     out.push('## Shared limits (vendor has them too)', '', 'Fixed-string rows where cua failed the same way as its own paired vendor sample, the same answer and the same read-back with the user\'s value kept (ruling 1144): equal, never a pass of the row\'s own check. Each observation grouped by its own cause; each cause needs a ticket, which the design session registers: P2 or higher for a shared false ok, P3 for an honest shared failure.', '');

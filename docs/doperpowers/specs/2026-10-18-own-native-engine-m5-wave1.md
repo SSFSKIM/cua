@@ -311,6 +311,22 @@ session's to add on `docs/117-progress`).
   refuses contradictory rows. `finder/frontmost/typeText.typeSelect` now records cua's `typeUnconfirmed` and fails
   until a departure is declared for it (T13's disposition). `meta.desktopMode` is the constant `shared`;
   `meta.hosted` comes from the runner's environment.
+- 2026-11-28, ruling 1259 (#212, under 1247(d)): what a secret's interrupted entry tells the person, as resolved when
+  #601 (origin/fix/587-590-typereadback 0c390389a) merged into feat (3f3792de4).
+  - Where #212's interruption account says the secret may have gone in, the guidance is to ask the person, never to
+    look. This covers a stop after the value write, and a stop part-way with no step named. `userChanged` gives
+    userChangedEntered, or userChangedMayShow for a password field. It never gives getAXState, a screenshot or a
+    re-query.
+  - Where nothing was entered (a refusal before the first step), getAXState stays.
+  - MAY_SHOW is shown only when the secret was entered into a password field.
+  - feat's #212 test in test/services-sky.test.mjs had expected the getAXState instruction in every case. It was
+    changed to this rule. #601's tests were not edited. The 1247(d) sweep gained two branches that carry an account.
+  - No matrix cell, judge or acceptance item reads #212's secret-input wording, so sitting D's judge needs no change.
+    The intervention and concurrent cells, and the cursor-sitting probes, match the engine's own userIntervened
+    sentence ("The user is still interacting with" / "The user changed"), which this does not change. The acceptance
+    scripts check only the error code `secret_input_failed` and that the message leaks nothing.
+  - The merged engine is 0.3.1: #601's fix plus feat's M5 engine changes. The proof run 46095539139 tests that combined
+    engine, not #601's main tree alone.
 - 2026-11-27, ruling 1248: how sitting C proves #587's engine fix and then the flip.
   - **The problem.** The #587/#590 fix changes cua's engine build. jobs-check (1230) holds a filtered rerun to the base's
     build (0.3.0, 2de28fcc909d7577). That rule matters, because the fix could move any of the base's other ~410 cells,

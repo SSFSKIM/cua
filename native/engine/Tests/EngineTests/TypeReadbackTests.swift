@@ -191,7 +191,12 @@ final class FakeApp {
                   range: { $0.readRange() },
                   batch: { field, _ in field.readLength() },
                   lastError: { self.focused?.lastError },
-                  effect: effect.map { effect in { budget in self.record("effect"); return effect(budget) } },
+                  effect: effect.map { effect in { _, budget in self.record("effect"); return effect(budget) } },
+                  applicationFocus: { _ in
+                    self.record("focus")
+                    if let applicationFocus = self.applicationFocus { return applicationFocus() }
+                    return self.focused.map { .value($0) } ?? .absent
+                  },
                   same: { $0 === $1 }, trace: trace,
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
@@ -200,6 +205,8 @@ final class FakeApp {
   /// #600: the paste transport's effect reading of this app (nil: none, the plain reading stands), and the recorder of
   /// every classifying read: its name, and whether it ran inside the transport's hold or the read-back's own points.
   var effect: ((Double) -> EffectSample<FakeField>?)?
+  /// #600 (R3): what the application's focus answers to the post gate, when not `focused` (another element, none).
+  var applicationFocus: (() -> ReadbackWalkRead<FakeField>)?
   var trace: ReadbackTrace?
   private(set) var classifying: [(read: String, inHold: Bool, inReadback: Bool)] = []
   private func record(_ read: String) {

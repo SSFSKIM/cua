@@ -523,11 +523,11 @@ private final class MainLag: @unchecked Sendable {
 /// after a restore that did not wait). With `beforePart`, past the request's deadline no further part is sent
 /// (`pasteDeadlineReached`).
 ///
-/// `transport`, type_text's (#600, ruling 1272), is the read-back's hold of the effect watch: every reading the watch
-/// takes is classified at the reading (`PasteTransport.sample`), and after each one (a line's baseline, its wait, a
-/// Return's baseline, its settle) `stop` raises a change it saw, before the next ⌘V or Return, before the line or the
-/// Return counts, and before a timeout's generic error; a notification, which reads nothing, has the field itself
-/// classified first (`classifyField`).
+/// `transport`, type_text's (#600, rulings 1272 and 1273): R3's post gate (`PasteTransport.gate`) runs in the one
+/// posting function immediately before every ⌘V and Return, and safety rests on it alone. For the answer, every reading
+/// the effect watch takes is classified at the reading (`sample`); after a line's wait and a Return's settle, `stop`
+/// raises a change they saw before the line or the Return counts and before a timeout's generic error; a notification,
+/// which reads nothing, has the field itself classified first (`classifyField`).
 @discardableResult
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
               remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
@@ -580,19 +580,28 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
   /// the write and the key-focus read), inside the restore's reach.
   /// `anyPosted`: whether any of them went (#602), noted as it goes, so a delivery guard that throws after the events
   /// still counts them.
+  ///
+  /// #600 (ruling 1273), R3: this is type_text's one posting function for every ⌘V and Return, and `transport.gate`
+  /// runs inside the delivery, immediately before the events, with nothing posted in between; a gate that stops
+  /// posts nothing and its error is raised once the delivery returns. `isReturn`: the event withheld is a Return.
   var keyed = false
   var anyPosted = false
-  func posting(_ events: () -> Bool) throws -> Bool {
+  func posting(_ events: () -> Bool, isReturn: Bool) throws -> Bool {
     if !keyed {
       try beforeFirstKey()
       keyed = true
     }
     return try withoutActuallyEscaping(events) { events in
       var posted = false
+      var gated: Error?
       if let outcome = try deliver({
+        if let transport {
+          do { try transport.gate(isReturn) } catch { gated = error; return }
+        }
         posted = meta.posting(events)
         if posted { anyPosted = true }
       }) { meta.delivery = outcome }
+      if let gated { throw gated }
       return posted
     }
   }
@@ -612,7 +621,6 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
       case .content(let representations, let units):
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
-        try transport?.stop(false)  // #600: the line's baseline, held at its reading, before its ⌘V
         beginLine(line)
         probe = nil
         guard let item = provider.item() else { throw clipboardWriteFailed }
@@ -634,7 +642,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
         probe = (postAt, lag)
-        guard try posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
+        guard try posting(postPaste, isReturn: false) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
         meta.paste?.stage = "read"
 
         // The read wait: its 2 s, or the request's deadline when that comes first.
@@ -681,14 +689,13 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         if settles {
           effect.begin()
           beginLine(line + 1)
-          try transport?.stop(true)  // #600: the Return's baseline, held at its reading, before the Return is posted
         }
         try checkInFlight()
         let returnAt = effect.now()
         // The notification gate is armed before the post, as for a ⌘V: a field's only report of the Return may come while
         // its delivery guard still samples.
         if settles { effect.keyPosted(at: returnAt) }
-        guard try posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+        guard try posting(postReturn, isReturn: true) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
         line += 1
         lastSeen = false
         if settles {
@@ -697,9 +704,9 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
           let budget = min(pasteEffectTimeoutMs, max(0, remainingMs()))
           let settled = effect.settle(timeoutMs: budget)
           // #600: as after a line's wait: a notification classifies the field itself; a change stops before the settle
-          // counts, and before its timeout (the Return is posted; the next part is a line).
+          // counts, and before its timeout, the next Return withheld when one follows ("a\n\nb").
           if settled == .notification { transport?.classifyField() }
-          try transport?.stop(false)
+          try transport?.stop(returnNext)
           meta.paste?.openingReturn?.settleMs = effect.now() - returnAt
           meta.paste?.openingReturn?.settle = settled == .timeout && budget < pasteEffectTimeoutMs ? "deadline" : settled.rawValue
           if settled == .timeout {
@@ -869,9 +876,10 @@ extension Engine {
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
     }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() },
        posted: { readback?.keyPosted(at: reads.now()) },
-       transport: reads.effect == nil ? nil : PasteTransport(sample: { readback?.transportHold(.effect($0)) },
-                                                           classifyField: { _ = readback?.transportHold(.field) },
-                                                           stop: { try readback?.transportStop(beforeKey: $0) }))
+       transport: reads.effect == nil ? nil : PasteTransport(sample: { readback?.transportHold(.effect($0), application: target.application) },
+                                                           classifyField: { _ = readback?.transportHold(.field, application: target.application) },
+                                                           stop: { try readback?.transportStop(beforeKey: $0) },
+                                                           gate: { try readback?.transportGate(beforeKey: $0, application: target.application) }))
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
@@ -1041,8 +1049,11 @@ func effectReading(of application: AXUIElement, withinMs budget: Double = .infin
 }
 
 /// `effectReading` with what its batch classified (#600): the role and subrole it read and the element it read them of,
-/// which type_text's paste route hands to the read-back's hold (`ReadbackReads.effect`). The same reads, nothing more.
-func effectSample(of application: AXUIElement, withinMs budget: Double = .infinity) -> EffectSample<AXUIElement>? {
+/// which type_text's paste route hands to the read-back's hold (`ReadbackReads.effect`). The same reads, nothing more;
+/// `focused` and `batch` are the read-back's own AX layer there (`ReadbackAX`), the live calls by default.
+func effectSample(of application: AXUIElement, withinMs budget: Double = .infinity,
+                  focused focusedOf: (AXUIElement) -> AXUIElement? = { elementAttribute($0, kAXFocusedUIElementAttribute) },
+                  batch: @escaping (AXUIElement, [String]) -> AttributeRead? = { fetchAttributesAsTimed($0, $1) }) -> EffectSample<AXUIElement>? {
   let end = monotonicMilliseconds() + budget
   func bound(_ element: AXUIElement) -> Bool {
     guard budget.isFinite else { return true }
@@ -1052,10 +1063,10 @@ func effectSample(of application: AXUIElement, withinMs budget: Double = .infini
   }
   defer { if budget.isFinite { AXUIElementSetMessagingTimeout(application, elementMessagingTimeout) } }
   guard bound(application) else { return nil }
-  guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return EffectSample(reading: EffectReading()) }
+  guard let focused = focusedOf(application) else { return EffectSample(reading: EffectReading()) }
   // The batch keeps the timeout `bound` set: `fetchAttributes` would put back the usual one.
   var role: String?, subrole = ReadbackSubrole.absent
-  guard let reading = focusedEffectReading(focused, bound: bound, batch: { fetchAttributesAsTimed($0, $1) },
+  guard let reading = focusedEffectReading(focused, bound: bound, batch: batch,
                                            classified: { role = $0; subrole = $1 }) else { return nil }
   return EffectSample(reading: reading, role: role, subrole: subrole, element: focused)
 }
@@ -1104,15 +1115,17 @@ struct PasteTyping {
   var transport: PasteTransport? = nil
 }
 
-/// #600 (ruling 1272): type_text's paste transport as the read-back holds it. `sample` is the effect watch's only reading
-/// (each one classified at the reading, `TypeReadback.transportHold`), `classifyField` the hold's classification of the
-/// field itself where no reading came (a notification), and `stop` raises the change a hold saw, `beforeKey` when the
-/// next Return is withheld. `runPaste` stops after every reading of the effect watch: a line's baseline, its wait, a
-/// Return's baseline and its settle.
+/// #600 (rulings 1272, 1273): type_text's paste transport as the read-back holds it, over the paste's prepared
+/// application element. `gate` is R3's post gate, which `runPaste`'s one posting function runs immediately before every
+/// ⌘V and Return (`TypeReadback.transportGate`): safety rests on it alone. For the answer, `sample` is the effect watch's
+/// only reading, classified at the reading (`transportHold`), `classifyField` the field's classification where a
+/// notification read nothing, and `stop`, after a line's wait and a Return's settle, raises a change they saw before
+/// the line or Return counts, `beforeKey` when the next Return is withheld.
 struct PasteTransport {
   let sample: (Double) -> EffectReading?
   let classifyField: () -> Void
   let stop: (_ beforeKey: Bool) throws -> Void
+  let gate: (_ beforeKey: Bool) throws -> Void
 }
 
 /// type_text's text as the read-back's units, one for one with `pasteParts(typing:)`'s parts, split the same way, so a

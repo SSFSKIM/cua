@@ -23,8 +23,7 @@
 // writable, by real path): nothing a cell or the worker can write is ever launched outside the sandbox. The scoped
 // preflight refuses a layout whose applications directories overlap a write root (src/runtime/sandbox.mjs).
 import {execFile, spawn} from 'node:child_process';
-import {closeSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {accessSync, constants, realpathSync, statSync} from 'node:fs';
 import {isAbsolute, join, relative} from 'node:path';
 
 export const PATH_NOT_ABSOLUTE_SENTENCE = 'LaunchServices application path must be absolute';
@@ -50,57 +49,26 @@ export function runOpen(args) {
   });
 }
 
-// gio's stderr: a private file, unlinked before gio starts, opened once to write (gio's) and once to read (cua's).
-function unlinkedFile() {
-  const dir = mkdtempSync(join(tmpdir(), 'cua-gio-'));
-  try {
-    const path = join(dir, 'stderr');
-    const write = openSync(path, 'wx', 0o600);
-    try {
-      return {write, read: openSync(path, 'r')};
-    } catch (error) {
-      closeSync(write);
-      throw error;
-    }
-  } finally {
-    rmSync(dir, {recursive: true, force: true});
-  }
-}
-
 // The Linux boundary: `gio launch <entry>` in a new session (`detached`), with `env`; resolves when gio exits having
-// asked for the launch (the application lives on outside cua's process tree), rejects with gio's last line.
-// The application inherits gio's stdin, stdout and stderr and most keep them open, so none is a pipe to cua (#598): one
-// would hold the answer until the timeout, and closing it would break the application's next write. Stdin and stdout
-// are /dev/null; stderr is the unlinked file, which gio's diagnostics are read back from once it has exited, and which
-// the application writes on into, unread, until it exits.
+// asked for the launch (the application lives on outside cua's process tree), rejects with how gio ended.
+// The application inherits gio's stdin, stdout and stderr and most keep them open, so all three are /dev/null, as the
+// engine's own launch_app gives them (#598): a pipe to cua held the answer until the timeout and, closed, broke the
+// application's next write; a file would take its output for its whole life. gio's own words go with them: it ends 1
+// on every failure, and launchLinux names the usual ones (the entry missing or unreadable) before gio runs.
 export function runGioLaunch(path, env, {gio = GIO, timeoutMs = OPEN_TIMEOUT_MS} = {}) {
   return new Promise((resolve, reject) => {
-    const stderr = unlinkedFile();
-    let child;
-    try {
-      child = spawn(gio, ['launch', path], {env, detached: true, stdio: ['ignore', 'ignore', stderr.write]});
-    } catch (error) {
-      closeSync(stderr.read);
-      throw error;
-    } finally {
-      closeSync(stderr.write);
-    }
-    let settled = false;
-    const timer = setTimeout(() => child.kill(), timeoutMs);
-    // On gio's exit, not on its streams' close: the application holds those.
-    const settle = (error, code) => {
-      if (settled) return;
-      settled = true;
+    const child = spawn(gio, ['launch', path], {env, detached: true, stdio: 'ignore'});
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const settle = (error, code, signal) => {
       clearTimeout(timer);
-      const failed = !error && code !== 0;
-      const said = failed ? readFileSync(stderr.read, 'utf8').trim().split('\n').at(-1) : '';
-      closeSync(stderr.read);
       if (error) reject(error);
-      else if (failed) reject(new Error(said || `Command failed: ${gio} launch ${path}`));
+      else if (timedOut) reject(new Error(`gio launch ${path} did not finish within ${timeoutMs} ms`));
+      else if (code !== 0) reject(new Error(`gio launch ${path} ${signal ? `was ended by ${signal}` : `exited with status ${code}`}`));
       else resolve();
     };
     child.once('error', error => settle(error));
-    child.once('exit', code => settle(null, code));
+    child.once('exit', (code, signal) => settle(null, code, signal));
   });
 }
 
@@ -126,10 +94,18 @@ async function launchLinux(message, {launch, env, writeRoots}) {
   if (path === null || message.bundle_identifier != null) throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}anything but a desktop entry's path on Linux`);
   if (typeof path !== 'string' || !isAbsolute(path)) throw new Error(PATH_NOT_ABSOLUTE_SENTENCE);
   const real = realOrNull(path);
+  // An entry where launch_app looks says why it is not launched; one elsewhere is refused without saying whether it exists.
+  if (real === null && [...xdgApplicationRoots(env), ...xdgApplicationDirs(env)].some(dir => within(path, dir)))
+    throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it does not exist`);
   if (real === null || !isFile(real) || !real.endsWith('.desktop') || !xdgApplicationDirs(env).some(dir => within(real, dir)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: only a desktop entry in an XDG applications directory is launched`);
   if (writeRoots.map(root => realOrNull(root) ?? root).some(root => within(real, root)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it lies where the sandbox lets JavaScript write, so it is not launched outside it`);
+  try {
+    accessSync(real, constants.R_OK);
+  } catch (error) {
+    throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it cannot be read (${error.code})`);
+  }
   const desktopEnv = Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === 'string').map(name => [name, env[name]]));
   try {
     await launch(real, desktopEnv);

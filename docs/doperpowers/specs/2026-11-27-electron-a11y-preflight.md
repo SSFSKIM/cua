@@ -537,3 +537,23 @@ its own.
    row through cua's own `runGioLaunch`; an earlier run gave 30,057 ms). An application the session bus starts itself
    (gedit) does not inherit them, which is how this went unseen (U: not probed). The fix is to settle on gio's exit.
    E2 edits the same file, but this deserves its own ticket.
+
+## K. Decision Log
+
+- **2026-11-28, taste call 1 (the owner's; ruling 1261): yes, for Electron only, with no setting.** The engine sends
+  `GetAttributes` only when a tree was asked for and the frame's read came back bare, and only to a window whose
+  `WM_WINDOW_ROLE` is `browser-window`. The owner accepted the three costs §F names, and the pull request states them:
+  - the app does more work on page changes, for as long as it runs;
+  - the change is visible to an app that asks for its accessibility features;
+  - a screen reader started after cua's request gets the lesser mode in that app until it restarts.
+- **2026-11-28, taste call 2 (the owner's; ruling 1261): yes, always.** `launch_app` sets `ACCESSIBILITY_ENABLED=1`
+  for every application it starts (§E2).
+- **2026-11-28, taste call 3 (the coordinator's; ruling 1251): only `browser-window` windows**, Electron's own role.
+  CEF and other embedders stay as they are. If a matrix cell or a user shows a need, it gets its own ticket.
+- **2026-11-28, taste call 4 (the coordinator's; ruling 1251): the "not on the bus" sentence is for Electron windows
+  only** (§E3). The plain line for every window stays out of scope, and gets its own ticket if a need shows.
+- **2026-11-28, delivery (ruling 1261).** §H's six tasks run after #598, or beside it where they share no file. Task 4
+  edits `src/repl-host/launch-services.mjs`, which #598 changes, so it waits for #598. The engine change ships as
+  linux-engine 0.4.7, with reviewer-high on it, and the release, the pin and the gates as for 0.4.6. The pull request
+  corrects §J's texts. The release notes name what a person may notice: cua turns on accessibility in the Electron
+  apps it reads, until they exit.

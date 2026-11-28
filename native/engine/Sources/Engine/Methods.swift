@@ -61,6 +61,9 @@ final class Engine: @unchecked Sendable {
   /// The paste's effect reading of the application's focused element within a budget (Paste.swift `effectReading`): the
   /// live one when nil, replaced in the unit tests (#361's, whose fake fields have no process to read).
   let pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)?
+  /// The paste's notification source (`pasteNotificationSource`), given the effect watch it reports to: the live rule
+  /// when nil, replaced in the unit tests (#600), which post the field's notifications to the watch themselves.
+  let pasteNotifications: ((PasteEffect) -> NotificationSource)?
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
   /// The after-action watches of closed connections, still running (#237, Activation.swift).
@@ -80,6 +83,7 @@ final class Engine: @unchecked Sendable {
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), pasteEffectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
+       pasteNotifications: ((PasteEffect) -> NotificationSource)? = nil,
        cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
        cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil,
        clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) },
@@ -98,6 +102,7 @@ final class Engine: @unchecked Sendable {
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
     self.pasteEffectReading = pasteEffectReading
+    self.pasteNotifications = pasteNotifications
     self.cursor = cursor
     // The person acting in an app a cursor acts in turns that cursor half-transparent: from the detector's own ledger.
     intervention.ledger.onRecord = { [cursor] pid in cursor.userActed(pid: pid) }
@@ -219,7 +224,14 @@ final class Engine: @unchecked Sendable {
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
-    guard deadline > receivedAt else { throw EngineError(rpc: .deadlineExceeded, "Request deadline exceeded") }
+    guard deadline > receivedAt else {
+      let expired = EngineError(rpc: .deadlineExceeded, "Request deadline exceeded")
+      // #602: an input method's request refused here dispatched nothing, and its input meta records that, as the
+      // prologue's refusals' do.
+      guard let method = params["method"] as? String, inputMethods.contains(method) else { throw expired }
+      throw withMeta(expired, .beforeInput(ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
+                                                            deadline: deadline, lineage: params["lineage"] as? String)))
+    }
     guard let method = params["method"] as? String else { throw EngineError(rpc: .invalidParams, "Invalid params: method is required") }
     let interval = timingSignposts.isEnabled ? timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)") : nil
     defer { if let interval { timingSignposts.endInterval("request", interval) } }
@@ -249,7 +261,7 @@ final class Engine: @unchecked Sendable {
       try signposted("prologue.lockCheck") { try refuseWhenLocked(isLocked: screenLocked) }
       if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try signposted("prologue.resolveApp") { try resolveApp(args) } }
     } catch let error as EngineError where inputMethods.contains(method) {
-      throw withMeta(error, InputMeta(context))
+      throw withMeta(error, .beforeInput(context))
     }
     // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
     // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
@@ -279,7 +291,7 @@ final class Engine: @unchecked Sendable {
     do {
       try connection.enterMenuSpan(step)
     } catch let error as EngineError where inputMethods.contains(method) {
-      throw withMeta(error, InputMeta(context))
+      throw withMeta(error, .beforeInput(context))
     }
     // The focus hold ends before anything aimed at another app.
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
@@ -293,7 +305,7 @@ final class Engine: @unchecked Sendable {
                                      connection: connection, budgetMs: Double(deadline - unixMilliseconds()))
         }
       } catch let error as EngineError {
-        throw withMeta(error, InputMeta(context))
+        throw withMeta(error, .beforeInput(context))
       }
     }
     let spanBefore = connection.menuSpan.serial

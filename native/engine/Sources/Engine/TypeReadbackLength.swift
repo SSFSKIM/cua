@@ -28,6 +28,13 @@ func readbackPasswordField(role: String, subrole: ReadbackSubrole) -> Bool {
 /// rule), its selected range and its character count: the attributes paste's effect reading takes (#405, ruling 808).
 let readbackLengthAttributes = classifyingAttributes + [kAXSelectedTextRangeAttribute, kAXNumberOfCharactersAttribute]
 
+/// A batch reply's subrole as `valueClassification` reads it: failed when its slot failed, is null or is not a string.
+func readbackBatchSubrole(_ read: AttributeRead) -> ReadbackSubrole {
+  if read.unreadable.contains(kAXSubroleAttribute) || read.null.contains(kAXSubroleAttribute) { return .failed }
+  guard let raw = read.values[kAXSubroleAttribute] else { return .absent }
+  return CFGetTypeID(raw) == CFStringGetTypeID() ? .value(raw as! String) : .failed
+}
+
 /// A batch reply's role: nil when its slot failed, is absent or is not a string.
 func readbackBatchRole(_ read: AttributeRead) -> String? {
   guard !read.unreadable.contains(kAXRoleAttribute), let raw = read.values[kAXRoleAttribute], CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
@@ -45,20 +52,20 @@ enum ReadbackLength {
   case read(count: ReadbackWalkRead<Int>, range: NSRange?)
 }
 
-/// One length read of a password field: the batch, classified from its own reply. A failed request or an unreadable
-/// role is `fieldUnreadable`; a reply that is no longer a password field (`readbackPasswordField`'s rule) is
-/// `noLongerSecure`; one with another role is `fieldChanged`. The count's slot keeps its error as the batch reported it
-/// (`fetchAttributes`: a slot whose error is not the attribute's absence is unreadable). A reply secure only because
-/// its subrole could not be read (`valueClassification` presumes a text-entry role secure then; AXSecureTextField is
-/// secure whatever its subrole did) is a password field to the poll's own batches, which go on, but not to a concealed
-/// request's final batch (`presumeSecure` false), which decides the reason: there it is `fieldUnreadable`, so a
-/// password field's may-show remedy applies (the review of e8e2702e..3b67bf4d, 1).
-func readbackLength<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, presumeSecure: Bool = true) -> ReadbackLength {
-  guard let read = reads.batch(field, readbackLengthAttributes), let seenRole = readbackBatchRole(read) else { return .closed(.fieldUnreadable) }
-  let classified = valueClassification(read)
-  guard typeReadbackFocusWalkRoles.contains(seenRole), classified.secure else { return .closed(.noLongerSecure) }
-  if !presumeSecure, classified.failed { return .closed(.fieldUnreadable) }
-  guard seenRole == role else { return .closed(.fieldChanged) }
+/// One length read of a password field: the batch, its role and subrole classified from its own reply against the
+/// baseline by R1's one comparison (`readbackClassify`; ruling 1250). A failed request, or a role or subrole that
+/// cannot be read where that is a failed read, is `fieldUnreadable`; any transition is its reason. The count's slot
+/// keeps its error as the batch reported it (`fetchAttributes`: a slot whose error is not the attribute's absence is
+/// unreadable). A subrole that cannot be read leaves a password field one to the poll's own batches, which go on, but
+/// not to a concealed request's final batch (`presumeSecure` false), which decides the reason: there it is
+/// `fieldUnreadable`, so a password field's may-show remedy applies (the review of e8e2702e..3b67bf4d, 1).
+func readbackLength<Element>(_ field: Element, identity: ReadbackIdentity, reads: ReadbackReads<Element>, presumeSecure: Bool = true) -> ReadbackLength {
+  guard let read = reads.batch(field, readbackLengthAttributes) else { return .closed(.fieldUnreadable) }
+  switch readbackClassify(identity, role: readbackBatchRole(read), subrole: readbackBatchSubrole(read), presumeSecure: presumeSecure) {
+  case .same: break
+  case .changed(let why): return .closed(why)
+  case .unreadable: return .closed(.fieldUnreadable)
+  }
   let count: ReadbackWalkRead<Int>
   if read.unreadable.contains(kAXNumberOfCharactersAttribute) {
     count = .failed
@@ -220,13 +227,13 @@ func readbackConcealedReason(finalBatch: ReadbackFinalBatch?, focus: ReadbackFoc
 /// field's. A count read that fails at the snapshot is refused `lengthUnreadable` before the settle, whose next read
 /// could otherwise agree with it as no count at all and leave the caret alone to confirm (ruling 839 takes only an
 /// absent count for that).
-func readbackLengthSnapshot<Element>(field: Element, role: String, returnIsText: Bool, found: ReadbackLookup, reads: ReadbackReads<Element>,
+func readbackLengthSnapshot<Element>(field: Element, identity: ReadbackIdentity, returnIsText: Bool, found: ReadbackLookup, reads: ReadbackReads<Element>,
                                      settle: inout ReadbackSettle?, baseline: BaselineWait?, waited: inout RangeWait?) -> ReadbackPlan<Element> {
   if case .selection? = baseline { return .refused(.selectionChanged) }
   if baseline == .stable {
     var closed: TypeReadbackReason?
     waited = awaitRange(RangeGoal<NSRange>.stable, read: {
-      switch readbackLength(field, role: role, reads: reads) {
+      switch readbackLength(field, identity: identity, reads: reads) {
       case .closed(let why): closed = why; return .closed
       case .read(_, let range): return range.map { .sample($0) } ?? .unread
       }
@@ -234,18 +241,18 @@ func readbackLengthSnapshot<Element>(field: Element, role: String, returnIsText:
     if let closed { return .refused(closed) }
   }
   var count: ReadbackWalkRead<Int>, range: NSRange?
-  switch readbackLength(field, role: role, reads: reads) {
+  switch readbackLength(field, identity: identity, reads: reads) {
   case .closed(let why): return .refused(why)
   case .read(let read, let selection): (count, range) = (read, selection)
   }
   if case .failed = count { return .refused(.lengthUnreadable) }
   if var settled = settle {
     defer { settle = settled }
-    if let closed = readbackLengthSettle(field, role: role, reads: reads, count: &count, range: &range, record: &settled) { return .refused(closed) }
+    if let closed = readbackLengthSettle(field, identity: identity, reads: reads, count: &count, range: &range, record: &settled) { return .refused(closed) }
   }
   switch readbackLengthBasis(count: count, range: range) {
   case .refused(let why): return .refused(why)
-  case .basis(let basis): return .expectLength(field: field, role: role, basis: basis, returnIsText: returnIsText, found: found)
+  case .basis(let basis): return .expectLength(field: field, identity: identity, basis: basis, returnIsText: returnIsText, found: found)
   }
 }
 
@@ -253,7 +260,7 @@ func readbackLengthSnapshot<Element>(field: Element, role: String, returnIsText:
 /// read agrees with the one before it, or the cap allows no further interval; `count` and `range` end as the last read.
 /// A count read that fails is `lengthUnreadable` at that read, as at the snapshot, so no read agrees with a failure:
 /// `number` compares a count or no count, never a failed read.
-func readbackLengthSettle<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, count: inout ReadbackWalkRead<Int>,
+func readbackLengthSettle<Element>(_ field: Element, identity: ReadbackIdentity, reads: ReadbackReads<Element>, count: inout ReadbackWalkRead<Int>,
                                    range: inout NSRange?, record: inout ReadbackSettle) -> TypeReadbackReason? {
   func number(_ read: ReadbackWalkRead<Int>) -> Int? {
     if case .value(let value) = read { return value }
@@ -262,7 +269,7 @@ func readbackLengthSettle<Element>(_ field: Element, role: String, reads: Readba
   let started = reads.now()
   while reads.now() - started + typeReadbackSettleIntervalMs <= typeReadbackSettleCapMs {
     reads.sleep(typeReadbackSettleIntervalMs)
-    switch readbackLength(field, role: role, reads: reads) {
+    switch readbackLength(field, identity: identity, reads: reads) {
     case .closed(let why): return why
     case .read(.failed, _): return .lengthUnreadable
     case .read(let next, let nextRange):

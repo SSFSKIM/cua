@@ -17,8 +17,8 @@ const client = (t, engine, options = {}) => {
   return made;
 };
 
-test('MIN_ENGINE_VERSION is 0.4.5 (#512); versions read from the --version line and compare numerically', () => {
-  assert.equal(MIN_ENGINE_VERSION, '0.4.5');
+test('MIN_ENGINE_VERSION is 0.4.7 (#228); versions read from the --version line and compare numerically', () => {
+  assert.equal(MIN_ENGINE_VERSION, '0.4.7');
   assert.equal(engineVersionOf('cua-engine 0.3.0 (9381f166e106)'), '0.3.0');
   assert.equal(engineVersionOf('cua-engine 1.12.4 (local)\n'), '1.12.4');
   for (const line of ['', 'sky_linux 0.3.0', 'cua-engine 0.3 (x)', 'cua-engine v0.3.0 (x)']) assert.equal(engineVersionOf(line), null, line);
@@ -29,10 +29,10 @@ test('MIN_ENGINE_VERSION is 0.4.5 (#512); versions read from the --version line 
 });
 
 test('an engine older than MIN_ENGINE_VERSION is refused before it is started, with the sentence naming the remedy', async t => {
-  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.4.4 (23f342178d94)'});
+  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.4.6 (61c97dda619f)'});
   const made = client(t, engine);
-  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.4 is older than 0.4.5, which this cua needs; ${REMEDY}`});
-  await assert.rejects(made.capabilities(), {message: /^cua-engine 0\.4\.4 is older than 0\.4\.5/});
+  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.6 is older than 0.4.7, which this cua needs; ${REMEDY}`});
+  await assert.rejects(made.capabilities(), {message: /^cua-engine 0\.4\.6 is older than 0\.4\.7/});
   assert.deepEqual(engine.spawns(), [], 'no server was started');
 });
 
@@ -110,7 +110,7 @@ test('an engine replaced at its path between starts: the next start runs the fil
   assert.equal(newer.spawns().length, 1, 'the next start ran the file now at the path');
   renameSync(older.path, first.path);
   await assert.rejects(made.request('move', {}), {message: 'the X connection broke'});
-  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.2 is older than 0.4.5, which this cua needs; ${REMEDY}`});
+  await assert.rejects(made.request('list_windows', {}), {message: `cua-engine 0.4.2 is older than 0.4.7, which this cua needs; ${REMEDY}`});
   assert.deepEqual([older.spawns().length, older.requests().length], [0, 0], 'the older one is never started, and nothing is sent to it');
   assert.equal(newer.spawns().length, 1);
 });

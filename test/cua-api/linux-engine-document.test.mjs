@@ -61,7 +61,7 @@ const QUOTED = [
   ['No accessibility tree yet: <app> was asked to turn its accessibility on and has not shown its elements; observe again.', [README], 'src/cua-api/bind-linux-app.mjs',
     'No accessibility tree yet: ${app} was asked to turn its accessibility on and has not shown its elements; observe again.'],
   ['clipboard update timed out', [README], 'native/linux-engine/src/copy.rs', 'CopyRoute::Text => "clipboard update timed out",'],
-  ['cua-engine <found> is older than 0.4.5, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine`', [README], 'src/services/engine/linux/client.mjs',
+  ['cua-engine <found> is older than 0.4.7, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine`', [README], 'src/services/engine/linux/client.mjs',
     'cua-engine ${found} is older than ${MIN_ENGINE_VERSION}, which this cua needs; ${REMEDY}'],
 ];
 
@@ -71,7 +71,7 @@ test('every answer the Linux documents quote is the text that answers it', () =>
     for (const document of documents) assert.ok(flat(file(document)).includes(flat(quoted)), `${document} does not quote: ${quoted}`);
   }
   // The version the README names is the one the service requires.
-  assert.match(file('src/services/engine/linux/client.mjs'), /export const MIN_ENGINE_VERSION = '0\.4\.5'/);
+  assert.match(file('src/services/engine/linux/client.mjs'), /export const MIN_ENGINE_VERSION = '0\.4\.7'/);
 });
 
 // The behaviour the documents narrow their promises to, where the engine decides it (the T8 review's fix wave 1):

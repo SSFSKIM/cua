@@ -41,7 +41,7 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
                                   activationPoint: CGPoint? = nil, onActivation: @escaping () -> Void = {},
                                   onDeactivation: @escaping () -> Void = {}, onCommandV: @escaping () -> Void = {}, readsPaste: Bool = true,
                                   selection: NSRange? = nil, deadlineMs: Int64 = 60_000, effectReading: (() -> EffectReading?)? = nil,
-                                  lateTarget: Bool = false, handlesAtFieldRead: Bool = false) -> Pasted {
+                                  lateTarget: Bool = false, handlesAtFieldRead: Bool = false, application: AXUIElement? = nil) -> Pasted {
   let seam = GuardSeam(frontmost: 990_002)
   seam.activationPoint = activationPoint ?? CGPoint(x: -1, y: 1_441)
   let pasteboard = TestPasteboard()
@@ -96,7 +96,8 @@ private func typeByPaste<Element>(_ text: String, reads: ReadbackReads<Element>,
                                  deadline: unixMilliseconds() + deadlineMs, lineage: nil)
   let target: pid_t = 990_001
   let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
-  let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
+  // The paste's prepared application element: the reads' own app when they read one (#600: the post gate reads its focus).
+  let pasteTarget = PasteTarget(app: app, pid: target, application: application ?? AXUIElementCreateApplication(target), keyboard: target,
                                 guarding: .off(app: "TextEdit"))
   var atSnapshot: (posts: [GuardPost.Kind], pasteboard: [String], keys: [String])?
   var watched = reads
@@ -543,8 +544,9 @@ final class PasteReadbackTests: XCTestCase {
 
   /// Literal text pasted into a password field is confirmed by #414's length rule: the count moved by exactly the
   /// paste over the selection, the caret right after it, held for the quiet window; its characters are never read, by
-  /// the read-back or by the paste (no effect reading is taken), and its success carries the length note. A paste the
-  /// field took one character short of answers `lengthMismatch`, with nothing of the field's.
+  /// the read-back or by the paste (whose effect sample, #600, is the length batch's attributes, and whose post gate
+  /// reads the focus, role and subrole), and its success carries the length note. A paste the field took one
+  /// character short of is never seen to land by #405's count rule: `pasteUnconfirmed`, with nothing of the field's.
   func testAPasswordFieldIsConfirmedByItsLengthAndNeverRead() throws {
     for (label, drops) in [("exact", false), ("a character dropped", true)] {
       let app = StubPasswordApp(value: String(repeating: "x", count: 9), selection: NSRange(location: 9, length: 0))
@@ -555,13 +557,15 @@ final class PasteReadbackTests: XCTestCase {
       let pasted = typeByPaste("hunter2", reads: reads, deliver: { units in
         app.deliver(units)
         app.posted()
-      })
+      }, application: app.el(StubPasswordApp.app))
       XCTAssertEqual(app.forbiddenReads, [], "\(label): only the length batch reads the field")
       XCTAssertEqual(pasted.keys, ["⌘V hunter2"], label)
       XCTAssertEqual(pasted.pasteboard, [owner], "\(label): restored")
       if drops {
-        XCTAssertEqual(pasted.error?.errorName, "typeUnconfirmed", label)
-        XCTAssertEqual(pasted.record as NSDictionary, ["confirmed": false, "secure": true, "reason": "lengthMismatch", "snapshotMs": 0.0] as NSDictionary, label)
+        // The paste's effect watch reads the field's count (the length batch's attributes, #600), and #405's count rule
+        // never sees the paste land: the paste's own pasteUnconfirmed, before the read-back's poll, as it is live.
+        XCTAssertEqual(pasted.error?.errorName, "pasteUnconfirmed", label)
+        XCTAssertEqual(pasted.record as NSDictionary, ["confirmed": false, "secure": true, "snapshotMs": 0.0] as NSDictionary, label)
       } else {
         XCTAssertNil(pasted.error, label)
         XCTAssertEqual(pasted.record as NSDictionary, ["confirmed": true, "secure": true, "confirmation": "length", "snapshotMs": 0.0] as NSDictionary, label)

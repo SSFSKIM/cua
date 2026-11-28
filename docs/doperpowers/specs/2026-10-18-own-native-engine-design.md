@@ -486,7 +486,11 @@ input errors  → the error below plus the same meta (startedAt/endedAt null whe
                 frontmost or the 1 s poll timed out; the click is refused, nothing posted, never retried with ⌘); every error of an
                 input method carries the meta, startedAt/endedAt
                 null when nothing was posted (an unresolvable or forbidden app, or a forbidden owning process of the target element,
-                refused at dispatch included)
+                refused at dispatch included); beforeInput: true (#602, ruling 1260) only where the engine knows the request
+                stopped before any of its input went out (no key, ⌘V or Return, no value write: refused at dispatch or past its deadline at receipt, a type_text,
+                paste or set_value stopped before its keys, its first ⌘V or Return, or its write), absent otherwise; the secret
+                wrapper says nothing was entered only on it, never on a null startedAt, and only from cua's engine as the selected
+                backend, with an interruption account (feat/117-m5) only of a recognized phase and preparation-only effects (ruling 1268)
 type_text/paste/set_value args may carry concealed: true (set by src/services/sky.mjs on a substituted request);
   a concealed request that would need the paste route fails with errorName "concealedInputUnavailable" before input
 error    {code: number (the vendor's codes where mapped; -10005 otherwise), message: string, errorName: string}
@@ -607,7 +611,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     note when not complete, unless the person acted), polls?, ms? (from the action's return to the open)}; never a
     title
   note: on a paste result that pasted a line with no channel to see it, read after ⌘V (#187; type_text's paste route
-    since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), and on a
+    since #361 never, its read-back answering instead), on a type_text a password field's length confirmed (#414), on a
+    type_text whose focused element is not a text field (#587), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
     result's content
   typeReadback (#354, on a type_text's result and its errors once the field was snapshotted, keyed or, since #361,
@@ -618,9 +623,14 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     confirmed before they were posted), keysUnconfirmed? (those keys, posted, their effect unconfirmed),
     expectedLength?, actualLength? (a plain mismatch's only, never a concealed one's), stoppedBeforeKey?: true,
     placeholderLine?: true, placeholderCaretUnread?: true (an ending Return's placeholder line, item 10.12),
-    settleReads?, settleCapped?: true (the settle before the snapshot after a recent press_key, item 10.15)};
+    settleReads?, settleCapped?: true (the settle before the snapshot after a recent press_key, item 10.15),
+    readFailure? (#590, on a roleUnreadable, fieldUnreadable, valueUnreadable or rangeUnreadable that a read which
+    failed gave: {phase: "snapshot" | "poll", read: "role" | "subrole" | "value" | "range", axError?, retries,
+    msSinceLastKey? (a poll's), role?, subrole? (as last read successfully)}), readsRetried? (#590: reads that failed
+    and then answered)}; on a literal request's success into an element that is no text field (#587, notTextField)
+    confirmed is false and the reason stays;
     value-free. A concealed request's is {confirmed, concealed: true, snapshotMs, reason?, keysUnconfirmed?: true,
-    stoppedBeforeKey?: true}: no count and no poll time, which would tell the secret's control characters and segments
+    stoppedBeforeKey?: true, readFailure? (without retries and msSinceLastKey)}: no count and no poll time, which would tell the secret's control characters and segments
   keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
     once its keys are posted
   scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
@@ -9142,6 +9152,104 @@ to T7. Where M4's code met a later decision on main, the later decision won; eac
     the post carries the notice, a refusal before it does not). The service test carries cua/keyTargetCutOff. 1801
     swift tests (2 skipped), 0 failures.
   Date/Author: 2026-11-24, cursor235's builder for #582.
+- Decision (#587 and #590, rulings 1219, 1225 and 1236, 2026-11-27, `fix/587-590-typereadback` from e54eab41, engine
+  0.2.2): **a type_text with no field to read back answers success with a note, as the vendor does, and a read that
+  fails is read again before it is answered.**
+  - #587: a focused element that is not a text field (Finder's type-select in a list or outline: C-5's
+    `finder/…/typeText.typeSelect`, C-6's background cells) threw `typeUnconfirmed` (`notTextField`) after its keys
+    landed, and the vendor answered ok. Both routes, keyed and pasted, now answer success with the note
+    (`readbackUnreadNote`): "The text was typed, but the focused element is not a text field, so the text could not be
+    read back to confirm it. Observe the app (take a screenshot or call getAXState()) before relying on it or typing it
+    again." Its record keeps `confirmed: false` and the reason. The note follows the cut-off notice in the result's note
+    and reaches the tool result's text (`NOTED_METHODS`).
+  - `noFocusedElement` takes the same contract, with its own note ("…no focused element could be found to read it back,
+    so it is not confirmed…"). The vendor's `targetForKeyboardEvent` (0x1006f645c) answers the app's pid when
+    `focusedUIElement` is nil, with no error, and `performKeyboardAction` posts without reading the target's element
+    (`R/F-helper-logic.md` §5.7, the pinned helper's disassembly at 0x1006f64b4 and 0x1006f65cc); it has no read-back,
+    so it answers ok. cua posts to the same pid, and its own cells show the text landing when it answered
+    `noFocusedElement` (`docs/evidence/2026-11-17-type-readback/`: background Safari, 80 of 80 exact; the marker route's
+    large-page baseline, DOM exact). No matrix cell compares the two engines with no focused element, so the reply is
+    read from the code, not seen. The walk's bounds can also answer it over a real field, which is why the note says the
+    text is not confirmed rather than that it landed.
+  - Unchanged: a text field's read-back and its `typeUnconfirmed`; the password field's reasons (`secure`,
+    `becameSecure`, `noLongerSecure`, and the length reasons); `selectionChanged`, nothing typed.
+  - #590: a read of the field's role, value or range in the snapshot (the settle and #359's wait included), and of its
+    role or subrole in a poll, that answers nothing is read again up to `typeReadbackReadRetries` (2) times,
+    `typeReadbackRetryIntervalMs` (the settle's 15 ms) apart, a retry starting only while its phase has time: the
+    request's time left less one messaging timeout at the snapshot, the poll's budget in a poll. A read that keeps failing
+    answers as before, at most 230 ms later (two retries of 15 ms and a 100 ms timeout each). The poll's value read was
+    already read again at the poll's interval within its budget. Only a failed read is read again: a mismatch,
+    `unchanged`, `fieldChanged`, `becameSecure` are answered as before, and the snapshot's subrole read, which classifies
+    a field whose subrole cannot be read as a password field, is read once. The password field's length batch keeps its
+    schedule.
+  - The record (`typeReadback.readFailure`, on the four unreadable reasons when a read failed): phase, attribute, raw
+    AXError, retries, the time after the request's last key (a poll's: the keyed route's last event, the paste route's
+    last ⌘V or Return) and the role and subrole as last read; never a value or range. A concealed request's and a
+    password field's carry no retries or time. `readsRetried` counts reads that failed and then answered, a plain
+    request's.
+  - Left (`tech-debt-tracker.md`): the focus check after the poll answers an unknown focus as `fieldChanged`, unretried.
+  - The proof: TypeReadbackTests (the note's text; Finder's roles answer success with the note through
+    `keyInputResult`, after the cut-off notice, within 500; no focused element likewise; a mismatch and the password
+    reasons still throw; a read failing once, in each phase and attribute, confirms; one that keeps failing throws with
+    its record; a mismatch beside a transient failure still throws; the snapshot's retries fit the time left),
+    PasteActivationTests (the paste route's note; a failed read timed from the ⌘V), the service test. Live proof: the
+    next sitting's `finder/frontmost/typeText.typeSelect` on cua.
+  Date/Author: 2026-11-27, cursor235's builder for #587 and #590.
+- Decision (#587 and #590, rulings 1242 and 1244, 2026-11-27, the review of e54eab41..106d2018; amends the entry
+  above): **ok-with-note only for a literal request whose search finished and found no field, and a retry never reads
+  more than its first try could.** Two invariants: (1) a retry or fallback reads nothing its first try could not, the
+  field classified again before every further read, and a password field's role or any change of role ends the
+  read-back; (2) only a finished search that found no field, on a request that is not concealed, answers ok with the
+  note.
+  - The lookup has three outcomes (`ReadbackFound`): a field; `.noField`, a search that finished with none; nil,
+    indeterminate. The walk answers `ReadbackWalkOutcome` (found, none focused in a walk that finished, unfinished: a
+    failed read, a node, depth or time bound, several focused fields, or a field found before a later failure). The
+    marker route answers `.noField` only when its climb reaches the web area (its marker names page content), and a
+    route that claimed nothing it can vouch for leaves the answer indeterminate whatever the walk finds. The
+    application's own answer of no focused element is never enough on its own: background Safari answers so over a
+    focused field (run 43752829833), so `.noField` always needs the finished walk, and a window that cannot be read is
+    indeterminate. The snapshot maps `.noField` and a non-text role to `ReadbackPlan.unread`; nil stays
+    `.refused(.noFocusedElement)` and throws as before #587.
+  - A concealed request whose search found no field, or could not finish, stays `typeUnconfirmed`, and its remedy never
+    advises an observation: "Because it is a secret and may have gone in where it can be seen, do not take a screenshot
+    or call getAXState() to check, and do not type it again; ask the person to check where it went."
+  - A no-field outcome under select_text's range is `selectionChanged`, nothing typed or pasted.
+  - Retries: a value or range retry, in the snapshot and its settle, runs only after the role and subrole are read again
+    (once, unretried) and still classify the field; a role read that names AXSecureTextField or another role ends a
+    poll's check whatever its subrole read answers, and only a failed role read, or the snapshot's role with a failed
+    subrole read, is tried again. A field the lookup took for a password field is classified by one role read, never
+    retried; its failure is `roleUnreadable` with the password field's warning. The keyed route's retries and polls are
+    bounded by the request's deadline, as the paste route's are. `readFailure` keeps the role and subrole last read
+    successfully; `subroleFailed` is gone (the failed attribute is `read`).
+  Date/Author: 2026-11-27, cursor235's builder for #587 and #590.
+- Decision (#587 and #590, ruling 1247, 2026-11-27, the review of 106d2018..d51ae683; supersedes the two entries above
+  where they differ): **ok-with-note is notTextField alone; noFocusedElement is a declared limit; no answer after a
+  secret's first key advises observing the app.**
+  - noFocusedElement throws `typeUnconfirmed` exactly as before #587: cua does not vouch for typing it cannot place,
+    though the vendor answers it (its `targetForKeyboardEvent` falls back to the app's pid, 0x1006f645c/0x1006f65cc).
+    Two review rounds could not certify an absence: the walk's unfinished answers, the marker's unvouched claims and a
+    background app's answer of no focus (Safari, over a focused field) all read alike. `.noField`, the marker's
+    `.noField` and `ReadbackWalkOutcome` are gone; the walk and the marker route answer as before #587 except as below.
+    The limit is a ticket of its own (enhancement, P3, parent #117).
+  - ok-with-note: a literal request whose application's own focus names an element whose role is no text field's. A
+    field the walk or the marker route found by a text-entry role (`ReadbackFound.field`'s `role`) that the snapshot
+    reads as another role answers fieldChanged (c).
+  - A password field the marker route classified but whose focus or place under the web area it cannot show is
+    `.closed(.fieldUnreadable, secure: true)`: the read-back stops there as a password field's, whatever the walk would
+    find; a route that gave no security evidence still leaves the walk to find the field (b).
+  - Under select_text's range, no field found (the nil lookup), a closed password claim or an element that is no text
+    field answers selectionChanged before any key or ⌘V (e).
+  - The rule (d): once any key of a secret may have posted, no answer suggests observing the app, neither a screenshot
+    nor the accessibility state, by name or otherwise. The engine's `typeUnconfirmed` for a concealed request ends with
+    `readbackConcealedRemedy` ("Because it is a secret and may have gone in where it can be seen, do not capture the
+    screen or read the app's accessibility state to check, and do not type it again; ask the person to check where it
+    went."), or for a password field that may now show it `readbackConcealedMayShowRemedy`. The service's wrapper
+    (src/services/secret-input.mjs) classifies `secretMayShow` as 'passwordField' or 'unplaced' (notTextField,
+    noFocusedElement, fieldChanged and every other reason posted without confirmation), gives every failure that may
+    have entered part of it a warning of that kind, and its userChanged instruction once entered asks the user to check
+    where it went rather than re-query.
+  - A retry's read, after the classification reads before it, starts only while its bound still allows it (h).
+  Date/Author: 2026-11-27, cursor235's builder for #587 and #590.
 
 ## Outcomes & Retrospective
 

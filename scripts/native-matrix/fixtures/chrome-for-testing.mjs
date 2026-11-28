@@ -97,10 +97,12 @@ export async function placeChromeForTesting({pin = loadPin(), cacheRoot = CACHE_
   } finally { fs.rmSync(staging, {recursive: true, force: true}); }
 }
 
-// `node scripts/native-matrix/fixtures/chrome-for-testing.mjs [--cache <root>]`: places the pinned build; prints the JSON.
+// `node scripts/native-matrix/fixtures/chrome-for-testing.mjs [--cache <root>] [--pin <file>]`: places the pinned build
+// (this directory's pin, or another one such as the hosted parity gate's); prints the JSON.
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
-  const at = process.argv.indexOf('--cache');
-  placeChromeForTesting(at > 0 ? {cacheRoot: process.argv[at + 1]} : {}).then(
+  const arg = name => { const at = process.argv.indexOf(name); return at > 0 ? process.argv[at + 1] : undefined; };
+  const cacheRoot = arg('--cache'), pinPath = arg('--pin');
+  placeChromeForTesting({...(cacheRoot ? {cacheRoot} : {}), ...(pinPath ? {pin: loadPin(pinPath)} : {})}).then(
     placed => process.stdout.write(JSON.stringify(placed) + '\n'),
     error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 }

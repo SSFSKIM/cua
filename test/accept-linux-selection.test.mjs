@@ -52,7 +52,7 @@ const HINT = 'a `cua` from another checkout installs that checkout\'s engine, no
 const LOOKUP = '/h/engine/linux/cua-engine';
 const SENTENCE = {
   engine_not_installed: `the default engine (cua) selects cua's own engine, and none is installed in this cua home (${LOOKUP})`,
-  engine_outdated: `the default engine (cua) selects cua's own engine, and the engine installed in this cua home (${LOOKUP}) is 0.4.3, older than 0.4.5, which this cua needs`,
+  engine_outdated: `the default engine (cua) selects cua's own engine, and the engine installed in this cua home (${LOOKUP}) is 0.4.3, older than 0.4.7, which this cua needs`,
   engine_unrecorded: `the default engine (cua) selects cua's own engine, and no record says what the engine installed in this cua home (${LOOKUP}) is: its install.json is absent, unreadable or another file's`,
 };
 const refusedDoctor = (reason, {status = 'fail', detail = `cua's engine is preferred (the default engine), but sessions here are refused (${reason}): ${SENTENCE[reason] ?? '…'}: run \`${REMEDY}\`; ${HINT}`,
@@ -122,7 +122,7 @@ test('a refused open is the refusal sentence whole, its one remedy at the end, t
 // The refused open: `cua serve` exits 1 before it answers anything, saying the reason and the installer, and no engine
 // runs below it. Anything less is not a refusal, and nothing that ran stands in for one.
 test('a refused open: the serve exits 1 unanswered, naming the reason and the installer, with no engine below it', () => {
-  const stderr = `cua: the default engine (cua) selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.5, which this cua needs: run \`${REMEDY}\` [engine_outdated]\n  ${HINT}\n`;
+  const stderr = `cua: the default engine (cua) selects cua's own engine, and the engine installed in this cua home (/h/engine/linux/cua-engine) is 0.4.3, older than 0.4.7, which this cua needs: run \`${REMEDY}\` [engine_outdated]\n  ${HINT}\n`;
   const refused = {exit: {code: 1, signal: null}, stderr, answered: false, samples: 3, observed: [], uninspectable: []};
   const judge = (open, kind = 'older') => refusedOpenProblem(open, kind, {remedy: REMEDY});
   assert.equal(judge(refused), null);

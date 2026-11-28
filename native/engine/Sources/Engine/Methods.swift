@@ -219,7 +219,14 @@ final class Engine: @unchecked Sendable {
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
-    guard deadline > receivedAt else { throw EngineError(rpc: .deadlineExceeded, "Request deadline exceeded") }
+    guard deadline > receivedAt else {
+      let expired = EngineError(rpc: .deadlineExceeded, "Request deadline exceeded")
+      // #602: an input method's request refused here dispatched nothing, and its input meta records that, as the
+      // prologue's refusals' do.
+      guard let method = params["method"] as? String, inputMethods.contains(method) else { throw expired }
+      throw withMeta(expired, .beforeInput(ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
+                                                            deadline: deadline, lineage: params["lineage"] as? String)))
+    }
     guard let method = params["method"] as? String else { throw EngineError(rpc: .invalidParams, "Invalid params: method is required") }
     let interval = timingSignposts.isEnabled ? timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)") : nil
     defer { if let interval { timingSignposts.endInterval("request", interval) } }

@@ -31,8 +31,25 @@ test('Linux: a desktop entry in an XDG applications directory is launched with g
   const launch = async (path, env) => { calls.push({path, env}); };
   for (const path of [user, system]) await launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', launch, env: d.env});
   assert.deepEqual(calls.map(c => c.path), [user, system]);
-  assert.deepEqual(Object.keys(calls[0].env).sort(), ['DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'HOME', 'LANG', 'PATH', 'XAUTHORITY', 'XDG_DATA_DIRS', 'XDG_RUNTIME_DIR'],
-    'the launched application gets the desktop session, never cua\'s settings or the secret store\'s path');
+  assert.deepEqual(Object.keys(calls[0].env).sort(), ['ACCESSIBILITY_ENABLED', 'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'HOME', 'LANG', 'PATH', 'XAUTHORITY', 'XDG_DATA_DIRS', 'XDG_RUNTIME_DIR'],
+    'the launched application gets the desktop session and the accessibility variable, never cua\'s settings or the secret store\'s path');
+  assert.deepEqual(calls.map(c => c.env.ACCESSIBILITY_ENABLED), ['1', '1']);
+});
+
+// #228 (the pre-flight's E2; taste call 2, ruling 1261): every application launch_app starts gets ACCESSIBILITY_ENABLED=1,
+// which only Chromium's family reads, so an Electron app's accessibility bridge starts whatever the session's
+// org.a11y.Status IsEnabled says. It is cua's, not the caller's: a supervisor environment that sets it otherwise changes nothing.
+test('Linux: every launch gets ACCESSIBILITY_ENABLED=1, whatever the supervisor\'s environment says', async t => {
+  const d = desktop(t);
+  const path = d.entry(join(d.system, 'applications'), 'code.desktop');
+  const calls = [];
+  const launch = async (_entry, env) => { calls.push(env); };
+  for (const value of [undefined, '0', '1']) {
+    const env = value === undefined ? d.env : {...d.env, ACCESSIBILITY_ENABLED: value};
+    await launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', launch, env});
+  }
+  assert.deepEqual(calls.map(env => env.ACCESSIBILITY_ENABLED), ['1', '1', '1']);
+  assert.deepEqual(calls.map(env => Object.keys(env).length), [9, 9, 9], 'nothing else of the supervisor\'s comes with it');
 });
 
 test('Linux: anything but a desktop entry inside an XDG applications directory is refused before gio runs', async t => {

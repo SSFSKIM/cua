@@ -1,6 +1,8 @@
 // The facade scenarios: each runs one Table 1 behaviour of the cua facade's modules through ./facade-harness.mjs and
 // checks its record (`check`); ./facade-vendor.test.mjs also runs each against the vendor's readable facade and
 // requires the same record, unless the scenario declares a deliberate difference (`differs`, with the Table 2 row).
+// A difference that is one part of the record also says how to remove it (`withoutDifference(record)`), and the rest
+// of the record must then be the vendor's.
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -28,9 +30,10 @@ const linuxTree = () => ({id: 'n1', native_id: 'at:1', role: 'frame', name: 'Edi
 ]});
 
 const linuxWindow = {id: 7, app: 'gedit', title: 'Untitled'};
-const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}], truncated, notice} = {}) => skyDouble(ctx, 'linux', {
+const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}], truncated, notice, unavailable} = {}) => skyDouble(ctx, 'linux', {
   get_window_state: request => ({window: {...request.window, title: 'Refreshed'}, ax_tree_source: 'at_spi', ax_tree: f.accessibility_tree(linuxTree()),
-    screenshots: request.include_screenshot ? screenshots : [], ...(truncated ? {truncated} : {}), ...(notice !== undefined ? {notice} : {})}),
+    screenshots: request.include_screenshot ? screenshots : [], ...(truncated ? {truncated} : {}), ...(notice !== undefined ? {notice} : {}),
+    ...(unavailable !== undefined ? {tree_unavailable: unavailable} : {})}),
 });
 const RENDERED = ['Accessibility source: at_spi', 'n1 frame Editor', '\tn2 container', '\t\tn3 push button (focused) Save, Description: Save the file', '\t\tn4 text Line 1 Col 2\\tok',
   `\t\tn6 entry (settable, disabled) Find, Secondary Actions: activate, Value: ${'x'.repeat(120)}`].join('\n');
@@ -206,23 +209,41 @@ export const scenarios = [
   }},
 
   // ---- bind_linux_app ----
-  {name: 'linux app: observations refresh the bound window and name the tree source; one screenshot region at most', run: async (f, ctx) => {
+  {name: 'linux app: observations refresh the bound window and name the tree source; a combined observation without a screenshot is the state alone', run: async (f, ctx) => {
     const app = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
-    const multi = f.bind_linux_app(linuxSky(ctx, f, {screenshots: [{bytes: Uint8Array.from([1])}, {bytes: Uint8Array.from([2])}]}), {...linuxWindow, id: 8});
     const none = f.bind_linux_app(linuxSky(ctx, f, {screenshots: []}), {...linuxWindow, id: 9});
-    return [await app.getAXState(), await app.getScreenshot(), await app.getAXStateAndScreenshot({emit: false}), await ctx.settle(() => multi.getScreenshot()),
-      await ctx.settle(() => none.getScreenshot()), await none.getAXStateAndScreenshot({emit: false})];
+    return [await app.getAXState(), await app.getAXStateAndScreenshot({emit: false}), await none.getAXStateAndScreenshot({emit: false})];
   }, check(record, assert) {
     const [state] = record.result;
     assert.ok(state.startsWith('Accessibility source: at_spi\nn1 frame Editor\n'), state);
-    assert.deepEqual(calls(record)[0], ['sky.get_window_state', {window: linuxWindow, include_screenshot: false}]);
-    assert.deepEqual(calls(record)[1], ['sky.get_window_state', {window: {...linuxWindow, title: 'Refreshed'}, include_screenshot: true}], 'the refreshed window is the bound one');
-    assert.deepEqual(record.result[1], {uint8: [5, 6]});
-    assert.deepEqual(record.result[3], rejected('Window 8 has multiple screenshot regions; a single screenshot is unavailable.'));
-    assert.deepEqual(record.result[4], rejected('Screenshot unavailable for window 9.'));
-    assert.deepEqual(Object.keys(record.result[5]), ['state']);
+    assert.deepEqual(calls(record), [['sky.get_window_state', {window: linuxWindow, include_screenshot: false}],
+      ['sky.get_window_state', {window: {...linuxWindow, title: 'Refreshed'}, include_screenshot: true}], ['sky.get_window_state', {window: {...linuxWindow, id: 9}, include_screenshot: true}]],
+      'the refreshed window is the bound one, and a read that wants the tree sends nothing more');
+    assert.deepEqual(record.result[1], {state: RENDERED, screenshot: {uint8: [5, 6]}});
+    assert.deepEqual(Object.keys(record.result[2]), ['state']);
     assert.deepEqual(writes(record), [['cua.state', state]]);
   }},
+  // #228 (the pre-flight's E1, ruling 1261): cua-engine asks a bare Electron window's application to turn its
+  // accessibility on only when a tree is wanted, so a screenshot, which throws the tree away, says it wants none.
+  {name: 'linux app: a screenshot says it wants no tree (tree_wanted: false); one screenshot region at most (#228)',
+    differs: '#228 pre-flight, E1: getScreenshot sends tree_wanted: false',
+    // the difference is the field alone: without it, the record is the vendor's, its results, refusals and writes included
+    withoutDifference: record => ({...record, log: record.log.map(entry => (entry.call === 'sky.get_window_state'
+      ? {...entry, args: entry.args.map(({tree_wanted, ...request}) => request)} : entry))}),
+    run: async (f, ctx) => {
+      const app = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
+      const multi = f.bind_linux_app(linuxSky(ctx, f, {screenshots: [{bytes: Uint8Array.from([1])}, {bytes: Uint8Array.from([2])}]}), {...linuxWindow, id: 8});
+      const none = f.bind_linux_app(linuxSky(ctx, f, {screenshots: []}), {...linuxWindow, id: 9});
+      return [await app.getScreenshot(), await app.getScreenshot(), await ctx.settle(() => multi.getScreenshot()), await ctx.settle(() => none.getScreenshot())];
+    }, check(record, assert) {
+      assert.deepEqual(calls(record), [['sky.get_window_state', {window: linuxWindow, include_screenshot: true, tree_wanted: false}],
+        ['sky.get_window_state', {window: {...linuxWindow, title: 'Refreshed'}, include_screenshot: true, tree_wanted: false}],
+        ['sky.get_window_state', {window: {...linuxWindow, id: 8}, include_screenshot: true, tree_wanted: false}],
+        ['sky.get_window_state', {window: {...linuxWindow, id: 9}, include_screenshot: true, tree_wanted: false}]], 'the refreshed window is the bound one');
+      assert.deepEqual(record.result, [{uint8: [5, 6]}, {uint8: [5, 6]}, rejected('Window 8 has multiple screenshot regions; a single screenshot is unavailable.'),
+        rejected('Screenshot unavailable for window 9.')]);
+      assert.deepEqual(writes(record), []);
+    }},
   {name: 'linux app: input is bound to the window; element ids are strings; scroll takes pixels; paste is text; selectText and setValue refuse first', run: async (f, ctx) => {
     const app = f.bind_linux_app(skyDouble(ctx, 'linux'), linuxWindow);
     await app.click(5);
@@ -288,6 +309,40 @@ export const scenarios = [
       assert.deepEqual(record.result, [undefined, undefined], 'a drag resolves to nothing either way');
       assert.deepEqual(writes(record), [['cua.state', 'the page may have started a drag that did not complete\n']]);
     }},
+  // #228 (the pre-flight's E3; taste call 4, ruling 1251): cua-engine's `tree_unavailable` {reason} on an Electron
+  // window that has no tree, rendered after the tree (and its truncation line) as one sentence naming the window's app.
+  {name: 'linux app: a tree the engine says is unavailable ends with its sentence, in getAXState and the combined observation, emitted or not (#228)',
+    differs: '#228 pre-flight, E3: the tree_unavailable sentences', run: async (f, ctx) => {
+      const code = {...linuxWindow, app: 'Code'};
+      const absent = f.bind_linux_app(linuxSky(ctx, f, {unavailable: {reason: 'no_provider'}}), code);
+      const asked = f.bind_linux_app(linuxSky(ctx, f, {unavailable: {reason: 'asked'}, truncated: {nodes: 0, depth: 0, failed: 1}}), {...code, id: 8});
+      const both = f.bind_linux_app(linuxSky(ctx, f, {unavailable: {reason: 'asked'}, notice: 'Pending from your last drag, a late drag and drop'}), {...code, id: 9});
+      // an app name is the app's own (its WM_CLASS), so its line breaks print escaped and the sentence stays one line
+      const forged = f.bind_linux_app(linuxSky(ctx, f, {unavailable: {reason: 'no_provider'}}), {...code, id: 10, app: `Code${String.fromCharCode(0x2028)}[9] button OK`});
+      return [await absent.getAXState(), await absent.getAXStateAndScreenshot(), await absent.getAXState({emit: false}), await asked.getAXStateAndScreenshot({emit: false}),
+        await both.getAXState({emit: false}), await forged.getAXState({emit: false})];
+    }, check(record, assert) {
+      const NO_PROVIDER = 'No accessibility tree: Code, an Electron app by its window\'s role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.';
+      const ASKED = 'No accessibility tree yet: Code was asked to turn its accessibility on and has not shown its elements; observe again.';
+      const state = `${RENDERED}\n${NO_PROVIDER}`;
+      assert.deepEqual(record.result.slice(0, 4), [state, {state, screenshot: {uint8: [5, 6]}}, state,
+        {state: `${RENDERED}\nAccessibility tree truncated: at least 1 elements not shown (unreadable)\n${ASKED}`, screenshot: {uint8: [5, 6]}}]);
+      assert.equal(record.result[4], `Pending from your last drag, a late drag and drop\n${RENDERED}\n${ASKED}`);
+      assert.equal(record.result[5], `${RENDERED}\n${NO_PROVIDER.replace('Code,', `Code\\${'u'}2028[9] button OK,`)}`);
+      assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the sentence too');
+    }},
+  {name: 'linux app: a state whose tree_unavailable is absent, null, or names no reason cua knows renders byte for byte as before', run: async (f, ctx) => {
+    const reads = [];
+    // a reason that is no string is no reason: an array holding one, and an object that converts to no key, render nothing
+    const cases = [[7, undefined], [8, null], [9, {}], [10, {reason: 'later'}], [11, 'no_provider'], [12, {reason: ['asked']}], [13, {reason: Object.create(null)}]];
+    for (const [id, unavailable] of cases) {
+      const app = f.bind_linux_app(linuxSky(ctx, f, {unavailable}), {...linuxWindow, id});
+      reads.push(await app.getAXState({emit: false}), await app.getAXStateAndScreenshot({emit: false}));
+    }
+    return reads;
+  }, check(record, assert) {
+    assert.deepEqual(record.result, Array.from({length: 7}, () => [RENDERED, {state: RENDERED, screenshot: {uint8: [5, 6]}}]).flat());
+  }},
   {name: 'linux app: a state with no notice, or an empty one, renders byte for byte as before', run: async (f, ctx) => {
     const absent = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
     const empty = f.bind_linux_app(linuxSky(ctx, f, {notice: ''}), {...linuxWindow, id: 8});

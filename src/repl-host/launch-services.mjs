@@ -16,7 +16,8 @@
 // trusted worker runs confined, and an application sky_linux fork/execs inside its sandbox dies at start (#115 M0's
 // probe: MIT-SHM and a read-only dconf), so cua's sky wrapper (src/services/sky.mjs) sends `launch_app` here as the
 // application's desktop entry, which is launched with `gio launch` in a session of its own (it is never in the
-// supervisor's process group, which the reaper may clear) and with the desktop session's environment only. The entry
+// supervisor's process group, which the reaper may clear) with the desktop session's environment and cua's
+// ACCESSIBILITY_ENABLED=1 only (#228). The entry
 // must be a `.desktop` file whose real path lies in an `applications/` directory of the supervisor's own XDG data
 // directories ($XDG_DATA_HOME or ~/.local/share, then $XDG_DATA_DIRS or /usr/local/share:/usr/share) and in none of
 // the sandbox's write roots (`writeRoots`: the session's run directory and temp and what the call's policy makes
@@ -38,6 +39,13 @@ const OPEN_TIMEOUT_MS = 30_000;
 // What a launched application inherits: the desktop session it runs in, nothing of cua's (src/runtime/launch.mjs
 // copies these from the caller; PATH is cua's fixed one).
 const DESKTOP_ENV = ['HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PATH', 'DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'XDG_DATA_DIRS'];
+// And what cua adds to every launch, whatever the caller's environment says (#228, docs/doperpowers/specs/
+// 2026-11-27-electron-a11y-preflight.md E2; ruling 1261): ACCESSIBILITY_ENABLED=1 starts a Chromium application's
+// accessibility bridge (Electron's, CEF's, Chrome's) at its start whatever the session's org.a11y.Status IsEnabled says
+// (on Chromium 86 to 110 only such a variable starts it). On the pre-flight's host only Chromium's family reads it. It
+// reaches what gio itself starts, not a DBusActivatable entry, which the session bus starts, nor an application already
+// running, which takes the launch into its running instance.
+const LAUNCH_ENV = {ACCESSIBILITY_ENABLED: '1'};
 
 // The OS boundary: runs `open` with `args`; rejects with its failure.
 export function runOpen(args) {
@@ -98,7 +106,7 @@ async function launchLinux(message, {launch, env, writeRoots}) {
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: only a desktop entry in an XDG applications directory is launched`);
   if (writeRoots.map(root => realOrNull(root) ?? root).some(root => within(real, root)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it lies where the sandbox lets JavaScript write, so it is not launched outside it`);
-  const desktopEnv = Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === 'string').map(name => [name, env[name]]));
+  const desktopEnv = {...Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === 'string').map(name => [name, env[name]])), ...LAUNCH_ENV};
   try {
     await launch(real, desktopEnv);
   } catch (error) {

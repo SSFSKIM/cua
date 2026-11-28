@@ -231,6 +231,24 @@ test('get_window_state numbers the tree as the vendor does, keeps the native ids
   assert.deepEqual(sent(engine), [['get_window_state', {window: W}], ['get_window_state', {window: W, include_screenshot: false}], ['get_window_state', {window: W, query: 'trunc'}]]);
 });
 
+// #228 (the pre-flight's E1 and E3): a screenshot's `tree_wanted: false` reaches cua-engine as the facade sent it, and
+// the engine's `tree_unavailable` {reason} reaches the facade on the window state, for its sentence
+// (src/cua-api/bind-linux-app.mjs); a state without it has no such field.
+test('get_window_state sends tree_wanted as given and passes tree_unavailable through to the window state', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    if (command === 'get_window_state' && input.query === 'bare') return {output: {window: ${JSON.stringify(W)}, ax_tree: ${JSON.stringify({...TREE, children: []})}, ax_tree_source: 'at_spi',
+      screenshots: [], truncated: {nodes: 0, depth: 0, failed: 1}, tree_unavailable: {reason: 'asked'}}};
+  }`});
+  const svc = service(t, engine);
+  const shot = await execute(svc, 'get_window_state', {window: W, include_screenshot: true, tree_wanted: false});
+  assert.deepEqual(shot.screenshots, [{filepath: engine.shot, data_url: JPEG_URL}]);
+  assert.equal('tree_unavailable' in shot, false, 'no tree_unavailable, no field');
+  const bare = await execute(svc, 'get_window_state', {window: W, query: 'bare'});
+  assert.deepEqual(bare.tree_unavailable, {reason: 'asked'});
+  assert.deepEqual(bare.truncated, {nodes: 0, depth: 0, failed: 1});
+  assert.deepEqual(sent(engine), [['get_window_state', {window: W, include_screenshot: true, tree_wanted: false}], ['get_window_state', {window: W, query: 'bare'}]]);
+});
+
 // The pending drag notice (#171 M4 T14): cua-engine puts it beside every reply's output while a drag's watch left
 // something pending; the state carries it to the facade, which renders it first (src/cua-api/bind-linux-app.mjs). The
 // other replies keep their shapes, and a read that fails carries it after its own sentence.

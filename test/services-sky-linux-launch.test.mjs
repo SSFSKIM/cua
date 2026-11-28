@@ -1,14 +1,15 @@
 // The sky wrapper's Linux launch_app (#115 M3): sky_linux's own launch would fork/exec the application inside the
 // trusted worker's sandbox, where it dies, so the wrapper resolves the inventory id to its desktop entry and asks the
 // supervisor to launch it outside (nodeRepl.launchServices.openApplication). Ids sky_linux does not list fail with
-// sky_linux's own sentence; requests in any other shape go to the vendor. Every launch asks its approval first, keyed by
-// the app id (test/services-sky-linux-policy.test.mjs); the client here accepts and the asks are recorded.
+// sky_linux's own sentence; a request in any other shape is refused before anything is asked or sent (#228), so no
+// launch reaches the engine's own launch_app. Every launch asks its approval first, keyed by the app id
+// (test/services-sky-linux-policy.test.mjs); the client here accepts and the asks are recorded.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createSkyService, desktopEntryFor} from '../src/services/sky.mjs';
+import {createSkyService, desktopEntryFor, LINUX_LAUNCH_SHAPE_REFUSED} from '../src/services/sky.mjs';
 import {fakeLinuxEngine} from './helpers/fake-linux-engine.mjs';
 
 const APPS = [{id: 'org.gnome.gedit.desktop', name: 'gedit', windows: []}, {id: 'kde-okular.desktop', name: 'Okular', windows: []}, {id: 'mine.desktop', name: 'Mine', windows: []}];
@@ -64,18 +65,43 @@ test('Linux launch_app: an id sky_linux does not list, or without a desktop entr
   assert.deepEqual(asked, [], 'nothing found, nothing asked');
 });
 
-test('Linux launch_app in any other shape goes to the vendor unchanged once the app it names is approved (one naming no app is refused); macOS goes to the vendor', async t => {
+// #228 (review of T4): the supervisor's route is the only one that sets ACCESSIBILITY_ENABLED=1, so a launch_app in any
+// shape but the pinned one is refused here, before an approval is asked and before the service is reached: it would
+// otherwise reach cua-engine's own launch_app, which the confined worker's environment starts.
+test('Linux launch_app in any other shape is refused before anything is asked or sent; macOS goes to the vendor', async t => {
   const {service, received, launched, asked} = harness(t);
   for (const request of [launchApp({app: 'org.gnome.gedit.desktop', extra: 1}), launchApp({app: 'org.gnome.gedit.desktop'}, {more: 1}),
-    {type: 'execute', method: 'launch_app', args: [{app: 'org.gnome.gedit.desktop'}, {}]}])
-    assert.equal(await service.handleRpc(request), 'vendor');
-  for (const request of [launchApp({app: 7}), {type: 'execute', method: 'launch_app', args: []}])
-    await assert.rejects(service.handleRpc(request), /^Error: Computer Use app approval requires /);
-  assert.deepEqual(launched, []);
-  assert.equal(received.length, 3);
-  assert.deepEqual(asked, Array(3).fill('org.gnome.gedit.desktop'));
+    {type: 'execute', method: 'launch_app', args: [{app: 'org.gnome.gedit.desktop'}, {}]}, launchApp({app: 7}), {type: 'execute', method: 'launch_app', args: []},
+    {type: 'execute', method: 'launch_app'}, launchApp('org.gnome.gedit.desktop'),
+    // the method by the key the service looks it up by: an array naming launch_app is launch_app
+    {type: 'execute', method: ['launch_app'], args: [{app: 'org.gnome.gedit.desktop'}]}])
+    await assert.rejects(service.handleRpc(request), {message: LINUX_LAUNCH_SHAPE_REFUSED});
+  assert.deepEqual([launched, received, asked], [[], [], []], 'nothing launched, nothing sent, nothing asked');
   const darwin = createSkyService({loadVendor: async () => ({handleRpc: async () => 'vendor'}), secrets: {}, platform: 'darwin', openApplication: async () => assert.fail('macOS never launches here')});
   assert.equal(await darwin.handleRpc(launchApp({app: 'com.apple.TextEdit'})), 'vendor');
+  assert.equal(await darwin.handleRpc({type: 'execute', method: 'launch_app', args: [{app: 'com.apple.TextEdit'}, {}]}), 'vendor');
+});
+
+test('Linux launch_app through cua\'s own Linux service: an extra positional input never reaches cua-engine\'s launch_app', async t => {
+  const engine = fakeLinuxEngine(t);
+  engine.behave(`export function answer(command) { if (command === 'list_apps') return {output: ${JSON.stringify(APPS)}}; }`);
+  const d = desktop(t);
+  const launched = [], asked = [];
+  // a service of its own (the module's one-per-worker instance is the next test's), closed with the test
+  const {createService} = await import('../src/services/engine/linux/service.mjs');
+  const cua = createService({env: {CUA_ENGINE_BIN: engine.path}});
+  t.after(() => cua.close());
+  const nodeRepl = {requestMeta: {}, createElicitation: async request => { asked.push(request.meta.tool_params.app); return {action: 'accept', content: {}}; }};
+  const service = createSkyService({loadVendor: async () => cua, secrets: {read: async () => assert.fail('no secret is read')}, platform: 'linux', env: d.env,
+    nodeRepl, openApplication: async target => { launched.push(target); return {}; }});
+  for (const [method, args] of [['launch_app', [{app: 'org.gnome.gedit.desktop'}, {}]], ['launch_app', [{app: 'org.gnome.gedit.desktop'}, 'extra']],
+    [['launch_app'], [{app: 'org.gnome.gedit.desktop'}]]])
+    await assert.rejects(service.handleRpc({type: 'execute', method, args}), {message: LINUX_LAUNCH_SHAPE_REFUSED});
+  assert.deepEqual([launched, asked], [[], []]);
+  assert.deepEqual(engine.requests().filter(r => r.command === 'launch_app'), [], 'cua-engine was never asked to launch');
+  assert.equal(await service.handleRpc(launchApp({app: 'org.gnome.gedit.desktop'})), undefined);
+  assert.deepEqual(launched, [{applicationPath: d.gedit}], 'the pinned shape launches through the supervisor, as before');
+  assert.deepEqual(engine.requests().filter(r => r.command === 'launch_app'), []);
 });
 
 // The late-take watch's acting-request rule reaches this launch too (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md,

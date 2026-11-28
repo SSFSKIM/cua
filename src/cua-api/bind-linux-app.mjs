@@ -28,6 +28,15 @@
 // "the page may have started a drag that did not complete", from a Chrome hold that waited for a drag and drop that
 // never came) writes that sentence, and a newline, as the cell's state output, so the model reads it though the drag
 // resolves to nothing, as before. A drag without one writes nothing.
+//
+// And its fourth (#228, docs/doperpowers/specs/2026-11-27-electron-a11y-preflight.md E1 and E3; rulings 1251 and 1261):
+// cua-engine asks a bare Electron window's application to turn its accessibility on only when a tree is wanted, so
+// getScreenshot, which throws the tree away, sends `tree_wanted: false`; every read that wants the tree sends nothing
+// new. A window state whose `tree_unavailable` names a reason cua knows (`no_provider`: an Electron window whose process
+// is not on the accessibility bus; `asked`: its application was asked and the tree is still bare) ends its rendered
+// state with that reason's sentence, after the tree and its truncation line, in getAXState and the combined observation
+// alike, emitted or not. The sentence names the window's app, by a name the app itself sets, so its line breaks print
+// escaped and it stays one line. A state without the field, or with a reason cua does not know, renders as before.
 import {image, one_screenshot, positive_pixels, require_plain_text, text} from './display.mjs';
 import {escapeLineBreaks} from './line-breaks.mjs';
 
@@ -43,18 +52,31 @@ function truncation(truncated) {
   return `\nAccessibility tree truncated: at least ${total} elements not shown (${reason})`;
 }
 
+// What cua-engine's `tree_unavailable` reasons say, for the window's app.
+const TREE_UNAVAILABLE = {
+  no_provider: app => `No accessibility tree: ${app}, an Electron app by its window's role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.`,
+  asked: app => `No accessibility tree yet: ${app} was asked to turn its accessibility on and has not shown its elements; observe again.`,
+};
+
+// The sentence for a state's `tree_unavailable` with the newline that puts it after the tree, or '' for none cua knows.
+function unavailable(state) {
+  const reason = state.tree_unavailable?.reason;
+  if (typeof reason !== 'string' || !Object.hasOwn(TREE_UNAVAILABLE, reason)) return '';
+  return `\n${TREE_UNAVAILABLE[reason](escapeLineBreaks(state.window.app))}`;
+}
+
 // A state's pending drag notice as its first line, with the newline that puts the rest after it, or ''. The notice
 // names the app the drag went into by a name the app itself sets (its GTK application id or WM_CLASS), so its line
 // breaks print escaped as the tree's do (#558, ruling 1178; ./line-breaks.mjs), and it stays one line.
 const pending = notice => (typeof notice === 'string' && notice !== '' ? `${escapeLineBreaks(notice)}\n` : '');
 
 export function bind_linux_app(sky, window) {
-  async function windowState({include_screenshot}) {
-    const state = await sky.get_window_state({window, include_screenshot});
+  async function windowState({include_screenshot, tree_wanted}) {
+    const state = await sky.get_window_state({window, include_screenshot, ...(tree_wanted === false ? {tree_wanted} : {})});
     window = state.window;
     return state;
   }
-  const describe = state => `${pending(state.notice)}Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}${truncation(state.truncated)}`;
+  const describe = state => `${pending(state.notice)}Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}${truncation(state.truncated)}${unavailable(state)}`;
   return {
     async getAXState(options) {
       const state = describe(await windowState({include_screenshot: false}));
@@ -62,7 +84,7 @@ export function bind_linux_app(sky, window) {
       return state;
     },
     async getScreenshot(options) {
-      const state = await windowState({include_screenshot: true});
+      const state = await windowState({include_screenshot: true, tree_wanted: false});
       const shot = one_screenshot(state.screenshots, window.id);
       if (shot === undefined) throw new Error(`Screenshot unavailable for window ${window.id}.`);
       const bytes = shot.bytes;

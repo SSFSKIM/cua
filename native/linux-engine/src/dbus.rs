@@ -813,6 +813,50 @@ impl Bus {
         }
     }
 
+    /// [`Bus::recv`], waiting no later than `deadline`: None when it passes first, every outstanding call then
+    /// abandoned, its late reply discarded when it comes, and every reply not yet handed out dropped with it. For a
+    /// caller whose calls are all that is outstanding (`atspi::read_by`). A bus silent for its I/O timeout before the
+    /// deadline fails every outstanding call, as [`Bus::recv`] does.
+    pub fn recv_until(&mut self, deadline: Instant) -> Result<Option<(u32, CallResult)>> {
+        // the writes wait no later than the deadline either, as `calls_until`'s do
+        self.write_by = Some(deadline);
+        let flushed = self.flush();
+        self.write_by = None;
+        flushed?;
+        let mut waited = false;
+        loop {
+            if let Some(done) = self.ready.pop_front() {
+                return Ok(Some(done));
+            }
+            if self.pending.is_empty() {
+                bail!("no D-Bus call is outstanding");
+            }
+            if self.dispatch_buffered()? {
+                continue;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                self.pending.clear();
+                return Ok(None);
+            }
+            if !waited {
+                self.stats.waits += 1;
+                self.stats.waits_alone += (self.pending.len() == 1) as u64;
+                waited = true;
+            }
+            let left = deadline - now;
+            if left >= self.io_timeout {
+                self.read_more()?;
+            } else {
+                // the socket waits at most until the deadline; its own silence timeout comes back afterwards
+                self.stream.set_read_timeout(Some(left))?;
+                let read = self.read_until_quiet();
+                self.stream.set_read_timeout(Some(self.io_timeout))?;
+                read?;
+            }
+        }
+    }
+
     /// A reply that has already arrived, without waiting for the bus.
     pub fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
         if self.ready.is_empty() {
@@ -1687,6 +1731,66 @@ mod tests {
         // the late reply is discarded when it comes: the next call gets its own
         assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_receive_with_a_deadline_ends_at_it_abandoning_every_outstanding_call() {
+        // one reply in time, one after the deadline: the bus's silence timeout (5 s here) restarting at each reply must
+        // not stretch the wait, and the late reply is not handed to the next caller
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let calls = read_calls(&mut theirs, 3);
+            theirs
+                .write_all(&answer(METHOD_RETURN, calls[0].0, None, &calls[0].1))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+            for (serial, member) in &calls[1..] {
+                theirs.write_all(&answer(METHOD_RETURN, *serial, None, member)).unwrap();
+            }
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let first = bus.send(&call("A")).unwrap();
+        bus.send(&call("B")).unwrap();
+        bus.send(&call("C")).unwrap();
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(300);
+        assert_eq!(
+            bus.recv_until(deadline).unwrap(),
+            Some((first, Ok(vec![Value::Str("A".into())])))
+        );
+        assert_eq!(
+            bus.recv_until(deadline).unwrap(),
+            None,
+            "B and C came after the deadline"
+        );
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_millis(290) && waited < Duration::from_millis(390),
+            "{waited:?}"
+        );
+        assert_eq!(bus.in_flight(), 0, "the calls are abandoned");
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_receive_with_a_deadline_beyond_the_silence_timeout_fails_the_calls_as_a_receive_does() {
+        // a bus silent for its I/O timeout fails every outstanding call (behaviour §19), deadline or not
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_millis(100)).unwrap();
+        let serial = bus.send(&call("A")).unwrap();
+        let started = Instant::now();
+        let (failed, result) = bus
+            .recv_until(started + Duration::from_secs(5))
+            .unwrap()
+            .expect("the silence fails the call before the deadline");
+        assert_eq!(failed, serial);
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_millis(400));
+        assert_eq!(read_calls(&mut theirs, 1)[0].1, "A");
     }
 
     #[test]

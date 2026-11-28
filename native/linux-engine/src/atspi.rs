@@ -45,6 +45,70 @@ impl Transport for Bus {
     }
 }
 
+/// A read past its deadline (`read_by`).
+#[derive(Debug)]
+struct PastDeadline;
+
+impl std::fmt::Display for PastDeadline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the read passed its deadline")
+    }
+}
+
+impl std::error::Error for PastDeadline {}
+
+/// The bus as a tree-read transport whose every wait ends by `deadline`.
+struct ReadBy<'a> {
+    bus: &'a mut Bus,
+    deadline: std::time::Instant,
+}
+
+impl Transport for ReadBy<'_> {
+    fn send(&mut self, obj: &ObjRef, field: Field) -> Result<u32> {
+        Transport::send(self.bus, obj, field)
+    }
+
+    fn recv(&mut self) -> Result<(u32, CallResult)> {
+        self.bus.recv_until(self.deadline)?.ok_or_else(|| PastDeadline.into())
+    }
+
+    fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
+        self.bus.try_recv()
+    }
+
+    fn in_flight(&self) -> usize {
+        self.bus.in_flight()
+    }
+
+    fn staged_bytes(&self) -> usize {
+        self.bus.staged_bytes()
+    }
+
+    fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: std::time::Instant) -> Result<Option<CallResult>> {
+        Transport::call_until(self.bus, obj, field, deadline.min(self.deadline))
+    }
+}
+
+/// The tree under `root` (`tree::read`), read no later than `deadline`: None when the deadline cut it, its calls then
+/// abandoned. Nothing else may be outstanding on `bus`, as between the engine's requests.
+pub fn read_by(
+    bus: &mut Bus,
+    root: &ObjRef,
+    window: tree::Window,
+    deadline: std::time::Instant,
+) -> Result<Option<(Option<tree::AxNode>, tree::ReadStats)>> {
+    debug_assert_eq!(
+        bus.in_flight(),
+        0,
+        "a read by a deadline abandons every outstanding call"
+    );
+    match tree::read(&mut ReadBy { bus, deadline }, root, window) {
+        Ok(read) => Ok(Some(read)),
+        Err(error) if error.downcast_ref::<PastDeadline>().is_some() => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// The accessibility bus address: the root window's `AT_SPI_BUS` property, else `org.a11y.Bus.GetAddress` on the
 /// session bus (`$DBUS_SESSION_BUS_ADDRESS`, else `unix:path=$XDG_RUNTIME_DIR/bus`), behaviour §19.
 pub fn bus_address(x: &X11) -> Result<String> {

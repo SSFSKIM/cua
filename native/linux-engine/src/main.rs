@@ -46,6 +46,7 @@ mod stray;
 mod table;
 mod tree;
 mod vcl;
+mod wait;
 mod wire;
 mod x11;
 

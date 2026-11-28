@@ -340,12 +340,30 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     }
 }
 
-/// A frame's application as `ask::ask_if_due` reaches it: on the bus connection whose read found it, never another
-/// (`Engine::on_this_connection`), and the window's role from the X server.
+/// A frame's application as `ask::after_read` reaches it: on the bus connection whose read found it, never another
+/// (`Engine::on_this_connection`), and the window's role from the X server; and the frame itself, as the wait reads it
+/// again on that connection.
 struct FrameApp<'a> {
     engine: &'a mut Engine,
     app: &'a tree::ObjRef,
+    frame: &'a tree::ObjRef,
     window: u32,
+}
+
+impl crate::wait::Frame for FrameApp<'_> {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn pause(&mut self, length: Duration) {
+        std::thread::sleep(length);
+    }
+
+    fn read_by(&mut self, deadline: Instant) -> Result<Option<(Option<tree::AxNode>, tree::ReadStats)>> {
+        let (frame, calls) = (self.frame, self.engine.cfg.window);
+        self.engine
+            .on_this_connection(|bus| atspi::read_by(bus, frame, calls, deadline))
+    }
 }
 
 impl crate::ask::Application for FrameApp<'_> {
@@ -941,7 +959,7 @@ impl Engine {
                 Association::Identity(unassociated) => return Ok(Observed::Refused(unassociated)),
                 Association::NoMatch(leave) | Association::Refused(_, leave) => return Ok(Observed::Fallback(leave)),
             };
-            frame_app = Some(associated.app.clone());
+            frame_app = Some((associated.app.clone(), associated.frame.clone()));
             let read = tree::read(bus, &associated.frame, window).map(|(tree, stats)| {
                 read_stats = stats;
                 tree
@@ -973,20 +991,29 @@ impl Engine {
                 None,
             ),
         };
-        // a bare frame of an Electron application is asked to turn its accessibility on (#228), for the next read
-        if source == "at_spi"
-            && let Some(app) = frame_app.as_ref()
+        // a bare frame of an Electron application is asked to turn its accessibility on (#228), and the frame read
+        // again until its content comes or the wait's bound passes (`wait.rs`)
+        let tree = if source == "at_spi"
+            && let Some((app, frame)) = frame_app.as_ref()
         {
-            let mut frame = FrameApp {
+            let mut on = FrameApp {
                 engine: self,
                 app,
+                frame,
                 window: id,
             };
-            let outcome = crate::ask::ask_if_due(input.tree_wanted(), crate::ask::bare(&tree), &mut frame);
+            let (tree, stats, outcome) = crate::ask::after_read(input.tree_wanted(), tree, read_stats, &mut on);
+            read_stats = stats;
+            // #228 task 3's point: a wait that ended with the page not there (`outcome.waited`'s end `Bound`, or
+            // `Failed`, with its shape `Bare` or `Pending`) is where the answer gains `tree_unavailable: {reason:
+            // "asked"}`. An application asked before is answered as its read came, with no wait and no reason.
             if let Some(record) = outcome.record() {
                 self.extra.insert("ask".into(), record);
             }
-        }
+            tree
+        } else {
+            tree
+        };
         self.extra.insert(
             "tree".into(),
             json!({

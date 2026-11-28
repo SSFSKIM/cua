@@ -1,0 +1,5 @@
+{"gsettings": {"screen-reader-enabled": "false", "toolkit-accessibility": "false"}, "probe": "switch", "status": {"IsEnabled": false, "ScreenReaderEnabled": false}, "step": "both set off"}
+{"gsettings": {"screen-reader-enabled": "false", "toolkit-accessibility": "true"}, "probe": "switch", "status": {"IsEnabled": true, "ScreenReaderEnabled": false}, "step": "IsEnabled set on"}
+{"gsettings": {"screen-reader-enabled": "true", "toolkit-accessibility": "true"}, "probe": "switch", "status": {"IsEnabled": true, "ScreenReaderEnabled": true}, "step": "IsEnabled set off, then ScreenReaderEnabled set on"}
+{"gsettings": {"screen-reader-enabled": "false", "toolkit-accessibility": "true"}, "probe": "switch", "status": {"IsEnabled": true, "ScreenReaderEnabled": false}, "step": "ScreenReaderEnabled set off"}
+{"path": "<session>/home/.config/dconf/user", "probe": "switch", "session_dconf_file_exists": true, "step": "where it was written"}

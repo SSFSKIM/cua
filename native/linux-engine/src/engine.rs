@@ -2,6 +2,8 @@
 //! input is in the child modules: keys (`keyboard`), the pointer (`pointer`, and `handle` for `drag_handle`), element
 //! actions (`elements`), the window and application requests (`windows`) and the clipboard's (`clipboard`).
 
+#[cfg(test)]
+mod ask_faults;
 mod clipboard;
 mod elements;
 mod handle;
@@ -367,6 +369,10 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     }
 }
 
+/// How long the association's confirmation right before the request may take, its bus calls included: the wait's own
+/// bound, which the association's reads fit many times over.
+const ASK_CONFIRM_BOUND: Duration = crate::wait::BOUND;
+
 /// A frame's application as `ask::after_read` reaches it: on the bus connection whose read found it, never another
 /// (`Engine::on_this_connection`), and the window's role from the X server; and the window's association, whose frame
 /// the wait reads again on that connection and confirms again after each read.
@@ -416,12 +422,36 @@ impl crate::ask::Application for FrameApp<'_> {
     }
 
     fn read_role(&mut self) -> Option<String> {
-        self.engine.x.role(self.window)
+        self.engine.x.role_exactly(self.window)
     }
 
-    fn send(&mut self) -> Result<crate::dbus::CallResult> {
+    /// The association again, right before the request (the whole-change review of #228, P1; task 185's fix wave 2):
+    /// on every route, the vendor's title match included, the whole association runs again and must name the same
+    /// frame of the same application, unambiguously (`Associated::confirm_for_ask`), its bus calls ending by
+    /// [`ASK_CONFIRM_BOUND`].
+    fn confirm(&mut self) -> Result<bool> {
+        let deadline = Instant::now() + ASK_CONFIRM_BOUND;
+        let associated = self.associated;
+        let confirmed = self
+            .engine
+            .on_this_connection_with_x(|bus, x| bus.by(deadline, |bus| associated.confirm_for_ask(bus, x)));
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        confirmed
+    }
+
+    fn send(&mut self) -> Result<crate::ask::Delivery> {
+        use crate::ask::Delivery;
+        use crate::dbus::Answer;
         let app = &self.associated.app;
-        self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))
+        Ok(
+            match self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))? {
+                Answer::Replied(_) | Answer::Unreadable(_) => Delivery::Answered,
+                Answer::Refused(error) => Delivery::Rejected(error),
+                Answer::Unanswered(error) => Delivery::Unanswered(error),
+            },
+        )
     }
 }
 
@@ -1063,7 +1093,7 @@ impl Engine {
             no_provider,
             waited: waited.as_ref(),
         };
-        let unavailable = crate::unavailable::reason(&report, || self.x.role(id));
+        let unavailable = crate::unavailable::reason(&report, || self.x.role_exactly(id));
         self.extra.insert(
             "tree".into(),
             json!({

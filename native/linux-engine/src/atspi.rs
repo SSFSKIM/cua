@@ -97,7 +97,11 @@ impl Transport for ReadBy<'_> {
     }
 
     fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: std::time::Instant) -> Result<Option<CallResult>> {
-        Transport::call_until(self.bus, obj, field, deadline.min(self.deadline))
+        // inside the read's deadline, so a call it catches unwritten is dropped, not `Broken` (`Bus::flush`)
+        let read_by = self.deadline;
+        self.bus.by(read_by, |bus| {
+            Transport::call_until(bus, obj, field, deadline.min(read_by))
+        })
     }
 }
 
@@ -305,9 +309,9 @@ pub fn toolkit_name(bus: &mut Bus, app: &ObjRef) -> Result<Option<String>> {
 
 /// One `Accessible.GetAttributes` to an application root, the request that sets a Chromium application's
 /// accessibility mode (`ask.rs`; the #228 pre-flight's §A). Its reply, the root's attributes, says nothing the engine
-/// uses.
-pub fn ask_attributes(bus: &mut Bus, app: &ObjRef) -> Result<CallResult> {
-    bus.call(&MethodCall {
+/// uses; what matters is whether it was written, answered, refused or left unanswered (`Bus::call_answered`).
+pub fn ask_attributes(bus: &mut Bus, app: &ObjRef) -> Result<crate::dbus::Answer> {
+    bus.call_answered(&MethodCall {
         dest: &app.bus,
         path: &app.path,
         iface: ACCESSIBLE,
@@ -481,6 +485,22 @@ impl Associated {
         };
         match associate(bus, x, &info)? {
             Association::Frame(again) => Ok(again.frame == self.frame),
+            Association::Identity(Unassociated::Failed(error)) => Err(error),
+            _ => Ok(false),
+        }
+    }
+
+    /// The confirmation right before #228's request (`ask.rs`; task 185's fix wave 2): the whole association runs again
+    /// on every route, the vendor's own title match included, and holds only when it again names this frame, of this
+    /// application root, unambiguously. The request turns on accessibility for the whole process and cannot be taken
+    /// back, so a window that was unique at the read and has since gained a same-title sibling is not asked. The reads
+    /// and the input keep [`Associated::confirm`].
+    pub fn confirm_for_ask(&self, bus: &mut Bus, x: &mut X11) -> Result<bool> {
+        let Ok(info) = x.get_window(self.window) else {
+            return Ok(false);
+        };
+        match associate(bus, x, &info)? {
+            Association::Frame(again) => Ok(again.frame == self.frame && again.app == self.app),
             Association::Identity(Unassociated::Failed(error)) => Err(error),
             _ => Ok(false),
         }

@@ -1,6 +1,7 @@
 //! The wait's tests: its end on recorded trees, and the loop on a scripted clock.
 
 use super::*;
+use crate::tree::Truncated;
 
 /// A tree written as the probe printed it: one node a line, indented two spaces a level, `role "name"`.
 fn recorded(text: &str) -> AxNode {
@@ -204,6 +205,8 @@ struct Read {
     tree: Result<Option<AxNode>, &'static str>,
     failed: u32,
     listings_failed: u32,
+    /// Nodes the read's limits left out (`Truncated::nodes`, `Truncated::depth`).
+    cut: u32,
     late: bool,
 }
 
@@ -229,6 +232,7 @@ impl Scripted {
                     tree: read.map(|t| t.map(recorded)),
                     failed: 0,
                     listings_failed: 0,
+                    cut: 0,
                     late: false,
                 })
                 .collect(),
@@ -243,6 +247,11 @@ impl Scripted {
 
     fn listing_failed(mut self, read: usize) -> Scripted {
         self.reads[read].listings_failed = 1;
+        self
+    }
+
+    fn cut(mut self, read: usize, nodes: u32) -> Scripted {
+        self.reads[read].cut = nodes;
         self
     }
 
@@ -274,6 +283,7 @@ impl Frame for Scripted {
         let mut stats = ReadStats::default();
         stats.truncated.failed = read.failed;
         stats.listings_failed = read.listings_failed;
+        stats.truncated.nodes = read.cut;
         match read.tree {
             Ok(tree) => Ok(Some((tree, stats))),
             Err(error) => Err(anyhow::anyhow!(error)),
@@ -319,6 +329,39 @@ fn a_read_whose_child_listing_failed_waits_on_for_the_page() {
     }
     let waited = wait(&mut stays, bare(), ReadStats::default());
     assert_eq!((waited.summary.end, waited.summary.shape), (End::Bound, Shape::Views));
+}
+
+/// The whole-change review, P2: a read the element limit or the depth limit cut may have left the document out with
+/// what it cut, so a visible control does not make it a window with no page; a populated document still ends the wait.
+#[test]
+fn a_read_cut_by_its_limits_is_no_window_without_a_page() {
+    for cut in [
+        Truncated {
+            nodes: 1,
+            ..Default::default()
+        },
+        Truncated {
+            depth: 2,
+            ..Default::default()
+        },
+    ] {
+        let stats = ReadStats {
+            truncated: cut,
+            ..Default::default()
+        };
+        assert_eq!(shape(&recorded(BASE_WINDOW), lost(&stats)), Shape::Views, "{cut:?}");
+        assert_eq!(shape(&recorded(CEF_DIALOG), lost(&stats)), Shape::Views, "{cut:?}");
+        assert_eq!(shape(&recorded(FIXTURE_PAGE), lost(&stats)), Shape::Page, "{cut:?}");
+    }
+    let mut frame = Scripted::new(vec![(1, Ok(Some(BASE_WINDOW))), (1, Ok(Some(FIXTURE_PAGE)))]).cut(0, 40);
+    let waited = wait(&mut frame, bare(), ReadStats::default());
+    assert_eq!((waited.summary.end, waited.summary.reads), (End::Page, 2));
+    let mut page = Scripted::new(vec![(1, Ok(Some(FIXTURE_PAGE)))]).cut(0, 40);
+    assert_eq!(
+        wait(&mut page, bare(), ReadStats::default()).summary.end,
+        End::Page,
+        "at once"
+    );
 }
 
 #[test]

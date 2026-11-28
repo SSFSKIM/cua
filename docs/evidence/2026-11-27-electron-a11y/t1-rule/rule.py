@@ -252,7 +252,9 @@ def fixture_bare(out):
                 'fixture_log_unchanged_by_screenshots': bool(log_before) and log_after == log_before,
                 'mode_unchanged_after_screenshots': walked is not None and walked['nodes'] <= 2,
                 'reads_answered': all(r['ok'] for r in reads),
-                'first_read_bare': reads[0]['nodes'] == 1,
+                # bare before task 2's wait; since it, the wait answers the page the request brought
+                'first_read_bare_or_its_waits_page': reads[0]['nodes'] == 1
+                or (((reads[0]['ask'] or {}).get('wait') or {}).get('end') == 'page' and reads[0]['fixture_button']),
                 'first_read_sent_one_GetAttributes_from_the_engine': reads[0]['seen']['GetAttributes'] == 1
                 and all(q['sender'] in engine.connections() for q in reads[0]['requests']),
                 'first_read_one_ToolkitName': reads[0]['seen']['ToolkitName'] == 1,

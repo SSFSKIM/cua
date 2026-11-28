@@ -589,3 +589,57 @@ its own.
   - **Screenshots and other windows.** A screenshot never gets the field. Every other window's answer equals the 0.4.6 engine's key for key; live, 43 answers matched one to one.
   - **The engine's own `launch_app`** sets `ACCESSIBILITY_ENABLED=1`, overriding an inherited value, so every route has it (call 2).
   - **The X11 caveat.** `BOUND`'s doc carries it.
+
+## Outcomes
+
+**What shipped** (the pull request closes #228; each task's as-built entry is in §K).
+- **The engine (cua-engine 0.4.7; T1 to T3, and the review's fixes).** When a tree is asked for and the frame of an
+  Electron window (`WM_WINDOW_ROLE` `browser-window`) reads bare, the engine sends one `GetAttributes` to the
+  application. Only a request that got its reply is followed by the wait: up to 2 s of wall time after the reply, for
+  the pauses and the accessibility-bus calls, not the X server's replies. The observation answers with the page when it
+  arrives in time. A screenshot never asks. `tree_unavailable` is `no_provider` for an Electron window whose process
+  association found, with the registry's listing whole, to have no application on the bus, and `asked` for a wait that ended at the
+  bound with the frame still alone (an empty document or panels alone give neither). Every other window's answer is the
+  0.4.6 engine's, key for key.
+- **The JavaScript (T4).** `launch_app` on Linux starts the application with `ACCESSIBILITY_ENABLED=1`, through both
+  routes (the supervisor's `gio launch` and the engine's own launcher). `getScreenshot` sends `tree_wanted: false`.
+  The facade renders the two sentences after the tree, and doctor's `accessibility.enabled` row names Chromium beside
+  Qt 6.
+- **The documents (T6).** `README.md`: the Electron limitation as what is left of it, with the two sentences and the
+  costs the owner accepted; "Chrome's own window" corrected (§J 3); the launch variable stated beside `launch_app`.
+  `docs/cua-api/linux-engine.md`: one paragraph for the model. The #171 spec's limitation line, corrected in place
+  and dated (§J 1; its Decision Log and Surprises entries stay as written). `scripts/linux-engine-diff/families.mjs`'s
+  Electron comment (§J 4). `test/cua-api/linux-engine-document.test.mjs` pins the new sentences to the facade's text
+  and the launch variable to the code.
+- **The release and the pin (T5), pending.** The engine's release, its pin and `MIN_ENGINE_VERSION` 0.4.7 together,
+  filled in from T5. At T6's base the pin is 0.4.6 with a minimum of 0.4.5; none of that is T6's.
+
+**The acceptance** (§G's live tests 1 and 3 through the confined service on the VM, T5):
+
+(T5's results, to be filled in.)
+
+**What is left.**
+- **The tracker line** (`tech-debt-tracker.md`, T2's review): the engine's X server replies block without a deadline,
+  in the association and in the wait's confirmation of it. The wait's 2 s bound covers its pauses and every
+  accessibility-bus call, not those. Ruled don't-fix for #228.
+- **CEF products and other embedders** stay as they were: taste call 3 (ruling 1251) limits the request to Electron's
+  own window role. If a matrix cell or a user shows a need, it gets a ticket of its own.
+- **The plain line for every window whose process is not on the bus** (taste call 4, ruling 1251) stays out of scope,
+  and gets its own ticket if a need shows. A Qt 6 app started with the switch off still reads as one node with no
+  explanation.
+- **Not measured** (§I): Flatpak and Snap, AppImage, Chromium browsers other than Chrome, arm64's own probes, and how
+  much worse a screen reader reads in the lesser mode.
+- §J 8 (`launch_app` taking 30 s for an app that keeps its output open) was not this ticket's; #598 fixed it
+  (merged as #605, cua 0.30.2).
+
+**What the work taught.**
+- **The flag was never the whole story.** An Electron app's tree needs the bridge and the mode, and the flag gave only
+  the mode. Once the two were told apart, one request that cua's engine had never sent turned the mode on in a running
+  app, and no change to anyone's command line was needed.
+- **A ticket's "known fact" can be a wrapper.** "Chrome exposed its tree without the flag" was the provisioning
+  script's `google-chrome`, which adds the flag. Read what a name on `PATH` runs before taking a baseline from it.
+- **A guard in front of a call can be a no-op on the route that matters.** The engine's check before the request
+  did nothing on the route that matches a window by its title; the review found it, and the fix is a re-association
+  made for the ask, on every route.
+- **Tests of what must not happen have to fail closed.** The live tests for the screenshot and the browsers bracket
+  each observation with markers on the bus, so an engine that asks when it should not turns them red.

@@ -1397,8 +1397,12 @@ Linux the denial is per directory: `profiles.json`, `current.json`, `staging/` a
 computer surface the trusted worker has the network, so the engine, its child, reaches X and the session bus; it
 keeps the same filesystem limits. `launch_app` on Linux starts the application outside the sandbox: cua checks the id
 against the engine's own `list_apps`, resolves it to a desktop entry outside every sandbox write root, and runs it
-with `gio launch` in the desktop session, so the application is not confined with the worker. A connection's own
-`profiles_list` check runs under the connection's mode. `CUA_SHIM_SANDBOX=disabled`, set in `cua serve`'s environment,
+with `gio launch` in the desktop session, so the application is not confined with the worker. That launch passes the
+application `ACCESSIBILITY_ENABLED=1`, beside the desktop session's own variables and nothing else of cua's
+environment (#228). A fresh process `gio` starts then puts its Chromium accessibility bridge on the bus, whatever the
+session's accessibility switch says, and what that process starts inherits the variable. A desktop entry the session
+bus starts itself (`DBusActivatable=true`) and an instance that is already running take the launch without it. A
+connection's own `profiles_list` check runs under the connection's mode. `CUA_SHIM_SANDBOX=disabled`, set in `cua serve`'s environment,
 is the operator's explicit opt-out: nothing is confined and cells reach X and the network again (doctor's `sandbox`
 row says which applies).
 
@@ -1480,9 +1484,13 @@ lack of `DISPLAY`.
   agent's X display answers with the extensions the helper needs.
 
 - **Chrome's own window.** Read through the native route, it exposes no accessibility tree by default. Chrome joins
-  AT-SPI when toolkit accessibility is on (`gsettings set org.gnome.desktop.interface toolkit-accessibility true`).
-  Web content appears only when Chrome is also started with `--force-renderer-accessibility`. The browser surface
-  needs neither.
+  AT-SPI when toolkit accessibility is on (`gsettings set org.gnome.desktop.interface toolkit-accessibility true`),
+  or, in a Debian or Ubuntu X session, whatever that setting says. Joined without
+  `--force-renderer-accessibility`, it still shows frames and nothing under them: no toolbar, no tabs, no page.
+  Once Chrome is on the bus, the flag is what shows its toolbar and its pages (it does not itself put Chrome on the
+  bus). The VM's `google-chrome` is the wrapper cua's provisioning writes, which adds the flag
+  (`deploy/cloud-vm/cua-provision.sh`), which is why Chrome showed its tree there. cua does not ask Chrome to turn its
+  accessibility on, as it does an Electron app (the Electron limitation below). The browser surface needs neither.
 
 ### cua's own Linux runtime
 
@@ -1620,8 +1628,20 @@ row is `skip`.
 
 ### Known limitations (cua's engine)
 
-- **Electron.** An Electron application exposes its tree only when started with `--force-renderer-accessibility`
-  (#228). Without it cua sees one X11 node. cua does not add the flag.
+- **Electron** (#228). Three things, in order. A fresh `launch_app` puts an Electron app on the accessibility bus, and
+  there it shows only its window until its accessibility is turned on. A read of such a window that finds the window
+  alone can ask the app to turn its accessibility on; once the app answers, cua waits up to 2 s for the elements, so that
+  read can take longer than later ones, and the elements come with it when they arrive in time. A screenshot never
+  asks, cua adds no flag to any command line, and only Electron's windows are asked: Chrome, CEF apps and NW.js are read
+  as before. Two answers, at the end of the observation, say there is still no tree:
+  `No accessibility tree: <app>, an Electron app by its window's role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.`
+  (an app that is not on the bus cannot be reached from outside; starting it again with `launch_app` is a remedy), and
+  `No accessibility tree yet: <app> was asked to turn its accessibility on and has not shown its elements; observe again.`
+  (the wait ended with the window still bare). **What it costs the app.** Where cua's request turned accessibility on,
+  it stays on until the app exits, so the app does more work when its page changes, and one that asks for its
+  accessibility features sees them on. In an Electron 37 or later app, Orca started after that request gets a lesser
+  mode (no inline text boxes, no screen-reader flag) until the app is restarted, which resolves it; Orca already running
+  when cua asks is not affected.
 - **GTK 4 needs `dedicated` mode for input.** Clicks at coordinates, keys, text, scroll, move and drag are refused in
   `shared` mode with `<App> does not accept background input; use a dedicated desktop or activate the window first`.
   Element actions work in both modes.

@@ -50,6 +50,16 @@ const QUOTED = [
     'pub const NOTICE: &str = "the page may have started a drag that did not complete";'],
   ['Accessibility tree truncated: at least <n> elements not shown (<reason>)', [LINUX_DOCUMENT, README], 'src/cua-api/bind-linux-app.mjs',
     'Accessibility tree truncated: at least ${total} elements not shown (${reason})'],
+  // The two sentences an Electron window's observation ends with (#228): the app is not on the bus, or was asked and has
+  // shown nothing yet. The documents write the app's name as their own placeholder.
+  ['No accessibility tree: <App>, an Electron app by its window\'s role, is not on the accessibility bus', [LINUX_DOCUMENT], 'src/cua-api/bind-linux-app.mjs',
+    'No accessibility tree: ${app}, an Electron app by its window\'s role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.'],
+  ['No accessibility tree: <app>, an Electron app by its window\'s role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.', [README], 'src/cua-api/bind-linux-app.mjs',
+    'No accessibility tree: ${app}, an Electron app by its window\'s role, is not on the accessibility bus, which it joins only as it starts; start it again with launch_app to get its elements.'],
+  ['No accessibility tree yet: <App> was asked to turn its accessibility on and has not shown its elements; observe again.', [LINUX_DOCUMENT], 'src/cua-api/bind-linux-app.mjs',
+    'No accessibility tree yet: ${app} was asked to turn its accessibility on and has not shown its elements; observe again.'],
+  ['No accessibility tree yet: <app> was asked to turn its accessibility on and has not shown its elements; observe again.', [README], 'src/cua-api/bind-linux-app.mjs',
+    'No accessibility tree yet: ${app} was asked to turn its accessibility on and has not shown its elements; observe again.'],
   ['clipboard update timed out', [README], 'native/linux-engine/src/copy.rs', 'CopyRoute::Text => "clipboard update timed out",'],
   ['cua-engine <found> is older than 0.4.5, which this cua needs; run `node <this cua>/bin/cua.mjs install --engine`', [README], 'src/services/engine/linux/client.mjs',
     'cua-engine ${found} is older than ${MIN_ENGINE_VERSION}, which this cua needs; ${REMEDY}'],
@@ -79,6 +89,12 @@ const CLAIMS = [
   ['the drop guard: shared mode, a family whose drop changes the desktop, unless in front', [[README, 'unless the window is already active, focused and fully unobscured']],
     'native/linux-engine/src/engine/pointer.rs',
     'if self.cfg.desktop == DesktopMode::Shared && self.family_of(window).is_some_and(|f| f.drop_changes_desktop) => { let standing = self.x.standing(window); let in_front = standing.active && standing.focused && self.x.unobscured(window);'],
+  // The environment gio runs with is the session's own variables, then cua's one (#228); it is passed to the launch itself.
+  ['launch_app passes the application ACCESSIBILITY_ENABLED=1 (#228)', [[README, 'That launch passes the application `ACCESSIBILITY_ENABLED=1`']],
+    'src/repl-host/launch-services.mjs',
+    'const desktopEnv = {...Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === \'string\').map(name => [name, env[name]])), ...LAUNCH_ENV}; try { await launch(real, desktopEnv);'],
+  ['that cua variable is ACCESSIBILITY_ENABLED=1', [[README, 'That launch passes the application `ACCESSIBILITY_ENABLED=1`']],
+    'src/repl-host/launch-services.mjs', 'const LAUNCH_ENV = {ACCESSIBILITY_ENABLED: \'1\'};'],
   ['Qt ignores the background wheel always', [[README, 'Qt** ignores synthetic wheel events in the background']], 'native/linux-engine/src/families.rs',
     'name: "Qt", toolkit: Some("Qt"), toolkit_major: None, classes: &[], drag: DragPacing::NONE, paste: DEFAULT_PASTE, ignores: &[Ignored { kind: Kind::Scroll, when: When::Always, }],'],
 ];

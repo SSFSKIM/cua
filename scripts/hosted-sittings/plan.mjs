@@ -115,15 +115,20 @@ const sittingCSchedule = ctx => sittingCOrder(ctx).runs;
 // Ruling 1239: a layered base (`base` and `baseRunId` comma lists, the full run first) is combined from its layers' raw
 // records (`baseRecords`, ./split.mjs baseLayersOf), beneath the run jobs.
 // `only`: the filter the run jobs ran; the save-sheet verdict is asked only when they ran that cell.
+// Ruling 1248 A(1): a filtered split with no base is a proof run: its cells (the filter's matrix cells) judged pairwise on
+// the jobs' own filtered runs alone, never combined over a base, so neither rejudge-base nor combine runs.
+const proofCellsOf = split => (split?.only?.length && !split.base ? split.only.filter(c => c !== SAVE_SHEET_CELL) : null);
 function splitJudge(ctx) {
   const {jobs, runs, base = null, baseRunId = null, baseRecords = null, only = null} = ctx.split, sitting = `hosted-${ctx.runId}-c`, combined = `${ctx.out}/combined`;
   const matrix = (...args) => ['node', 'scripts/native-matrix.mjs', ...args], keyRoute = `${ctx.out}/key-route`;
+  const proof = proofCellsOf(ctx.split);
   const gate = base ? ['jobs-check', 'rejudge-base'] : ['jobs-check'];
-  return [
-    {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228); the base matches its digests (H1)', kind: 'verdict', check: 'exit',
-      argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base, '--base-run-id', baseRunId] : []), '--out', `${ctx.out}/jobs.json`]},
-    ...(base ? [{id: 'rejudge-base', label: 'the base re-judged by this judge against its own commit\'s: only a difference this commit\'s declarations explain may differ, a departure now declared or a ticketed not-judged rule\'s row now not judged, each citing its ruling (rulings 1230, 1234)', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
-      argv: ['node', 'scripts/hosted-sittings.mjs', 'rejudge-base', '--base', base, '--out', `${ctx.out}/base-rejudge.json`]}] : []),
+  const judges = proof ? (proof.length ? [
+    {id: 'summary', label: `the matrix summary of the proof run's ${proof.length} cells, its jobs' filtered runs judged alone (ruling 1248)`, kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: gate,
+      argv: matrix('summary', ...jobs, '--proof', proof.join(','), '--out', `${ctx.out}/summary.md`)},
+    {id: 'compare', label: `the matrix judge of the proof run's ${proof.length} cells (ruling 1248)`, kind: 'verdict', check: 'verdict', needs: gate,
+      argv: matrix('compare', ...jobs, '--proof', proof.join(','), '--out', `${ctx.out}/comparison.md`)},
+  ] : []) : [
     // Each job's whole sitting dir: combine takes its matrix records and its speed-extra cell's, when it ran (F). Its
     // verdict is NO VERDICT when a rerun could not be combined; the judges still run, each such problem their missing proof.
     {id: 'combine', label: 'the run jobs\' records per lane, filtered reruns over the full run beneath them', kind: 'verdict', check: 'verdict', needs: gate,
@@ -131,6 +136,13 @@ function splitJudge(ctx) {
     {id: 'summary', label: 'the matrix summary (the three-point report)', kind: 'verdict', check: 'report', report: `${ctx.out}/summary.md`, needs: gate,
       argv: matrix('summary', combined, '--out', `${ctx.out}/summary.md`)},
     {id: 'compare', label: 'the matrix judge (Acceptance 7)', kind: 'verdict', check: 'verdict', needs: gate, argv: matrix('compare', combined, '--out', `${ctx.out}/comparison.md`)},
+  ];
+  return [
+    {id: 'jobs-check', label: 'the run jobs are one harness commit and one pair of engine versions, each job\'s runner recorded (ruling 1228); the base matches its digests (H1)', kind: 'verdict', check: 'exit',
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'jobs-check', '--jobs', jobs.join(','), ...(base ? ['--base', base, '--base-run-id', baseRunId] : []), '--out', `${ctx.out}/jobs.json`]},
+    ...(base ? [{id: 'rejudge-base', label: 'the base re-judged by this judge against its own commit\'s: only a difference this commit\'s declarations explain may differ, a departure now declared or a ticketed not-judged rule\'s row now not judged, each citing its ruling (rulings 1230, 1234)', kind: 'verdict', check: 'exit', needs: ['jobs-check'],
+      argv: ['node', 'scripts/hosted-sittings.mjs', 'rejudge-base', '--base', base, '--out', `${ctx.out}/base-rejudge.json`]}] : []),
+    ...judges,
     // I3: the run jobs' save-sheet verdicts, carried into this job's verdict.
     ...(!only || only.includes(SAVE_SHEET_CELL) ? [{id: 'save-sheet', label: '#212\'s save-sheet cell as each run job recorded it (I3 of the split review)', kind: 'verdict', check: 'verdict', needs: ['jobs-check'],
       argv: ['node', 'scripts/hosted-sittings.mjs', 'save-sheet-verdicts', '--jobs-file', `${ctx.out}/jobs.json`, '--runs', runs.join(',')]}] : []),
@@ -251,9 +263,12 @@ const BUILDERS = {a: sittingA, b: sittingB, c: sittingC, d: sittingD, e: sitting
 export function sittingPlan(sitting, ctx) {
   const build = BUILDERS[sitting];
   if (!build) throw new Error(`no sitting ${sitting}: the sittings are ${SITTINGS.join(', ')}`);
-  const [title, proves] = TITLES[sitting];
+  const [named, proves] = TITLES[sitting];
+  const proof = sitting === 'c' && ctx.split?.judge ? proofCellsOf(ctx.split) : null;
+  const title = proof?.length ? `${named} (proof run: ${proof.length} cells, no base)` : named;
   return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx), ...(sitting === 'c' && ctx.split ? {split: ctx.split} : {}),
-    counts: sitting !== 'c' || (ctx.split && !ctx.split.judge) ? [] : ctx.split?.judge ? [`${ctx.out}/combined/vendor`, `${ctx.out}/combined/cua`, ...ctx.split.jobs.map(d => `${d}/save-sheet`)]
+    counts: sitting !== 'c' || (ctx.split && !ctx.split.judge) ? [] : proof ? ctx.split.jobs.flatMap(d => ['vendor', 'cua', 'save-sheet'].map(x => `${d}/${x}`))
+      : ctx.split?.judge ? [`${ctx.out}/combined/vendor`, `${ctx.out}/combined/cua`, ...ctx.split.jobs.map(d => `${d}/save-sheet`)]
       : ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`), pilotReads: sitting === 'c' && Boolean(ctx.pilot),
     ...(sitting === 'c' ? {laneOrder: sittingCOrder(ctx)} : {}),
     scratchDirs: sitting === 'd' ? [acceptConfig(ctx)] : []};

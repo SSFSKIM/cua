@@ -36,9 +36,10 @@ function jobOf({dir, results, hardware = null, report = null}, scenesOf = () => 
 // `jobs`: [{dir, results: [{result}], hardware, report}] of the run jobs; `base`: the full run beneath filtered reruns,
 // or null; `scenesOf`: a recorded plan's scenes (../native-matrix/run.mjs). Ruling 1230: the jobs agree with each other
 // on harness commit and engines, and beneath filtered reruns both engines (the vendor's version, cua's engine version
-// and build) are the base's exactly; both harness commits are recorded. -> {refused: [why], jobs: [jobOf], base: jobOf |
-// null, commits: {jobs, base}}.
-export function jobsCheck(jobs, {base = null, scenesOf} = {}) {
+// and build) are the base's exactly; both harness commits are recorded. `lastJudged` {dir, cua} (ruling 1248): the last
+// judged sitting C's cua build, from its committed evidence, recorded against the jobs' as information, never refused
+// on. -> {refused: [why], jobs: [jobOf], base: jobOf | null, commits: {jobs, base}, lastJudged?: {dir, cua, jobs, same}}.
+export function jobsCheck(jobs, {base = null, scenesOf, lastJudged = null} = {}) {
   const read = jobs.map(j => jobOf(j, scenesOf)), under = base ? jobOf(base, scenesOf) : null, refused = [];
   const differ = (label, pick) => {
     const seen = read.flatMap(j => pick(j).map(v => [v, j.dir]));
@@ -64,7 +65,9 @@ export function jobsCheck(jobs, {base = null, scenesOf} = {}) {
       }
     }
   }
-  return {refused, jobs: read, base: under, commits: {jobs: [...new Set(read.flatMap(j => j.commit))], base: under?.commit ?? null}};
+  const builds = [...new Set(read.flatMap(j => j.cua))];
+  return {refused, jobs: read, base: under, commits: {jobs: [...new Set(read.flatMap(j => j.commit))], base: under?.commit ?? null},
+    ...(lastJudged ? {lastJudged: {dir: lastJudged.dir, cua: lastJudged.cua, jobs: builds, same: builds.length > 0 && builds.every(b => lastJudged.cua.includes(b))}} : {})};
 }
 
 // The jobs as the sitting report lists them: each job's runs, run id and attempt, runner and hardware, and why the judge
@@ -76,6 +79,7 @@ export function renderJobs(check) {
   return ['## The run jobs (ruling 1228)', '', '| job | runs | run id | attempt | image | VM | hardware | scenes | save sheet |', '|---|---|---|---|---|---|---|---|---|',
     ...[...(check.base ? [{...check.base, dir: `${check.base.dir} (beneath)`}] : []), ...(check.layers ?? []).flatMap(l => l.jobs.map(j => ({...j, dir: `${j.dir} (beneath, layer ${l.runId})`}))), ...check.jobs].map(j => `| ${j.dir} | ${j.runs.join(', ')} | ${j.runId} | ${j.attempt} | ${j.image ?? '-'} | ${j.vm ?? '-'} | ${hardware(j.hardware)} | ${j.scenes?.join(', ') || '-'} | ${sheet(j)} |`),
     '', ...(check.commits ? [`Harness commits: the jobs ${check.commits.jobs.join(', ') || 'none recorded'}${check.base ? `; the base ${check.commits.base?.join(', ') || 'none recorded'}` : ''}.`, ''] : []),
+    ...(check.lastJudged ? [`The cua engine against the last judged sitting C (${check.lastJudged.dir}): ${check.lastJudged.cua.join(', ') || 'none recorded'} then, ${check.lastJudged.jobs.join(', ') || 'none recorded'} in these jobs: ${check.lastJudged.same ? 'the same build' : 'a new build'} (recorded, never refused; ruling 1248).`, ''] : []),
     ...check.jobs.flatMap(j => (j.saveSheet ?? []).filter(s => s.status !== 'PASS').map(s => `- ${j.dir} ${s.id}: ${s.status}${s.reason ? ` (${s.reason})` : ''}`)),
     ...(check.refused.length ? [`Refused to judge: ${check.refused.join('; ')}.`, ''] : [])];
 }

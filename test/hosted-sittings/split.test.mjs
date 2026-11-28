@@ -609,3 +609,58 @@ test('the base re-judged: a declaration with a ticket but no ruling explains not
   assert.equal(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [departure], declaredAtBase: cell => cell === DRAG}).refused.length, 1);
   assert.deepEqual(baseRejudge(baseCells({}), baseCells({[DRAG]: {verdict: 'declared'}}), {departures: [{...departure, ruling: '1228'}]}).refused, []);
 });
+
+// Ruling 1248 A(1): the proof run, a filtered split with no base. Its judge checks the jobs, then judges their own
+// filtered runs pairwise on the proof cells alone: no rejudge-base, no combine; jobs-check records the jobs' cua build
+// against the last judged sitting C's, read from the committed evidence, as information.
+test('the proof run\'s judge: jobs-check, then summary and compare over the jobs themselves with --proof, never rejudge-base or combine', () => {
+  const only = ['textedit/concurrent.sheet@electron', 'openPanel/background/getAXState.panel@finder'];
+  const proof = plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null, only});
+  assert.deepEqual(proof.steps.map(s => s.id), ['jobs-check', 'summary', 'compare', 'key-route']);
+  const [check, summary, compare] = proof.steps;
+  assert.deepEqual(check.argv.slice(2), ['jobs-check', '--jobs', '/j/1,/j/2,/j/3', '--out', '/w/out/jobs.json']);
+  assert.deepEqual(summary.argv.slice(2), ['summary', '/j/1', '/j/2', '/j/3', '--proof', only.join(','), '--out', '/w/out/summary.md']);
+  assert.deepEqual(compare.argv.slice(2), ['compare', '/j/1', '/j/2', '/j/3', '--proof', only.join(','), '--out', '/w/out/comparison.md']);
+  assert.deepEqual([summary.needs, compare.needs, compare.check], [['jobs-check'], ['jobs-check'], 'verdict']);
+  for (const step of [summary, compare]) assert.deepEqual(parseCommand(step.argv.slice(2)).proof, only, 'the matrix CLI takes the step as written');
+  assert.ok(proof.steps.every(s => !['rejudge-base', 'combine'].includes(s.argv[2])), 'nothing of the base, nothing combined');
+  assert.match(proof.title, /\(proof run: 2 cells, no base\)$/);
+  assert.deepEqual(proof.counts, ['/j/1/vendor', '/j/1/cua', '/j/1/save-sheet', '/j/2/vendor', '/j/2/cua', '/j/2/save-sheet', '/j/3/vendor', '/j/3/cua', '/j/3/save-sheet']);
+  // The save sheet in the filter keeps its verdict step; the matrix's proof never names it.
+  const withSheet = plan({judge: true, jobs: ['/j/1'], runs: [1], base: null, only: [...only, SAVE_SHEET_CELL]});
+  assert.deepEqual(withSheet.steps.map(s => s.id), ['jobs-check', 'summary', 'compare', 'save-sheet', 'key-route']);
+  assert.equal(flag(withSheet.steps[1].argv, '--proof'), only.join(','));
+  // A full split (no filter, no base) is judged as before: combined over nothing, every cell.
+  assert.deepEqual(plan({judge: true, jobs: ['/j/1', '/j/2', '/j/3'], runs: [1, 2, 3], base: null}).steps.map(s => s.id), ['jobs-check', 'combine', 'summary', 'compare', 'save-sheet', 'key-route']);
+});
+
+test('jobs-check records the jobs\' cua build against the last judged sitting C\'s, never refusing on it', () => {
+  const last = {dir: 'docs/evidence/x-m5-sitting-c-split', cua: ['0.3.0 build b1']};
+  const other = jobsCheck([job('/j/1', {planId: 'filtered', build: 'b2'})], {lastJudged: last});
+  assert.deepEqual([other.refused, other.lastJudged], [[], {dir: last.dir, cua: ['0.3.0 build b1'], jobs: ['0.3.0 build b2'], same: false}]);
+  assert.match(renderJobs(other).join('\n'), /^The cua engine against the last judged sitting C \(docs\/evidence\/x-m5-sitting-c-split\): 0\.3\.0 build b1 then, 0\.3\.0 build b2 in these jobs: a new build \(recorded, never refused; ruling 1248\)\.$/m);
+  assert.equal(jobsCheck([job('/j/1', {planId: 'filtered'})], {lastJudged: last}).lastJudged.same, true);
+  // The jobs still agree with each other on the build.
+  assert.match(jobsCheck([job('/j/1', {planId: 'filtered'}), job('/j/2', {run: 2, planId: 'filtered', build: 'b2'})], {lastJudged: last}).refused[0], /more than one cua engine version/);
+});
+
+test('jobs-check with no base reads the last judged sitting C\'s build from the committed evidence', () => {
+  const cli = (...args) => spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', ...args], {encoding: 'utf8'});
+  const root = fs.mkdtempSync(join(tmpdir(), 'split-last-')), out = join(root, 'jobs.json');
+  try {
+    const jobs = ['1-1', '2-1', '3-1'].map(n => `${SPLIT_BASE}/jobs/m5-sitting-c-run-${n}/sitting`);
+    const r = cli('jobs-check', '--jobs', jobs.join(','), '--out', out);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const {lastJudged} = JSON.parse(fs.readFileSync(out, 'utf8'));
+    const recorded = JSON.parse(fs.readFileSync(`${SPLIT_BASE}/jobs/m5-sitting-c-run-1-1/sitting/cua/run-1/result.json`, 'utf8')).lanes[0].build;
+    assert.deepEqual([lastJudged.dir, lastJudged.cua, lastJudged.same], [SPLIT_BASE, [`0.3.0 build ${recorded}`], true]);
+    assert.ok(recorded.startsWith('2de28fcc909d7577'));
+  } finally { fs.rmSync(root, {recursive: true, force: true}); }
+});
+
+test('the workflow takes a filter with no base_run_id as a proof run (ruling 1248): the run jobs never refuse it, and the judge gets no base', () => {
+  const workflow = WORKFLOW();
+  assert.doesNotMatch(workflow, /a filter needs base_run_id/);
+  assert.match(workflow, /base_run_id:\n\s+description: "[^"]*empty with a filter: a proof run \(ruling 1248\)/);
+  assert.match(workflow, /\[ -n "\$\{M5_BASE:-\}" \] && flags\+=\(--base "\$M5_BASE" --base-run-id "\$M5_BASE_RUN_ID"\)\n\s+\[ -n "\$FILTER" \] && flags\+=\(--only "\$FILTER"\)/);
+});

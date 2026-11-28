@@ -9,7 +9,8 @@ name: m5-sittings
 # which refuses unless RUNNER_ENVIRONMENT=github-hosted and the O0 entry is in the Decision Log (ruling 1111). No repository
 # secret is used; replayd's store is never written (ruling 1141). Each job uploads its output, whatever its result.
 # form=split (sitting c, ruling 1228): one job per run number (split_runs; filter for a filtered rerun over the full run
-# base_run_id names), then a judging job that refuses jobs of another harness commit or engine version (split.mjs).
+# base_run_id names, or with no base_run_id a proof run whose cells are judged alone, ruling 1248), then a judging job
+# that refuses jobs of another harness commit or engine version (split.mjs).
 # jobs_run_id (ruling 1234): a judge-only dispatch, the judging job alone over the run jobs of that earlier run (its
 # attempt and drawing commit pinned by jobs_run_attempt and jobs_commit), refused unless they check out (source-run).
 on:
@@ -37,7 +38,7 @@ on:
         type: string
         default: ''
       base_run_id:
-        description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791), then, comma-separated, each judged split run whose run jobs are layered over it in order (ruling 1239; e.g. 45468052791,46069842660)"
+        description: "split with a filter: the run id of the full sitting C whose records lie beneath the filtered reruns (e.g. 45468052791), then, comma-separated, each judged split run whose run jobs are layered over it in order (ruling 1239; e.g. 45468052791,46069842660); empty with a filter: a proof run (ruling 1248), its cells judged pairwise on its own runs alone"
         type: string
         default: ''
       jobs_run_id:
@@ -223,8 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          # A filtered rerun is judged over the full run beneath it, so it names that run.
-          [ -z "$FILTER" ] || [ -n "$BASE_RUN_ID" ] || { echo 'a filter needs base_run_id, the full run beneath it'; exit 2; }
+          # A filtered rerun names the full run beneath it (base_run_id); one that names none is a proof run (ruling 1248).
           git log -1 --format='sitting %H %s'
           sw_vers; echo "ImageOS=$ImageOS ImageVersion=$ImageVersion arch=$(uname -m) run=$RUN filter=$FILTER"
           npm ci --no-audit --no-fund

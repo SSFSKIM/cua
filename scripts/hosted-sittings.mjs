@@ -145,6 +145,18 @@ function basesOf(values) {
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
 // Every record under it (its matrix lanes, save-sheet and speed-extra cells) and its sitting report (sitting.json: the
 // run job's save-sheet verdicts, I3).
+// Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it: the newest docs/evidence/<date>-m5-
+// sitting-c-* directory, its run jobs' records (jobs/*/sitting) or else its sitting/'s, and the cua builds they name.
+// -> {dir (relative to the checkout), cua: [build]} | null.
+function lastJudgedC() {
+  const root = join(REPO, 'docs', 'evidence');
+  const dir = existsSync(root) ? readdirSync(root).filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().at(-1) : null;
+  if (!dir) return null;
+  const jobs = join(root, dir, 'jobs');
+  const records = existsSync(jobs) ? readdirSync(jobs).sort().map(j => join(jobs, j, 'sitting')) : [join(root, dir, 'sitting')];
+  const {jobs: read} = jobsCheck(records.map(jobDir), {scenesOf});
+  return {dir: `docs/evidence/${dir}`, cua: [...new Set(read.flatMap(j => j.cua))]};
+}
 function jobDir(dir) {
   const {results} = readResults([dir]);
   const readJsonFile = file => { try { return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null; } catch { return null; } };
@@ -401,7 +413,7 @@ async function main(argv) {
       const bases = basesOf(values), unfit = bases ? bases.dirs.flatMap((dir, i) => baseDirCheck(dir, bases.ids[i])) : [];
       const jobs = values.jobs.split(',').filter(Boolean).map(d => jobDir(resolve(d)));
       const full = bases ? jobDir(bases.layers[0].records[0]) : null;
-      let check = unfit.length ? {refused: unfit, jobs: [], base: null} : jobsCheck(jobs, {base: full, scenesOf});
+      let check = unfit.length ? {refused: unfit, jobs: [], base: null} : jobsCheck(jobs, {base: full, scenesOf, ...(bases ? {} : {lastJudged: lastJudgedC()})});
       // Ruling 1239: each rerun layer's run jobs, checked against the full run beneath them as their own judge checked them.
       if (!unfit.length && bases?.layers.length > 1) {
         const layers = bases.layers.slice(1).map((layer, i) => ({dir: layer.dir, runId: bases.ids[i + 1], ...jobsCheck(layer.records.map(jobDir), {base: full, scenesOf})}));

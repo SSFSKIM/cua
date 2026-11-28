@@ -557,3 +557,11 @@ its own.
   linux-engine 0.4.7, with reviewer-high on it, and the release, the pin and the gates as for 0.4.6. The pull request
   corrects §J's texts. The release notes name what a person may notice: cua turns on accessibility in the Electron
   apps it reads, until they exit.
+- **2026-11-28, T1 as built (task 179, reviewed clean).**
+  - **The rule** is a pure function in `native/linux-engine/src/ask.rs`. It checks a tree wanted, the frame bare and not asked before first, then the toolkit and then the role, so an already-asked application makes no new call.
+  - **The input field** is `tree_wanted: false` on `get_window_state`, where absent means true. The engine still reads and returns the tree; only the request is skipped. A combined tree-and-picture read wants the tree.
+  - **"Bare"** means the frame has no children in a tree read from the accessibility bus.
+  - **Connections.** The `ToolkitName` read and the request run only on the connection that associated the window (`dbus::on_this_connection`), never across a reconnect. A broken connection is dropped, and the next observation associates again.
+  - **What is remembered.** Only real `ToolkitName` answers are cached, per application per connection; a timeout or error is not. An error reply to `GetAttributes` counts as a failed send and is not remembered.
+  - **Live tests 5 to 8 fail closed.** Each observation is bracketed by `GetAttributes` markers sent to the registry's desktop object, which no application receives. An engine that asks on a screenshot turns test 5 red. §G7 counts every method on the engine's connections against main.
+  - **Consequence for the facade:** engine 0.4.6 refuses the unknown `tree_wanted`. `MIN_ENGINE_VERSION` goes to 0.4.7 together with the 0.4.7 pin, because the pin alone doesn't refuse an older installed or override binary.

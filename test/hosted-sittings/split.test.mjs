@@ -625,6 +625,7 @@ test('the proof run\'s judge: jobs-check, then summary and compare over the jobs
   for (const step of [summary, compare]) assert.deepEqual(parseCommand(step.argv.slice(2)).proof, only, 'the matrix CLI takes the step as written');
   assert.ok(proof.steps.every(s => !['rejudge-base', 'combine'].includes(s.argv[2])), 'nothing of the base, nothing combined');
   assert.match(proof.title, /\(proof run: 2 cells, no base\)$/);
+  assert.equal(proof.proves, 'the proof run\'s 2 cells alone, judged pairwise on this build\'s runs (ruling 1248); none of the sitting\'s acceptance');
   assert.deepEqual(proof.counts, ['/j/1/vendor', '/j/1/cua', '/j/1/save-sheet', '/j/2/vendor', '/j/2/cua', '/j/2/save-sheet', '/j/3/vendor', '/j/3/cua', '/j/3/save-sheet']);
   // The save sheet in the filter keeps its verdict step; the matrix's proof never names it.
   const withSheet = plan({judge: true, jobs: ['/j/1'], runs: [1], base: null, only: [...only, SAVE_SHEET_CELL]});

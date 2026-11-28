@@ -26,6 +26,8 @@ test('the proof form judges its cells alone on the filtered runs, and its headin
     const missing = logs.filter(l => l.startsWith('  missing: ')).map(l => l.slice('  missing: '.length));
     assert.deepEqual(missing, ['concurrent use: textedit/concurrent.sheet@electron has no valid cua sample', '1 cell(s) do not qualify: fewer than 3 complete run pairs (NO VERDICT by cell)'], logs.join('\n'));
     assert.deepEqual(logs.filter(l => l.startsWith('  blocking: ')), []);
+    // A departure declared for a cell outside the proof is none of its business: no owner line asks to remove it.
+    assert.deepEqual(logs.filter(l => l.startsWith('  owner: ')), []);
     assert.equal(logs.find(l => l.startsWith('VERDICT: ')), 'VERDICT: NO VERDICT');
     assert.equal(code, 4);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
@@ -41,6 +43,7 @@ test('the proof judgment: its cells and nothing else, no other cell, finding ele
   assert.deepEqual([j.runs, j.others], [{vendor: 3, cua: 3}, []]);
   assert.ok(!j.missing.some(m => /manifest missing|finding elements|full matrix run/.test(m)), j.missing.join('\n'));
   assert.equal(j.findingVerdict, 'not in the proof');
+  assert.deepEqual(j.options, [], 'the owner options are other cells\' runs');
   // The save-sheet and speed-extra records the jobs also hold are listed, never counted.
   assert.ok(j.narrowed.some(n => n.cell === 'intervention-save-sheet') && j.narrowed.some(n => n.cell === 'speed-extra'), JSON.stringify(j.narrowed));
   // A proof cell the runs' filter does not hold: its rows absent from each run's manifest, missing proof by name.

@@ -517,7 +517,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     else { row.samples += 1; if (row.length !== lengths.length) row.length = null; }
   }
   const shared = [...sharedGroups.values()];
-  const unneeded = full.length ? [...byRow.values()].filter(e => !applied.some(a => a.section === e.section && a.id === e.id)) : [];
+  const unneeded = full.length ? [...byRow.values()].filter(e => inPlan(e) && !applied.some(a => a.section === e.section && a.id === e.id)) : [];
 
   // Every judged cell of the manifest: its samples with and without a verdict, and whether it qualifies.
   const speedVerdict = c => (c.accepted ? 'accepted-miss' : `${c.beat === null ? 'no-verdict' : c.beat ? 'beat' : 'missed'}${c.remeasured && c.beat !== null ? '-remeasured' : ''}`);
@@ -605,7 +605,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     hosted: full.filter(({result}) => result.meta?.hosted === true).length, full: full.length};
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, acceptedMisses, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
-    blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
+    blocking, missing, options: OWNER_OPTIONS.filter(inPlan).map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
     firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
 }
 

@@ -266,7 +266,8 @@ export function sittingPlan(sitting, ctx) {
   const [named, proves] = TITLES[sitting];
   const proof = sitting === 'c' && ctx.split?.judge ? proofCellsOf(ctx.split) : null;
   const title = proof?.length ? `${named} (proof run: ${proof.length} cells, no base)` : named;
-  return {sitting, title, proves, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx), ...(sitting === 'c' && ctx.split ? {split: ctx.split} : {}),
+  const claims = proof?.length ? `the proof run's ${proof.length} cells alone, judged pairwise on this build's runs (ruling 1248); none of the sitting's acceptance` : proves;
+  return {sitting, title, proves: claims, form: ctx.pilot ? 'pilot' : 'full', setup: SETUP.has(sitting), steps: build(ctx), ...(sitting === 'c' && ctx.split ? {split: ctx.split} : {}),
     counts: sitting !== 'c' || (ctx.split && !ctx.split.judge) ? [] : proof ? ctx.split.jobs.flatMap(d => ['vendor', 'cua', 'save-sheet'].map(x => `${d}/${x}`))
       : ctx.split?.judge ? [`${ctx.out}/combined/vendor`, `${ctx.out}/combined/cua`, ...ctx.split.jobs.map(d => `${d}/save-sheet`)]
       : ['vendor', 'cua', 'save-sheet'].map(d => `${ctx.out}/${d}`), pilotReads: sitting === 'c' && Boolean(ctx.pilot),

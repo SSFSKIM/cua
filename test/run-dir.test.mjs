@@ -3,7 +3,9 @@
 // issue #66) left it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {spawn, spawnSync} from 'node:child_process';
+import {syncBuiltinESMExports} from 'node:module';
 import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -186,3 +188,29 @@ for (const parent of ['state', 'state/compat', 'kernel']) {
     for (const p of [...planted, ...files]) assert.ok(existsSync(p), `${p} survives a release`);
   });
 }
+
+// #171 M6b, task 167's fix wave 2: a record is read to its end however short each read, and only a whole record (the pid
+// and its newline) names an owner, so the sweep never takes a prefix of a live pid for a pid that is gone. A record is
+// read from a regular file only, never through a link.
+test('a session record is read whole across short reads; a prefix, a truncated record or a linked one never reaches the liveness check', t => {
+  const dir = home(t);
+  const run = join(dir, 'run');
+  mkdirSync(run);
+  const owner = 123_456;
+  session(run, ID(1), owner, {socket: false});                                  // live, read 2 bytes at a time
+  mkdirSync(join(run, ID(2)));
+  writeFileSync(join(run, `${ID(2)}.pid`), '98765');                          // no newline: still being written
+  writeFileSync(join(dir, 'elsewhere.pid'), '999999\n');
+  symlinkSync(join(dir, 'elsewhere.pid'), join(run, `${ID(3)}.pid`));          // a link: no record
+  const readSync = fs.readSync;
+  fs.readSync = function (fd, buffer, offset, length, position) { return readSync.call(this, fd, buffer, offset, Math.min(length, 2), position); };
+  syncBuiltinESMExports();
+  const asked = [];
+  let found;
+  try { found = sweepRun(dir, {alive: pid => { asked.push(pid); return pid === owner; }}); } finally { fs.readSync = readSync; syncBuiltinESMExports(); }
+  assert.deepEqual(asked, [owner], 'only the whole pid was asked about');
+  assert.deepEqual(found.live, [{session: ID(1), pid: owner}]);
+  assert.deepEqual(found.swept, []);
+  assert.deepEqual(found.unowned.sort(), [ID(2), `${ID(2)}.pid`, `${ID(3)}.pid`]);
+  assert.ok(existsSync(join(run, ID(1))) && existsSync(join(run, ID(2))), 'nothing of either session was removed');
+});

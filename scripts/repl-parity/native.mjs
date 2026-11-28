@@ -5,15 +5,17 @@ import {declaredDevice} from './devices.mjs';
 import {serveCommand} from '../native-baseline/remote.mjs';
 import {assertEngineOptions} from '../native-baseline/engine.mjs';
 import {pinnedApprovals} from '../accept/lib.mjs';
-import {ENGINE_NOTIFICATION,mergeObservations} from './engine-answered.mjs';
+import {ENGINE_NOTIFICATION,LINUX_VENDOR_LANE_RETIRED,mergeObservations} from './engine-answered.mjs';
 // The native lane runs on the declared Linux device it was prepared on (cua-171, cua-gce, or the paused cua-linux VM),
-// on the engine it names (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites):
+// on the engine it names, cua (the vendor lane refused since #171 M6b; the spec at
+// docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites):
 // CUA_NATIVE_ENGINE always explicit, so neither a default nor the device's engine.json moves under the lane, and
-// CUA_LINUX_ENGINE_BIN always set: `engineBin` (--engine-bin, the cua lane only, the engine's absolute path on the
+// CUA_LINUX_ENGINE_BIN always set: `engineBin` (--engine-bin, the engine's absolute path on the
 // device), else empty, so an ambient one never reaches the serve.
 export function nativeCommand({device,checkout,home,host,engine,engineBin,fixtureMode='blank',...facts}){
  if(declaredDevice(device).platform!=='linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires a prepared declared Linux device');
- if(!['vendor','cua'].includes(engine))throw Error('The native lane names its engine: vendor or cua');
+ if(engine==='vendor')throw Error(LINUX_VENDOR_LANE_RETIRED);
+ if(engine!=='cua')throw Error('The native lane names its engine: cua');
  if(engineBin!==undefined&&(engine!=='cua'||!/^\/[^\0\n]*$/.test(engineBin)))throw Error('--engine-bin names an absolute cua-engine path on the device, with --engine cua only');
  if(!['blank','drag','scroll','minimized'].includes(fixtureMode))throw Error('Unknown native fixture mode');
  const expectedFacts={device,checkout,home,...facts},nativeFilename=`cua-m4-${randomUUID()}.txt`;
@@ -39,17 +41,20 @@ export function nativeWindowApp(result){
  if(typeof app!=='string'||!app)throw Error('Native setup failed: '+cellText(result));
  return app;
 }
-// One native case on its own connection. `recordEngine` receives what answered it: {case, requested, expected, error,
-// observed}, from the serve's notifications (./engine-answered.mjs), judged by the run (laneEngineProblem).
+// One native case on its own connection. `recordEngine` receives what answered it: {case, connection, requested,
+// expected, error, observed}, from the serve's notifications (./engine-answered.mjs), judged by the run
+// (laneEngineProblem); `connection` is the pool's name for the case's connection, whose recorded provenance attests the
+// home that answered it (hostAttestations[].executionFacts.answeringHost), so R1's verdict binds the engine to that home
+// (scripts/linux-engine-gate/parity-verdict.mjs; #171 M6b, fix wave 1).
 export async function runNativeScenario(scenario,{pool,prepared,host,engine,engineBin,emit,recordEngine=()=>{}}){
  const seen=[];let record=null;
  const command={...nativeCommand({...prepared,host,engine,engineBin,fixtureMode:scenario.fixtureMode}),onNotification:message=>{
   if(message.method!==ENGINE_NOTIFICATION)return;
   const {observed=[],sampleError,...facts}=message.params??{};record??=facts;seen.push(observed);if(sampleError)record.sampleError??=sampleError;
  }};
- const client=await pool.open(command);
+ const client=await pool.open(command),connection=pool.connectionOf?.(client)??null;
  try{return await exerciseNative(scenario,{client,command,prepared,emit});}
- finally{recordEngine({case:scenario.id,...(record??{requested:engine,expected:null,error:'the serve reported no engine observation'}),observed:mergeObservations(...seen)});}
+ finally{recordEngine({case:scenario.id,connection,...(record??{requested:engine,expected:null,error:'the serve reported no engine observation'}),observed:mergeObservations(...seen)});}
 }
 async function exerciseNative(scenario,{client,command,prepared,emit}){
  const pinned=new Set();

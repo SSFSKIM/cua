@@ -76,10 +76,10 @@ export function procTable(psText, readExe) {
 }
 
 // The native-socket holder step of verify.mjs: null where it applies (macOS), else why it is skipped. On Linux the
-// computer-use helper is a child process of the runtime over stdio and holds no socket.
+// computer-use engine, cua-engine, is a child process of the runtime over stdio and holds no socket.
 export function nativeSocketStep(platform) {
   return platform === 'darwin' ? null
-    : {status: 'skip', reason: `${platform}: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder`};
+    : {status: 'skip', reason: `${platform}: the computer-use engine (cua-engine) is a child process of the runtime over stdio, not a native socket holder`};
 }
 
 // `lsof -F pc <path>` field output -> [{pid, command}].

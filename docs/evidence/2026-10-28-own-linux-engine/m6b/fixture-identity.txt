@@ -1,0 +1,125 @@
+# Comparator fixture identity (#171 M6b T3, task 168), 2026-11-24T13:04:31Z, on dc-linux171-1e68, checkout at edce32a36 with T3's uncommitted tool
+# Each fixture's vendor payload against its authenticated deb, before its manifest entry is written.
+
+## 1. Each deb's length and SHA-256 against its pin (runtime/releases/26.928.40906-linux-<arch>.json)
+
+$ node -e const p=require("./runtime/releases/26.928.40906-linux-"+process.argv[1]+".json");console.log("pin", p.release, "length", p.archive.length, "sha256", p.archive.sha256) x64
+pin 26.928.40906-linux-x64 length 474898954 sha256 8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30
+(exit 0)
+
+$ stat -c %s %n /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+474898954 /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+(exit 0)
+
+$ sha256sum /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30  /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+(exit 0)
+
+$ node -e const p=require("./runtime/releases/26.928.40906-linux-"+process.argv[1]+".json");console.log("pin", p.release, "length", p.archive.length, "sha256", p.archive.sha256) arm64
+pin 26.928.40906-linux-arm64 length 453477698 sha256 ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd
+(exit 0)
+
+$ stat -c %s %n /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+453477698 /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+(exit 0)
+
+$ sha256sum /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd  /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+(exit 0)
+
+## 2. Each fixture's own checksums
+
+$ bash -c cd '/Users/new/.local/share/cua-171/vendor-x64-pinned' && sha256sum -c SHA256SUMS && ls -l && wc -l tree-sha256.txt && sha256sum tree-sha256.txt
+26.928.40906-linux-x64.tar: OK
+total 209760
+-rw------- 1 new new 214425600 Nov 24 02:04 26.928.40906-linux-x64.tar
+-rw------- 1 new new        93 Nov 24 02:04 SHA256SUMS
+-rw------- 1 new new    357459 Nov 24 02:04 tree-sha256.txt
+2345 tree-sha256.txt
+7886c5dc6c39e7985043ba0718fd4bbb60c6f7efef7962f88a1c2492da7bb54f  tree-sha256.txt
+(exit 0)
+
+$ bash -c cd '/Users/new/.local/share/cua-171/vendor-arm64-pinned' && sha256sum -c SHA256SUMS && ls -l && wc -l tree-sha256.txt && sha256sum tree-sha256.txt
+26.928.40906-linux-arm64.tar: OK
+total 203972
+-rw------- 1 new new 208496640 Nov 24 01:53 26.928.40906-linux-arm64.tar
+-rw------- 1 new new        95 Nov 24 01:53 SHA256SUMS
+-rw------- 1 new new    357505 Nov 24 01:53 tree-sha256.txt
+2345 tree-sha256.txt
+24340a6e732d56d54f88717efe21ccc522278ca143939f612e50cb5482cfaf45  tree-sha256.txt
+(exit 0)
+
+## 3. The identity check, then the manifest entry (vendor-fixture-pin.mjs)
+
+$ node scripts/linux-engine-gate/vendor-fixture-pin.mjs /var/cache/cua/chatgpt_26.928.40906_amd64.deb /Users/new/.local/share/cua-171/vendor-x64-pinned
+deb /var/cache/cua/chatgpt_26.928.40906_amd64.deb: 474898954 bytes, SHA-256 8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30: the pinned 26.928.40906-linux-x64 (https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb)
+fixture tar /Users/new/.local/share/cua-171/vendor-x64-pinned/26.928.40906-linux-x64.tar: 214425600 bytes, SHA-256 2e6209866473328aa832fcb7b0e1f19b2a435fe803512c2bf578706f83505914
+fixture SHA256SUMS names that hash
+compared: the deb's cua_node 2344 files, 326 directories, 0 links; the fixture's 2344 files, 326 directories, 0 links, beside install.json, set aside
+identity: the same names, types, link targets and bytes on both sides, install.json alone set aside
+tree list /Users/new/.local/share/cua-171/vendor-x64-pinned/tree-sha256.txt: 2345 files, SHA-256 7886c5dc6c39e7985043ba0718fd4bbb60c6f7efef7962f88a1c2492da7bb54f, every one the tar's
+wrote the x64 entry of /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/scripts/linux-engine-gate/vendor-fixture.json
+(exit 0)
+
+$ node scripts/linux-engine-gate/vendor-fixture-pin.mjs /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb /Users/new/.local/share/cua-171/vendor-arm64-pinned
+deb /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb: 453477698 bytes, SHA-256 ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd: the pinned 26.928.40906-linux-arm64 (https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_arm64.deb)
+fixture tar /Users/new/.local/share/cua-171/vendor-arm64-pinned/26.928.40906-linux-arm64.tar: 208496640 bytes, SHA-256 fab959715d4087d7bc72805ecd8ab165a8b909609ea1ac272d3987a8497e0d69
+fixture SHA256SUMS names that hash
+compared: the deb's cua_node 2344 files, 326 directories, 0 links; the fixture's 2344 files, 326 directories, 0 links, beside install.json, set aside
+identity: the same names, types, link targets and bytes on both sides, install.json alone set aside
+tree list /Users/new/.local/share/cua-171/vendor-arm64-pinned/tree-sha256.txt: 2345 files, SHA-256 24340a6e732d56d54f88717efe21ccc522278ca143939f612e50cb5482cfaf45, every one the tar's
+wrote the arm64 entry of /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t3/scripts/linux-engine-gate/vendor-fixture.json
+(exit 0)
+
+## 4. The manifest written
+
+$ cat scripts/linux-engine-gate/vendor-fixture.json
+{
+  "schema": 1,
+  "about": "The comparator fixtures (#171 M6b, its pre-flight §4.4): hashes only, each entry written by vendor-fixture-pin.mjs after the fixture's tree equalled its pinned deb's payload. The fixtures themselves are never in this repository (ruling 1217, N7).",
+  "fixtures": {
+    "arm64": {
+      "release": "26.928.40906-linux-arm64",
+      "tar": {
+        "name": "26.928.40906-linux-arm64.tar",
+        "sha256": "fab959715d4087d7bc72805ecd8ab165a8b909609ea1ac272d3987a8497e0d69",
+        "length": 208496640
+      },
+      "treeList": {
+        "sha256": "24340a6e732d56d54f88717efe21ccc522278ca143939f612e50cb5482cfaf45",
+        "files": 2345
+      },
+      "binary": {
+        "path": "cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "sha256": "a2ee3b612a2a65a9e1cb429b69954f9cfddf26072568aeb882f42e0545da2193"
+      },
+      "deb": {
+        "release": "26.928.40906-linux-arm64",
+        "sha256": "ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd",
+        "length": 453477698
+      }
+    },
+    "x64": {
+      "release": "26.928.40906-linux-x64",
+      "tar": {
+        "name": "26.928.40906-linux-x64.tar",
+        "sha256": "2e6209866473328aa832fcb7b0e1f19b2a435fe803512c2bf578706f83505914",
+        "length": 214425600
+      },
+      "treeList": {
+        "sha256": "7886c5dc6c39e7985043ba0718fd4bbb60c6f7efef7962f88a1c2492da7bb54f",
+        "files": 2345
+      },
+      "binary": {
+        "path": "cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+        "sha256": "7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd"
+      },
+      "deb": {
+        "release": "26.928.40906-linux-x64",
+        "sha256": "8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30",
+        "length": 474898954
+      }
+    }
+  }
+}
+(exit 0)

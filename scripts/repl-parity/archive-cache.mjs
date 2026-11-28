@@ -1,9 +1,9 @@
-// The managed parity preparation's archive cache: the pinned archives `cua install` takes (the vendor's ChatGPT
-// archive, the official Node tarball and, on Linux, cua's sandbox helper, #115 M3), fetched once per preparation with
-// the installer's own download and verification (the pin's URL, length cap and SHA-256), kept under the prepared home so
+// The managed parity preparation's archive cache: the pinned archives `cua install` takes (on macOS the vendor's
+// ChatGPT archive, which no Linux install takes since #171 M6b; the official Node tarball; on Linux cua's sandbox
+// helper, #115 M3), fetched once per preparation with the installer's own download and verification (the pin's URL, length cap and SHA-256), kept under the prepared home so
 // its removal removes them. Every managed fixture still runs the real release install into its fresh scratch home, from
-// these local copies (`cua install --archive … --node-archive … [--sandbox-helper …]`, installArgs, which re-verifies
-// each against its pin); a fixture never downloads, so an absent or damaged cache is a preparation fault: clean up and
+// these local copies (`cua install [--archive …] --node-archive … [--sandbox-helper …]`, installArgs, `--archive` on
+// macOS only, which re-verifies each against its pin); a fixture never downloads, so an absent or damaged cache is a preparation fault: clean up and
 // prepare again. Once cua's Linux engine is pinned (#171, runtime/engine/linux-engine.json), its asset for the machine's
 // arch is cached too, verified by its hash under the installer's length bound, and a fixture places it in its scratch
 // home before installing (placeCachedEngine), so the install's engine step finds the pinned engine already in place.
@@ -28,16 +28,16 @@ export const ENGINE_MAX_BYTES=64*1024*1024;
 const SCRIPT=fileURLToPath(import.meta.url);
 export const archiveCacheDir=home=>join(home,'parity-archives');
 
-// {vendor, node, helper?, engine?, modules?}: {file, archive: the pin's own {url, length, sha256}} for this host's
+// {vendor?, node, helper?, engine?, modules?}: {file, archive: the pin's own {url, length, sha256}} for this host's
 // install; `helper` on Linux only, `engine` on Linux once the engine is pinned ({url, sha256, maxLength}: hash-pinned,
 // length-bounded), `modules` on Linux, {dir, packages: [{file, archive: {url, length, integrity}}]}: the module tree's
 // tarballs for the host's closure (`modulePins` {lock, provenance}, the checked-in ones), each once.
-export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins=loadPins(),nodePins=loadNodePins(),helperPin=host.platform==='linux'?loadHelperPin():null,enginePin=host.platform==='linux'?loadEnginePin():null,
+export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins,nodePins=loadNodePins(),helperPin=host.platform==='linux'?loadHelperPin():null,enginePin=host.platform==='linux'?loadEnginePin():null,
  modulePins=host.platform==='linux'?{lock:loadModuleLock(),provenance:loadModuleProvenance()}:null}={}){
- const vendor=selectPin(pins,host),node=selectNodePin(nodePins,host);
+ const vendor=host.platform==='linux'?null:selectPin(pins??loadPins(),host),node=selectNodePin(nodePins,host);
  if(!node)throw new Error(`No Node is pinned for ${host.platform}-${host.arch}; managed parity preparation installs the pinned Node`);
  return {
-  vendor:{file:`${vendor.release}-${vendor.platform}-${vendor.arch}.${vendor.archive.format??'zip'}`,archive:vendor.archive},
+  ...(vendor?{vendor:{file:`${vendor.release}-${vendor.platform}-${vendor.arch}.${vendor.archive.format??'zip'}`,archive:vendor.archive}}:{}),
   node:{file:`${nodeDistName(node)}.tar.gz`,archive:node.archive},
   ...(helperPin?{helper:{file:`codex-linux-sandbox-${helperPin.upstreamTag}-linux-${host.arch}`,archive:helperAsset(helperPin,host.arch)}}:{}),
   ...(host.platform==='linux'&&enginePin?(asset=>({engine:{file:basename(new URL(asset.url).pathname),archive:{url:asset.url,sha256:asset.sha256,maxLength:ENGINE_MAX_BYTES}}}))(engineAsset(enginePin,host.arch)):{}),
@@ -59,7 +59,7 @@ function moduleTarballs({lock,provenance},host){
 
 // `cua install`'s arguments for the cached archives (cachedArchives). The engine is not one: placeCachedEngine puts it in
 // place first.
-export const installArgs=archives=>['install','--archive',archives.vendor,'--node-archive',archives.node,...(archives.helper?['--sandbox-helper',archives.helper]:[]),
+export const installArgs=archives=>['install',...(archives.vendor?['--archive',archives.vendor]:[]),'--node-archive',archives.node,...(archives.helper?['--sandbox-helper',archives.helper]:[]),
  ...(archives.modules?['--modules-dir',archives.modules]:[])];
 
 // Preparation only, into a home that has no cache yet. Each archive lands under its name only once verified.

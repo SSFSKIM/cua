@@ -305,7 +305,7 @@ const X_FACING = new Set(["'xtrace'", "'setpriv'", "'stdbuf'", "'xprop'", "'xdot
  * org.a11y.Bus stand-in (`process.execPath`, a11y-stub.mjs: given the root's value, it starts with an empty environment;
  * the test below holds it to that).
  */
-const NOT_X_FACING = new Set(["'busctl'", "'dbus-monitor'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'command', 'process.execPath']);
+const NOT_X_FACING = new Set(["'busctl'", "'tar'", "'dbus-monitor'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'command', 'process.execPath']);
 
 test("the harness starts node only as the run's org.a11y.Bus stand-in, with an empty environment, or as the cua serve the engine-stop experiment drives, through the spawner", () => {
   const nodes = harnessStarts().filter((s) => s.command === 'process.execPath');
@@ -409,6 +409,7 @@ const HANDOFFS = /\bloadVendorClient\s*\(|\bcreateService\s*\(|sky_js\/src\/serv
 /** The handoffs that reach no display of a person's by construction, each with why. */
 const KNOWN_HANDOFFS = {
   'wire-check.mjs': "the wire check's client starts only the stub engine (stub-replay.mjs), which reaches no display",
+  'vendor-fixture.mjs': "the comparator fixture names the client's service.js only to read its hash from the fixture's list; it loads nothing",
 };
 
 test("every handoff of an engine start to OpenAI's client or a service sits behind the reachability check, in a declared live run, or is the wire check's stub", () => {

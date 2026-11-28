@@ -1,15 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cpSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
+import {cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import fs from 'node:fs';  // the mutable module object: its functions are wrapped below
 import {syncBuiltinESMExports} from 'node:module';
 import {dirname, join} from 'node:path';
-import {parsePin, loadPins, selectPin, locateRuntime, resolveRuntime, runtimeFor, vendorLinuxRuntime, linuxRelease, loadLinuxRuntime, ownInstaller, installHint, RELEASES_DIR} from '../src/runtime/manifest.mjs';
+import * as manifest from '../src/runtime/manifest.mjs';
+import {parsePin, loadPins, selectPin, locateRuntime, resolveRuntime, linuxRelease, loadLinuxRuntime, ownInstaller, installHint, RELEASES_DIR} from '../src/runtime/manifest.mjs';
 import {MODULES_PIN_DIR} from '../src/runtime/module-tree.mjs';
 import {defaultHome, realHome} from '../src/runtime/layout.mjs';
-import {checkIpc} from '../src/runtime/checks.mjs';
-import {realPinJson, linuxPinJson, scratch, forgeActiveRuntime, REPO} from './fixtures/runtime-fixture.mjs';
+import {realPinJson, scratch, forgeActiveRuntime, REPO} from './fixtures/runtime-fixture.mjs';
+import {RETIRED, plantRetiredRelease} from './fixtures/retired-release.mjs';
 import {fakeModuleTree} from './fixtures/own-linux-runtime.mjs';
+import {VENDOR_ENGINE_RETIRED_IN} from '../src/runtime/launch.mjs';
 
 const LINUX_X64 = {platform: 'linux', arch: 'x64'};
 const LINUX_ARM64 = {platform: 'linux', arch: 'arm64'};
@@ -85,57 +87,48 @@ test('platform selection returns the host pin and refuses other targets instead 
   assert.throws(() => selectPin(pins, {platform: 'linux', arch: 'riscv64'}), expectCode('unsupported_platform'));
 });
 
-test('three pins ship: the darwin one and the two Linux debs, each selected only by its own host', () => {
+// #171 M6b (its pre-flight's §1.2, §4.1): the two Linux deb pins left runtime/releases/ for runtime/provenance/, where
+// scripts/modules-pin.mjs alone reads them; the parser keeps the darwin schema alone, and a Linux pin is refused, naming
+// Linux's own record, so a record put back here cannot load.
+test('one pin ships, the darwin one: a Linux host has none, and is told so as unsupported_platform', () => {
   const pins = loadPins();
-  assert.deepEqual(pins.map(p => p.release), ['26.928.40906-darwin-arm64', '26.928.40906-linux-arm64', '26.928.40906-linux-x64']);
-  assert.equal(selectPin(pins, LINUX_X64).release, '26.928.40906-linux-x64');
-  assert.equal(selectPin(pins, LINUX_ARM64).release, '26.928.40906-linux-arm64');
-  assert.throws(() => selectPin(pins, {platform: 'darwin', arch: 'x64'}), err => /darwin-arm64, linux-arm64, linux-x64/.test(err.message));
+  assert.deepEqual(pins.map(p => p.release), ['26.928.40906-darwin-arm64']);
+  for (const host of [LINUX_X64, LINUX_ARM64]) assert.throws(() => selectPin(pins, host), expectCode('unsupported_platform'), host.arch);
+  assert.throws(() => selectPin(pins, {platform: 'darwin', arch: 'x64'}), err => /pinned runtimes exist only for darwin-arm64$/.test(err.message));
 });
 
-test('the Linux pins name the vendor pool debs by length and hash, with the provenance check recorded and no signing', () => {
-  const pins = loadPins();
-  const expected = {
-    x64: {deb: 'amd64', length: 474898954, sha256: '8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30'},
-    arm64: {deb: 'arm64', length: 453477698, sha256: 'ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd'},
-  };
-  for (const [arch, {deb, length, sha256}] of Object.entries(expected)) {
-    const pin = pins.find(p => p.release === `26.928.40906-linux-${arch}`);
-    assert.deepEqual(pin.archive, {format: 'deb', url: `https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_${deb}.deb`, length, sha256});
-    assert.match(pin.notes, /_gpgorigin/);
-    assert.match(pin.notes, /3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4/);
-    assert.match(pin.notes, /GOODSIG/);
-    assert.match(pin.notes, new RegExp(`chatgpt_26\\.928\\.40906_${deb}\\.deb`));
-    assert.equal(pin.signing, undefined);
-    assert.deepEqual(pin.runtime, {version: '0.0.27/20260927214556-b77d38801cca', node: '24.21.0-cua.1'});
-    assert.deepEqual(pin.components, {cua_node: 'usr/lib/chatgpt/resources/cua_node'}, 'no Codex CLI since #115 M3');
-    assert.equal('codexCli' in pin.layout, false);
-    assert.equal(pin.layout.skyLinuxBin, `cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`);
-    assert.equal('skyServiceApp' in pin.layout || 'ipcClient' in pin.layout, false);
-    assert.equal('chromePlugin' in pin, false);
+// §3.6: a cloud VM's provisioner from before 0.30.0 is what still asks for a Linux pin; the sentence names its successor.
+test('selectPin for a Linux host names deploy/cloud-vm/update.sh as what replaces the provisioner that asked', () => {
+  for (const host of [LINUX_X64, LINUX_ARM64, {platform: 'linux', arch: 'riscv64'}]) {
+    assert.throws(() => selectPin(loadPins(), host), err => {
+      assert.equal(err.code, 'unsupported_platform');
+      assert.equal(err.message, `cua ${VENDOR_ENGINE_RETIRED_IN} has no vendor release for Linux; a cloud VM's provisioner that asks for one is replaced with \`deploy/cloud-vm/update.sh\``);
+      return true;
+    }, host.arch);
   }
 });
 
-test('Linux pin parsing is strict too: no signing, no IPC, a deb archive and the Linux layout keys', () => {
+test('a Linux pin is invalid_pin, whatever else it holds, naming runtime/linux-runtime.json as Linux\'s record; one put back in a pins directory refuses the load', t => {
+  const asLinux = json => ({...json, platform: 'linux', arch: 'x64', release: `${json.appVersion}-linux-x64`});
+  const whole = realPinJson();
   const cases = {
-    signing: p => { p.signing = {team: '2DC432GLL2', components: ['cua_node/bin/node']}; },
-    ipc: p => { p.runtime.ipc = 'CodexComputerUseIPC-5'; },
-    noFormat: p => { delete p.archive.format; },
-    zip: p => { p.archive.format = 'zip'; },
-    darwinLayout: p => { p.layout.skyServiceApp = 'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app'; },
-    ipcClient: p => { p.layout.ipcClient = 'cua_node/lib/node_modules/x.js'; },
-    noSkyLinuxBin: p => { delete p.layout.skyLinuxBin; },
-    notes: p => { p.notes = 42; },
-    codexCli: p => { p.layout.codexCli = 'cua_node/bin/codex'; },
+    'the darwin pin moved to Linux': asLinux(whole),
+    'the old Linux pin\'s shape': {...asLinux(whole), archive: {...whole.archive, format: 'deb'}, notes: 'checked', signing: undefined},
+    'a provenance record': JSON.parse(readFileSync(join(REPO, 'runtime', 'provenance', '26.928.40906-linux-x64.json'), 'utf8')),
+    'a bare platform': {platform: 'linux'},
   };
-  for (const [name, mutate] of Object.entries(cases)) {
-    const pin = linuxPinJson();
-    mutate(pin);
-    assert.throws(() => parsePin(pin), expectCode('invalid_pin'), name);
-  }
-  const noNotes = linuxPinJson();
-  delete noNotes.notes;
-  assert.equal(parsePin(noNotes).notes, undefined, 'notes are optional');
+  for (const [name, json] of Object.entries(cases))
+    assert.throws(() => parsePin(json), err => expectCode('invalid_pin')(err) && err.message.endsWith('cua 0.30.0 reads no Linux release pin: Linux\'s runtime is cua\'s own, recorded in runtime/linux-runtime.json'), name);
+  const dir = mkdtempSync(join(scratchDir(t), 'pins-'));
+  cpSync(join(RELEASES_DIR, '26.928.40906-darwin-arm64.json'), join(dir, '26.928.40906-darwin-arm64.json'));
+  assert.deepEqual(loadPins(dir).map(p => p.release), ['26.928.40906-darwin-arm64']);
+  cpSync(join(REPO, 'runtime', 'provenance', '26.928.40906-linux-x64.json'), join(dir, '26.928.40906-linux-x64.json'));
+  assert.throws(() => loadPins(dir), expectCode('invalid_pin'));
+});
+
+test('the Linux pin\'s parser and its exports are gone: no Linux layout keys, no vendor tree lookup, no vendor pins guard', () => {
+  for (const name of ['LINUX_LAYOUT_KEYS', 'vendorLinuxRuntime', 'vendorPinsOf', 'RESTORE_PINS']) assert.equal(name in manifest, false, name);
+  assert.equal(manifest.LAYOUT_KEYS.includes('skyLinuxBin'), false);
 });
 
 test('the darwin pin keeps its schema: no archive format, no notes, signing required', () => {
@@ -156,17 +149,7 @@ test('no pin carries the Chrome plugin any more: a chromePlugin field is refused
   const chromePlugin = {from: 'ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome', dir: 'chrome-plugin',
     layout: {host: 'extension-host/macos/arm64/ChatGPT for Chrome'}, signing: [], nativeHost: {name: 'com.openai.codexextension', description: 'x', extensionIds: []}};
   for (const pin of loadPins()) assert.equal('chromePlugin' in pin, false, pin.release);
-  for (const [name, json] of [['darwin', realPinJson()], ['linux', linuxPinJson()]])
-    assert.throws(() => parsePin({...json, chromePlugin}), err => expectCode('invalid_pin')(err) && /chromePlugin/.test(err.message), name);
-});
-
-test('a Linux runtime record carries its own layout paths, and the IPC check does not apply to it', () => {
-  const pin = parsePin(linuxPinJson('arm64'));
-  const runtime = runtimeFor({home: '/home/u/.local/share/cua', pin, record: null});
-  const root = '/home/u/.local/share/cua/runtimes/26.928.40906-linux-arm64';
-  assert.equal(runtime.paths.skyLinuxBin, `${root}/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64`);
-  assert.deepEqual(Object.keys(runtime.paths), Object.keys(pin.layout));
-  assert.deepEqual(checkIpc(root, pin), {ok: true, found: [], detail: 'not applicable on linux'});
+  assert.throws(() => parsePin({...realPinJson(), chromePlugin}), err => expectCode('invalid_pin')(err) && /chromePlugin/.test(err.message));
 });
 
 test('CUA_HOME overrides the default home, which is under Application Support', () => {
@@ -193,14 +176,12 @@ test('resolving with no pointer is a classified not-installed error with install
   } finally { cleanup(); }
 });
 
-// F9 (ruling 1110): on Linux every remedy names this cua's own installer by its absolute path, never the bare `cua
-// install`, which may run another checkout's cua. The vendor tree's own errors keep the `--archive` form.
-test('install and recovery hints name the archive this host installs: a zip on macOS (unchanged), a deb on Linux by this cua\'s own installer', async () => {
-  const {installHint, recoveryHint} = await import('../src/runtime/manifest.mjs');
-  const own = `node ${CUA_ENTRY} install`;
-  assert.equal(installHint('darwin'), 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)');
-  assert.equal(installHint('linux'), `run \`${own}\` (or \`${own} --archive <ChatGPT deb>\` with the pinned archive)`);
-  assert.equal(recoveryHint('/r', 'linux'), `stop any \`cua serve\` using it, remove /r, then ${installHint('linux')}`);
+// The vendor's release has a remedy on macOS alone since cua 0.30.0 (#171 M6b): the zip's. Linux's remedies name this
+// cua's own installer (F9, ruling 1110), and none offers an archive.
+test('install and recovery hints name the archive macOS installs, the zip, and nothing of a deb', async () => {
+  const {recoveryHint} = await import('../src/runtime/manifest.mjs');
+  assert.equal(installHint(), 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)');
+  assert.equal(recoveryHint('/r'), `stop any \`cua serve\` using it, remove /r, then ${installHint()}`);
   const {dir, cleanup} = scratch();
   try {
     assert.throws(() => resolveRuntime({home: dir, host: DARWIN}), err => /<ChatGPT zip>/.test(err.hint));
@@ -226,6 +207,11 @@ test('a relative XDG_DATA_HOME is ignored, as the XDG Base Directory spec requir
 // this lock and host. The pointer selects nothing there: whatever it names, or nothing, the same record resolves, and
 // the vendor tree under runtimes/ is never read on the way.
 
+function scratchDir(t) {
+  const s = scratch();
+  t.after(s.cleanup);
+  return s.dir;
+}
 function linuxHome(t) {
   const s = scratch();
   t.after(s.cleanup);
@@ -309,9 +295,15 @@ function assertOwnReadsOnly(home, touched) {
   assert.equal(touched.filter(path => path === join(MODULES_PIN_DIR, 'package-lock.json')).length, 1, 'the module lock is read once');
 }
 
+// The home an older cua's install leaves: its recorded release under runtimes/ and the pointer naming it.
+function olderInstall(home) {
+  plantRetiredRelease(home);
+  writePointer(home, RETIRED.x64.release);
+}
+
 test('linux: the home an older cua\'s install leaves (vendor pointer, vendor tree intact, no module tree) is refused, and nothing under runtimes/ is read', t => {
   const home = linuxHome(t);
-  forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
+  olderInstall(home);
   const release = derived(LINUX_X64);
   for (const resolve of [locateRuntime, resolveRuntime]) {
     const {error, touched} = pathsTouched(() => resolve({home, host: LINUX_X64}));
@@ -324,7 +316,7 @@ test('linux: the home an older cua\'s install leaves (vendor pointer, vendor tre
 
 test('linux: an upgraded home whose vendor tree is gone, own parts installed, resolves the own record; with the tree there nothing under runtimes/ is read', t => {
   const home = linuxHome(t);
-  forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
+  olderInstall(home);
   const tree = fakeModuleTree(home, LINUX_X64);
   const {result, error, touched} = pathsTouched(() => resolveRuntime({home, host: LINUX_X64}));
   assert.equal(error, undefined);
@@ -374,70 +366,6 @@ test('linux: a tree with a package.json missing is layout_invalid at resolution,
     assert.ok(err.hint.endsWith(`which may not be ${tree.release}`), 'F9: the derived release is named');
     return true;
   });
-});
-
-// ---- the vendor tree, for CUA_NATIVE_ENGINE=vendor only ----
-
-test('vendorLinuxRuntime: the pinned vendor tree for the host, found without the pointer', t => {
-  const home = linuxHome(t);
-  const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
-  rmSync(join(home, 'current.json'));
-  const pin = selectPin(loadPins(), LINUX_X64);
-  const vendor = vendorLinuxRuntime({home, host: LINUX_X64});
-  assert.equal(vendor.release, pin.release);
-  assert.equal(vendor.root, root);
-  assert.equal(vendor.paths.skyLinuxBin, join(root, pin.layout.skyLinuxBin));
-  assert.equal(vendor.paths.skyVendorService, join(root, pin.layout.skyVendorService));
-  assert.equal(vendor.paths.moduleDir, join(root, pin.layout.moduleDir));
-  writePointer(home, derived(LINUX_X64));
-  assert.equal(vendorLinuxRuntime({home, host: LINUX_X64}).root, root);
-});
-
-// T3 renders its own refusal for the vendor selection and T4 skips an absent tree but fails a damaged one, so the
-// lookup tells the two apart by code and carries the release, the home and the tree's root as structured context.
-test('vendorLinuxRuntime: an absent tree is release_not_installed; one present but damaged is release_damaged; each carries its release, home and root', t => {
-  const own = quote(`node ${CUA_ENTRY} install`);
-  const hint = new RegExp(`^run \`${own}\` \\(or \`${own} --archive <ChatGPT deb>\` with the pinned archive\\)$`);
-  const pin = selectPin(loadPins(), LINUX_X64);
-  const contextOf = home => ({release: pin.release, home, root: join(home, 'runtimes', pin.release)});
-
-  const empty = linuxHome(t);
-  assert.throws(() => vendorLinuxRuntime({home: empty, host: LINUX_X64}), err => {
-    assert.equal(err.code, 'release_not_installed');
-    assert.match(err.hint, hint);
-    assert.deepEqual(err.context, contextOf(empty));
-    return true;
-  });
-
-  const damaged = {
-    'a file at the tree\'s path': home => { mkdirSync(join(home, 'runtimes')); writeFileSync(join(home, 'runtimes', pin.release), ''); },
-    'a link to a real tree': home => {
-      const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
-      fs.renameSync(root, `${root}.real`);
-      fs.symlinkSync(`${root}.real`, root);
-    },
-    'runtimes/ a file, so the tree cannot be stat-ed': home => writeFileSync(join(home, 'runtimes'), ''),
-    'an install record that is not the pin\'s': home => { const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false}); writeFileSync(join(root, 'install.json'), '{}'); },
-    'a layout file missing': home => { const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false}); rmSync(join(root, pin.layout.skyLinuxBin)); },
-  };
-  for (const [name, plant] of Object.entries(damaged)) {
-    const home = linuxHome(t);
-    plant(home);
-    // A runtimes/ that is a file is what blocks the tree: its remedy names that file, not a path beneath it (#171 M6a T4).
-    const blocking = name.startsWith('runtimes/') ? join(home, 'runtimes') : contextOf(home).root;
-    assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => {
-      assert.equal(err.code, 'release_damaged', `${name}: ${err.code} ${err.message}`);
-      assert.deepEqual(err.context, contextOf(home), name);
-      assert.equal(err.hint, `stop any \`cua serve\` using it, remove ${blocking}, then ${installHint('linux')}`, name);
-      if (blocking !== contextOf(home).root) assert.match(err.message, new RegExp(`: ${blocking.replaceAll('/', '\\/')} is not a directory, so no release can be installed under it$`), name);
-      return true;
-    }, name);
-  }
-  const home = linuxHome(t);
-  const {root} = forgeActiveRuntime(home, {}, {host: LINUX_X64, ownRuntime: false});
-  rmSync(join(root, pin.layout.skyLinuxBin));
-  assert.throws(() => vendorLinuxRuntime({home, host: LINUX_X64}), err => /skyLinuxBin/.test(err.message));
-  assert.throws(() => vendorLinuxRuntime({home, host: DARWIN}), expectCode('unsupported_platform'));
 });
 
 // ---- darwin: unchanged ----

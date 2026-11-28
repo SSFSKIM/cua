@@ -9,13 +9,14 @@
 // engine of cua's. M5's default kept the vendor's engine there; since #171 M6a (F3) it refuses every computer session
 // for the home's own reason (FALLBACK_HOMES), and the probe requires that refusal from doctor (refusedSelectionProblem)
 // and from an open (refusedOpenProblem), each naming the reason and this cua's own installer with --engine, by its
-// absolute path (manifest.mjs ownInstaller, ruling 1110).
+// absolute path (manifest.mjs ownInstaller, ruling 1110), as the one remedy, with no vendor engine, local build or
+// second command offered (ruling 1212, #171 M6b).
 import {spawnSync} from 'node:child_process';
 import * as nodeFs from 'node:fs';
 import {join} from 'node:path';
 import {engineKind} from '../repl-parity/engine-answered.mjs';
 import {engineSettingsPath, readEngineSettings} from '../../src/runtime/engine-sign.mjs';
-import {ownInstaller} from '../../src/runtime/installer.mjs';
+import {ENGINE_HINT, ownInstaller} from '../../src/runtime/installer.mjs';
 
 export const SELECTION_MODES = ['explicit', 'default'];
 // Each fallback home, and the reason the default refuses cua's engine there (src/runtime/launch.mjs nativeEngineFor).
@@ -23,6 +24,32 @@ export const FALLBACK_HOMES = Object.freeze({none: 'engine_not_installed', previ
 // The remedy every refusal names: this checkout's own installer with --engine.
 const engineInstaller = () => `${ownInstaller().command} --engine`;
 const noHome = kind => `no fallback home ${kind}: ${Object.keys(FALLBACK_HOMES).join(', ').replace(/, (?=[^,]*$)/, ' or ')}`;
+// Ruling 1212's refusal of the installed engine, as a whole sentence (#171 M6b; src/runtime/launch.mjs linuxEngineFor):
+// in the default mode the source is the default engine, the reason is the home's, and the one remedy, this cua's own
+// installer with --engine, ends the sentence. The only text it may hold besides is the reason's own: the engine's lookup
+// path (`<home>/engine/linux/cua-engine`, holding no backtick) and, when outdated, the two versions. Nothing else fits,
+// so a vendor engine, a local build or a second command offered anywhere in the sentence fails it, and an installer
+// path that merely contains such a word (`cargo`) does not (fix wave 1, finding 6).
+const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const LOOKUP = '(/[^`\\n]*/engine/linux/cua-engine)';
+const VERSION = '\\d+\\.\\d+\\.\\d+';
+const WHY = Object.freeze({
+  engine_not_installed: `none is installed in this cua home \\(${LOOKUP}\\)`,
+  engine_outdated: `the engine installed in this cua home \\(${LOOKUP}\\) is ${VERSION}, older than ${VERSION}, which this cua needs`,
+  engine_unrecorded: `no record says what the engine installed in this cua home \\(${LOOKUP}\\) is: its install\\.json is absent, unreadable or another file's`,
+});
+/** The refusal sentence the default mode must give for `reason`, its remedy `remedy`, as an anchored pattern. */
+export const refusalSentence = (reason, remedy) => new RegExp(`^the default engine \\(cua\\) selects cua's own engine, and ${WHY[reason]}: run \`${escape(remedy)}\`$`);
+/** The sentence out of doctor's engine row: `cua's engine is preferred (…), but sessions here are refused (<reason>): <sentence>; <hint>`. */
+const doctorSentence = (detail, reason) => new RegExp(`^cua's engine is preferred \\(the default engine\\), but sessions here are refused \\(${reason}\\): (.*); ${escape(ENGINE_HINT)}$`).exec(detail)?.[1] ?? null;
+/** The sentence out of `cua serve`'s refusal on stderr: `cua: <sentence> [<reason>]`, then the hint, alone on its line. */
+const serveSentence = (stderr, reason) => new RegExp(`^cua: (.*) \\[${reason}\\]\\n {2}${escape(ENGINE_HINT)}\\n?$`).exec(stderr)?.[1] ?? null;
+/** A refusal's form (ruling 1212): its sentence, parsed out of `text` by `parse`, whole and exact -> a problem, or null. */
+function formProblem(sentence, reason, remedy, where, shape) {
+  if (sentence === null) return `${where} is not ${shape} with this cua's hint and nothing else`;
+  if (!refusalSentence(reason, remedy).test(sentence)) return `${where}'s sentence is not the default engine's refusal for ${reason} ending \`: run \`${remedy}\`\` with nothing else offered: ${JSON.stringify(sentence)}`;
+  return null;
+}
 
 /** The mode `--selection <mode>` in `argv` names: explicit when absent; anything else throws. */
 export function selectionMode(argv) {
@@ -66,7 +93,8 @@ export function defaultSelectionProblem(report) {
 /**
  * A fallback home's judge from doctor (`kind` a key of FALLBACK_HOMES; `remedy` the installer the refusal must name,
  * this checkout's own with --engine): null when doctor says the default prefers cua's engine and refuses every computer
- * session for that home's reason, its engine row a failure naming the reason and `remedy`; else what differs. An engine
+ * session for that home's reason, its engine row a failure naming the reason and `remedy` as its one remedy (ruling
+ * 1212: formProblem); else what differs. An engine
  * selected, the vendor's included, is never a refusal.
  */
 export function refusedSelectionProblem(report, kind, {remedy = engineInstaller()} = {}) {
@@ -81,7 +109,7 @@ export function refusedSelectionProblem(report, kind, {remedy = engineInstaller(
   if (found.row.status !== 'fail') return `doctor's engine row is ${found.row.status}, not a failure`;
   if (!found.row.detail.includes(`(${reason})`)) return `doctor's engine row does not name its reason, ${reason}`;
   if (!found.row.detail.includes(remedy)) return `doctor's engine row does not name ${remedy}`;
-  return null;
+  return formProblem(doctorSentence(found.row.detail, reason), reason, remedy, 'doctor\'s engine row', `\`cua's engine is preferred (the default engine), but sessions here are refused (${reason}): <sentence>; <hint>\``);
 }
 
 /**
@@ -124,7 +152,7 @@ export function refusalSample(root, {proc = '/proc', fs = nodeFs} = {}) {
  * ({code, signal, forced?}, or null while it still ran), stderr, answered (false only when its output was read and
  * held no answer), samples (how many samples of the processes below it were taken), observed (the engines they saw),
  * uninspectable (the processes below it they could not read), sampleError?}. Null when it refused: it exited 1 without
- * answering, its refusal naming the home's reason and `remedy`, and at least one sample saw every process below it and
+ * answering, its refusal naming the home's reason and `remedy` as its one remedy, the whole sentence exact (formProblem), and at least one sample saw every process below it and
  * no engine there; else what differs. Evidence that is missing is never read as a negative.
  */
 export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}) {
@@ -136,6 +164,8 @@ export function refusedOpenProblem(open, kind, {remedy = engineInstaller()} = {}
   if (open.exit.code !== 1) return `cua serve exited with code ${open.exit.code}, not 1`;
   if (!open.stderr.includes(`[${reason}]`)) return `cua serve's refusal does not name ${reason}`;
   if (!open.stderr.includes(remedy)) return `cua serve's refusal does not name ${remedy}`;
+  const offered = formProblem(serveSentence(open.stderr, reason), reason, remedy, 'cua serve\'s refusal', `\`cua: <sentence> [${reason}]\` and the hint`);
+  if (offered) return offered;
   if (open.sampleError) return `an engine observation failed (${open.sampleError}), so what ran below the serve is unknown`;
   if (!Number.isInteger(open.samples) || open.samples < 1) return 'no sample of the processes below the serve was taken, so what ran there is unknown';
   if (!Array.isArray(open.uninspectable)) return 'the sample does not say whether every process below the serve was inspected';

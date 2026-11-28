@@ -1,16 +1,19 @@
-# M6a's live Linux runs on GitHub's hosted runners (#171 M6a, T6; docs/doperpowers/specs/2026-10-28-own-linux-engine-m6a-
-# preflight.md §5.2, "Venues", F8): an arm64 leg on ubuntu-24.04-arm, the acceptance's arm64 venue, and an x64 leg on
-# ubuntu-24.04 as its control. One recipe runs on both, so a failure on arm64 alone is the architecture's and a failure on
-# both is the recipe's. Both suites run inside scripts/accept/linux-runtime-env.sh's environment (a private Xvfb with
-# Openbox, a private session bus, accessibility on, homes of the run's, the sandbox scoped), after doctor's user-namespace
-# remedy, and fetch the pinned vendor deb for the leg's architecture (allowed on this dispatch-only lane, F8 (ii)).
-#   acceptance (the default)  acceptance 12's cells, scripts/accept/linux-runtime.mjs: an empty home (E0 to E5) and an
-#                             upgraded home that the cua before M6a installs (U0 to U5), from a second checkout at `older`
+# The live Linux runs on GitHub's hosted runners (#171 M6a, T6, and M6b, T6; the M6b pre-flight
+# docs/doperpowers/specs/2026-10-28-own-linux-engine-m6b-preflight.md §5.2, "Venues"): an arm64 leg on ubuntu-24.04-arm,
+# the acceptance's arm64 venue, and an x64 leg on ubuntu-24.04 as its control. One recipe runs on both, so a failure on
+# arm64 alone is the architecture's and a failure on both is the recipe's. Both suites run inside
+# scripts/accept/linux-runtime-env.sh's environment (a private Xvfb with Openbox, a private session bus, accessibility
+# on, homes of the run's, the sandbox scoped), after doctor's user-namespace remedy. The acceptance's upgraded home is
+# made by the older cua's real install, which fetches the pinned vendor deb for the leg's architecture and unpacks it
+# with ar and xz (F11; allowed on this dispatch-only lane, M6a's F8 (ii)); this cua fetches none.
+#   acceptance (the default)  acceptance 13's cells, scripts/accept/linux-runtime.mjs: an empty home (E0 to E3), an
+#                             upgraded home that the cua before M6b installs from a second checkout at `older` (U0 to
+#                             U3), and two copies of its vendor release (U4, U5)
 #   pilot                     the wave-0 venue pilot, scripts/accept/linux-runtime-pilot.mjs, on a commit of main's code:
 #                             doctor's four environment rows, today's `cua install`, `sandbox.launcher`, the item 1 smoke
 #                             with the shared confinement step, plain and under `strace -f`, answering its four questions
 #
-#   gh workflow run linux-runtime.yml --ref <branch> -f commit=<40-hex sha> -f older=<40-hex sha of the cua before M6a>
+#   gh workflow run linux-runtime.yml --ref <branch> -f commit=<40-hex sha> -f older=<40-hex sha of the cua before M6b>
 #   gh workflow run linux-runtime.yml --ref <branch> -f commit=<40-hex sha> -f suite=pilot
 #
 # The commit must be the head of the ref the run is dispatched on, as linux-engine.yml requires: the run tests what it
@@ -28,12 +31,12 @@ on:
         description: 'the cua commit to run (40 hex digits): the head of the ref this run is dispatched on'
         required: true
       suite:
-        description: 'acceptance: acceptance 12 (scripts/accept/linux-runtime.mjs); pilot: the wave-0 venue pilot'
+        description: 'acceptance: acceptance 13 (scripts/accept/linux-runtime.mjs); pilot: the wave-0 venue pilot'
         type: choice
         options: [acceptance, pilot]
         default: acceptance
       older:
-        description: 'acceptance only: the commit of the cua before M6a (40 hex digits) that installs the upgraded home'
+        description: 'acceptance only: the commit of the cua before M6b (40 hex digits) that installs the upgraded home'
         required: false
 permissions: {}
 concurrency:
@@ -126,9 +129,9 @@ jobs:
           retention-days: 30
   acceptance:
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'acceptance'
-    name: acceptance 12 ${{ matrix.arch }}
+    name: acceptance 13 ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 100
+    timeout-minutes: 150
     permissions:
       contents: read
     strategy:
@@ -146,7 +149,7 @@ jobs:
           set -euo pipefail
           [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "commit must be 40 lowercase hex digits" >&2; exit 1; }
           [[ "$COMMIT" == "$GITHUB_SHA" ]] || { echo "${GITHUB_REF} is at ${GITHUB_SHA}, not ${COMMIT}: dispatch on a ref whose head is the commit" >&2; exit 1; }
-          [[ "$OLDER" =~ ^[0-9a-f]{40}$ ]] || { echo "older must be the 40-hex commit of the cua before M6a, which installs the upgraded home" >&2; exit 1; }
+          [[ "$OLDER" =~ ^[0-9a-f]{40}$ ]] || { echo "older must be the 40-hex commit of the cua before M6b, which installs the upgraded home" >&2; exit 1; }
           # The run's directory: its homes, its scratch and the artifact.
           echo "RUN=${RUNNER_TEMP}/linux-runtime" >> "$GITHUB_ENV"
       - name: Check out the commit
@@ -154,7 +157,7 @@ jobs:
         with:
           ref: ${{ inputs.commit }}
           persist-credentials: false
-      - name: Check out the cua before M6a
+      - name: Check out the cua before M6b
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.older }}
@@ -170,20 +173,22 @@ jobs:
           set -euo pipefail
           npm ci
           (cd older-cua && npm ci --omit=dev)
-      - name: Install the desktop (Xvfb, Openbox, a session bus, AT-SPI, gedit, zenity), bubblewrap, strace and the deb's tools
+      - name: Install the desktop (Xvfb, Openbox, a session bus, AT-SPI, gedit, zenity), bubblewrap, strace, file and the older cua's deb tools
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -y
+          # binutils and xz-utils are the older cua's (ar and xz unpack the vendor's deb in its install, F11); file is
+          # E0's static-linkage check.
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xvfb xauth x11-utils openbox dbus dbus-bin at-spi2-core gedit zenity bubblewrap strace binutils xz-utils
+            xvfb xauth x11-utils openbox dbus dbus-bin at-spi2-core gedit zenity bubblewrap strace file binutils xz-utils
       - name: Apply the user-namespace remedy doctor names
         shell: bash
         run: |
           set -euo pipefail
           # USERNS_REMEDY, src/runtime/linux-desktop.mjs: lift Ubuntu's AppArmor restriction for this runner.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Run acceptance 12's cells
+      - name: Run acceptance 13's cells
         shell: bash
         run: |
           set +e -uo pipefail
@@ -192,7 +197,7 @@ jobs:
           node -e '
             const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
             const cell = c => `| ${c.cell} | ${c.verdict?.pass ? "PASS" : "FAIL"} | ${(c.verdict?.problems ?? []).join("; ").replaceAll("|", "/")} |`;
-            const lines = [`### acceptance 12, ${r.leg} (${r.arch}), ${r.head}, older ${r.older?.commit ?? "none"}`, "", "| cell | verdict | problems |", "|---|---|---|", ...r.cells.map(cell),
+            const lines = [`### acceptance 13, ${r.leg} (${r.arch}), ${r.head}, older ${r.older?.commit ?? "none"}`, "", "| cell | verdict | problems |", "|---|---|---|", ...r.cells.map(cell),
               "", `verdict: ${r.verdict.pass ? "PASS" : "FAIL"}${r.verdict.missing?.length ? ` (not run: ${r.verdict.missing.join(", ")})` : ""}${r.error ? ` (stopped: ${r.error})` : ""}`];
             process.stdout.write(lines.join("\n") + "\n");' "$RUN/artifact/runtime.json" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"

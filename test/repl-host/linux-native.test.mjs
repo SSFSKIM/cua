@@ -1,17 +1,18 @@
 // The Linux native route on cua's own REPL host (#116 M4; docs/doperpowers/specs/2026-10-14-own-repl-host-design.md,
 // "M4 — Make the Linux native route real", acceptance 5 and 6's native substitution): a Linux computer-only or
-// combined session that explicitly selects cua runs the trusted sky wrapper (src/services/sky.mjs) and the vendor's Sky
-// service in the owned trusted worker, which starts sky_linux as its own stdio child. Everything below the vendor is a
-// double (test/fixtures/linux-native-runtime.mjs), so this runs on any machine with Node 24 (CUA_NODE); the launch is
-// the production one (buildLaunch on the Linux pin, the sandbox the proxy derives for Linux (scoped, through a double of
-// the pinned helper, #115 M3), the proxy's anchored process
-// group, its lazy runtime and idle stop), and so are the supervisor, kernel, worker, the owned facade the production
-// banner imports, and the wrapper (on a machine that is not Linux, with its platform pinned to linux:
-// test/fixtures/linux-sky-service.mjs). Secrets are synthetic, in a scratch store; nothing records a value.
+// combined session that explicitly selects cua runs the trusted sky wrapper (src/services/sky.mjs) and cua's own Linux
+// service (#171 M3) in the owned trusted worker, which starts cua-engine as its own stdio child. Since #171 M6b the
+// engine is the only one on Linux. Everything below the service is a double (test/fixtures/linux-native-runtime.mjs:
+// cua's module tree, an engine double and a double of the pinned sandbox helper), so this runs on any machine with Node
+// 24 (CUA_NODE); the launch is the production one (buildLaunch on cua's own runtime, the sandbox the proxy derives for
+// Linux (scoped, through the helper double, #115 M3), the proxy's anchored process group, its lazy runtime and idle
+// stop), and so are the supervisor, kernel, worker, the owned facade the production banner imports, the service and the
+// wrapper (on a machine that is not Linux, with its platform pinned to linux: test/fixtures/linux-sky-service.mjs).
+// Secrets are synthetic, in a scratch store; nothing records a value but the engine double's own log.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {realpathSync, rmSync} from 'node:fs';
+import {realpathSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
 import {dirname, join} from 'node:path';
@@ -27,7 +28,6 @@ import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, texts} from './supervisor-harness.mjs';
 import {linuxNativeRuntime, sha256} from '../fixtures/linux-native-runtime.mjs';
 import {pinnedApprovals} from '../../scripts/accept/lib.mjs';
-import {fakeLinuxEngine} from '../helpers/fake-linux-engine.mjs';
 
 const {node, skip} = kernelNode();
 const own = {skip};
@@ -49,13 +49,12 @@ const GEDIT = 'org.gnome.gedit';
 // memory (#117 M3). Its idle timer is the test's: `stop()` fires it, so the runtime goes through the connection's own
 // idle stop, and resolves that stop's teardown. The client offers form elicitation, accepts the approval of the
 // fixture's app and declines anything else, recording each request it is asked in `asked`.
-// `engine`, when given, is the ambient's engine selection (CUA_NATIVE_ENGINE, CUA_LINUX_ENGINE_BIN); by default the
-// vendor's, whose tree is the fixture's (since #171 M6a the selection resolves it, and nothing falls back to it).
-async function linuxSession(t, {surfaces, secrets = {}, engine = {CUA_NATIVE_ENGINE: 'vendor'}}) {
-  const fixture = linuxNativeRuntime(t, {node, secrets});
-  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP, ...engine};
+// The engine is the fixture's double, named by CUA_LINUX_ENGINE_BIN under the default selection (cua's).
+async function linuxSession(t, {surfaces, secrets = {}}) {
+  const fixture = linuxNativeRuntime(t, {secrets});
+  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP, CUA_LINUX_ENGINE_BIN: fixture.engine.path};
   const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
-  const replHost = replHostFor({platform: 'linux', arch: fixture.runtime.manifest.arch, surfaces, ambient, home: fixture.home, resolveOwnNode: () => node, engine: {vendor: () => fixture.runtime}});
+  const replHost = replHostFor({platform: 'linux', arch: fixture.runtime.manifest.arch, surfaces, ambient, home: fixture.home, resolveOwnNode: () => node});
   const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, replHost});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
   if (services.sky && LINUX_SKY !== SKY_SERVICE) launch.env.CUA_REPL_TRUSTED_CODE_PATHS += `:${dirname(SKY_SERVICE)}`;
@@ -129,7 +128,7 @@ function assertConfined(launched, {worker}) {
   }
 }
 
-test('a Linux computer session on the own host drives sky_linux through the owned facade and trusted worker; the helper is the worker\'s stdio child in the owned group, outlives kernel ends and goes with the runtime', own, async t => {
+test('a Linux computer session on the own host drives cua-engine through the owned facade, trusted worker and cua\'s service; the engine is the worker\'s stdio child in the owned group, outlives kernel ends and goes with the runtime', own, async t => {
   const session = await linuxSession(t, {surfaces: ['computer']});
   assert.deepEqual(session.initialized.result.serverInfo, {name: REPL_HOST_NAME, version: REPL_HOST_VERSION});
   const first = ok(await session.js(`const windows = await cua.listWindows({emit: false});
@@ -139,47 +138,48 @@ test('a Linux computer session on the own host drives sky_linux through the owne
   assert.deepEqual(first._meta[REPL_HOST_META_KEY], {host: 'cua', version: REPL_HOST_VERSION});
   assert.deepEqual(JSON.parse(texts(first).at(-1)), {target: 'linux', windows: [7, 8],
     keys: ['computer', 'getApp', 'getState', 'initialize', 'listApps', 'listWindows', 'rewriteDocumentation']});
-  // Each window method follows the approval's own list_windows (the app sky_linux names for that window id).
-  assert.deepEqual(session.fixture.helperLog().map(({command, window, text}) => [command, window, text]), [
+  // The service asks the engine's capabilities at setup; then each window method follows the approval's own list_windows
+  // (the app the engine names for that window id).
+  assert.deepEqual(session.fixture.engineLog().map(({command, window, text}) => [command, window, text]), [['capabilities', null, undefined],
     ['list_windows', null, undefined], ['list_windows', null, undefined], ['list_windows', null, undefined], ['get_window_state', 7, undefined],
     ['list_windows', null, undefined], ['type_text', 7, sha256('hello')], ['list_windows', null, undefined], ['press_key', 7, undefined]]);
   assert.deepEqual(session.asked, [{method: 'elicitation/create', app: GEDIT, action: 'accept'}], 'one approval for the window\'s app; the host remembers it');
   assertConfined(session.fixture.launches(), {worker: 'enabled'});
 
-  const [helper] = new Set(session.fixture.helperLog().map(entry => entry.pid));
+  const [engine] = new Set(session.fixture.engineLog().map(entry => entry.pid));
   const [worker] = session.worker();
   assert.ok(worker, 'one trusted worker');
-  const helperRow = descendants(session.group()).find(p => p.pid === helper);
-  assert.equal(helperRow?.ppid, worker.pid, 'sky_linux is the trusted worker\'s own child');
-  assert.equal(pgidOf(helper), session.group(), 'in the owned process group, not a session of its own');
+  const engineRow = descendants(session.group()).find(p => p.pid === engine);
+  assert.equal(engineRow?.ppid, worker.pid, 'cua-engine is the trusted worker\'s own child');
+  assert.equal(pgidOf(engine), session.group(), 'in the owned process group, not a session of its own');
 
-  // A kernel's end reaps what it left in the owned group; the worker's tree, the helper in it, is not that.
+  // A kernel's end reaps what it left in the owned group; the worker's tree, the engine in it, is not that.
   const timedOut = await session.js('for (;;) {}', {timeout_ms: 300});
   assert.match(texts(timedOut).join('\n'), /timed out/);
   assert.deepEqual(texts(await session.call('js_reset')), ['js kernel reset']);
   await delay(300);
-  assert.equal(alive(helper), true, 'the helper survived the kernel\'s timeout and the reset');
+  assert.equal(alive(engine), true, 'the engine survived the kernel\'s timeout and the reset');
   ok(await session.js('const again = await cua.getApp({windowId: 7}); await again.typeText("after");'));
   assert.equal(session.asked.length, 1, 'the approval outlives the kernel\'s timeout and the reset');
-  assert.deepEqual([...new Set(session.fixture.helperLog().map(entry => entry.pid))], [helper], 'the same helper answered after the kernel was replaced');
+  assert.deepEqual([...new Set(session.fixture.engineLog().map(entry => entry.pid))], [engine], 'the same engine answered after the kernel was replaced');
 
-  // The idle stop (lazy-runtime stop: the owned group's teardown) takes the worker and its helper; the next call starts
+  // The idle stop (lazy-runtime stop: the owned group's teardown) takes the worker and its engine; the next call starts
   // fresh ones.
-  assert.equal((await session.stop()).confirmed, true, 'the group emptied, the helper with it');
-  assert.equal(alive(helper), false);
+  assert.equal((await session.stop()).confirmed, true, 'the group emptied, the engine with it');
+  assert.equal(alive(engine), false);
   assert.equal(alive(worker.pid), false);
   ok(await session.js('const later = await cua.getApp({windowId: 7}); await later.pressKey("Return");'));
-  const relaunched = session.fixture.helperLog().at(-1).pid;
-  assert.notEqual(relaunched, helper, 'a fresh helper after the idle stop');
+  const relaunched = session.fixture.engineLog().at(-1).pid;
+  assert.notEqual(relaunched, engine, 'a fresh engine after the idle stop');
   assert.deepEqual(session.asked.map(entry => entry.app), [GEDIT], 'the approval outlives the kernel and the idle stop: the connection\'s, not the runtime\'s');
   assert.equal((await session.terminate()).confirmed, true, 'the connection\'s close empties the group too');
   assert.equal(alive(relaunched), false);
 });
 
-test('Linux native secret substitution: a whole-field reference in typeText and paste reaches sky_linux as the stored value and nowhere else; refusals come before input and errors carry labels only', own, async t => {
+test('Linux native secret substitution: a whole-field reference in typeText and paste reaches cua-engine as the stored value and nowhere else; refusals come before input and errors carry labels only', own, async t => {
   const session = await linuxSession(t, {surfaces: ['computer'], secrets: {WORK_PASSWORD: SENTINEL}});
   ok(await session.js('const app = await cua.getApp({windowId: 7}); const failing = await cua.getApp({windowId: 8});'));
-  const typed = () => session.fixture.helperLog().filter(entry => entry.command === 'type_text');
+  const typed = () => session.fixture.engineLog().filter(entry => entry.command === 'type_text');
   const results = [];
   const run = async code => { const result = ok(await session.js(code)); results.push(result); return texts(result).at(-1); };
 
@@ -194,7 +194,7 @@ test('Linux native secret substitution: a whole-field reference in typeText and 
   assert.match(await run(caught('await app.typeText("{{secret:CUA_DEVICE_TOKEN}}");')), /\[secret_reserved\]$/);
   assert.match(await run(caught('await app.typeText("{{secret:bad label}}");')), /\[invalid_secret_label\]$/);
   assert.equal(await run(caught('await app.paste("{{secret:WORK_PASSWORD}}", {format: "html"});')), 'Linux paste supports only text format.');
-  assert.equal(typed().length, before, 'nothing reached the helper for any refusal');
+  assert.equal(typed().length, before, 'nothing reached the engine for any refusal');
 
   const failed = await run(caught('await failing.typeText("{{secret:WORK_PASSWORD}}");'));
   assert.match(failed, /^cua: type_text with secret "WORK_PASSWORD" failed \(failed\) after the secret was read; .*\[secret_input_failed\]$/);
@@ -205,30 +205,28 @@ test('Linux native secret substitution: a whole-field reference in typeText and 
   assert.deepEqual(session.asked.map(({app, action}) => [app, action]), [[GEDIT, 'accept']], 'both windows are the one app\'s: asked once');
 });
 
-test('a combined Linux session on the own host has both surfaces, the scoped default and the same helper; a browser-only one keeps the worker off the network', own, async t => {
+test('a combined Linux session on the own host has both surfaces, the scoped default and the same sandbox helper; a browser-only one keeps the worker off the network', own, async t => {
   const combined = await linuxSession(t, {surfaces: ['computer', 'browser']});
   const result = ok(await combined.js(`const windows = await cua.listWindows({emit: false});
     nodeRepl.write(JSON.stringify({target: cua.computer.target, windows: windows.length, browsers: await cua.listBrowsers({emit: false}), agent: typeof agent.browsers.list}));`));
   assert.deepEqual(JSON.parse(texts(result).at(-1)), {target: 'linux', windows: 2, browsers: [], agent: 'function'});
   assert.equal(combined.launch.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
   assertConfined(combined.fixture.launches(), {worker: 'enabled'});
-  const [helper] = combined.fixture.helperLog().map(entry => entry.pid);
-  assert.equal(descendants(combined.group()).find(p => p.pid === helper)?.ppid, combined.worker()[0].pid);
+  const [engine] = combined.fixture.engineLog().map(entry => entry.pid);
+  assert.equal(descendants(combined.group()).find(p => p.pid === engine)?.ppid, combined.worker()[0].pid);
   assert.equal((await combined.terminate()).confirmed, true);
-  assert.equal(alive(helper), false);
+  assert.equal(alive(engine), false);
 
   const browserOnly = await linuxSession(t, {surfaces: ['browser']});
   ok(await browserOnly.js('nodeRepl.write(JSON.stringify(await cua.listBrowsers({emit: false})));'));
   assertConfined(browserOnly.fixture.launches(), {worker: 'restricted'});
-  assert.equal(browserOnly.fixture.helperLog().length, 0, 'no computer-use helper without the computer surface');
+  assert.equal(browserOnly.fixture.engineLog().length, 0, 'no engine without the computer surface');
   assert.equal('OAI_SKY_LINUX_BIN' in browserOnly.launch.env, false);
 });
 
-test('with CUA_NATIVE_ENGINE=cua a Linux computer session runs cua\'s own Linux service: cua-engine is the trusted worker\'s child, and no vendor Sky module is loaded (#171 M3)', own, async t => {
-  const engine = fakeLinuxEngine(t);
-  const session = await linuxSession(t, {surfaces: ['computer'], engine: {CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: engine.path}});
-  // The vendor's service module is gone: anything that imported it would fail.
-  rmSync(session.fixture.runtime.paths.skyVendorService);
+test('a Linux computer session runs cua\'s own Linux service: the capabilities first, cua-engine in the device mode, the trusted worker\'s child (#171 M3)', own, async t => {
+  const session = await linuxSession(t, {surfaces: ['computer']});
+  const {engine} = session.fixture;
   const first = ok(await session.js(`const windows = await cua.listWindows({emit: false});
     const app = await cua.getApp({windowId: windows[0].id});
     const state = await app.getAXState({emit: false});
@@ -242,7 +240,7 @@ test('with CUA_NATIVE_ENGINE=cua a Linux computer session runs cua\'s own Linux 
   assert.deepEqual(engine.requests().filter(r => r.command !== 'list_windows').map(({command, input}) => [command, input.element_id ?? input.text ?? input.key ?? null]),
     [['capabilities', null], ['get_window_state', null], ['get_window_state', null], ['type_text', 'hello'], ['press_key', 'ctrl+a']], 'the capabilities first, at setup');
   assert.deepEqual(engine.spawns().map(s => s.args), [['server', '--desktop', 'shared']]);
-  assert.deepEqual(session.fixture.helperLog(), [], 'the vendor\'s sky_linux never ran');
+  for (const [name, value] of Object.entries(session.launch.env)) assert.doesNotMatch(value, /@oai\/sky|sky_linux/, `${name}: nothing of the vendor's engine is named`);
   assert.deepEqual(session.asked, [{method: 'elicitation/create', app: GEDIT, action: 'accept'}], 'the wrapper\'s approval still comes first');
   const [{pid}] = engine.spawns();
   const [worker] = session.worker();

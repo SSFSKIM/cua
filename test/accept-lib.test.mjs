@@ -172,6 +172,8 @@ test('a tree snapshot notices added, removed and rewritten entries, and an untou
   mkdirSync(join(s.dir, 'a', 'b'), {recursive: true});
   writeFileSync(join(s.dir, 'a', 'b', 'file'), 'one');
   symlinkSync('b/file', join(s.dir, 'a', 'link'));
+  // ext4 stamps times from a coarse clock, so an add straight after the link can leave `a`'s mtime where it was (#595).
+  utimesSync(join(s.dir, 'a'), 1, 1);
   const before = snapshotTree(s.dir);
   assert.equal(diffSnapshots(before, snapshotTree(s.dir)).same, true);
   writeFileSync(join(s.dir, 'a', 'b', 'file'), 'two');

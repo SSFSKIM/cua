@@ -40,18 +40,18 @@
 // engine, cua-engine in the cua home: the engine sessions here run (the installed one, or what CUA_LINUX_ENGINE_BIN
 // names), its version, release and SHA-256 against this cua's pin, or that it is a local build (`cua engine build`), an
 // older release or an unknown file; the service that drives it (`cua`, cua's own Linux service, src/services/engine/
-// linux; the vendor's engine runs behind the vendor's); the device mode; and the engine's capability report. For the
-// report doctor starts the engine as a session's service does (the version check, `server --desktop <mode>`,
-// `capabilities` first), with the session's display and bus, and stops it once it has answered; it starts nothing
-// while cua's engine is not what sessions run, no file it does not recognize, and nothing without a display, since the
-// engine starts only on one (the report is then unread, and the display row says why). `pass` for the pinned engine
-// with every capability; `warn` for a local build, a recorded release behind or ahead of the pin, CUA_LINUX_ENGINE_BIN,
-// an unread report for want of a display, or a capability the backend lacks; `fail` for sessions refused while cua's
-// engine is preferred, by the default too (since #171 M6a's F3 no other engine stands in: none installed, one older
-// than this cua needs or whose record does not match it), a vendor selection refused because the vendor's tree is not
-// installed, an unknown or unexecutable file, an invalid device mode, or an engine whose report fails as a session's
-// start would; else `skip` while the vendor's engine is preferred. Every remedy names this cua's own installer by its
-// absolute path, `node <this cua>/bin/cua.mjs install --engine` (ruling 1110).
+// linux); the device mode; and the engine's capability report. For the report doctor starts the engine as a session's
+// service does (the version check, `server --desktop <mode>`, `capabilities` first), with the session's display and
+// bus, and stops it once it has answered; it starts nothing while cua's engine is not what sessions run, no file it does
+// not recognize, and nothing without a display, since the engine starts only on one (the report is then unread, and the
+// display row says why). `pass` for the pinned engine with every capability; `warn` for a local build, a recorded
+// release behind or ahead of the pin, CUA_LINUX_ENGINE_BIN, an unread report for want of a display, or a capability the
+// backend lacks; `fail` for sessions refused while cua's engine is preferred, by the default too (since #171 M6a's F3 no
+// other engine stands in: none installed, one older than this cua needs or whose record does not match it), a vendor
+// selection, which cua 0.30.0 retired on Linux (M6b: engine_retired, with the selection's sentence and what the home
+// holds), an unknown or unexecutable file, an invalid device mode, or an engine whose report fails as a session's start
+// would. Every remedy names this cua's own installer by its absolute path, `node <this cua>/bin/cua.mjs install
+// --engine` (ruling 1110).
 import {realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
@@ -207,12 +207,12 @@ function vendorRow(selection, records, builds) {
 // ---- Linux (#171) ----
 
 // The report's facts on Linux: the selection; `runs`, the engine sessions here run ({path, source: 'installed' |
-// 'override'}, null when they run the vendor's); `installed`, what the cua home holds (inspectLinuxEngine's facts, null
-// when unread); `pinned`, this cua's pin for this machine; `service`, what drives the engine (`cua`, cua's own Linux
-// service, or `vendor`; null when refused); and where cua's engine runs, the device mode and its capability report
-// (`capabilities`, or why it is unread, `capabilitiesUnread`).
+// 'override'}, null when refused); `installed`, what the cua home holds (inspectLinuxEngine's facts, null when unread);
+// `pinned`, this cua's pin for this machine; `service`, what drives the engine (`cua`, cua's own Linux service; null
+// when refused); and where cua's engine runs, the device mode and its capability report (`capabilities`, or why it is
+// unread, `capabilitiesUnread`).
 function linuxReport({selected = null, reason = null, refused = null, preferred = null, facts = null, runs = null, desktop = null}) {
-  const service = selected === null ? null : selected === 'cua' ? 'cua' : 'vendor';
+  const service = selected === 'cua' ? 'cua' : null;
   const installed = facts && {path: facts.path, exists: facts.exists, executable: facts.executable, sha256: facts.sha256, version: facts.version, build: facts.build,
     release: facts.release, current: facts.current};
   return {selected, reason, refused, preferred, service, runs, installed, pinned: facts?.pinned ?? null, desktop, capabilities: null, capabilitiesUnread: null};
@@ -236,10 +236,22 @@ function linuxHeld(facts, say) {
     : say('fail', `the file at ${path} (SHA-256 ${facts.sha256}) is neither this cua's pinned engine nor a build cua recorded: ${install} replaces it`);
   return facts.executable ? words : `${words}; ${say('fail', `it is not executable, so no session runs it: ${install} places it again`)}`;
 }
+// What the cua home holds, as facts alone, for a row whose one remedy is another sentence's (a vendor selection's,
+// #171 M6b's §2.3): never a command.
+function linuxHeldFacts(facts) {
+  const {path, pinned} = facts;
+  if (!facts.exists) return `no engine is installed in this cua home (${path})`;
+  const words = facts.build === 'pinned' && facts.current ? `the pinned cua-engine ${facts.version} (${facts.release}) at ${path}, SHA-256 ${facts.sha256}`
+    : facts.build === 'pinned' ? `cua-engine ${facts.version} from ${facts.release} at ${path} (SHA-256 ${facts.sha256})${pinned ? `, which is not this cua's pinned ${pinned.version}` : ''}`
+    : facts.build === 'local' ? `a local build of cua-engine ${facts.version} at ${path}, SHA-256 ${facts.sha256}, not the pinned engine`
+    : `the file at ${path} (SHA-256 ${facts.sha256}), neither this cua's pinned engine nor a build cua recorded`;
+  return facts.executable ? words : `${words}, not executable`;
+}
 
-// The correction of a Linux setting no installer can fix: where it is set, what it may name.
+// The correction of a Linux setting no installer can fix: where it is set, what it may name (cua alone there since
+// 0.30.0, which retired the vendor's engine).
 const SETTING_FIX = {
-  engine: 'name vendor or cua there, or remove the setting for the default',
+  engine: 'name cua there, or remove the setting for the default',
   desktop: 'name shared or dedicated there, or remove the setting for shared',
 };
 
@@ -252,17 +264,17 @@ const DESKTOP_WORDS = {
 async function linuxRow(selection, {env, config, session, facts, readCapabilities}) {
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
-  const held = linuxHeld(facts, say);
   const source = SOURCE_WORDS[selection.preferred.reason];
   const report = linuxReport({...selection, facts});
   const {refused} = selection;
   if (selection.preferred.engine === 'vendor') {
-    const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : source('vendor');
-    // The vendor's engine refused at the open: its tree is not installed (launch.mjs linuxEngineFor, #171 M6a).
-    if (refused?.code === 'engine_not_installed')
-      return {row: result('engine', 'fail', `cua's engine is not selected: ${why}, and sessions here are refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint ?? ownInstaller().hint}`), report};
-    const serves = refused ? `; sessions here are refused (${refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service';
-    return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
+    // The vendor's engine, retired on Linux by cua 0.30.0 (#171 M6b): every computer session is refused at the open
+    // (launch.mjs linuxEngineFor), in the selection's own words. A session refused before its engine is asked for is
+    // repl.host's to fail. What the home holds is said as facts: the selection's sentence is the row's one remedy.
+    const selected = `the vendor's engine is selected (${source('vendor')})`;
+    if (refused?.code !== 'engine_retired') return {row: result('engine', 'skip', `${selected}; sessions here are refused (${refused?.code}; see repl.host)`), report};
+    return {row: result('engine', 'fail', `${selected}, and every Linux computer session is refused (${refused.code}; see repl.host): ${refused.message}; ${refused.hint}; `
+      + `in this home: ${linuxHeldFacts(facts)}`), report};
   }
   // cua's engine preferred, by the default too, runs or is refused at the open (#171 M6a, F3): no other engine stands
   // in for it.
@@ -272,15 +284,18 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
     return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${refused.code}): ${refused.message}${refused.hint ? `; ${refused.hint}` : ''}`), report};
 
   const bin = session.engine.bin;
-  const runs = bin.source === 'override'
-    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
-    : `${held}, ${SERVICE_WORDS}`;
   const device = deviceMode({env, config});
   const desktop = device.desktop;
   const mode = device.verdict ? say(device.verdict, `${device.words}: ${SETTING_FIX.desktop}`) : device.words;
   // An invalid device mode has failed the row already, and no session starts the engine in it.
   const caps = desktop ? await linuxCapabilities({bin, facts, desktop: desktop.mode, env, readCapabilities}) : {report: null, unread: 'the device mode is invalid', words: ''};
   if (caps.verdict) verdicts.push(caps.verdict);
+  // A start that failed as a session's would carries the row's one remedy (#171 M6b, fix wave 2), so what the home holds
+  // is then said as facts alone.
+  const held = caps.startFailed ? linuxHeldFacts(facts) : linuxHeld(facts, say);
+  const runs = bin.source === 'override'
+    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
+    : `${held}, ${SERVICE_WORDS}`;
   return {row: result('engine', worst(verdicts), `cua's engine is selected (${source('cua')}): sessions here run ${runs}; ${mode}${caps.words}`),
     report: {...report, service: 'cua', runs: {path: bin.path, source: bin.source}, desktop, capabilities: caps.report, capabilitiesUnread: caps.unread}};
 }
@@ -291,7 +306,7 @@ const NO_DISPLAY = /failed to connect to the X server/;
 const noDisplay = why => ({verdict: 'warn', words: `; its capability report is unread: no X display is reachable here (${why}; see display), and cua-engine starts only on one`});
 
 // The capability report of the engine sessions here run, read as a session's start reads it, with the desktop session
-// the launch hands a session -> {report, unread, verdict?, words}. The engine is started only where a session would
+// the launch hands a session -> {report, unread, verdict?, startFailed?, words}. The engine is started only where a session would
 // start it: a file cua placed or recorded, or the one CUA_LINUX_ENGINE_BIN names, on a display.
 async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
   if (bin.source !== 'override' && facts.build !== 'pinned' && facts.build !== 'local') {
@@ -304,11 +319,16 @@ async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
     report = await readCapabilities({path: bin.path, desktop, env: {...desktopSessionEnv(env), ...(env.HOME ? {HOME: env.HOME} : {})}});
   } catch (error) {
     if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
-    // The remedy: an engine CUA_LINUX_ENGINE_BIN names is the harness's to drop; an installed one may be placed again, and
-    // the session's environment (display, bus, sandbox) is what doctor's other rows describe.
-    const remedy = bin.source === 'override' ? 'unset CUA_LINUX_ENGINE_BIN to run the installed engine instead'
-      : `if the engine is at fault, ${engineInstall()} places the pinned one again; the display, accessibility and sandbox rows describe the session's environment`;
-    return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
+    // The remedy, in the selection's form (#171 M6b, §2.1), one for the whole row: for an engine CUA_LINUX_ENGINE_BIN
+    // names, its unset as the prerequisite, then the one command, since the home may hold no engine to fall back to; an
+    // installed one may be placed again, and the session's environment (display, bus, sandbox) is what doctor's other
+    // rows describe. The client's own sentence stays as it is (N5): where it already names the installer, the row adds
+    // only the prerequisite.
+    const named = error.message.includes(ownInstaller().command);
+    const remedy = bin.source === 'override' ? (named ? 'unset CUA_LINUX_ENGINE_BIN before running it' : `unset CUA_LINUX_ENGINE_BIN, then run ${engineInstall()}`)
+      : `${named ? '' : `if the engine is at fault, run ${engineInstall()} to place the pinned one again; `}the display, accessibility and sandbox rows describe the session's environment`;
+    return {report: null, unread: error.message, verdict: 'fail', startFailed: true,
+      words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}; ${remedy}`};
   }
   const {CANNOT} = await import('../services/engine/linux/methods.mjs');   // the service's words, loaded only on Linux
   const lacking = Object.keys(CANNOT).filter(key => [undefined, null, false].includes(key.split('.').reduce((at, part) => at?.[part], report)));

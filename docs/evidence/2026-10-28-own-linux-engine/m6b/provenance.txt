@@ -1,0 +1,145 @@
+# The end-to-end provenance proof (#171 M6b T4, task 169; the pre-flight's §4.2), 2026-11-24T15:49:17Z, on dc-linux171-1e68
+# checkout at 69fb968d1920e84c419318fae2e1026b5a8dabb5 (#171 M6b T4 (#589): a confined Linux launch keeps its deny list's home directories out of )
+# runtime/modules/provenance.json written from the two real debs through scripts/modules-pin.mjs's own reader of
+# runtime/provenance/, with no pin of the old shape anywhere: runtime/releases/ holds no Linux pin, and
+# pinModules takes no pins. Then the written file is compared with the checked-in one.
+
+$ ls runtime/releases runtime/provenance
+runtime/provenance:
+26.928.40906-linux-arm64.json
+26.928.40906-linux-x64.json
+
+runtime/releases:
+26.928.40906-darwin-arm64.json
+node
+(exit 0)
+
+$ node -e import("./scripts/modules-pin.mjs").then(m => console.log(JSON.stringify(m.loadProvenanceRecords(), null, 1)))
+[
+ {
+  "release": "26.928.40906-linux-arm64",
+  "length": 453477698,
+  "sha256": "ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd",
+  "lockfile": "usr/lib/chatgpt/resources/cua_node/lib/node_modules/.pnpm/lock.yaml"
+ },
+ {
+  "release": "26.928.40906-linux-x64",
+  "length": 474898954,
+  "sha256": "8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30",
+  "lockfile": "usr/lib/chatgpt/resources/cua_node/lib/node_modules/.pnpm/lock.yaml"
+ }
+]
+(exit 0)
+
+$ stat -c %s %n /var/cache/cua/chatgpt_26.928.40906_amd64.deb /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+474898954 /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+453477698 /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+(exit 0)
+
+$ sha256sum /var/cache/cua/chatgpt_26.928.40906_amd64.deb /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30  /var/cache/cua/chatgpt_26.928.40906_amd64.deb
+ab3eea138b767555aecb2b69f4aa553d843e6c5ef3037645e544aafc72d0f5cd  /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+(exit 0)
+
+$ sha256sum runtime/modules/provenance.json
+9f18d46c21a200d9b34fe66b45213016a70f50ba73eccd1cb2054bd78ad6c9d1  runtime/modules/provenance.json
+(exit 0)
+
+$ node scripts/modules-pin.mjs /var/cache/cua/chatgpt_26.928.40906_amd64.deb /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+/var/cache/cua/chatgpt_26.928.40906_amd64.deb: the pinned 26.928.40906-linux-x64
+26.928.40906-linux-x64: its lockfile holds both closures, by name, version and SHA-512
+/Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb: the pinned 26.928.40906-linux-arm64
+26.928.40906-linux-arm64: its lockfile holds both closures, by name, version and SHA-512
+@img/colour@1.1.0: 17410 bytes, SHA-512 checked
+@img/sharp-libvips-linux-arm64@1.3.3: 8453817 bytes, SHA-512 checked
+@img/sharp-linux-arm64@0.35.4: 173900 bytes, SHA-512 checked
+abstract-level@3.1.1: 118217 bytes, SHA-512 checked
+base64-js@1.5.1: 4109 bytes, SHA-512 checked
+buffer@6.0.3: 23108 bytes, SHA-512 checked
+classic-level@3.0.0: 2387814 bytes, SHA-512 checked
+detect-libc@2.1.2: 7776 bytes, SHA-512 checked
+ieee754@1.2.1: 2886 bytes, SHA-512 checked
+is-buffer@2.0.5: 2092 bytes, SHA-512 checked
+jpeg-js@0.4.4: 21818 bytes, SHA-512 checked
+level-supports@6.2.0: 7451 bytes, SHA-512 checked
+level-transcoder@1.0.1: 9922 bytes, SHA-512 checked
+maybe-combine-errors@1.0.0: 2686 bytes, SHA-512 checked
+module-error@1.0.2: 3394 bytes, SHA-512 checked
+napi-macros@2.2.2: 4649 bytes, SHA-512 checked
+node-gyp-build@4.8.4: 5449 bytes, SHA-512 checked
+pixelmatch@7.1.0: 6347 bytes, SHA-512 checked
+playwright@1.57.0: 871339 bytes, SHA-512 checked
+playwright-core@1.57.0: 1987032 bytes, SHA-512 checked
+pngjs@7.0.0: 160939 bytes, SHA-512 checked
+semver@7.8.5: 29399 bytes, SHA-512 checked
+sharp@0.35.4: 214415 bytes, SHA-512 checked
+@img/sharp-libvips-linux-x64@1.3.3: 8176720 bytes, SHA-512 checked
+@img/sharp-linux-x64@0.35.4: 185604 bytes, SHA-512 checked
+wrote /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t4/runtime/modules/provenance.json: lock b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c; linux-arm64 23 packages, linux-x64 23 packages; checked against 26.928.40906-linux-arm64, 26.928.40906-linux-x64
+(exit 0)
+
+$ sha256sum runtime/modules/provenance.json
+9f18d46c21a200d9b34fe66b45213016a70f50ba73eccd1cb2054bd78ad6c9d1  runtime/modules/provenance.json
+(exit 0)
+
+$ git diff --exit-code --stat runtime/modules/provenance.json
+(exit 0)
+
+$ git status --short runtime/
+(exit 0)
+
+
+# Again at H = 3722f2826ca8a8ff3c7a6e28e00ba765d10b077b (#171 M6b T8, task 173), 2026-11-27T19:17:15Z, on dc-linux171-1e68:
+# the same two debs through the same reader, then the written file compared with H's. The bytes are H's (the hash is
+# T4's above), and the tree stays clean (x64/scripts/t8.sh, phase prov).
+
+$ git rev-parse HEAD
+3722f2826ca8a8ff3c7a6e28e00ba765d10b077b
+$ ls runtime/releases runtime/provenance
+runtime/provenance:
+26.928.40906-linux-arm64.json
+26.928.40906-linux-x64.json
+
+runtime/releases:
+26.928.40906-darwin-arm64.json
+node
+$ sha256sum runtime/modules/provenance.json
+9f18d46c21a200d9b34fe66b45213016a70f50ba73eccd1cb2054bd78ad6c9d1  runtime/modules/provenance.json
+$ node scripts/modules-pin.mjs /var/cache/cua/chatgpt_26.928.40906_amd64.deb /Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb
+/var/cache/cua/chatgpt_26.928.40906_amd64.deb: the pinned 26.928.40906-linux-x64
+26.928.40906-linux-x64: its lockfile holds both closures, by name, version and SHA-512
+/Users/new/.local/share/cua-171/task144/arm64-deb/chatgpt_26.928.40906_arm64.deb: the pinned 26.928.40906-linux-arm64
+26.928.40906-linux-arm64: its lockfile holds both closures, by name, version and SHA-512
+@img/colour@1.1.0: 17410 bytes, SHA-512 checked
+@img/sharp-libvips-linux-arm64@1.3.3: 8453817 bytes, SHA-512 checked
+@img/sharp-linux-arm64@0.35.4: 173900 bytes, SHA-512 checked
+abstract-level@3.1.1: 118217 bytes, SHA-512 checked
+base64-js@1.5.1: 4109 bytes, SHA-512 checked
+buffer@6.0.3: 23108 bytes, SHA-512 checked
+classic-level@3.0.0: 2387814 bytes, SHA-512 checked
+detect-libc@2.1.2: 7776 bytes, SHA-512 checked
+ieee754@1.2.1: 2886 bytes, SHA-512 checked
+is-buffer@2.0.5: 2092 bytes, SHA-512 checked
+jpeg-js@0.4.4: 21818 bytes, SHA-512 checked
+level-supports@6.2.0: 7451 bytes, SHA-512 checked
+level-transcoder@1.0.1: 9922 bytes, SHA-512 checked
+maybe-combine-errors@1.0.0: 2686 bytes, SHA-512 checked
+module-error@1.0.2: 3394 bytes, SHA-512 checked
+napi-macros@2.2.2: 4649 bytes, SHA-512 checked
+node-gyp-build@4.8.4: 5449 bytes, SHA-512 checked
+pixelmatch@7.1.0: 6347 bytes, SHA-512 checked
+playwright@1.57.0: 871339 bytes, SHA-512 checked
+playwright-core@1.57.0: 1987032 bytes, SHA-512 checked
+pngjs@7.0.0: 160939 bytes, SHA-512 checked
+semver@7.8.5: 29399 bytes, SHA-512 checked
+sharp@0.35.4: 214415 bytes, SHA-512 checked
+@img/sharp-libvips-linux-x64@1.3.3: 8176720 bytes, SHA-512 checked
+@img/sharp-linux-x64@0.35.4: 185604 bytes, SHA-512 checked
+wrote /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/.claude/worktrees/m6b-t8/runtime/modules/provenance.json: lock b71dc1f8185d2b37370bc0bb86bddd1768f959c98c836d96721571ba65a0b08c; linux-arm64 23 packages, linux-x64 23 packages; checked against 26.928.40906-linux-arm64, 26.928.40906-linux-x64
+(exit 0)
+$ sha256sum runtime/modules/provenance.json
+9f18d46c21a200d9b34fe66b45213016a70f50ba73eccd1cb2054bd78ad6c9d1  runtime/modules/provenance.json
+$ git diff --exit-code runtime/modules/provenance.json
+(exit 0)
+$ git status --porcelain
+(end)

@@ -20,6 +20,16 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   --scene gedit,chrome,chrome-input,over-budget,big-text,gtk-table,calc,retention --ops all --out "$OUT"
 ```
 
+**Where the pinned vendor build comes from (#171 M6b, F7).** Since cua 0.30.0 the gate no longer takes the vendor's
+Linux release from a cua home: cua's install no longer places it, and a home that holds one from an older install keeps
+it (ruling 1216) but is never read for it. `$VENDOR` and `$SKY` come from the comparator fixture: `vendor-fixture.mjs` checks a fixture directory
+outside any cua home (`~/.local/share/cua-171/vendor-<arch>-pinned`, or `gate.mjs --vendor-fixture <dir>`) against
+`scripts/linux-engine-gate/vendor-fixture.json`, extracts its tar on first use, and checks every extracted file before
+each use; the gate takes the build and the client from it alone, and refuses a step whose fixture does not check. Each
+fixture was compared once with its pinned deb before its entry was written (`vendor-fixture-pin.mjs`;
+`docs/evidence/2026-10-28-own-linux-engine/m6b/fixture-identity.txt`). The fixtures themselves are never in the
+repository; a lost one is restored from the x64 VM's copy or the owner's MacBook's, checked by the same hashes.
+
 `$ARTIFACT` is the release workflow's attested artifact of the checked-out commit, or the run is `--dev` (below).
 
 ## The candidate: a gate judges the bytes that ship (#267)
@@ -122,7 +132,7 @@ two services) are given that installed path, and so are the wire-driven verdict 
 it takes no top-up (the design session's ruling 722), so a pilot step lasts about as long as its form, not its full
 step. A series it could not decide is reported **unjudged** in every record it writes: a verdict run's verdict
 `unjudged` (`run.mjs` `pilotVerdict`) and its `end` row's `unjudged` list, a drag cell's speed and the events
-experiment's groups in their summary row's `unjudged`, R2's `unjudged.txt` (`suites.sh`). Unjudged is never a pass, so
+experiment's groups in their summary row's `unjudged` (R2's `unjudged.txt` went with R2, #171 M6b). Unjudged is never a pass, so
 the run's line reads "no verdict FAIL", never "every verdict PASS"; it fails nothing, and everything else a run judges
 (answers, witness, audit, effect, a decided loss) is judged as before. With `--pinned` a pilot is a **development run on
 the pinned release** (`gate` `pinned-dev`, candidate.mjs `PINNED_DEVELOPMENT`): its engine taken by the pinned rule

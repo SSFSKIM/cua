@@ -1,0 +1,6 @@
+# FB: the engine binaries the step executed and the vendor client files it opened, from FB.strace.gz (strace -f -e trace=%file)
+# execve of an engine binary (count, path), successful calls only:
+      5 /Users/new/.local/share/cua-171/t168/run/src/cua/engine/linux/cua-engine
+# opens of the vendor client's service.js (count, path), successful calls only:
+      2 /Users/new/.local/share/cua-171/vendor-x64-pinned/extracted/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js
+# any path under a runtimes/ directory, any call: 0

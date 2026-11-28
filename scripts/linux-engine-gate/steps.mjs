@@ -14,8 +14,8 @@
 // device-chrome-dnd, and V5 under the gate's Chrome ballast so its drops meet M3's window load); the over-budget scene
 // through the facade; the drag cells (every family and kind 30 of 30, Chrome's and Firefox's canvas, Chrome's drag and
 // drop, the thumbs, Writer unprimed since T16 removed the priming); the events experiment's `move`; the settle through
-// the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
-// compare --engines, linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner); T7 revised's acceptance on the shipped engine (the focus-timer
+// the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity's cua lane,
+// linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner; native-baseline's R2 left with M6b); T7 revised's acceptance on the shipped engine (the focus-timer
 // experiment's shipped lane and its stops); T7b's engine stop through cua serve on the installed engine (ES, from M5); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
 // takes' path through `t14-late`'s freeze bands, which the device scene cannot produce, judged by drop-signals-judge.mjs
 // `chromeDropVerdict` and its `LATE_BANDS`, ruling 931);
@@ -106,12 +106,10 @@ export const STEPS = [
   experiment('D5', 'private', 'idle', 25, drag('writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen'), 'Writer (unprimed, T16), the terminals, GTK 4\'s scale, Writer through gen'),
   // the facade suites on the candidate (the design session's requirement, 2026-11-12): suites.sh, each part on a
   // private desktop it starts itself, the candidate as its ENGINE_BIN; they count only when they pass on the artifact
-  suite('R1', 40, 'parity', "repl-parity's native suite on both engine lanes, and the diff against its expected differences"),
-  // R2's 45: the counted sitting about 21 min (T18's), and its one top-up as long again when a series needs it (the
-  // design session, 2026-11-13: suites.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate). From
-  // M5 the engine-answered series are judged in-cell (#370, F8), and one still undetermined after the top-up fails R2
-  // unless declared a gap by name (F8a, compare.mjs DECLARED_ENGINE_GAPS), then unproved and never a pass
-  suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines, the operations the engine answers judged by their in-cell time with the wall time beside it, which fails an operation only past a gross backstop of max(10%, 500 ms) over the vendor wall median (ruling 706); a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it fails, unless the design session declared it a gap by name: then it is unproved, listed apart from the passes'),
+  // R1 (#171 M6b, its pre-flight §1.3): the cua lane alone, by its own verdict (parity-verdict.mjs). The vendor lane, its
+  // diff and R2, which compared the two lanes in native-baseline, went with the vendor's Linux engine; their last runs
+  // are stored, and repl-parity's diff and native-baseline's compare --engines still judge them
+  suite('R1', 40, 'parity', "repl-parity's native suite on the cua lane, by its own verdict: the run's exit status, all 34 cases, both text cases positive, the home's cua-engine under the worker, and a clean cleanup"),
   suite('R3', 5, 'accept', "scripts/accept/linux-native.mjs on the candidate, in a home of the run's"),
   suite('R4', 3, 'device', 'scripts/accept/linux-device-mode.mjs on the candidate'),
   { name: 'FB', kind: 'facade', display: 'private', load: 'idle', minutes: 5, args: ['--scenes', 'over-budget'], what: 'the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)', pilot: asIs },

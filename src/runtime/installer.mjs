@@ -14,3 +14,7 @@ export function ownInstaller({release, entry = CUA_ENTRY} = {}) {
   const command = `node ${shellWord(entry)} install`;
   return {command, hint: `run \`${command}\`; a \`cua\` from another checkout installs that checkout's runtime${release ? `, which may not be ${release}` : ', not this one\'s'}`};
 }
+
+// The hint every Linux engine refusal carries (#171 M6b, rulings 1215 and 1216): the refusal's sentence ends with the one
+// command, `<command> --engine`, so the hint holds none and says only why it is this checkout's.
+export const ENGINE_HINT = 'a `cua` from another checkout installs that checkout\'s engine, not this one\'s';

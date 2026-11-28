@@ -1,5 +1,5 @@
 // The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade
-// suites; M1b): `--engine vendor|cua` with `--host cua`, and `--engine-bin <absolute path>` with `--engine cua`, on a
+// suites; M1b): `--engine cua` with `--host cua` (the vendor lane refused since M6b), and `--engine-bin <absolute path>` with `--engine cua`, on a
 // declared Linux device; the native command forwards them to the device's serve as CUA_NATIVE_ENGINE and
 // CUA_LINUX_ENGINE_BIN. Nothing reaches a device.
 import {test} from 'node:test';
@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {parseSelection, assertNativeEngine, assertPreparationServes} from '../../scripts/repl-parity.mjs';
 import {nativeCommand} from '../../scripts/repl-parity/native.mjs';
 import {DEVICES} from '../../scripts/repl-parity/devices.mjs';
+import {LINUX_VENDOR_LANE_RETIRED} from '../../scripts/repl-parity/engine-answered.mjs';
+const retired = new RegExp(LINUX_VENDOR_LANE_RETIRED.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
 const run = (...rest) => parseSelection(['run', '--device', 'cua-171', '--host', 'cua', '--suite', 'native', '--out', '/nowhere', ...rest]);
 const BIN = '/Users/new/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine';
@@ -16,12 +18,14 @@ test('the #171 VMs are declared Linux devices', () => {
   assert.equal(DEVICES['cua-171-arm64'].platform, 'linux');
 });
 
-test('parseSelection: a Linux native run names its engine, with cua\'s host, and the cua lane may name its binary', () => {
-  assert.equal(run('--engine', 'vendor').v.engine, 'vendor');
+test('parseSelection: a Linux native run names its engine, cua, with cua\'s host, and may name its binary', () => {
   assert.equal(run('--engine', 'cua').v.engine, 'cua');
   assert.equal(run('--engine', 'cua', '--engine-bin', BIN).v['engine-bin'], BIN);
   assert.equal(parseSelection(['run', '--device', 'cua-gce', '--host', 'cua', '--suite', 'all', '--engine', 'cua', '--out', '/x']).v.engine, 'cua');
-  assert.throws(() => run('--engine', 'sky'), /--engine vendor\|cua/);
+  assert.throws(() => run('--engine', 'sky'), /names its engine: --engine cua$/);
+  // #171 M6b: the vendor lane is refused, saying where its last runs are stored
+  assert.throws(() => run('--engine', 'vendor'), retired);
+  assert.throws(() => parseSelection(['run', '--device', 'cua-171-arm64', '--host', 'cua', '--suite', 'all', '--engine', 'vendor', '--out', '/x']), retired);
   assert.throws(() => run('--engine', 'vendor', '--engine-bin', BIN), /--engine-bin .*--engine cua/);
   assert.throws(() => run('--engine-bin', BIN), /--engine-bin .*--engine cua/);
   assert.throws(() => run('--engine', 'cua', '--engine-bin', 'relative/cua-engine'), /absolute/);
@@ -37,18 +41,19 @@ test('parseSelection: the Linux engine options belong to a Linux run of the nati
 
 test('assertNativeEngine: a run whose selection holds native cases names its engine', () => {
   const native = [{id: 'native/cua/computer', backend: 'native'}], cells = [{id: 'cells/x', backend: 'no-services'}];
-  assert.doesNotThrow(() => assertNativeEngine(native, {engine: 'vendor'}));
+  assert.doesNotThrow(() => assertNativeEngine(native, {engine: 'cua'}));
   assert.doesNotThrow(() => assertNativeEngine(cells, {}));
-  assert.throws(() => assertNativeEngine(native, {}), /names its engine: --engine vendor\|cua/);
+  assert.throws(() => assertNativeEngine(native, {}), /names its engine: --engine cua /);
 });
 
-test('nativeCommand forwards the lane\'s engine to the device\'s serve, explicitly, and its binary only on the cua lane', () => {
+test('nativeCommand forwards the lane\'s engine to the device\'s serve, explicitly, and refuses the vendor lane', () => {
   const facts = {device: 'cua-171', platform: 'linux', host: 'cua', checkout: '/c', home: '/h'};
   const script = c => c.args.at(-1);
-  assert.match(script(nativeCommand({...facts, engine: 'vendor'})), / CUA_NATIVE_ENGINE='vendor' CUA_LINUX_ENGINE_BIN='' node test\/repl-parity\/serve-native\.mjs$/, 'an ambient override never reaches the vendor lane');
+  assert.match(script(nativeCommand({...facts, engine: 'cua'})), / CUA_NATIVE_ENGINE='cua' CUA_LINUX_ENGINE_BIN='' node test\/repl-parity\/serve-native\.mjs$/, 'an ambient override never reaches the lane');
   assert.match(script(nativeCommand({...facts, engine: 'cua', engineBin: BIN})), new RegExp(` CUA_NATIVE_ENGINE='cua' CUA_LINUX_ENGINE_BIN='${BIN}' node test/repl-parity/serve-native\\.mjs$`));
   assert.throws(() => nativeCommand(facts), /names its engine/);
-  assert.throws(() => nativeCommand({...facts, engine: 'vendor', engineBin: BIN}), /--engine cua only/);
+  assert.throws(() => nativeCommand({...facts, engine: 'vendor'}), retired);
+  assert.throws(() => nativeCommand({...facts, engine: 'vendor', engineBin: BIN}), retired);
   assert.throws(() => nativeCommand({...facts, engine: 'cua', engineBin: 'cua-engine'}), /absolute/);
 });
 

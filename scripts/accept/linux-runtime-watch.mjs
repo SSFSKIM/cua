@@ -4,7 +4,8 @@
 // record): the most sky_linux processes at once and every cua-engine with its executable and its parent's command line;
 // and beside it each sky_linux's executable with the service and engine its parent was launched with
 // (CUA_SKY_SERVICE, OAI_SKY_LINUX_BIN), and every process of the REPL host (Node running src/repl-host/<role>.mjs).
-// Executables are read from /proc, never taken from a name.
+// Executables are read from /proc, never taken from a name. Since #171 M6b a sky_linux is only ever a failure here: no
+// judge expects the vendor's engine to answer (its E5 judge went with the rollback).
 import {readdirSync, readFileSync, readlinkSync} from 'node:fs';
 import {basename} from 'node:path';
 import {watchVerdict} from '../linux-engine-gate/engine-watch.mjs';
@@ -80,18 +81,6 @@ export const cuaEngineProblems = (watch, {engine}) => watchVerdict(watch, {engin
 
 /** No engine ran at any sample (a browser-only session). */
 export const noEngineProblems = watch => [...sampled(watch), ...enginesRan(watch), ...skySeen(watch)];
-
-/**
- * The vendor's engine answered (E5): a sky_linux whose executable is this home's `bin` (real path), its parent launched
- * with the vendor `service`, and no cua-engine at any sample.
- */
-export function vendorEngineProblems(watch, {bin, service}) {
-  const problems = [...sampled(watch), ...enginesRan(watch)];
-  const own = watch.skyLinux.filter(s => s.exe === bin);
-  if (!own.length) problems.push(`no sky_linux at any sample ran this home's ${bin}${watch.skyLinux.length ? ` (seen: ${watch.skyLinux.map(s => s.exe ?? 'unread').join(', ')})` : ''}`);
-  else if (!own.some(s => s.service === service)) problems.push(`this home's sky_linux did not run behind the vendor service ${service} (its parent's CUA_SKY_SERVICE: ${own.map(s => s.service ?? 'unset').join(', ')})`);
-  return problems;
-}
 
 /**
  * The REPL host ran on the home's managed Node (`node`, its real path): every trusted worker and kernel sampled ran it, by

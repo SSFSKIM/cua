@@ -168,12 +168,12 @@ test('#354: a concealed type_text that keyed and did not match repeats typeUncon
 
 test('#414: a concealed type_text whose password field stopped being one warns, in a fixed sentence, that the field may show the secret; no other reason does', async () => {
   const value = VALUES['WORK_PASSWORD'];
-  const warning = 'The password field may have stopped being one while the secret was typed, and may now show it: do not take a screenshot of it or call getAXState(); put it right with setValue.';
+  const warning = 'The password field may have stopped being one while the secret was typed, and may now show it: do not capture the screen or read the app\'s accessibility state; put it right with setValue.';
   const native = `The text was typed, but the password field turned into another kind of field (native-only-sentence) ${value}`;
   const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
   const record = reason => ({confirmed: false, reason, secure: true, concealed: true, snapshotMs: 1.5});
   const changed = 'Computer Use server error -10016: The user changed \'/Applications/Safari.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
-  const hideFirst = 'the user changed the app; ask the user to hide or clear the password field before re-querying the app\'s state, and before any setValue;';
+  const hideFirst = 'the user changed the app; ask the user to hide or clear the password field, before any setValue;';
   const cases = [
     {label: 'noLongerSecure', name: 'typeUnconfirmed', meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
     {label: 'noLongerSecure, then the user changed the app', name: 'userIntervened', message: changed, meta: {...posted, typeReadback: record('noLongerSecure')}, warned: true},
@@ -205,8 +205,8 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
     assert.equal(error.message.includes(warning), warned, label);
     if (name === 'userIntervened') {
       // The review of f35a42b8..cbce12e2 (P1): a field that may show the secret is never re-queried first; the one
-      // instruction is to have the user hide or clear it. Without the warning, the re-query instruction stays.
-      assert.equal(error.message.includes('re-query its state (getAXState)'), !warned, label);
+      // instruction is to have the user hide or clear it. Nothing entered, the re-query instruction stays.
+      assert.equal(error.message.includes('re-query its state (getAXState)'), meta.startedAt === null, label);
       assert.equal(error.message.includes(hideFirst), warned, label);
     }
     assert.doesNotMatch(error.message, /native-only-sentence|turned into|Safari|noLongerSecure|lengthMismatch|lengthUnreadable/, `${label}: nothing of the native error or the reason`);
@@ -217,6 +217,45 @@ test('#414: a concealed type_text whose password field stopped being one warns, 
   const {service} = harness({answer: () => { throw new EngineError('actionFailed', native, {...posted, typeReadback: record('noLongerSecure')}); }});
   const set = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
   assert.equal(set.message.includes(warning), false);
+});
+
+test('ruling 1247 (d): no answer after a secret\'s first key may have posted advises observing the app, on any branch', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const posted = {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042};
+  const record = (reason, extra = {}) => ({confirmed: false, reason, concealed: true, snapshotMs: 1.5, ...extra});
+  const changed = 'Computer Use server error -10016: The user changed \'/Applications/Finder.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
+  const still = 'Computer Use server error -10016: The user is still interacting with \'/Applications/Finder.app\'. Wait 5 seconds and retry.';
+  const readback = ['notTextField', 'noFocusedElement', 'fieldChanged', 'valueMismatch', 'concealedMismatch', 'unchanged', 'possiblyTruncated',
+    'roleUnreadable', 'fieldUnreadable', 'valueUnreadable', 'rangeUnreadable', 'becameSecure', 'secure', 'lengthMismatch', 'caretMismatch',
+    'lengthUnreadable', 'selectionUnreadable', 'noLongerSecure'];
+  const engine = (name, meta, message = `${name} ${value} take a screenshot or call getAXState()`) => () => { const e = new EngineError(name, message, meta); if (name === 'userIntervened') e.code = -10016; throw e; };
+  const branches = [
+    ...readback.map(reason => [`typeUnconfirmed ${reason}`, engine('typeUnconfirmed', {...posted, typeReadback: record(reason)})]),
+    ['typeUnconfirmed, a password field unclassified', engine('typeUnconfirmed', {...posted, typeReadback: record('fieldUnreadable', {secure: true})})],
+    ['userIntervened changed, posted', engine('userIntervened', posted, changed)],
+    ['userIntervened changed, posted, a password field', engine('userIntervened', {...posted, typeReadback: record('noLongerSecure', {secure: true})}, changed)],
+    ['userIntervened changed, the account: stopped after input', engine('userIntervened', {...posted, interruption: {phase: 'inFlight', effects: ['focus', 'input']}}, changed)],
+    ['userIntervened changed, the account: stopped part-way, a password field', engine('userIntervened',
+      {...posted, typeReadback: record('noLongerSecure', {secure: true}), interruption: {phase: 'inFlight', effects: []}}, changed)],
+    ['userIntervened changed, the vendor', engine('userIntervened', null, changed)],
+    ['userIntervened still interacting', engine('userIntervened', posted, still)],
+    ['userIntervened, another sentence', engine('userIntervened', posted)],
+    ['the deadline at a key (keysDeadlinePassed)', engine('keysDeadlinePassed', posted)],
+    ['the deadline (timeoutReached)', engine('timeoutReached', posted)],
+    ['inputSourceChanged', engine('inputSourceChanged', posted)],
+    ['eventCreationFailed', engine('eventCreationFailed', posted)],
+    ['a transport timeout', () => { const e = new Error(`timed out ${value}`); e.name = 'SkyComputerUseTransportError'; throw e; }],
+    ['a plain error', () => { throw new Error(`boom ${value}`); }],
+    ['the vendor, no meta', engine('typeUnconfirmed', null)],
+  ];
+  for (const [label, answer] of branches) {
+    const {service} = harness({answer});
+    const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', label);
+    assert.doesNotMatch(error.message, /screenshot/i, label);
+    assert.doesNotMatch(error.message, /getAXState/i, label);
+    assertValueFree(error);
+  }
 });
 
 test('userIntervened after substitution says which of its two sentences the model must act on, value-free, on both engines', async () => {
@@ -242,6 +281,10 @@ test('userIntervened after substitution says which of its two sentences the mode
       if (wait) {
         assert.match(error.message, /the user is still interacting with the app; wait 5 seconds and retry/, label);
         assert.doesNotMatch(error.message, /re-query/i, label);
+      } else if (entered) {
+        // Ruling 1247 (d): once part of the secret may be in, the re-query becomes the user's check.
+        assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows/, label);
+        assert.doesNotMatch(error.message, /getAXState|screenshot|re-query/i, label);
       } else {
         assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, label);
         assert.doesNotMatch(error.message, /wait 5 seconds/, label);
@@ -287,7 +330,11 @@ test('#212: userIntervened after substitution names what may have taken effect f
       const error = await rejection(service.handleRpc(request));
       const at = `${request.method}, ${label}`;
       assert.equal(error.code, 'secret_input_failed', at);
-      assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, at);
+      // Ruling 1247 (d): once the account says the secret may be in, the re-query becomes the user's check.
+      if (entered) {
+        assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows/, at);
+        assert.doesNotMatch(error.message, /getAXState|screenshot|re-query/i, at);
+      } else assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, at);
       assert.equal(/nothing was entered/.test(error.message), nothing, at);
       assert.equal(/may have been partly entered/.test(error.message), entered, at);
       if (nothing) assert.match(error.message, /it was refused before its first step; nothing was entered\./, at);

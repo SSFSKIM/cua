@@ -11,7 +11,10 @@ test('the endpoint CLI pins only the acquisition to the vendor engine under the 
  const calls=[];
  const run=(file,args,options)=>{calls.push({file,args,env:options.env});return 'fixture output';};
  for(const args of [['install','--archive','/fixture/archive'],['remote','show','--json']])
-  assert.equal(endpointCli('/fixture/scratch',args,{ambient,run}),'fixture output');
+  assert.equal(endpointCli('/fixture/scratch',args,{ambient,run,platform:'darwin'}),'fixture output');
+ // #171 M6b: on Linux the install names no engine (cua 0.30.0 refuses the vendor's there), an ambient one included
+ endpointCli('/fixture/scratch',['install'],{ambient:{...ambient,CUA_NATIVE_ENGINE:'vendor'},run,platform:'linux'});
+ assert.equal('CUA_NATIVE_ENGINE' in calls[2].env,false,'a Linux install names no engine');
  assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor','the install never builds an engine (#117 M4)');
  assert.equal(calls[0].env.HOME,'/fixture/scratch.home');
  assert.equal(calls[0].env.CUA_HOME,'/fixture/scratch');

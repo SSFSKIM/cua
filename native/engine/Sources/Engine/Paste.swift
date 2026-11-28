@@ -834,7 +834,8 @@ extension Engine {
       readback = made
       // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
-    }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() })
+    }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() },
+       posted: { readback?.keyPosted(at: reads.now()) })
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
@@ -847,7 +848,7 @@ extension Engine {
       throw typedPasteError(error, entered: entered, total: text.utf16.count, line: meta.paste?.line, lines: meta.paste?.lines,
                             unconfirmedLines: meta.paste?.unconfirmedLines ?? 0)
     }
-    if let record = readback?.record, record.secure, record.lengthConfirmed { meta.note = readbackLengthNote }
+    if let note = readback?.note { meta.note = note }  // a password field's length note (#414), or no field to read (#587)
     return meta.note
   }
 
@@ -931,7 +932,11 @@ extension Engine {
       // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
       // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
       let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, keyboard) }
-      func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
+      func press(_ key: KeyPress) -> Bool {
+        let sent = keyPressEvents(key).map { poster.post($0) }.contains(true)
+        if sent { typing?.posted() }
+        return sent
+      }
       let outcome = try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: keyboard, application: application, window: window, system: system) },
@@ -1029,6 +1034,8 @@ struct PasteTyping {
   let snapshot: (_ activationClickPending: Bool) throws -> Void
   let beforePart: (_ index: Int) throws -> Void
   let finish: () throws -> Void
+  /// After each ⌘V or Return that was posted: a failed read after it says how long after (#590).
+  var posted: () -> Void = {}
 }
 
 /// type_text's text as the read-back's units, one for one with `pasteParts(typing:)`'s parts, split the same way, so a

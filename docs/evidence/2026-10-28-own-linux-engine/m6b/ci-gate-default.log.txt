@@ -1,0 +1,15 @@
+ci-gate: testing 3722f282 on SSFSKIM/cua as ci/m6b-t8-H-3722f282-0ad5cb
+ci-gate: run https://github.com/SSFSKIM/cua/actions/runs/46052942014
+PASS harness-dbus 0m53s
+PASS plugin 0m54s
+WAIT test-2 2m25s
+WAIT test-1 2m25s
+PASS sandbox-live 2m31s
+PASS engine-swift 7m48s
+PASS parity-browser 8m06s
+PASS test-1 8m59s
+PASS test-2 9m25s
+PASS sandbox-denials 26m07s
+ci-gate: removed ci/m6b-t8-H-3722f282-0ad5cb
+GREEN https://github.com/SSFSKIM/cua/actions/runs/46052942014
+exit 0

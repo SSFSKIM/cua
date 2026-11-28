@@ -61,7 +61,7 @@ const TREE_UNAVAILABLE = {
 // The sentence for a state's `tree_unavailable` with the newline that puts it after the tree, or '' for none cua knows.
 function unavailable(state) {
   const reason = state.tree_unavailable?.reason;
-  if (!Object.hasOwn(TREE_UNAVAILABLE, reason)) return '';
+  if (typeof reason !== 'string' || !Object.hasOwn(TREE_UNAVAILABLE, reason)) return '';
   return `\n${TREE_UNAVAILABLE[reason](escapeLineBreaks(state.window.app))}`;
 }
 

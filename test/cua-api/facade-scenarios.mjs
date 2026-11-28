@@ -1,6 +1,8 @@
 // The facade scenarios: each runs one Table 1 behaviour of the cua facade's modules through ./facade-harness.mjs and
 // checks its record (`check`); ./facade-vendor.test.mjs also runs each against the vendor's readable facade and
 // requires the same record, unless the scenario declares a deliberate difference (`differs`, with the Table 2 row).
+// A difference that is one part of the record also says how to remove it (`withoutDifference(record)`), and the rest
+// of the record must then be the vendor's.
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -224,7 +226,11 @@ export const scenarios = [
   // #228 (the pre-flight's E1, ruling 1261): cua-engine asks a bare Electron window's application to turn its
   // accessibility on only when a tree is wanted, so a screenshot, which throws the tree away, says it wants none.
   {name: 'linux app: a screenshot says it wants no tree (tree_wanted: false); one screenshot region at most (#228)',
-    differs: '#228 pre-flight, E1: getScreenshot sends tree_wanted: false', run: async (f, ctx) => {
+    differs: '#228 pre-flight, E1: getScreenshot sends tree_wanted: false',
+    // the difference is the field alone: without it, the record is the vendor's, its results, refusals and writes included
+    withoutDifference: record => ({...record, log: record.log.map(entry => (entry.call === 'sky.get_window_state'
+      ? {...entry, args: entry.args.map(({tree_wanted, ...request}) => request)} : entry))}),
+    run: async (f, ctx) => {
       const app = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
       const multi = f.bind_linux_app(linuxSky(ctx, f, {screenshots: [{bytes: Uint8Array.from([1])}, {bytes: Uint8Array.from([2])}]}), {...linuxWindow, id: 8});
       const none = f.bind_linux_app(linuxSky(ctx, f, {screenshots: []}), {...linuxWindow, id: 9});
@@ -327,13 +333,15 @@ export const scenarios = [
     }},
   {name: 'linux app: a state whose tree_unavailable is absent, null, or names no reason cua knows renders byte for byte as before', run: async (f, ctx) => {
     const reads = [];
-    for (const [id, unavailable] of [[7, undefined], [8, null], [9, {}], [10, {reason: 'later'}], [11, 'no_provider']]) {
+    // a reason that is no string is no reason: an array holding one, and an object that converts to no key, render nothing
+    const cases = [[7, undefined], [8, null], [9, {}], [10, {reason: 'later'}], [11, 'no_provider'], [12, {reason: ['asked']}], [13, {reason: Object.create(null)}]];
+    for (const [id, unavailable] of cases) {
       const app = f.bind_linux_app(linuxSky(ctx, f, {unavailable}), {...linuxWindow, id});
       reads.push(await app.getAXState({emit: false}), await app.getAXStateAndScreenshot({emit: false}));
     }
     return reads;
   }, check(record, assert) {
-    assert.deepEqual(record.result, Array.from({length: 5}, () => [RENDERED, {state: RENDERED, screenshot: {uint8: [5, 6]}}]).flat());
+    assert.deepEqual(record.result, Array.from({length: 7}, () => [RENDERED, {state: RENDERED, screenshot: {uint8: [5, 6]}}]).flat());
   }},
   {name: 'linux app: a state with no notice, or an empty one, renders byte for byte as before', run: async (f, ctx) => {
     const absent = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);

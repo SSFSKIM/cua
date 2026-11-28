@@ -13,7 +13,7 @@ import {isComputerUseApproval} from '../scripts/accept/lib.mjs';
 import {elicitationParams} from '../src/repl-host/elicitation.mjs';
 import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {DESKTOP_APPROVAL, LINUX_WINDOW_METHODS, linuxApprovalRequest} from '../src/services/engine/policy.mjs';
-import {createSkyService} from '../src/services/sky.mjs';
+import {createSkyService, LINUX_LAUNCH_SHAPE_REFUSED} from '../src/services/sky.mjs';
 
 const window = (id, app, title = `window ${id}`) => ({app, focused: false, height: 600, id, modal: false, title, width: 800, window_type: 'normal', x: 0, y: 0});
 const GEDIT = window(7, 'org.gnome.gedit', 'notes.txt - gedit');
@@ -223,14 +223,13 @@ test('launch_app asks keyed by its app id once sky_linux lists it, then launches
   await assert.rejects(declined.service.handleRpc(execute('launch_app', {app: 'org.gnome.gedit.desktop'})), {message: 'Computer Use was not approved to use org.gnome.gedit.desktop'});
   assert.deepEqual(declined.launched, []);
 
-  // Any other launch_app shape still goes to the vendor, behind the approval of the app it names; one naming none is refused.
+  // Any other launch_app shape is refused before it is asked about or delivered (#228: only the supervisor's route sets
+  // the launch's ACCESSIBILITY_ENABLED=1; test/services-sky-linux-launch.test.mjs).
   const other = linux({apps, env: d.env});
-  const extra = execute('launch_app', {app: 'org.gnome.gedit.desktop', extra: 1});
-  assert.deepEqual(await other.service.handleRpc(extra), {done: 'launch_app'});
-  assert.deepEqual(other.asked.map(a => a.meta.tool_params.app), ['org.gnome.gedit.desktop']);
-  for (const request of [execute('launch_app', {app: 7}), execute('launch_app')])
-    assert.match((await rejection(other.service.handleRpc(request))).message, /^Computer Use app approval requires /);
-  assert.deepEqual(other.delivered().filter(r => r.method === 'launch_app'), [extra]);
+  for (const request of [execute('launch_app', {app: 'org.gnome.gedit.desktop', extra: 1}), execute('launch_app', {app: 7}), execute('launch_app')])
+    assert.equal((await rejection(other.service.handleRpc(request))).message, LINUX_LAUNCH_SHAPE_REFUSED);
+  assert.deepEqual(other.asked, []);
+  assert.deepEqual(other.delivered().filter(r => r.method === 'launch_app'), []);
 });
 
 test('secrets on Linux: the wrapper\'s own refusals come before the approval; a substituted type_text is approved before the store is read', async () => {

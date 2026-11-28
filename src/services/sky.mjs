@@ -39,7 +39,10 @@
 // application "<app>" was not found`); its desktop entry is found as the XDG specification finds a desktop file id
 // (desktopEntryFor), and the supervisor launches it outside the sandbox (nodeRepl.launchServices.openApplication,
 // src/repl-host/launch-services.mjs). It answers as the vendor's launch_app does (undefined). Any other launch_app shape
-// goes to the vendor unchanged, as on macOS. With cua's own Linux service (#171), whose engine refuses the first request
+// is refused with LINUX_LAUNCH_SHAPE_REFUSED before anything is asked or sent (#228): only the supervisor's launch gives
+// the application ACCESSIBILITY_ENABLED=1, and a launch delegated to the service would reach the engine's own
+// launch_app, which the confined worker's environment starts. On macOS every shape goes to the vendor unchanged. With
+// cua's own Linux service (#171), whose engine refuses the first request
 // that acts after a late drag and drop it has not reported yet, the launch acts too: just before it, the wrapper calls
 // the service's `beforeLaunch` (the engine's `preflight`), whose refusal is the launch's answer; the vendor's service has
 // no such export and is not asked. The same goes for `kernelReset`, which the trusted worker calls when the REPL host
@@ -165,6 +168,9 @@ export function desktopEntryFor(id, env) {
   return null;
 }
 
+// What a Linux launch_app in any shape but the one below is answered (#228).
+export const LINUX_LAUNCH_SHAPE_REFUSED = 'launch_app on Linux takes exactly one input, {app: <application id>}, and nothing else; nothing was launched';
+
 // Exactly `{type: 'execute', method: 'launch_app', args: [{app: <string>}]}`: the app id, else null.
 function launchAppId(request) {
   if (!isPlainObject(request) || request.type !== 'execute' || request.method !== 'launch_app' || !Object.keys(request).every(key => REQUEST_KEYS.includes(key))) return null;
@@ -220,6 +226,8 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
   async function delegate(request) {
     const app = platform === 'linux' ? launchAppId(request) : null;
     if (app !== null) return launchLinuxApp(app, request);
+    // by the key the service looks the method up by, so an array naming it is launch_app too
+    if (platform === 'linux' && request?.type === 'execute' && propertyKey(request.method) === 'launch_app') throw new Error(LINUX_LAUNCH_SHAPE_REFUSED);
     const plan = substitutionFor(request, eligible);
     if (!plan) {
       await approved(request);

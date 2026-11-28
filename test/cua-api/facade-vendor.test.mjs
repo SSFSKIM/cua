@@ -1,7 +1,8 @@
 // The vendor differential for the cua facade: every scenario of ./facade-scenarios.mjs runs against the port
 // (src/cua-api) and against the vendor's readable facade (chatgpt-26.928.40906 @oai/cua tinysky_alt, get_state,
 // get_apps and Sky's Linux accessibility tree) through the same doubles. The records must be equal, except where a
-// scenario declares a deliberate difference (the surface inventory's Table 2 row), whose records must differ. The
+// scenario declares a deliberate difference (the surface inventory's Table 2 row), whose records must differ, and must
+// be equal once a scoped difference is removed (`withoutDifference`). The
 // readable tree is outside the repository, so this runs only when CUA_VENDOR_CUA names its cua_node/@oai/cua directory
 // (e.g. ~/codex-app-src/readable/chatgpt-26.928.40906/cua_node/@oai/cua) and skips visibly otherwise.
 import {test} from 'node:test';
@@ -18,5 +19,7 @@ for (const scenario of scenarios) {
     const theirs = await runScenario(vendor, scenario);
     if (scenario.differs) assert.notDeepEqual(mine, theirs, `declared difference (${scenario.differs}) did not appear`);
     else assert.deepEqual(mine, theirs);
+    // a scoped difference: the record without it is the vendor's
+    if (scenario.withoutDifference) assert.deepEqual(scenario.withoutDifference(mine), theirs, `more than the declared difference (${scenario.differs})`);
   });
 }

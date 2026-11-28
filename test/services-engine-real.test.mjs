@@ -66,7 +66,7 @@ async function session(t, {answer = () => ({action: 'decline', content: null, _m
   const client = createEngineClient({nodeRepl, appPath: nodeRepl.env.CUA_ENGINE_APP, socketPath: socket,
     expected: {engineVersion: engineVersionFromSource(), build: 'unbundled'}, launchWaitMs: 15_000});
   t.after(() => client.close());
-  const wrapper = createSkyService({loadVendor: async () => createService({nodeRepl, client}), secrets: {read: async () => assert.fail('no secret is read')}, platform: 'darwin'});
+  const wrapper = createSkyService({loadVendor: async () => createService({nodeRepl, client}), secrets: {read: async () => assert.fail('no secret is read')}, platform: 'darwin', cuaEngine: true});
   const saved = globalThis.nodeRepl;
   globalThis.nodeRepl = {rpc: async (_name, request) => wrapper.handleRpc(request)};
   try {

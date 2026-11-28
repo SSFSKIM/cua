@@ -494,7 +494,8 @@ final class TypeReadbackMarkerTests: XCTestCase {
         XCTAssertEqual(reason(meta), "noLongerSecure", name)
         XCTAssertEqual(record(meta)["secure"] as? Bool, true, "\(name): a password field's record, with no reads or poll time")
         XCTAssertNil(record(meta)["reads"], name)
-        XCTAssertTrue(error?.message.hasSuffix("The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); put it right with setValue, and do not type the text again.") ?? false, name)
+        // The latch (ruling 1275): nothing typed, and the field may now show its text.
+        XCTAssertEqual(error?.message, "Nothing was typed: the password field turned into another kind of field before the text was typed, so none of it was sent. The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); check the field with the person before typing again.", name)
         XCTAssertFalse(reply.contains("hunter2"), name)
         XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.log)")
         guard let snapshot = safari.log.lastIndex(of: "\(kAXSubroleAttribute)@\(StubSafari.field)") else {
@@ -542,7 +543,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
     let (error, meta, _) = type("pass", into: stable, baseline: .stable)
     XCTAssertEqual(error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(reason(meta), "noLongerSecure")
-    XCTAssertEqual(stable.value, "hunter2pass", "a stable baseline types, as before")
+    XCTAssertEqual(stable.value, "hunter2", "the latch: nothing typed under a stable baseline either (ruling 1275)")
   }
 
   /// The review of 81a1aebc..52f0109a (P2): a field the route found to be a password field keeps a password field's
@@ -558,9 +559,10 @@ final class TypeReadbackMarkerTests: XCTestCase {
       XCTAssertEqual(reason(meta), "roleUnreadable")
       XCTAssertEqual(record(meta)["secure"] as? Bool, true)
       // A password field that could not be classified may have stopped being one (the review of a1939d2f..e8e2702e, 4).
-      XCTAssertTrue(error?.message.contains("the password field could not be read, so it may no longer hide its text") ?? false)
+      // The latch (ruling 1275): nothing typed, the failed read reported, a password field's remedy.
+      XCTAssertTrue(error?.message.hasPrefix("Nothing was typed: the password field could not be read") ?? false, error?.message ?? "")
       XCTAssertTrue(error?.message.contains("may now show its text") ?? false)
-      XCTAssertFalse(error?.message.contains("Observe the field with getAXState()") ?? true)
+      XCTAssertFalse(error?.message.contains("Observe the") ?? true)
       // A refusal after posting answers at once (ruling 1ea561bc:851), concealed or not.
       XCTAssertEqual(meta.typeReadback?.pollMs, 0)
       XCTAssertNil(record(meta)["reads"])
@@ -598,7 +600,10 @@ final class TypeReadbackMarkerTests: XCTestCase {
         let afterClassification = safari.log[(classified + 1)...]
         XCTAssertFalse(afterClassification.contains { $0.hasSuffix("@\(closed)") || $0.hasSuffix("@\(StubSafari.field)") },
                        "\(name): nothing more read: \(afterClassification)")
-        XCTAssertEqual(Array(afterClassification), ["post", "post", "post", "post"], "\(name): the text is typed, nothing read")
+        // The latch (ruling 1275): a closed claim is terminal, nothing typed.
+        XCTAssertEqual(Array(afterClassification), [], "\(name): nothing typed, nothing read")
+        XCTAssertTrue(error?.message.hasPrefix("Nothing was typed: ") ?? false, "\(name): \(error?.message ?? "")")
+        XCTAssertEqual(meta.beforeInput, true, name)
       }
     }
   }
@@ -639,6 +644,7 @@ final class TypeReadbackMarkerTests: XCTestCase {
       let (error, meta, _) = type("xyz", into: safari)
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
       XCTAssertEqual(reason(meta), "noFocusedElement", name)
+      XCTAssertNil(meta.note, "\(name): no focused element earns no note (ruling 1247)")
       XCTAssertEqual(safari.valueReads, [], "\(name): \(safari.valueReads)")
       XCTAssertEqual(safari.windowChildrenReads, 2, "\(name): the web area's search, then the walk after the route claimed nothing")
     }
@@ -646,6 +652,33 @@ final class TypeReadbackMarkerTests: XCTestCase {
     let small = StubSafari(filler: 3)
     small.markerRangeError = .noValue
     XCTAssertNil(type("xyz", into: small).error)
+  }
+
+  /// Ruling 1247 (b): a password field the route classified but whose focus or place under the web area it cannot show
+  /// stops the read-back as a password field's, whatever the walk would find; a route with no such evidence leaves the
+  /// walk to find the field.
+  func testAPasswordFieldTheRouteCannotVouchForStopsTheReadBack() {
+    let cases: [(String, (StubSafari) -> Void)] = [
+      ("its focus unreadable", { $0.errors[StubSafari.field] = [kAXFocusedAttribute: .cannotComplete] }),
+      ("not under the web area", { $0.parents[StubSafari.form] = nil }),
+    ]
+    for (name, setUp) in cases {
+      let safari = StubSafari(filler: 3)
+      safari.subroles[StubSafari.field] = "AXSecureTextField"
+      setUp(safari)
+      let (error, meta, _) = type("xyz", into: safari)
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", name)
+      XCTAssertEqual(reason(meta), "fieldUnreadable", name)
+      XCTAssertEqual(record(meta)["secure"] as? Bool, true, name)
+      XCTAssertTrue(error?.message.hasPrefix("Nothing was typed: the password field could not be read") ?? false, name)
+      XCTAssertEqual(meta.beforeInput, true, "\(name): the latch, nothing typed")
+      XCTAssertEqual(safari.valueReads, [], name)
+      XCTAssertEqual(safari.windowChildrenReads, 1, "\(name): no walk after the route's claim")
+    }
+    // A plain field the route could not vouch for is no evidence: the walk finds it on a page it can read.
+    let plain = StubSafari(filler: 3)
+    plain.parents[StubSafari.form] = nil
+    XCTAssertNil(type("xyz", into: plain).error)
   }
 
   /// The marker names an element more than `typeReadbackMarkerFieldHops` below its field: no claim; at the cap, the

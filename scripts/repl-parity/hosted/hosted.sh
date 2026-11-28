@@ -7,7 +7,9 @@
 #   sh scripts/repl-parity/hosted/hosted.sh browser    gate `parity-browser`
 #
 # Both items share the setup:
-#   harness Chrome  Chrome for Testing, preinstalled on the hosted image, with cua's extension loaded unpacked, on the
+#   harness Chrome  Chrome for Testing at the version pinned in ./chrome-for-testing.json (#606), downloaded into the
+#                   scratch root and checked against the pin's size and SHA-256
+#                   (scripts/native-matrix/fixtures/chrome-for-testing.mjs), with cua's extension loaded unpacked, on the
 #                   user-data directory `cua chrome register` finds ($HOME/Library/Application Support/Google/Chrome),
 #                   after `cua install` and register; cua's profile `harness` added on its Default profile and bound to
 #                   the live backend. Binding reads `pick_required` (reason `unlabelled`) when the vendor's profile
@@ -79,7 +81,8 @@ S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159p.XXXXXX") && S=$(cd "$S" && pwd -P) 
 case "$S" in */cua159p.*) ;; *) echo "hosted-parity: no scratch root" >&2; exit 2 ;; esac
 ERR=$S/stderr RUNS=$S/runs SSHD=$S/sshd
 mkdir -p "$ERR" "$RUNS" "$SSHD"
-CFT="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+# Set by chrome_place: the pinned build's executable.
+CFT=''
 UDD="$HOME/Library/Application Support/Google/Chrome"
 EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb
 DEVICE=hosted-macos
@@ -142,9 +145,19 @@ step() {
 gated() { if [ "$1" = yes ]; then shift; step "$@"; else record "SKIP $2 (an earlier step failed)"; return 1; fi; }
 
 # --- setup ---------------------------------------------------------------------------------------------------------
-chrome_present() {
-  [ -x "$CFT" ] || return 1
-  say "Chrome for Testing $("$CFT" --version 2> /dev/null | awk '{print $NF}')"
+# The harness Chrome is pinned, not the image's (#606). The image's Chrome for Testing moves with every image release:
+# image 20261123 brought 158.0.8127.36 for 157.0.8103.78 and nothing else a browser cell touches, and on it 5 of 8
+# runs failed api cases on CDP timeouts, a different case each time and on either host, where 8 of 8 on the image
+# before passed. A cell that answers in tens of milliseconds stalled for 3 to 6 s, its neighbours with it. A Chrome
+# update is a change to what this gate measures, so it comes in as a change to the pin, run like any other.
+chrome_place() {
+  pin="$H/chrome-for-testing.json"
+  quiet chrome-place node scripts/native-matrix/fixtures/chrome-for-testing.mjs --pin "$pin" --cache "$S/chrome-for-testing" > "$S/chrome.json" || return
+  CFT="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).appPath)' "$S/chrome.json")/Contents/MacOS/Google Chrome for Testing"
+  [ -x "$CFT" ] || { say "the placed Chrome for Testing has no executable"; return 1; }
+  c_want=$(node -p 'require(process.argv[1]).version' "$R/$pin") c_got=$("$CFT" --version 2> /dev/null | awk '{print $NF}')
+  say "Chrome for Testing $c_got (pinned $c_want); the image's: $("/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" --version 2> /dev/null | awk '{print $NF}')"
+  [ "$c_got" = "$c_want" ] || { say "the placed Chrome for Testing is not the pinned version"; return 1; }
 }
 cua_install() { quiet install node bin/cua.mjs install --json > "$S/install.json"; }
 # register looks for a browser's user-data directory: the harness Chrome's is made before its first launch.
@@ -248,7 +261,7 @@ prepare() {
 
 say "macOS $(sw_vers -productVersion) ($(sw_vers -buildVersion)) $(uname -m), image ${ImageOS:-?} ${ImageVersion:-?}; node $(node -v); item $ITEM"
 ok=yes
-step "Chrome for Testing preinstalled" chrome_present || ok=no
+step "Chrome for Testing placed at the pinned version" chrome_place || ok=no
 step "cua install (discovery home)" cua_install || ok=no
 step "cua chrome register (manifest names cua's extension)" register || ok=no
 gated $ok "harness Chrome launched with cua's extension" launch_chrome || ok=no

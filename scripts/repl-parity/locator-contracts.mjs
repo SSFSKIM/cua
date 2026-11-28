@@ -60,7 +60,11 @@ function diagnostics(expected,context,origin){
   return isDeepStrictEqual(JSON.parse(match[1]),expected);
  };
 }
-supplements.set('click',[contract('diagnostics-sampling',scratch('/visible-dom-dense.html',`await scratch.playwright.locator(${JSON.stringify(sampleSelector)}).click({timeoutMs:1000});return true;`),diagnostics(sampling,'waiting on click for selector '+sampleSelector,/strict mode violation/i))]);
+// A strict-mode violation is thrown on the locator's first resolution, so the budget only bounds how long that first
+// resolution may take: 251 matches on a dense page, in a scratch tab opened inactive. At 1000 ms that resolution ran out on a
+// loaded hosted runner before it answered, a CDP Runtime.evaluate timeout instead of the violation (#606); 10000 ms, the
+// host's own bound on a CDP command, leaves the answer unchanged and only stops the budget from being the tighter one.
+supplements.set('click',[contract('diagnostics-sampling',scratch('/visible-dom-dense.html',`await scratch.playwright.locator(${JSON.stringify(sampleSelector)}).click({timeoutMs:10000});return true;`),diagnostics(sampling,'waiting on click for selector '+sampleSelector,/strict mode violation/i))]);
 // The no-matches wait runs out of its 100 ms, and two deadlines race to name the error's first line: the locator's
 // ("Playwright selector deadline exceeded") or a CDP command's own ("Timed out after 1ms waiting for CDP command
 // Runtime.evaluate.", or Page.createIsolatedWorld's on a slow scratch tab), on either host and on load alone (#168). No

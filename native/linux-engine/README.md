@@ -345,9 +345,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `release_sync.visits_dropped`, `skipped` when both were), and the release never moves. Since 0.4.5 (#512, ruling
   1142): a drop whose path's last step went out after the 326 ms (`floor_until`), by any margin, takes the tail after
   its path as an open gate's does, though its gate stays shut (`release_sync.overran`, with
-  `last_step_after_take_ms`); and a drop whose tail still dropped a visit is answered unconfirmed with option (c)'s
-  notice whatever option (c)'s switch says (`release_sync.unconfirmed`: `visit_dropped`, or `outlasted` for option (c)
-  itself). The engine can see Chrome's drag cursor but not which of the page's places accept a drop, nor Chrome's
+  `last_step_after_take_ms`; since 0.4.6 a drop with no floor, `--drag-dnd-after-take-ms 0`, overran none, #580); and
+  a drop whose tail still dropped a visit, and whose only confirmation is Chrome's activation request, is answered
+  unconfirmed with option (c)'s notice whatever option (c)'s switch says. Since 0.4.6 (#580) `release_sync.unconfirmed`
+  names the cause (`visit_dropped`, or `outlasted` for option (c) itself) only on a drop it answered so, and
+  `unconfirm_outlasted` is option (c)'s own gate and switch, as in 0.4.4. The engine can see Chrome's drag cursor but not which of the page's places accept a drop, nor Chrome's
   status for each position, which stays in its process, so it cannot hold the drop to the page's own leave (task 158's
   probe). A release dwell (Gecko's
   30 ms, reached by a foreground drag named for Firefox that presses into Chrome) stays on top of the floor, as

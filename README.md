@@ -1294,7 +1294,7 @@ The Linux computer surface runs on one native engine, cua's own (cua's own engin
 - **cua's own engine, `cua-engine`** (#171; `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`): a
   static binary built from `native/linux-engine/` for x86-64 and arm64, with no shared libraries. The release workflow
   `.github/workflows/linux-engine.yml` builds it, tests it and attests its build provenance, and
-  `runtime/engine/linux-engine.json` pins its version (0.4.5), URLs and SHA-256s. `cua install` fetches the asset for
+  `runtime/engine/linux-engine.json` pins its version (0.4.6), URLs and SHA-256s. `cua install` fetches the asset for
   this machine into `$CUA_HOME/engine/linux/cua-engine` and checks its hash; `cua install --engine` makes that step
   required, so a failed engine download fails the command (cua's own Linux runtime, below). cua's own Linux service
   (`src/services/engine/linux/`) drives it, so no OpenAI JavaScript runs for the computer surface.
@@ -1488,14 +1488,14 @@ lack of `DISPLAY`.
 
 Since #171 M6a every Linux session, browser-only ones included, runs from four parts that `cua install` places under
 `CUA_HOME`, none of them OpenAI's. `runtime/linux-runtime.json` names them, and the runtime's release is made from
-them, `cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d` on x64 today, so a change to any part is a new release.
+them, `cua-linux-x64-e0.4.6-n24.22.0-s0.163.0-mb71dc1f8185d` on x64 today, so a change to any part is a new release.
 
 | Part | In `CUA_HOME` | Pinned in | Needed by | What a session accepts | Named stand-in |
 |---|---|---|---|---|---|
 | The module tree: the packages cells import (`playwright`, `sharp`, `pngjs`, `jpeg-js`, `pixelmatch`) and `classic-level`, which `cua profiles bind` loads, with their dependencies: 23 packages | `modules/<lock hash>/` | `runtime/modules/` | every session | this cua's tree, whole | none |
 | Node 24.22.0, which cua's own REPL host runs on | `node/<version>/` | `runtime/releases/node/` | every session | a Node cua installed, its bytes as recorded, at 24 or later | `CUA_NODE` |
 | The sandbox helper, `codex-linux-sandbox` (`rust-v0.163.0`; The sandbox, above) | `sandbox/<tag>/` | `runtime/sandbox/linux-sandbox.json` | every session but a `CUA_SHIM_SANDBOX=disabled` one | the pinned helper's bytes, checked at every launch | `CUA_SHIM_SANDBOX=disabled`, which runs none |
-| cua's engine, `cua-engine` 0.4.5 | `engine/linux/cua-engine` | `runtime/engine/linux-engine.json` | computer sessions on cua's engine | a release cua installed, at 0.4.5 or later | `CUA_LINUX_ENGINE_BIN`, for the development harnesses; a local build from `cua engine build` |
+| cua's engine, `cua-engine` 0.4.6 | `engine/linux/cua-engine` | `runtime/engine/linux-engine.json` | computer sessions on cua's engine | a release cua installed, at 0.4.5 or later | `CUA_LINUX_ENGINE_BIN`, for the development harnesses; a local build from `cua engine build` |
 
 A part that is missing, damaged or below that minimum refuses the session when it opens, and the refusal names this
 cua's installer by its absolute path: `runtime_not_installed` (no module tree of this cua's lock, or no Node),

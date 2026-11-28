@@ -21,6 +21,22 @@ final class LockScreenTests: XCTestCase {
     return engine.handle(Request(id: 1, method: "execute", params: params), on: ConnectionState(id: 1, fd: -1), receivedAt: unixMilliseconds()).result
   }
 
+  /// #602: a request whose deadline passed before it arrived is refused first, as before; an input method's refusal
+  /// carries the input meta recording that nothing was dispatched, any other method's none.
+  func testAnExpiredDeadlineRecordsThatAnInputMethodDispatchedNothing() {
+    let engine = engine(locked: false)
+    let received = unixMilliseconds()
+    for (method, recorded) in [("type_text", true), ("paste", true), ("set_value", true), ("click", true), ("get_app_state", false)] {
+      let params: [String: Any] = ["method": method, "args": ["app": "com.apple.TextEdit", "text": "x"], "deadlineUnixMilliseconds": received - 1]
+      let result = engine.handle(Request(id: 1, method: "execute", params: params), on: ConnectionState(id: 1, fd: -1), receivedAt: received).result
+      guard case .failure(let error) = result else { return XCTFail("\(method): refused") }
+      XCTAssertEqual(error.errorName, "deadlineExceeded", method)
+      let meta = error.extra["meta"] as? [String: Any]
+      XCTAssertEqual(meta?["beforeInput"] as? Bool, recorded ? true : nil, method)
+      XCTAssertEqual(meta == nil, !recorded, method)
+    }
+  }
+
   func testTheSessionDictionarysLockFlag() {
     XCTAssertTrue(sessionIsLocked(["CGSSessionScreenIsLocked": true]))
     XCTAssertFalse(sessionIsLocked(["CGSSessionScreenIsLocked": false]))

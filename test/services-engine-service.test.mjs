@@ -108,7 +108,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
   // that took its time would show.
   const timed = {get identity() { return client.identity; }, execute: async (method, args, options) => ({...await client.execute(method, args, options), engineMs: ENGINE_MS[method] ?? 7.25})};
   const service = createService({nodeRepl, client: timed});
-  const wrapper = createSkyService({loadVendor: async () => service, secrets: {read: async label => secrets[label]}, platform: 'darwin'});
+  const wrapper = createSkyService({loadVendor: async () => service, secrets: {read: async label => secrets[label]}, platform: 'darwin', cuaEngine: true});
   const saved = globalThis.nodeRepl;
   globalThis.nodeRepl = {rpc: async (name, request) => { assert.equal(name, 'sky'); return wrapper.handleRpc(request); }};
   let sky;
@@ -947,7 +947,8 @@ test('the kept identity: a new pid drops it so the next call resolves again; a n
 
 test('a secret typed through the wrapper reaches the engine concealed; the engine\'s concealedInputUnavailable is the wrapper\'s own sentence, unchanged', async t => {
   const {getApp, call, engine} = await session(t, {secrets: {WORK_PASSWORD: 'hunter2-value'}, handlers: {'execute:type_text': ({args}) => {
-    if (args.concealed) throw new EngineFailure(-10005, 'Concealed text is keyed only under a reliable Latin input source.', 'concealedInputUnavailable', {meta: {...INPUT_META, startedAt: null, endedAt: null}});
+    // The engine's refusal before anything is entered, with its record that nothing was posted (#602).
+    if (args.concealed) throw new EngineFailure(-10005, 'Concealed text is keyed only under a reliable Latin input source.', 'concealedInputUnavailable', {meta: {...INPUT_META, startedAt: null, endedAt: null, beforeInput: true}});
     return {meta: INPUT_META};
   }}});
   const {app} = await getApp('TextEdit');

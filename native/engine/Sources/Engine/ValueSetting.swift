@@ -83,12 +83,19 @@ func setElementValue(_ value: String, on element: AXUIElement, role: String, val
                      afterWrite: (CFTypeRef, inout InputMeta) -> Void = { _, _ in },
                      checkInFlight: () throws -> Void, acted: () -> Void,
                      withoutFocus: UnfocusedValueWrite? = nil) throws -> UnfocusedValueReadback? {
-  guard ax.isSettable(element, kAXValueAttribute) else { throw valueNotSettable }
-  try focus(&meta)
-  let kind = valueClosed() ? ValueKind.string : valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element))
-  let converted = try coercedValue(value, to: kind)
-  beforeWrite(&meta)
-  try checkInFlight()
+  // #602: an error before the write (the focus and its click included) leaves the value unsent.
+  let converted: CFTypeRef
+  do {
+    guard ax.isSettable(element, kAXValueAttribute) else { throw valueNotSettable }
+    try focus(&meta)
+    let kind = valueClosed() ? ValueKind.string : valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element))
+    converted = try coercedValue(value, to: kind)
+    beforeWrite(&meta)
+    try checkInFlight()
+  } catch {
+    meta.beforeInput = true
+    throw error
+  }
   var written = AXError.failure
   meta.posting { written = ax.write(element, kAXValueAttribute, converted); return true }
   acted()
@@ -160,6 +167,8 @@ extension Engine {
     let token = try requiredElementToken(args, context, method: "set_value")
 
     var meta = InputMeta(context)
+    // #602: until `setElementValue` begins, the value has not been sent; from then on it marks `beforeInput` itself.
+    var writeBegun = false
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       // #390: the token's re-reads, here and in the re-check after the write, read no AXValue on any route, the value
@@ -195,6 +204,7 @@ extension Engine {
       // route posts none of its own, so only an earlier click arms the window there.
       var pending = false
       var drift: WrittenValueDrift?
+      writeBegun = true
       let readback = try setElementValue(value, on: element, role: target.entry.identity.role, valueClosed: {
                             setValueClosed(concealed: concealed, role: { stringAttribute(element, kAXRoleAttribute) }, subrole: { subroleRead(element) })
                           }, ax: .live, meta: &meta,
@@ -249,6 +259,7 @@ extension Engine {
       if let readback, let unconfirmed = unfocusedValueAnswer(readback, app: app.displayName) { throw unconfirmed }
       return ["meta": meta.wire]
     } catch let error as EngineError {
+      if !writeBegun { meta.beforeInput = true }
       throw withMeta(error, meta)
     }
   }

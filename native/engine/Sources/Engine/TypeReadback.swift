@@ -1262,6 +1262,7 @@ func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Boo
   // #359: select_text's range gone, nothing is typed, so no text lands where the caret moved to.
   if readback.refusesTyping {
     if !concealed { meta.entered = 0 }
+    meta.beforeInput = true  // #602: no key was posted
     throw typeUnconfirmed(.selectionChanged)
   }
   // B, the read-back's origin (#414): the instant the last key event was posted, on the read-back's clock, taken where

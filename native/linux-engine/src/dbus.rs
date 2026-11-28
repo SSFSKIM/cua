@@ -1056,6 +1056,25 @@ impl Bus {
     }
 }
 
+/// Runs `f` on `slot`'s connection and never on another: with no connection it fails, sending nothing, and a
+/// connection `f` finds broken is taken out of `slot` (and given back, for its stats) without a new one made. For a
+/// call that names an object the connection found: on a new connection, after a bus restart, the same unique name may
+/// be another application's, and a request whose reply was lost may already have been delivered.
+pub fn on_this_connection<T>(
+    slot: &mut Option<Bus>,
+    f: impl FnOnce(&mut Bus) -> Result<T>,
+) -> (Result<T>, Option<Bus>) {
+    let Some(bus) = slot.as_mut() else {
+        return (Err(anyhow!("no accessibility bus connection")), None);
+    };
+    let result = f(bus);
+    let broken = match &result {
+        Err(error) if error.downcast_ref::<Broken>().is_some() => slot.take(),
+        _ => None,
+    };
+    (result, broken)
+}
+
 fn reply_serial_of(fields: &[Value]) -> Option<u32> {
     let Some(Value::Array(items)) = fields.first() else {
         return None;
@@ -1532,6 +1551,74 @@ mod tests {
         assert!(first.1.unwrap_err().contains("os error 11"));
         assert_eq!(bus.in_flight(), 0);
         drop(theirs);
+    }
+
+    /// #228 T1's review: the request and the toolkit read name an object of the connection that found it, so they are
+    /// never sent again on another. No connection sends nothing; a broken one is taken out, not replaced.
+    #[test]
+    fn a_call_on_this_connection_is_never_made_on_another() {
+        let mut none: Option<Bus> = None;
+        let mut called = 0;
+        let (result, broken) = on_this_connection(&mut none, |_| {
+            called += 1;
+            Ok(())
+        });
+        assert!(result.is_err() && broken.is_none() && none.is_none());
+        assert_eq!(called, 0);
+
+        let (ours, theirs) = UnixStream::pair().unwrap();
+        drop(theirs);
+        let mut slot = Some(Bus::over(ours, Duration::from_secs(5)).unwrap());
+        let (result, broken) = on_this_connection(&mut slot, |bus| {
+            called += 1;
+            bus.call(&call("GetAttributes"))
+        });
+        assert!(result.unwrap_err().downcast_ref::<Broken>().is_some());
+        assert!(broken.is_some(), "the broken connection is given back for its stats");
+        assert!(slot.is_none(), "and not replaced");
+        assert_eq!(called, 1);
+
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            for (serial, _) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, "fine")).unwrap();
+            }
+        });
+        let mut slot = Some(Bus::over(ours, Duration::from_secs(5)).unwrap());
+        let (result, broken) = on_this_connection(&mut slot, |bus| bus.call(&call("GetAttributes")));
+        assert_eq!(result.unwrap(), Ok(vec![Value::Str("fine".into())]));
+        assert!(broken.is_none() && slot.is_some());
+        server.join().unwrap();
+    }
+
+    /// #228 T1's review: a `ToolkitName` read the bus timed out is a failure of the read, never "no toolkit", so it is
+    /// not kept for the connection (`ask::Asked`) and the next read answers.
+    #[test]
+    fn a_toolkit_read_that_timed_out_fails_and_the_next_one_answers() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        let server = std::thread::spawn(move || {
+            read_calls(&mut theirs, 1); // the first is left unanswered
+            wait.recv().unwrap();
+            for (serial, _) in read_calls(&mut theirs, 1) {
+                theirs
+                    .write_all(&answer(METHOD_RETURN, serial, None, "Chromium"))
+                    .unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_millis(100)).unwrap();
+        let app = crate::tree::ObjRef {
+            bus: ":1.9".into(),
+            path: "/org/a11y/atspi/accessible/root".into(),
+        };
+        let timed_out = crate::atspi::toolkit_name(&mut bus, &app);
+        assert!(timed_out.is_err(), "{timed_out:?}");
+        go.send(()).unwrap();
+        assert_eq!(
+            crate::atspi::toolkit_name(&mut bus, &app).unwrap(),
+            Some("Chromium".into())
+        );
+        server.join().unwrap();
     }
 
     /// The final review of wave 5: a bus that has stopped reading holds a write once its queue is full. With a deadline

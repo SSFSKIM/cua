@@ -169,6 +169,8 @@ pub struct Engine {
     drop_settles: crate::drop_settle::SettleCounts,
     /// What the current request's drag answers beside its ok: an extended hold with no take's notice (ruling 897).
     hold_notice: Option<&'static str>,
+    /// The applications asked to turn their accessibility on, and their toolkits, on this bus connection (`ask.rs`).
+    asked: crate::ask::Asked,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -338,6 +340,38 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     }
 }
 
+/// A frame's application as `ask::ask_if_due` reaches it: on the bus connection whose read found it, never another
+/// (`Engine::on_this_connection`), and the window's role from the X server.
+struct FrameApp<'a> {
+    engine: &'a mut Engine,
+    app: &'a tree::ObjRef,
+    window: u32,
+}
+
+impl crate::ask::Application for FrameApp<'_> {
+    fn bus_name(&self) -> &str {
+        &self.app.bus
+    }
+
+    fn asked(&mut self) -> &mut crate::ask::Asked {
+        &mut self.engine.asked
+    }
+
+    fn read_toolkit(&mut self) -> Result<Option<String>> {
+        let app = self.app;
+        self.engine.on_this_connection(|bus| atspi::toolkit_name(bus, app))
+    }
+
+    fn read_role(&mut self) -> Option<String> {
+        self.engine.x.role(self.window)
+    }
+
+    fn send(&mut self) -> Result<crate::dbus::CallResult> {
+        let app = self.app;
+        self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))
+    }
+}
+
 fn merge(into: &mut BusStats, from: BusStats) {
     into.calls += from.calls;
     into.waits += from.waits;
@@ -377,6 +411,7 @@ impl Engine {
             idle_watchdog: None,
             drop_settles: Default::default(),
             hold_notice: None,
+            asked: Default::default(),
         })
     }
 
@@ -669,9 +704,27 @@ impl Engine {
     }
 
     fn drop_bus(&mut self) {
-        if let Some(mut bus) = self.bus.take() {
+        let bus = self.bus.take();
+        self.forget_bus(bus);
+    }
+
+    /// A connection that ended: its stats kept, and what the engine remembered of its applications forgotten.
+    fn forget_bus(&mut self, bus: Option<Bus>) {
+        if let Some(mut bus) = bus {
             merge(&mut self.bus_stats, bus.take_stats());
         }
+        self.asked.forget();
+    }
+
+    /// Runs `f` on the current connection and never on another (`dbus::on_this_connection`): for a call naming an
+    /// object that connection found. A broken connection is dropped, not replaced; the next observation connects and
+    /// associates again.
+    fn on_this_connection<T>(&mut self, f: impl FnOnce(&mut Bus) -> Result<T>) -> Result<T> {
+        let (result, broken) = crate::dbus::on_this_connection(&mut self.bus, f);
+        if broken.is_some() {
+            self.forget_bus(broken);
+        }
+        result
     }
 
     /// The family of a window (`families.rs`): by its X11 class, and where no class entry matches and some entry is
@@ -881,12 +934,14 @@ impl Engine {
         let info = self.x.get_window(id)?;
         let window = self.cfg.window;
         let mut read_stats = tree::ReadStats::default();
+        let mut frame_app = None;
         let at_spi = self.with_bus(|bus, x| {
             let associated = match atspi::associate(bus, x, &info)? {
                 Association::Frame(associated) => associated,
                 Association::Identity(unassociated) => return Ok(Observed::Refused(unassociated)),
                 Association::NoMatch(leave) | Association::Refused(_, leave) => return Ok(Observed::Fallback(leave)),
             };
+            frame_app = Some(associated.app.clone());
             let read = tree::read(bus, &associated.frame, window).map(|(tree, stats)| {
                 read_stats = stats;
                 tree
@@ -918,6 +973,20 @@ impl Engine {
                 None,
             ),
         };
+        // a bare frame of an Electron application is asked to turn its accessibility on (#228), for the next read
+        if source == "at_spi"
+            && let Some(app) = frame_app.as_ref()
+        {
+            let mut frame = FrameApp {
+                engine: self,
+                app,
+                window: id,
+            };
+            let outcome = crate::ask::ask_if_due(input.tree_wanted(), crate::ask::bare(&tree), &mut frame);
+            if let Some(record) = outcome.record() {
+                self.extra.insert("ask".into(), record);
+            }
+        }
         self.extra.insert(
             "tree".into(),
             json!({

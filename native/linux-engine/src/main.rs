@@ -7,6 +7,7 @@ mod adaptive_hold;
 #[cfg(test)]
 mod alloc_watch;
 mod apps;
+mod ask;
 mod atspi;
 mod browser;
 mod caps;

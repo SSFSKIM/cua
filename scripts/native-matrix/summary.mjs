@@ -93,6 +93,7 @@ import {exclusionOf, NOT_JUDGED_RULES, notJudgedRefusal, notJudgedRuleOf} from '
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, PRESS_KEY, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
 import {frameAsymmetry, panelFrameSplits} from '../hosted-sittings/venue.mjs';
+import {SPEED_EXTRA_SAMPLES} from '../hosted-sittings/plan.mjs';
 import {classifyAttestation, classifyAttestedRecord} from '../probe/lib.mjs';
 
 export {BEAT, judgeMethod, judgePressKey, judgeSpeed} from './cell-verdict.mjs';
@@ -349,7 +350,7 @@ function speedExtrasOf(results, own, pairable = () => true) {
   for (const run of runs) for (const engine of ['vendor', 'cua']) for (const {result} of lane(engine, run)) for (const row of result.rows) {
     if (row.section !== 'speed' || !(SPEED_EXTRA_IDS.includes(row.id) || SPEED_CONTROL_IDS.includes(row.id))) continue;
     if (!byId.has(row.id)) byId.set(row.id, {vendor: [], cua: [], runs});
-    byId.get(row.id)[engine].push(row);
+    byId.get(row.id)[engine].push({...row, run});
   }
   return byId;
 }
@@ -430,14 +431,17 @@ export function judge(results, problems = [], {departures: entries = readDepartu
     const base = judgeSpeed(...sides(list), {required: RUNS_PER_SIDE, pairable, planned: plannedOf('speed', id)});
     // Ruling 1232: an op the full runs missed, re-measured, is judged on its re-measurement alone.
     const extra = SPEED_EXTRA_IDS.includes(id) ? extras.get(id) : undefined;
-    speed.push({id, section: 'speed', scene, op, ...(extra ? judgeRemeasured(base, extra, {required: RUNS_PER_SIDE}) : base)});
+    speed.push({id, section: 'speed', scene, op, ...(extra ? judgeRemeasured(base, extra, {required: RUNS_PER_SIDE, samples: SPEED_EXTRA_SAMPLES}) : base)});
   }
   speed.sort((a, b) => a.id.localeCompare(b.id));
   // Ruling 1240: a miss the owner accepted (departures.json's acceptedMisses) stays judged with its numbers and reads
   // accepted; an entry whose op did not miss applies to nothing. Ruling 1278: one whose re-measurement is worse than
-  // the entry's bound is not accepted, and is the owner's with why (./departures.mjs acceptanceExceeded).
+  // the entry's bound is not accepted, and is the owner's with why (./departures.mjs acceptanceExceeded); one whose
+  // re-measurement does not qualify (cell-verdict.mjs judgeRemeasured) is neither a miss nor held to the bound: the
+  // acceptance is not evaluated, said, and the op is the owner's.
   const accepting = new Map(usableAcceptedMisses(acceptances).map(e => [e.id, e]));
   for (const s of speed) {
+    if (s.remeasured && s.beat === null && accepting.has(s.id)) s.acceptanceNotEvaluated = {ticket: accepting.get(s.id).ticket};
     if (s.beat !== false || !accepting.has(s.id)) continue;
     const entry = accepting.get(s.id), exceeded = acceptanceExceeded(entry, s);
     if (exceeded) s.acceptanceExceeded = {ticket: entry.ticket, ...exceeded};
@@ -563,9 +567,18 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const speedMisses = speed.filter(s => s.beat === false && !s.remeasured && !s.accepted);
   // Ruling 1232, as 1240 settles it: a pass on re-measurement counts as a pass; any other re-measured op is the owner's
   // whatever its numbers, unless its miss is accepted.
-  const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)${s.acceptanceExceeded ? exceededNote(s.acceptanceExceeded) : ''}`;
+  // Why a re-measurement did not qualify, by its counts: too few runs, or a run short of its samples on a lane.
+  const shortOf = r => [...(r.runs.length < r.need.runs ? [`${r.runs.length} of the ${r.need.runs} runs it needs re-measured`] : []),
+    ...r.short.map(c => `run ${c.run} holds ${c.vendor} vendor and ${c.cua} cua usable samples, of the ${r.need.samples} a lane each re-measured run needs`)].join('; ');
+  const remeasuredLine = s => `speed: ${s.id} ${s.beat === true ? 'passes on re-measurement' : s.beat === false ? 'missed the 10% beat on re-measurement' : 'not qualified on re-measurement'} (${s.beat === null && s.remeasured.need ? `${shortOf(s.remeasured)}; ` : ''}cua ${round(s.cua?.median)} ms against ${round(s.vendor?.median)} ms, p95 ${round(s.cua?.p95)} against ${round(s.vendor?.p95)}, n = ${nOf(s.remeasured)}; the base's n = ${s.base.vendor?.n ?? 0}: cua ${round(s.base.cua?.median)} ms against ${round(s.base.vendor?.median)} ms): the owner's whatever the numbers (ruling 1232)${s.acceptanceExceeded ? exceededNote(s.acceptanceExceeded) : ''}${s.acceptanceNotEvaluated ? `; ${s.acceptanceNotEvaluated.ticket}'s acceptance not evaluated: the re-measurement does not qualify` : ''}`;
   const ratio = v => (v === null ? 'unread' : v.toFixed(3));
-  const exceededNote = e => `; worse than ${e.ticket}'s accepted bound (ruling ${e.ruling}, ${e.evidence}) on ${e.worse.join(' and ')}: cua/vendor median ${ratio(e.ratios.median)} against ${ratio(e.bound.median)}, p95 ${ratio(e.ratios.p95)} against ${ratio(e.bound.p95)}, so no longer the accepted miss`;
+  // Worse than the bound on a measure, or the bound not evaluated on one (no ratio): either way not the accepted miss.
+  const exceededNote = e => {
+    const bound = `${e.ticket}'s accepted bound (ruling ${e.ruling}, ${e.evidence})`, unread = e.unread ?? [];
+    if (!e.worse.length) return `; ${bound} could not be evaluated (cua/vendor ${unread.map(k => `${k} unread`).join(', ')}): the acceptance is withheld`;
+    return `; worse than ${bound} on ${e.worse.join(' and ')}: cua/vendor median ${ratio(e.ratios.median)} against ${ratio(e.bound.median)}, p95 ${ratio(e.ratios.p95)} against ${ratio(e.bound.p95)}, `
+      + (unread.length ? `and not evaluated on ${unread.join(' and ')}: the acceptance is withheld` : 'so no longer the accepted miss');
+  };
   const evidence = evidenceOf(full);
   const owner = [
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
@@ -850,7 +863,12 @@ function renderRemeasurement(j) {
   const runs = [...new Set(re.flatMap(s => s.remeasured.runs))].sort((a, b) => a - b);
   const counts = [...new Set(re.map(s => nOf(s.remeasured)))];
   const perLane = [...new Set(re.flatMap(s => ['vendor', 'cua'].map(e => Math.round((s.remeasured[e] / s.remeasured.runs.length) * 10) / 10)))];
-  return [`Only the ${re.length} op${re.length === 1 ? '' : 's'} that missed in the base ${re.length === 1 ? 'was' : 'were'} re-measured, at n = ${counts.join(' or ')} (the speed-extra cell, ${perLane.join(' or ')} samples a lane in each of run${runs.length === 1 ? '' : 's'} ${runs.join(', ')}), and ${re.length === 1 ? 'is' : 'are'} judged on the re-measurement alone; the other ${others.length} ops (${others.filter(s => s.beat === true).length} of them beating the vendor) rest on the full runs' samples, n = ${ns.join(' or ')} a side. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss (rulings 1232, 1240).`, ''];
+  // What the base did with them, by count (the cell re-times a fixed list, ../native-matrix/run.mjs SPEED_EXTRA_IDS, not
+  // only the ops a given base missed).
+  const did = [[re.filter(s => s.base.beat === false).length, 'missed the beat'], [re.filter(s => s.base.beat === true).length, 'beat it'],
+    [re.filter(s => s.base.beat !== true && s.base.beat !== false).length, 'did not qualify']].filter(([n]) => n > 0).map(([n, what]) => `${n} of ${re.length === 1 ? 'it' : 'them'} ${what}`);
+  const base = did.length > 1 ? `${did.slice(0, -1).join(', ')} and ${did.at(-1)}` : did[0];
+  return [`${re.length} op${re.length === 1 ? ' was' : 's were'} re-measured, at n = ${counts.join(' or ')} (the speed-extra cell, ${perLane.join(' or ')} samples a lane in each of run${runs.length === 1 ? '' : 's'} ${runs.join(', ')}), and ${re.length === 1 ? 'is' : 'are'} judged on the re-measurement alone (in the base, ${base}); the other ${others.length} ops (${others.filter(s => s.beat === true).length} of them beating the vendor) rest on the full runs' samples, n = ${ns.join(' or ')} a side. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss (rulings 1232, 1240).`, ''];
 }
 
 // `notes`: the known capability differences no cell exercises (./capability-notes.mjs), printed, never judged.

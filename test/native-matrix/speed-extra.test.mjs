@@ -71,7 +71,7 @@ test('ruling 1232: the four missed ops are judged on the re-measurement alone, n
     const s = after.speed.find(x => x.id === id), base = before.speed.find(x => x.id === id);
     // The re-measurement alone: 30 samples a side, never the base's 3 pooled in.
     assert.deepEqual([s.beat, s.vendor.n, s.cua.n, s.vendor.median, s.cua.median], [true, 30, 30, 100, 40], id);
-    assert.deepEqual(s.remeasured, {runs: [1, 2, 3], vendor: 30, cua: 30}, id);
+    assert.deepEqual(s.remeasured, {runs: [1, 2, 3], vendor: 30, cua: 30, need: {runs: 3, samples: 10}, short: []}, id);
     assert.deepEqual([s.base.vendor, s.base.cua, s.base.deltaPct, s.base.beat], [base.vendor, base.cua, base.deltaPct, false], id);
     assert.equal(after.cells.find(c => c.section === 'speed' && c.id === id).verdict, 'beat-remeasured', id);
   }
@@ -80,7 +80,7 @@ test('ruling 1232: the four missed ops are judged on the re-measurement alone, n
   assert.match(text, /^\| method\.paste\.replace \| 100\.0 \| 100\.0 \| 40\.0 \| 40\.0 \| -60% \| passes on re-measurement \|$/m);
   assert.doesNotMatch(text, /pooled with/);
   // The asymmetry, said plainly, and each re-measured op's base beside it.
-  assert.match(text, /^Only the 4 ops that missed in the base were re-measured, at n = 30 a side \(the speed-extra cell, 10 samples a lane in each of runs 1, 2, 3\), and are judged on the re-measurement alone; the other \d+ ops \(\d+ of them beating the vendor\) rest on the full runs' samples, n = 6 or 3 a side\. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss \(rulings 1232, 1240\)\.$/m);
+  assert.match(text, /^4 ops were re-measured, at n = 30 a side \(the speed-extra cell, 10 samples a lane in each of runs 1, 2, 3\), and are judged on the re-measurement alone \(in the base, 4 of them missed the beat\); the other \d+ ops \(\d+ of them beating the vendor\) rest on the full runs' samples, n = 6 or 3 a side\. The base's samples are shown beside each re-measured op for reference, never pooled; a pass on re-measurement counts as a pass, and any other re-measured op stays the owner's unless it is an accepted miss \(rulings 1232, 1240\)\.$/m);
   assert.match(text, /^- method\.typeText\.replace: re-measured, n = 30 a side \(runs 1, 2, 3\); the base for reference \(n = 3 a side\): vendor median 40\.0, p95 40\.0; cua median 40\.0, p95 40\.0; change 0%; it missed the beat there$/m);
   assert.match(text, /^- \*\*Speed\*\*: \d+ of \d+ measured ops beat the vendor by at least 10% with p95 not worse, 4 of them on re-measurement \(ruling 1240\); \d+ missed \(the owner's fork\), /m);
 });
@@ -224,4 +224,67 @@ test('ruling 1278: a bounded acceptance holds while the re-measurement\'s cua/ve
   // A malformed bound applies to nothing and is blocking.
   const bad = judgedWith([], full, {acceptedMisses: [{...ACCEPTED, bound: {...BOUND, vendor: {median: 0, p95: 406}}}]});
   assert.ok(bad.blocking.some(b => /^accepted misses: .*'s bound names no ruling, evidence, n, or cua and vendor median and p95 above 0$/.test(b)), bad.blocking.join('\n'));
+});
+
+// Review of ruling 1278 (c): the bound is C's n = 30, so a re-measurement qualifies (a beat or a miss, the bound applied)
+// only when every re-measured run holds SPEED_EXTRA_SAMPLES usable samples on both lanes, and at least the runs the rule
+// asks for were re-measured. Short of that it is not qualified: the owner's, the counts said, the bound not evaluated.
+test('a re-measurement qualifies only with SPEED_EXTRA_SAMPLES usable samples in each run on both lanes; short, the owner\'s with the counts and the bound not evaluated', async () => {
+  const {SPEED_EXTRA_SAMPLES} = await import('../../scripts/hosted-sittings/plan.mjs');
+  assert.equal(SPEED_EXTRA_SAMPLES, 10);
+  const bounded = {...ACCEPTED, bound: BOUND};
+  // Run 2's cua lane recorded 7 samples: worse than the bound on its numbers, but not qualified, so not held to it.
+  const fewer = [1, 2, 3].flatMap(run => [extra('vendor', run, 300), extra('cua', run, id => (id === ACCEPTED.id ? 330 : 100), run === 2 ? 7 : 10)]);
+  const j = judgedWith(fewer, full, {acceptedMisses: [bounded]});
+  const s = j.speed.find(x => x.id === ACCEPTED.id);
+  assert.deepEqual([s.beat, s.accepted, s.acceptanceExceeded], [null, undefined, undefined]);
+  assert.deepEqual(s.remeasured, {runs: [1, 2, 3], vendor: 30, cua: 27, need: {runs: 3, samples: 10}, short: [{run: 2, vendor: 10, cua: 7}]});
+  assert.equal(j.cells.find(c => c.section === 'speed' && c.id === ACCEPTED.id).verdict, 'no-verdict');
+  assert.deepEqual(j.acceptedMisses, []);
+  const line = j.owner.find(o => o.startsWith(`speed: ${ACCEPTED.id} not qualified on re-measurement (`));
+  assert.match(line ?? '', /^speed: textedit\/method\.typeText\.replace not qualified on re-measurement \(run 2 holds 10 vendor and 7 cua usable samples, of the 10 a lane each re-measured run needs; cua 330 ms against 300 ms/, j.owner.join('\n'));
+  assert.match(line, /: the owner's whatever the numbers \(ruling 1232\); #593's acceptance not evaluated: the re-measurement does not qualify$/);
+  // An op that would pass is not qualified either: no pass on a short re-measurement.
+  const other = j.speed.find(x => x.id === 'textedit/method.paste.replace');
+  assert.deepEqual([other.beat, other.remeasured.short], [null, [{run: 2, vendor: 10, cua: 7}]]);
+  // A sample with a cause is not usable: run 3's vendor lane holds 9.
+  const invalid = r => (r.meta.run === 3 && r.lanes[0].engine === 'vendor' ? {...r, rows: r.rows.map((row, i) => (i === 0 ? {...row, ok: false, invalid: 'not prepared'} : row))} : r);
+  const k = judgedWith(everyRun(100, 40).map(invalid)).speed.find(x => x.id === IDS[0]);
+  assert.deepEqual([k.beat, k.remeasured.short], [null, [{run: 3, vendor: 9, cua: 10}]]);
+  // Fewer runs than the rule asks: said by count.
+  const one = judgedWith([extra('vendor', 2, 100), extra('cua', 2, 40)]);
+  assert.match(one.owner.find(o => o.startsWith(`speed: ${IDS[0]} not qualified on re-measurement (`)) ?? '', /^speed: \S+ not qualified on re-measurement \(1 of the 3 runs it needs re-measured; cua 40 ms/);
+  // Every run full: qualified as before.
+  assert.deepEqual(judgedWith(everyRun(100, 40)).speed.find(x => x.id === IDS[0]).remeasured.short, []);
+});
+
+// Review of ruling 1278 (c): the re-measurement's sentence says what the base did, by count. In the planned run both
+// paste.replace ops passed in the base and are re-timed beside the two that missed.
+test('the re-measurement sentence counts the re-measured ops that missed and that passed in the base, never calling them all misses', () => {
+  const fastPaste = (engine, run, ms) => {
+    const r = full(engine, run, ms);
+    return {...r, rows: r.rows.map(row => (row.id.endsWith('paste.replace') && engine === 'vendor' ? {...row, inCellMs: 100} : row))};
+  };
+  const j = judgedWith(everyRun(100, 40), fastPaste);
+  assert.deepEqual(IDS.map(id => j.speed.find(s => s.id === id).base.beat), [false, true, true, false]);
+  const text = renderSummary(j);
+  assert.match(text, /^4 ops were re-measured, at n = 30 a side \(the speed-extra cell, 10 samples a lane in each of runs 1, 2, 3\), and are judged on the re-measurement alone \(in the base, 2 of them missed the beat and 2 of them beat it\); the other \d+ ops /m);
+  assert.doesNotMatch(text, /that missed in the base/);
+});
+
+// Review of ruling 1278 (c): a ratio that cannot be formed (a median or p95 of 0) is no evidence of "worse": the bound
+// could not be evaluated, said so, and the acceptance stays withheld.
+test('a bound whose ratio cannot be formed is said not evaluated, not worse, and the acceptance stays withheld', async () => {
+  const {acceptanceExceeded} = await import('../../scripts/native-matrix/departures.mjs');
+  const bounded = {...ACCEPTED, bound: BOUND};
+  const at = (vendor, cua) => ({remeasured: {runs: [1, 2, 3]}, vendor: {median: vendor, p95: vendor}, cua: {median: cua, p95: cua}});
+  assert.deepEqual(acceptanceExceeded(bounded, at(0, 40)).worse, []);
+  assert.deepEqual(acceptanceExceeded(bounded, at(0, 40)).unread, ['median', 'p95']);
+  assert.deepEqual(acceptanceExceeded(bounded, at(300, 330)).unread, []);
+  const j = judgedWith(everyRun(id => (id === ACCEPTED.id ? 0 : 300), id => (id === ACCEPTED.id ? 40 : 100)), full, {acceptedMisses: [bounded]});
+  const s = j.speed.find(x => x.id === ACCEPTED.id);
+  assert.deepEqual([s.beat, s.accepted], [false, undefined]);
+  const line = j.owner.find(o => o.startsWith(`speed: ${ACCEPTED.id} missed the 10% beat on re-measurement (`)) ?? '';
+  assert.match(line, /; #593's accepted bound \(ruling 1278, docs\/evidence\/2026-11-27-m5-sitting-c-split\) could not be evaluated \(cua\/vendor median unread, p95 unread\): the acceptance is withheld$/, j.owner.join('\n'));
+  assert.doesNotMatch(line, /worse than/);
 });

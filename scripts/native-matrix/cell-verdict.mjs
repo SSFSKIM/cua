@@ -221,14 +221,18 @@ export function remeasuredStats(extra) {
   return {vendor, cua, deltaPct: vendor && cua ? round(((cua.median - vendor.median) / vendor.median) * 100) : null, runs: extra.runs};
 }
 // Ruling 1232: one op the full runs missed, judged on its re-measurement alone (`extra`), never pooled with its full
-// runs' (`base`, judgeSpeed's, kept for reference). It qualifies on `required` runs re-measured on both lanes; the
-// account is the base's but for that. -> judgeSpeed's shape over the re-measurement, with `remeasured: {runs, vendor,
-// cua}` (its sample counts) and `base: {vendor, cua, deltaPct, beat}`.
-export function judgeRemeasured(base, extra, {required = 1} = {}) {
+// runs' (`base`, judgeSpeed's, kept for reference). It qualifies on `required` runs re-measured on both lanes, each run
+// holding `samples` usable samples (no cause) on each lane (ruling 1278 (c): the bound it is held to is an n of that
+// size); the account is the base's but for that. -> judgeSpeed's shape over the re-measurement, with `remeasured: {runs,
+// vendor, cua, need: {runs, samples}, short: [{run, vendor, cua}]}` (its usable sample counts, and each run short of
+// `samples` on a lane) and `base: {vendor, cua, deltaPct, beat}`.
+export function judgeRemeasured(base, extra, {required = 1, samples = 1} = {}) {
   const {vendor, cua, deltaPct, runs} = remeasuredStats(extra);
-  const qualifies = runs.length >= required && Boolean(vendor && cua);
+  const usable = (rows, run) => rows.filter(r => !causeOf(r) && runOf(r) === run).length;
+  const short = runs.map(run => ({run, vendor: usable(extra.vendor, run), cua: usable(extra.cua, run)})).filter(c => c.vendor < samples || c.cua < samples);
+  const qualifies = runs.length >= required && short.length === 0 && Boolean(vendor && cua);
   return {vendor, cua, deltaPct, beat: qualifies ? beatOf(vendor, cua) : null, provisional: beatOf(vendor, cua), partial: {vendor, cua},
-    account: {...base.account, qualifies}, remeasured: {runs, vendor: vendor?.n ?? 0, cua: cua?.n ?? 0},
+    account: {...base.account, qualifies}, remeasured: {runs, vendor: vendor?.n ?? 0, cua: cua?.n ?? 0, need: {runs: required, samples}, short},
     base: {vendor: base.vendor, cua: base.cua, deltaPct: base.deltaPct, beat: base.beat}};
 }
 

@@ -128,16 +128,18 @@ const boundWellFormed = b => Boolean(b) && typeof b.ruling === 'string' && /^\d+
 // n, cua: {median, p95}, vendor: {median, p95}}) holds on a re-measurement only while that re-measurement is no worse
 // than the bound: cua's median and p95 each, as a ratio to the vendor's of the same samples, at most the bound's ratio.
 // The ratio, not cua's own milliseconds, since a sitting's vendor is slower or faster with its runner. A miss not
-// re-measured is not held to the bound (its n = 3 says nothing against an n = 30). -> null when the acceptance holds,
-// else {ratios: {median, p95}, bound: {median, p95}, evidence, ruling} saying where it is worse.
+// re-measured is not held to the bound (its n = 3 says nothing against an n = 30). A ratio that cannot be formed (a
+// median or p95 of 0) is no evidence of worse: that measure is `unread`, the bound not evaluated on it, and the
+// acceptance still withheld. -> null when the acceptance holds, else {worse, unread, ratios: {median, p95}, bound:
+// {median, p95}, evidence, ruling}: `worse` the measures above the bound, `unread` those it could not be evaluated on.
 export function acceptanceExceeded(entry, s) {
   const b = entry?.bound;
   if (!b || !s?.remeasured || !s.cua || !s.vendor) return null;
   const ratio = (cua, vendor) => (positive(cua) && positive(vendor) ? cua / vendor : null);
   const ratios = {median: ratio(s.cua.median, s.vendor.median), p95: ratio(s.cua.p95, s.vendor.p95)};
   const bound = {median: b.cua.median / b.vendor.median, p95: b.cua.p95 / b.vendor.p95};
-  const worse = ['median', 'p95'].filter(k => ratios[k] === null || ratios[k] > bound[k]);
-  return worse.length ? {worse, ratios, bound, evidence: b.evidence, ruling: b.ruling} : null;
+  const worse = ['median', 'p95'].filter(k => ratios[k] !== null && ratios[k] > bound[k]), unread = ['median', 'p95'].filter(k => ratios[k] === null);
+  return worse.length || unread.length ? {worse, unread, ratios, bound, evidence: b.evidence, ruling: b.ruling} : null;
 }
 // -> [sentence].
 export function acceptedMissProblems(list, judged = judgedCells()) {

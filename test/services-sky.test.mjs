@@ -295,7 +295,7 @@ test('ruling 1247 (d): no answer after a secret\'s first key may have posted adv
     ['userIntervened changed, #212 stop before the first key, no record', engine('userIntervened',
       {...UNRECORDED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}, changed)],
     ['userIntervened changed, #212 stop after an activation click, no record', engine('userIntervened',
-      {...posted, inputRoute: '3', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}, changed)],
+      {...UNRECORDED, inputRoute: '3', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}, changed)],
     ['the vendor backend: userIntervened changed, #212 stop before the first key, the record', engine('userIntervened',
       {...NOTHING_POSTED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}, changed), {cuaEngine: false}],
     ['userIntervened changed, the vendor', engine('userIntervened', null, changed)],
@@ -421,12 +421,52 @@ test('P2-4: the record is read only from cua\'s engine as the selected backend, 
 // Ruling 1269: secretUnentered's allowlist and the engine's InputEffect stay in step. Every case of the Swift enum is a
 // preparation step (PREPARATION_EFFECTS) or marked as entry (ENTERING_EFFECTS), never both, and neither list names a
 // case the engine lacks; so an effect the engine gains fails here until it is classified.
-test('ruling 1269: every InputEffect case of the engine is a preparation step or marked as entry, parsed from the Swift source', () => {
-  const swift = readFileSync(fileURLToPath(new URL('../native/engine/Sources/Engine/Intervention.swift', import.meta.url)), 'utf8');
+const INTERVENTION_SWIFT = fileURLToPath(new URL('../native/engine/Sources/Engine/Intervention.swift', import.meta.url));
+// Swift source with its comments blanked (newlines kept) and its string literals kept, so neither a comment's word nor a
+// brace in a string misleads the parser below.
+function blankSwiftComments(source) {
+  let out = '', i = 0, block = 0, string = false;
+  while (i < source.length) {
+    const two = source.slice(i, i + 2);
+    if (block) {
+      if (two === '/*') { block++; out += '  '; i += 2; } else if (two === '*/') { block--; out += '  '; i += 2; } else { out += source[i] === '\n' ? '\n' : ' '; i++; }
+    } else if (string) {
+      if (source[i] === '\\') { out += two; i += 2; continue; }
+      if (source[i] === '"' || source[i] === '\n') string = false;
+      out += source[i++];
+    } else if (two === '//') {
+      while (i < source.length && source[i] !== '\n') { out += ' '; i++; }
+    } else if (two === '/*') { block = 1; out += '  '; i += 2; } else {
+      if (source[i] === '"') string = true;
+      out += source[i++];
+    }
+  }
+  return out;
+}
+// The wire values of InputEffect's cases, in order: each case's raw value when it gives one, else its name. Every line
+// at the enum's own level (not inside its members' bodies) naming `case` must be one or more cases, each a name with at
+// most a plain string raw value; any other such line fails, so no case can slip past the classification unread.
+const CASE_ITEM = '[A-Za-z_][A-Za-z0-9_]*(?:\\s*=\\s*"[^"\\\\\\n]*")?';
+const CASE_LINE = new RegExp(`^\\s*case\\s+(${CASE_ITEM}(?:\\s*,\\s*${CASE_ITEM})*)\\s*$`);
+function inputEffectCases(swift) {
   const body = swift.match(/^enum InputEffect: String, CaseIterable \{\n([\s\S]*?)^\}/m)?.[1];
   assert.ok(body, 'InputEffect found in Intervention.swift');
-  const cases = [...body.matchAll(/^ {2}case ([\w, ]+)$/gm)].flatMap(([, names]) => names.split(',').map(name => name.trim()));
+  const cases = [];
+  let depth = 0;
+  for (const line of blankSwiftComments(body).split('\n')) {
+    const code = line.replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+    if (depth === 0 && /\bcase\b/.test(code)) {
+      const items = line.match(CASE_LINE)?.[1];
+      assert.ok(items, `an InputEffect case line not parsed: ${line.trim()}`);
+      const item = /\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*=\s*"([^"]*)")?\s*(?:,|$)/y;
+      for (let found; item.lastIndex < items.length && (found = item.exec(items));) cases.push(found[2] ?? found[1]);
+    }
+    for (const char of code) depth += char === '{' ? 1 : char === '}' ? -1 : 0;
+  }
   assert.ok(cases.length > 0, 'its cases parsed');
+  return cases;
+}
+function assertInputEffectsClassified(cases) {
   for (const effect of cases) {
     const preparation = PREPARATION_EFFECTS.includes(effect);
     const entry = ENTERING_EFFECTS.includes(effect);
@@ -435,18 +475,49 @@ test('ruling 1269: every InputEffect case of the engine is a preparation step or
   }
   for (const effect of [...PREPARATION_EFFECTS, ...ENTERING_EFFECTS]) assert.ok(cases.includes(effect), `${effect}: not an InputEffect case`);
   assert.deepEqual(Object.keys(EFFECT_PHRASES), cases, 'each case has its phrase, in the engine\'s order');
+}
+test('ruling 1269: every InputEffect case of the engine is a preparation step or marked as entry, parsed from the Swift source', () => {
+  assertInputEffectsClassified(inputEffectCases(readFileSync(INTERVENTION_SWIFT, 'utf8')));
+});
+
+// The parser on copies of the enum with one case added: every form Swift allows on a line is read as the wire value it
+// sends (the raw value when one is given), so an added case fails the classification; a case line it cannot read fails.
+test('ruling 1269: the InputEffect parser reads a raw value, a trailing comment and several cases on a line, and fails on a case line it cannot read', async t => {
+  const swift = readFileSync(INTERVENTION_SWIFT, 'utf8');
+  const withCase = line => {
+    assert.ok(swift.includes('\n  case activationRelease\n'), 'the last case, to add after');
+    return swift.replace('\n  case activationRelease\n', `\n  case activationRelease\n${line}\n`);
+  };
+  for (const [line, added] of [
+    ['  case caretMove', ['caretMove']],
+    ['  case caretMove = "caretMove"', ['caretMove']],
+    ['  case caretMove // note', ['caretMove']],
+    ['  case caretMove = "caret" /* the wire name */', ['caret']],
+    ['  case caretMove, caretJump', ['caretMove', 'caretJump']],
+    ['  case caretMove = "a, b", caretJump // note', ['a, b', 'caretJump']],
+  ]) {
+    await t.test(`added: ${line.trim()}`, () => {
+      const cases = inputEffectCases(withCase(line));
+      assert.deepEqual(cases.slice(-added.length), added, line);
+      assert.throws(() => assertInputEffectsClassified(cases), new RegExp(`${added[0]}: neither a preparation step`), line);
+    });
+  }
+  for (const line of ['  case caretMove,', '  case caretMove; case caretJump', '  @available(*, deprecated) case caretMove', '  case caretMove(Int)',
+    '  indirect case caretMove', '  case caretMove = caretRaw', '  case `caretMove`']) {
+    await t.test(`unreadable: ${line.trim()}`, () => assert.throws(() => inputEffectCases(withCase(line)), /an InputEffect case line not parsed/, line));
+  }
 });
 
 // #212 beside #602: type_text's in-flight guard stopping keyText before its first key answers "user changed" part-way,
 // as a stop between keys does, and only the engine's record tells them apart: with it nothing was entered and the
 // re-query stays; without it (an older engine) or from the vendor's backend the secret may have been entered, and the
 // user is asked to check with no advice to observe. The metas are the engine's: the keyed route with nothing posted, and
-// route 3 after its forced activation's click, which stamps the interval.
+// route 3 after its forced activation and its click, which the engine counts from what the activation posted
+// (`ActivationPosts`), not through the input's posting, so the action interval stays null.
 test('#212\'s stop before the first key says nothing was entered only on cua\'s engine\'s record', async () => {
   const stops = [
     ['the keyed route, nothing posted', {...UNRECORDED, inputRoute: "2'", interruption: {phase: 'inFlight', effects: []}}],
-    ['route 3 after its activation click', {...UNRECORDED, inputRoute: '3', startedAt: 1000, endedAt: 1004,
-      interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}],
+    ['route 3 after its activation click', {...UNRECORDED, inputRoute: '3', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']}}],
   ];
   for (const [label, unrecorded] of stops) {
     for (const [backend, meta, options] of [['the record', {...unrecorded, beforeInput: true}, {}], ['no record', unrecorded, {}],
@@ -460,7 +531,8 @@ test('#212\'s stop before the first key says nothing was entered only on cua\'s 
         assertValueFree(error);
       } else {
         mayHaveEntered(error, at);
-        assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went/, at);
+        assert.match(error.message, /the user changed the app, and the secret may have gone in; ask the user to check where it went/, at);
+        if (backend === 'no record') assert.match(error.message, /; entry could not be ruled out, so it may have been partly entered; cua's engine reports that the request was stopped part-way, and /, at);
       }
     }
   }
@@ -501,7 +573,7 @@ test('userIntervened after substitution says which of its two sentences the mode
         assert.doesNotMatch(error.message, /re-query/i, label);
       } else if (entered) {
         // Ruling 1247 (d): once part of the secret may be in, the re-query becomes the user's check.
-        assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows/, label);
+        assert.match(error.message, /the user changed the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows/, label);
         assert.doesNotMatch(error.message, /getAXState|screenshot|re-query/i, label);
       } else {
         assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions/, label);
@@ -555,13 +627,14 @@ test('#212: userIntervened after substitution names what may have taken effect f
         assert.equal(error.code, 'secret_input_failed', at);
         // Ruling 1247 (d): once the secret may be in, the re-query becomes the user's check.
         if (entered) {
-          assert.match(error.message, /the user changed the app while the secret was being entered; ask the user to check where it went and to clear it if it shows; it may have been partly entered; /, at);
+          assert.match(error.message, /the user changed the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows; entry could not be ruled out, so it may have been partly entered; cua's engine reports that the request /, at);
           assert.doesNotMatch(error.message, /getAXState|screenshot|re-query/i, at);
         } else assert.match(error.message, /the user changed the app; re-query its state \(getAXState\) before sending more actions; nothing was entered; /, at);
         assert.equal(/nothing was entered/.test(error.message), !entered, at);
-        if (interruption.phase === 'beforeAction' && interruption.effects.length === 0) assert.match(error.message, /; it was refused before its first step\. /, at);
+        const subject = entered ? 'the request' : '; it';
+        if (interruption.phase === 'beforeAction' && interruption.effects.length === 0) assert.ok(error.message.includes(`${subject} was refused before its first step. `), at);
         else {
-          assert.match(error.message, interruption.phase === 'beforeAction' ? /; it was refused before its first step, and / : /; it was stopped part-way, and /, at);
+          assert.ok(error.message.includes(`${subject} ${interruption.phase === 'beforeAction' ? 'was refused before its first step' : 'was stopped part-way'}, and `), at);
           assert.match(error.message, /; nothing was undone\. /, at);
         }
         for (const phrase of named) assert.ok(error.message.includes(phrase), `${at}: names ${phrase}`);
@@ -581,6 +654,69 @@ test('#212: userIntervened after substitution names what may have taken effect f
   const fromVendor = await rejection(vendor.service.handleRpc(setValue(REF('WORK_PASSWORD'))));
   assert.match(fromVendor.message, /may have been partly entered/);
   assert.doesNotMatch(fromVendor.message, /stopped part-way|moving focus/);
+});
+
+// The whole sentence for every combination of the record (present or not), the account (none, either phase, with steps
+// or none) and a password field (#414), on both of the vendor's sentences. Without the record the account is the
+// engine's report beside the plain "entry could not be ruled out": a phase never reads as proof that nothing went in
+// (an older engine reports a refusal before the action without the record), and nothing says entry was under way. The
+// instruction is then the user's check, never an observation (ruling 1247, d); the password warning comes only with a
+// password field that may have been entered.
+test('#212 beside #602: userIntervened\'s whole sentence for each record, account and field', async () => {
+  const open = 'cua: type_text with secret "WORK_PASSWORD" failed (userIntervened) after the secret was read: ';
+  const close = 'The runtime\'s error is withheld because it can contain the secret [secret_input_failed]';
+  const passwordWarning = 'The password field may have stopped being one while the secret was typed, and may now show it: do not capture the screen or read the app\'s accessibility state; put it right with setValue. ';
+  const instructions = {
+    [CHANGED]: {
+      unentered: 'the user changed the app; re-query its state (getAXState) before sending more actions',
+      entered: 'the user changed the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows',
+      password: 'the user changed the app; ask the user to hide or clear the password field, before any setValue',
+    },
+    [STILL]: {
+      unentered: 'the user is still interacting with the app; wait 5 seconds and retry',
+      entered: 'the user is interacting with the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows',
+      password: 'the user is interacting with the app; ask the user to hide or clear the password field, before any setValue',
+    },
+  };
+  const reached = 'what may have taken effect: the app\'s activation in the background; an activation click, at the window\'s activation point or just outside the window; nothing was undone';
+  const released = 'what may have taken effect: the end of a held activation, which may have sent the app a deactivation; nothing was undone';
+  const notRuledOut = 'entry could not be ruled out, so it may have been partly entered; cua\'s engine reports that the request';
+  const accounts = [
+    {label: 'no account', interruption: undefined, unentered: 'nothing was entered', entered: 'it may have been partly entered'},
+    {label: 'refused before the action', interruption: {phase: 'beforeAction', effects: []},
+      unentered: 'nothing was entered; it was refused before its first step', entered: `${notRuledOut} was refused before its first step`},
+    {label: 'refused, a held activation ended', interruption: {phase: 'beforeAction', effects: ['activationRelease']},
+      unentered: `nothing was entered; it was refused before its first step, and ${released}`, entered: `${notRuledOut} was refused before its first step, and ${released}`},
+    {label: 'stopped part-way, no step named', interruption: {phase: 'inFlight', effects: []},
+      unentered: 'nothing was entered; it was stopped part-way, and any step it had begun may have taken effect; nothing was undone',
+      entered: `${notRuledOut} was stopped part-way, and any step it had begun may have taken effect; nothing was undone`},
+    {label: 'stopped part-way after route 3\'s activation click', interruption: {phase: 'inFlight', effects: ['activation', 'activationClick']},
+      unentered: `nothing was entered; it was stopped part-way, and ${reached}`, entered: `${notRuledOut} was stopped part-way, and ${reached}`},
+  ];
+  const passwordField = {typeReadback: {confirmed: false, reason: 'noLongerSecure', secure: true, concealed: true, snapshotMs: 1.5}};
+  const sentences = [];
+  for (const [message, instruction] of Object.entries(instructions)) {
+    for (const {label, interruption, unentered, entered} of accounts) {
+      for (const recorded of [true, false]) {
+        for (const password of [false, true]) {
+          const meta = {...(recorded ? NOTHING_POSTED : UNRECORDED), ...(interruption ? {interruption} : {}), ...(password ? passwordField : {})};
+          const error = await rejection(harness({answer: failing('userIntervened', meta, message)}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+          const state = recorded ? 'unentered' : password ? 'password' : 'entered';
+          const expected = `${open}${instruction[state]}; ${recorded ? unentered : entered}. ${!recorded && password ? passwordWarning : ''}${close}`;
+          assert.equal(error.message, expected, `${message === CHANGED ? 'changed' : 'still'}, ${label}, ${recorded ? 'the record' : 'no record'}${password ? ', a password field' : ''}`);
+          sentences.push(error.message);
+        }
+      }
+    }
+  }
+  assert.equal(new Set(sentences).size, 30, 'the record makes the field irrelevant; every other combination reads differently');
+  for (const sentence of sentences.filter(sentence => !sentence.includes('nothing was entered'))) {
+    assert.doesNotMatch(sentence, /being entered|was entering|wait 5 seconds|retry|getAXState|re-query|screenshot/i, sentence);
+  }
+  // The record beside an entering step: the step bars "nothing was entered", and the report names it.
+  const value = await rejection(harness({answer: failing('userIntervened', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['focus', 'value']}}, CHANGED)})
+    .service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+  assert.equal(value.message, `cua: set_value with secret "WORK_PASSWORD" failed (userIntervened) after the secret was read: ${instructions[CHANGED].entered}; ${notRuledOut} was stopped part-way, and what may have taken effect: moving focus to the field; the value written to the field; nothing was undone. ${close}`);
 });
 
 test('cua\'s engine-only error names are admitted value-free; concealedInputUnavailable gets its own sentence, saying nothing was entered', async () => {

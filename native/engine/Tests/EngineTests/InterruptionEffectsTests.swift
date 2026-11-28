@@ -189,8 +189,9 @@ final class InterruptionEffectsTests: XCTestCase {
 
   /// #602 beside #212: type_text's in-flight guard stopping keyText before its first key answers `userChanged` part-way,
   /// as a stop between keys does, and only the record `beforeInput: true`, carried beside the account, tells the two
-  /// apart; whatever preparation posted first (here a forced activation's click) is named in the account and leaves the
-  /// record. Engine.execute's restatement, which adds a request's ended activation, keeps the record.
+  /// apart; whatever preparation posted first (here a forced activation and its click, counted as FakeActivation counts
+  /// what it posts on the request's thread, `ActivationPosts`, and outside the action's interval) is named in the account
+  /// and leaves the record. Engine.execute's restatement, which adds a request's ended activation, keeps the record.
   func testKeyTextsGuardStopBeforeTheFirstKeyCarriesTheRecordBesideTheAccount() {
     let units = [TypedUnit](repeating: TypedUnit(press: KeyPress(keyCode: 0, modifiers: []), text: [0x61], consumed: 1), count: 2)
     for activated in [false, true] {
@@ -198,7 +199,7 @@ final class InterruptionEffectsTests: XCTestCase {
       var latest: AttributedEvent?
       let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
       var metadata = meta()
-      if activated { XCTAssertTrue(metadata.posting(as: .activationClick) { true }, label) }
+      if activated { ActivationPosts.current.activations += 1; ActivationPosts.current.clicks += 1 }
       latest = AttributedEvent(sequence: 1, at: 11)
       var keys = 0
       var caught: Error?
@@ -208,13 +209,14 @@ final class InterruptionEffectsTests: XCTestCase {
       guard let caught else { continue }
       let answer = answered(caught, metadata)
       XCTAssertEqual(answer.phase, "inFlight", label)
-      XCTAssertEqual(answer.effects, activated ? ["activationClick"] : [], label)
+      XCTAssertEqual(answer.effects, activated ? ["activation", "activationClick"] : [], label)
+      XCTAssertNil(metadata.startedAt, "\(label): outside the action's interval")
       let wrapped = withMeta(caught as! EngineError, metadata)
       XCTAssertEqual((wrapped.wire["meta"] as? [String: Any])?["beforeInput"] as? Bool, true, label)
       let restated = wrapped.interrupted(adding: [.activationRelease]).wire["meta"] as? [String: Any]
       XCTAssertEqual(restated?["beforeInput"] as? Bool, true, "\(label): kept by the restatement")
       XCTAssertEqual((restated?["interruption"] as? [String: Any])?["effects"] as? [String],
-                     (activated ? ["activationClick"] : []) + ["activationRelease"], label)
+                     (activated ? ["activation", "activationClick"] : []) + ["activationRelease"], label)
     }
 
     // The same guard after the first unit's keys: the account names the input, and there is no record.

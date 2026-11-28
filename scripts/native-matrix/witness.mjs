@@ -11,9 +11,12 @@
 // failing closed. That the source pid separates them is checked in every cell, not assumed: a cell where the probe's
 // own typing was not seen under its pid is a gap, so the separation is proven where R3 rests on it.
 //
-// The positive control: once the run's cells are done, one modifier-free flagsChanged posted by the harness's helper
-// (./witness-control.swift) to each tapped pid, in no judged cell; the tap must record it under that pid from the
-// helper's pid, else every row's witness has a gap. Its result is kept on the run (meta.witness.controls).
+// The positive control: once the cells the witness decides are done (the input sections, ./run.mjs postControls' call),
+// one modifier-free flagsChanged posted by the harness's helper (./witness-control.swift) to each tapped pid, in no
+// judged cell; the tap must record it under that pid from the helper's pid, else every row's witness has a gap. It is
+// posted before the launch rows, which take the Electron fixture down and quit the one the engine launched, so the
+// tapped pid is still the live one (posted at the run's end, it went to a quit pid and no sheet row could be decided);
+// a run stopped before then has it posted as the tap stops. Its result is kept on the run (meta.witness.controls).
 //
 // The judged window: from the act's start to the check's end. The attempt's prepare before it (the driven scene's, the
 // user field emptied and focused) runs through the engine under test, whose focus click posts to the user app: what the
@@ -49,9 +52,18 @@ export function startWitness(ctx, users) {
 // A keystroke probe's pid as it started (null when the device could not name it: its posts then stay unseparated).
 export const noteProbe = (ctx, pid) => { ctx.witness?.probePids.push(Number.isSafeInteger(pid) ? pid : null); };
 
-// The control posted and the tap stopped, after the run's cells, whatever stopped the run. Records meta.witness.
-// -> {listenAccess, probePids, tap: {logRead, startedAt, stoppedAt, taps, disabled, events}, controls} for rowPosts, or
-// null when no tap came up (its rows unwitnessed).
+// The positive control posted to each tapped pid, once, while the tap runs on: after the cells the witness decides and
+// before anything that may quit a tapped app (the launch rows). Nothing when no tap came up or it was posted already.
+export async function postControls(ctx) {
+  const w = ctx.witness;
+  if (!w || w.posted || w.start?.ready !== true) return;
+  w.posted = w.targets.map(t => ({scene: t.scene, pid: t.pid, answer: device(ctx, 'control', ['control', '--pid', String(t.pid)])}));
+  await ctx.sleep(CONTROL_SETTLE_MS);
+}
+
+// The tap stopped (the control posted first when the run stopped before postControls), whatever stopped the run.
+// Records meta.witness. -> {listenAccess, probePids, tap: {logRead, startedAt, stoppedAt, taps, disabled, events},
+// controls} for rowPosts, or null when no tap came up (its rows unwitnessed).
 export async function finishWitness(ctx) {
   const w = ctx.witness;
   if (!w) return null;
@@ -63,8 +75,8 @@ export async function finishWitness(ctx) {
     ctx.meta.witness = {...meta, missing: `the witness tap did not come up: ${start.reason ?? start.error ?? start.refused ?? 'no readiness'}`};
     return null;
   }
-  const posted = w.targets.map(t => ({scene: t.scene, pid: t.pid, answer: device(ctx, 'control', ['control', '--pid', String(t.pid)])}));
-  await ctx.sleep(CONTROL_SETTLE_MS);
+  await postControls(ctx);
+  const posted = w.posted;
   const stop = device(ctx, 'tap-stop', ['tap', 'stop', '--mode', 'events']) ?? {};
   const tap = {logRead: stop.logRead === true, startedAt: stop.startedAt ?? start.startedAt ?? null, stoppedAt: stop.stoppedAt ?? null,
     // Both the start's and the stop's taps are the tap's own ready line; the start's stand when the log's were not read.

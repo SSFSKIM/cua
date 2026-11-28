@@ -5,7 +5,7 @@
 // person's; a gap is NO VERDICT, a post by anyone else a failure. A row records events by target pid and kind alone.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {finishWitness, noteProbe, rowPosts, startWitness} from '../../scripts/native-matrix/witness.mjs';
+import {finishWitness, noteProbe, postControls, rowPosts, startWitness} from '../../scripts/native-matrix/witness.mjs';
 
 const USER = 41, PROBE = 77, HELPER = 90, ENGINE = 33;
 const SPAN = [2_000, 3_000];
@@ -83,6 +83,22 @@ test('the run taps the user app\'s pid in events mode, posts the control after i
   assert.deepEqual([ctx.meta.witness.ready, ctx.meta.witness.startedAt, ctx.meta.witness.stoppedAt, ctx.meta.witness.events, ctx.meta.witness.probes], [true, 1_000, 9_000, 2, 1]);
   assert.deepEqual(ctx.windows.map(w => [w.kind, w.key]), [['harness', 'witness:tap-start'], ['harness', 'witness:control'], ['harness', 'witness:tap-stop']]);
   assert.deepEqual(rowPosts(witness, {userPid: USER, at: SPAN}), {source: 'tap', gaps: [], others: [], prepare: [], probe: 1});
+});
+
+test('the control posted once the decided cells are done stands: the tap stops later without posting it again', async () => {
+  const {ctx, calls, slept} = ctxOf({answer: DEVICE});
+  startWitness(ctx, ['textedit']);
+  await postControls(ctx);
+  assert.deepEqual(calls.map(c => c[0] === 'tap' ? `tap ${c[1]}` : c[0]), ['tap start', 'control']);
+  await postControls(ctx);
+  await finishWitness(ctx);
+  assert.deepEqual(calls.map(c => c[0] === 'tap' ? `tap ${c[1]}` : c[0]), ['tap start', 'control', 'tap stop']);
+  assert.equal(slept.length, 1);
+  assert.deepEqual(ctx.meta.witness.controls, [{scene: 'textedit', pid: USER, posted: true, by: HELPER, at: 7_990, seen: true}]);
+  const down = ctxOf({answer: argv => (argv[1] === 'start' ? {launched: false, reason: 'no tap'} : DEVICE(argv))});
+  startWitness(down.ctx, ['textedit']);
+  await postControls(down.ctx);
+  assert.deepEqual(down.calls.map(c => c.slice(0, 2)), [['tap', 'start']]);
 });
 
 test('a control the tap did not see is recorded unseen; a tap that never came up gets no control and no rows witnessed', async () => {

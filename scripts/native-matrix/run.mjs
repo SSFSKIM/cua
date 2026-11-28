@@ -71,7 +71,7 @@ import {manifestOf} from './manifest.mjs';
 import {caseId, casesOf, FOCUS_REASONS, isPanelTarget, MATRIX_SCENE_ARGS, methodTimingId, OWNER_OPTIONS, SCENE_OF, SPEED_EXTRA, speedExtraCases, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {closePanel, closeUntitledDocument, openPanelOf, PanelCloseStopped, panelWindowsIn, PanelStuck, tagOpening, untitledDocument} from './panels.mjs';
 import {finishProbeWitness, PROBE_ROWS, probeCells, ResetBlocked} from './probe-run.mjs';
-import {finishWitness, rowPosts, startWitness} from './witness.mjs';
+import {finishWitness, postControls, rowPosts, startWitness} from './witness.mjs';
 import {keyRouteSection, refuseKeyRouteOffRunner, refuseKeyRouteUnattested} from './key-route-run.mjs';
 import {guardCause, sendsPointer} from './alert-guard.mjs';
 import {placeWindows} from '../hosted-sittings/alert-guard.mjs';
@@ -357,6 +357,8 @@ async function runOnce(options, io) {
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
     await inputSections(ctx, plan);
+    // R3's positive control while every tapped pid is still the one tapped: the launch rows quit the Electron fixture.
+    await postControls(ctx);
     for (const launch of plan.launch) await launchRow(ctx, launch);
     if (plan.keyRoute) await keyRouteSection(ctx);
     snapshot();

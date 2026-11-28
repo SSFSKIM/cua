@@ -93,3 +93,17 @@ test('R3 through the run: the control unseen leaves the row NO VERDICT; off a ho
   assert.equal(off.steps.some(s => s.startsWith('key-route ')), false);
   assert.deepEqual(off.result.meta.witness, {missing: 'off a GitHub-hosted runner: no witness tap (ruling 1225)'});
 });
+
+// The sheet variant's control on the Electron fixture's pid (ruling 1238): in a run with the launch rows, which take the
+// fixture down and quit the one launched, the control is posted before them, while the tapped pid is the live one.
+test('R3 through the run: the positive control precedes the launch rows, so the tapped Electron pid is still the live one', async () => {
+  const order = [];
+  const ops = {
+    matrix: (base, a) => { if (a[0] === 'step' && a[1] === 'down') order.push(`down ${a[2]}`); return base(a); },
+    keyRoute: (base, a) => { if (a[0] === 'control' || a[0] === 'tap') order.push(a[0] === 'tap' ? `tap ${a[1]}` : 'control'); return base(a); },
+  };
+  const plan = {...planOf('concurrent-use-sheet'), launch: planOf('launch', {scene: 'electron'}).launch};
+  assert.ok(plan.sheet && plan.launch.length === 1);
+  await runWith({env: HOSTED, plan, ops, cellName: 'concurrent-use-sheet'});
+  assert.deepEqual(order.filter(o => o !== 'tap start'), ['control', 'down electron', 'tap stop']);
+});

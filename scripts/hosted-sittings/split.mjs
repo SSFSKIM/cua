@@ -74,9 +74,10 @@ export function jobsCheck(jobs, {base = null, scenesOf, lastJudged = null} = {})
 
 // Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it, information for jobs-check and never
 // a reason to stop it: the newest docs/evidence/<date>-m5-sitting-c-* directory whose records name a cua build, read
-// from whatever records it holds (`resultsOf(name)`: every cell record under it, in any layout; a proof run's evidence
-// may be committed later in one of its own), its cua builds as a job's are named. A newer directory that names none, or
-// whose records cannot be read, is skipped and said so. Newest by the directory's date, and among directories of one
+// from whatever records it holds (`resultsOf(name)`: {results, problems}, every cell record under it, in any layout, and
+// those that could not be parsed; a proof run's evidence may be committed later in one of its own), its cua builds as a
+// job's are named. A newer directory that names none, or whose records cannot be read (the read throws, yields no
+// record, or could not parse one), is skipped and said so. Newest by the directory's date, and among directories of one
 // date by the GitHub run id their records name (ids only grow), since a name after the date says nothing of order (a
 // proof run's `-proof-587` sorts after the later full run's `-full-0.3.3`); one whose records cannot be read stands
 // first in its date, so it is said as skipped. -> {dir, cua: [build], skipped: [{dir, why}]} | {unavailable: why,
@@ -87,7 +88,10 @@ export function lastJudgedOf({list, resultsOf}) {
   const read = names.filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().reverse().map(name => {
     const dir = `docs/evidence/${name}`;
     try {
-      const job = jobOf({dir, results: resultsOf(name)}), id = Number(job.runId);
+      const {results, problems = []} = resultsOf(name);
+      if (problems.length) throw new Error(`${problems.length} record(s) could not be parsed`);
+      if (!results.length) throw new Error('it holds no cell record');
+      const job = jobOf({dir, results}), id = Number(job.runId);
       return {name, dir, cua: job.cua, runId: Number.isSafeInteger(id) ? id : -1};
     } catch (error) { return {name, dir, error: `its records could not be read: ${error.message}`, runId: Infinity}; }
   });

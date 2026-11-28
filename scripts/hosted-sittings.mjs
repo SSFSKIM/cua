@@ -143,9 +143,10 @@ function basesOf(values) {
   return {dirs, ids, layers};
 }
 // Ruling 1248 A(1): the last judged sitting C, as its committed evidence holds it (./hosted-sittings/split.mjs
-// lastJudgedOf): every cell record under each docs/evidence/<date>-m5-sitting-c-* directory, whatever its layout.
+// lastJudgedOf): every cell record under each docs/evidence/<date>-m5-sitting-c-* directory, whatever its layout, and
+// the records that could not be parsed (a directory with any is unreadable, never judged on the rest).
 // Information only: a comparator that cannot be read is said so, never thrown.
-const lastJudgedC = () => lastJudgedOf({list: () => readdirSync(join(REPO, 'docs', 'evidence')), resultsOf: name => readResults([join(REPO, 'docs', 'evidence', name)]).results});
+const lastJudgedC = () => lastJudgedOf({list: () => readdirSync(join(REPO, 'docs', 'evidence')), resultsOf: name => readResults([join(REPO, 'docs', 'evidence', name)])});
 // A job's directory as the judge reads it: its matrix records and the hardware the workflow wrote beside its sitting.
 // Every record under it (its matrix lanes, save-sheet and speed-extra cells) and its sitting report (sitting.json: the
 // run job's save-sheet verdicts, I3).

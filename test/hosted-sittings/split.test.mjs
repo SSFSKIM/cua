@@ -657,7 +657,7 @@ test('the last judged sitting C: the newest *-m5-sitting-c-* directory whose rec
     '2026-11-29-m5-sitting-c-later': null,
     '2026-11-26-m5-sitting-b': job('/x', {build: 'b9'}).results,
   };
-  const resultsOf = name => { if (records[name] === null) throw new Error('ENOENT: no such file or directory'); return records[name]; };
+  const resultsOf = name => { if (records[name] === null) throw new Error('ENOENT: no such file or directory'); return {results: records[name], problems: []}; };
   const last = lastJudgedOf({list: () => Object.keys(records), resultsOf});
   assert.deepEqual(last, {dir: 'docs/evidence/2026-11-27-m5-sitting-c-split', cua: ['0.3.0 build b1'], skipped: [
     {dir: 'docs/evidence/2026-11-29-m5-sitting-c-later', why: 'its records could not be read: ENOENT: no such file or directory'},
@@ -686,8 +686,26 @@ test('the last judged sitting C among directories of one date is the one whose r
     '2026-11-28-m5-sitting-c-full-0.3.3': job('/x', {build: 'b3', id: '46165236186'}).results,
     '2026-11-27-m5-sitting-c-split': job('/x', {build: 'b0', id: '46069842660'}).results,
   };
-  assert.deepEqual(lastJudgedOf({list: () => Object.keys(records), resultsOf: name => records[name]}),
+  assert.deepEqual(lastJudgedOf({list: () => Object.keys(records), resultsOf: name => ({results: records[name], problems: []})}),
     {dir: 'docs/evidence/2026-11-28-m5-sitting-c-full-0.3.3', cua: ['0.3.0 build b3'], skipped: []});
+});
+
+// Review of the warm-up round (6a): a directory whose read yields no record, or some record that could not be parsed,
+// is unreadable as one that throws is: first in its date, so it is said as skipped, never passed over in silence for a
+// same-date directory with a smaller run id.
+test('the last judged sitting C: a directory with no records, or with records that could not be parsed, is unreadable and listed as skipped', () => {
+  const records = {
+    '2026-11-28-m5-sitting-c-full-0.3.3': {results: job('/x', {build: 'b3', id: '46165236186'}).results, problems: []},
+    '2026-11-28-m5-sitting-c-empty': {results: [], problems: []},
+    '2026-11-28-m5-sitting-c-torn': {results: job('/x', {build: 'b4', id: '46200000000'}).results, problems: ['/r/cua/run-1/result.json: Unexpected end of JSON input']},
+    '2026-11-27-m5-sitting-c-split': {results: job('/x', {build: 'b0', id: '46069842660'}).results, problems: []},
+  };
+  const last = lastJudgedOf({list: () => Object.keys(records), resultsOf: name => records[name]});
+  assert.equal(last.dir, 'docs/evidence/2026-11-28-m5-sitting-c-full-0.3.3');
+  assert.deepEqual(last.skipped.map(s => s.dir).sort(), ['docs/evidence/2026-11-28-m5-sitting-c-empty', 'docs/evidence/2026-11-28-m5-sitting-c-torn']);
+  assert.deepEqual(Object.fromEntries(last.skipped.map(s => [s.dir.slice('docs/evidence/'.length), s.why])), {
+    '2026-11-28-m5-sitting-c-empty': 'its records could not be read: it holds no cell record',
+    '2026-11-28-m5-sitting-c-torn': 'its records could not be read: 1 record(s) could not be parsed'});
 });
 
 test('jobs-check with no base reads the last judged sitting C\'s build from the committed evidence', () => {

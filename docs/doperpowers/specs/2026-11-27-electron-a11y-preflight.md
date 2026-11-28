@@ -583,3 +583,9 @@ its own.
     - Anything else is inconclusive and is read again.
   - **Each replacement read is confirmed again** against the window's association within the deadline. A changed association ends the wait with the read before it.
   - **§G 10** is met by substitution, as recorded above.
+- **2026-11-28, T3 as built (task 181, reviewed clean after one fix wave).**
+  - **`no_provider`.** The answer carries `tree_unavailable: {reason: "no_provider"}` only on a window whose role is `browser-window`, when association found no provider. That also requires the registry's listing to be whole and every listed application's process to be named; otherwise the old fallback answer stands, with no field.
+  - **`asked`.** `{reason: "asked"}` only on the observation whose wait ended at the bound with the frame still alone. Panels, a pending document or a failed read get no sentence, and later observations of an app already asked get no field.
+  - **Screenshots and other windows.** A screenshot never gets the field. Every other window's answer equals the 0.4.6 engine's key for key; live, 43 answers matched one to one.
+  - **The engine's own `launch_app`** sets `ACCESSIBILITY_ENABLED=1`, overriding an inherited value, so every route has it (call 2).
+  - **The X11 caveat.** `BOUND`'s doc carries it.

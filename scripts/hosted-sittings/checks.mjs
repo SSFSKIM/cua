@@ -170,6 +170,11 @@ export const CHECKS = Object.freeze({
       const held = resetBlocked(step.record, record) ?? alertStopped(step.record, record) ?? guardStopped(step.record, record);
       const beside = besideRefusal(record);
       if (held && beside.length) return ['FAIL', `runtime error: the run is incomplete (${beside.join('; ')}); the alert guard also refused ${(record.guardRefused ?? []).join(', ')}`];
+      // Every other stop is a runtime error that fails the run job, and jobs-check refuses the job until it is re-run
+      // (split.mjs runJobStops). So is a matrix run the warm-up stopped (ruling 1278 (b): a fixture its typing changed
+      // and the harness could not put back, meta.warmUpStop, ../native-matrix/warm-up-run.mjs FixtureChanged), named
+      // in the reason: like ruling 1227's infrastructure stops, its answer is `gh run rerun --failed` of that job, never
+      // judging the stopped lane.
       return held ? ['NO VERDICT', held] : ['FAIL', `runtime error: the run is incomplete (${firstProblem(record)})`];
     }
     if (side) return ['NO VERDICT', side.reason];

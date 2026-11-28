@@ -193,11 +193,21 @@ async function koreanWarmUp(ctx, field, when) {
     Object.assign(seen, await warmUpAct(ctx, field, {act: warmUpComposeCell(field, PRESS_KEY.keys), keys: PRESS_KEY.keys.split(' '), keysAs: 'composition', between: clear}));
     // Nothing sent, nothing composed: the source as Korean held it, nothing to end or empty.
     if (!seen.sent) return {ended: null, korean: null, retried: false};
-    Object.assign(seen, cleared?.emptied === true ? await composedOutcome(ctx, field) : {composed: null});
+    // What composed is a diagnostic: a read of it that throws is recorded unread (never its words), and the cleanup
+    // after it runs whatever it read. A Stop is the run's, as anywhere.
+    let outcome = {composed: null};
+    if (cleared?.emptied === true) {
+      try { outcome = await composedOutcome(ctx, field); } catch (error) { if (error instanceof Stop) throw error; outcome = {composed: 'unread', composedReads: null}; }
+    }
+    Object.assign(seen, outcome);
     seen.ended = useSource(ctx, ABC, `${when} warm-up:end`);
     again = koreanIn(ctx, field, `${when} after the warm-up`);
     seen.retried = again !== null;
     if (again) again = koreanIn(ctx, field, `${when} after the warm-up, again`);
+    // The one intended exception to "the warm-up makes no row invalid": Korean that did not engage again after two tries
+    // leaves the field's Korean rows invalid by their own precondition (the source read back engaged before them), since
+    // no row is judged under a source the harness could not verify. Running them under ABC, or under an unread source,
+    // would judge the engines on input they were never given.
     seen.korean = again === null;
     seen.neutral = neutral(ctx, ['field-empty', '--scene', field], 'emptied');
     return {};

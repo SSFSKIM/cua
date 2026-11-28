@@ -13,6 +13,8 @@ import {emptyField} from '../../scripts/native-matrix/probe-plan.mjs';
 import {KOREAN_2SET, unicodeCase, unicodeRowsOf} from '../../scripts/native-matrix/unicode-plan.mjs';
 import {COMPOSITION_VENUES, WARM_UP_TEXT} from '../../scripts/native-matrix/warm-up-run.mjs';
 import {cellsOf, runWith} from './run-doubles.mjs';
+import {CHECKS} from '../../scripts/hosted-sittings/checks.mjs';
+import {runJobStops} from '../../scripts/hosted-sittings/split.mjs';
 
 const HOSTED = {RUNNER_ENVIRONMENT: 'github-hosted'};
 const tagOf = code => /cua-matrix-cell: ([\w.]+)/.exec(code)?.[1] ?? null;
@@ -121,6 +123,19 @@ test('a fixture the typing changed and the harness could not put back stops the 
   }
 });
 
+// Verification review: on a hosted run job a FixtureChanged stop fails the lane's run step as a runtime error, its cause
+// in the reason, and jobs-check refuses the job until it is re-run (gh run rerun --failed), as ruling 1227's
+// infrastructure stops are: a stopped lane is never judged.
+test('a FixtureChanged stop fails the run step with its cause named, and jobs-check refuses the job until it is re-run', async () => {
+  const ops = {matrix: (base, a) => (a[0] === 'field-strip' ? {answer: {restored: false, why: 'selection-unconfirmed'}, at: [1, 2]} : base(a))};
+  const {result} = await ordered({ops});
+  const path = '/o/cua/run-1/result.json';
+  const [status, reason] = CHECKS.record({record: path}, {exit: 1, readJson: p => (p === path ? result : null), logText: () => '', exists: () => true});
+  assert.equal(status, 'FAIL');
+  assert.match(reason, /^runtime error: the run is incomplete \(stopped: the warm-up's typing left textedit's document changed and the harness could not put it back \(selection-unconfirmed\): no row is judged on a changed fixture/);
+  assert.deepEqual(runJobStops({steps: [{id: 'run-1-cua', status, reason}]}), [{id: 'run-1-cua', status: 'FAIL', reason}]);
+});
+
 test('keys that were never sent changed nothing: a field that then does not read back is recorded and the run goes on', async () => {
   const unprepared = c => (tagOf(c) === 'warmup.prepare' && c.includes('Scene notes') ? {ready: false, reason: 'the field is not in the text'} : null);
   const stays = {matrix: (base, a) => (a[0] === 'field-empty' && a.includes('chrome') ? {answer: {emptied: false, count: 0, why: 'no-field'}, at: [1, 2]} : base(a))};
@@ -200,6 +215,28 @@ test('the Korean warm-up records what composed as a category alone: complete, pa
   assert.deepEqual([partial.composed, partial.composedReads], ['partial', 2]);
   assert.equal((await composedOf(reading(null))).composed, 'unread');
   assert.equal((await composedOf(reading(sha256Hex('x')))).composed, 'other');
+});
+
+// Verification review: what composed is a diagnostic; the cleanup never depends on it. A read that throws there is
+// recorded unread, and the composition is still ended, Korean established again and the field emptied.
+test('a composed-outcome read that throws is recorded unread; the cleanup still runs and the field\'s Korean rows still run', async () => {
+  let composed = false, selected = false, thrown = 0;
+  const cell = c => { if (tagOf(c) === 'warmup.composition') composed = true; return null; };
+  const ops = {matrix: (base, a) => {
+    if (composed && a[0] === 'source' && a[1] === 'select') selected = true;
+    if (composed && !selected && a[0] === 'read') { thrown += 1; throw new Error('the focus probe failed'); }
+    return base(a);
+  }};
+  const {result, events, code} = await ordered({plan: KOREAN_PLAN, ops, cell});
+  assert.equal(code, 0, JSON.stringify(result.problems));
+  assert.ok(thrown > 0, 'the composed read was reached');
+  const step = result.meta.warmUp.steps.find(s => s.kind === 'composition' && !s.skipped);
+  assert.deepEqual([step.sent, step.composed, step.ended, step.korean, step.neutral?.emptied], [true, 'unread', true, true, true]);
+  assert.ok(!JSON.stringify(step).includes('the focus probe failed'), 'never the error\'s words');
+  const at = events.indexOf('warmup.composition');
+  assert.deepEqual(events.slice(at, at + 8), ['warmup.composition', 'select ABC', 'current', 'select Korean', 'activate textedit', 'activate chrome', 'current', 'field-empty chrome']);
+  const rows = result.rows.filter(r => r.condition === 'korean');
+  assert.ok(rows.length > 0 && rows.every(r => r.ok === true && !r.invalid));
 });
 
 // Review finding 2: the warm-up never invalidates its rows.

@@ -5,7 +5,8 @@
 // record. A warm-up's own failure (a cell that failed, keys left unsent) never stops the run and never makes a row
 // invalid; what stops any run (the key guard's stop, a possible system alert) stops it here too. One more thing stops
 // it: a fixture the typing changed and the harness could not put back (FixtureChanged), since judging rows on a changed
-// fixture would not be honest, and a stopped run is NO VERDICT.
+// fixture would not be honest, and a stopped run is NO VERDICT. One row-level exception: Korean that does not engage
+// again after the composition leaves that field's Korean rows invalid by their own precondition (./unicode-run.mjs).
 //
 // Two steps, each as a harness cell, never a row:
 //   typeText     one typeText of WARM_UP_TEXT into each text venue the plan brings up (typingWarmUp, ./run.mjs, after the

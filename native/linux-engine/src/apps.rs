@@ -413,41 +413,54 @@ mod launched_tests {
 
     /// #228 (the pre-flight's §E2, taste call 2): every application `launch_app` starts has `ACCESSIBILITY_ENABLED=1`,
     /// so a Chromium application's bridge starts whatever the session's switch says, and the rest of the engine's
-    /// environment is passed on as it is.
+    /// environment is passed on as it is. The launched program checks the two variables itself and answers by its exit
+    /// status, so nothing of the environment leaves it. The test then runs again in a process of its own whose
+    /// environment says `ACCESSIBILITY_ENABLED=0`, as a supervisor's might, and the launch still gives `1`.
     #[test]
-    fn a_launched_program_has_accessibility_enabled_and_the_rest_of_the_engines_environment() {
-        let dir = std::env::temp_dir().join(format!("cua-engine-launch-env-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("environ");
-        let target = file.display().to_string();
+    fn a_launched_program_has_accessibility_enabled_whatever_the_engine_has() {
+        const AGAIN: &str = "CUA_ENGINE_TEST_LAUNCH_ENV_AGAIN";
+        let path = std::env::var("PATH").unwrap();
         let entry = Entry {
             id: "probe.desktop".into(),
             name: "probe".into(),
-            argv: ["/bin/cp", "/proc/self/environ", &target]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            argv: [
+                "/bin/sh",
+                "-c",
+                r#"[ "$ACCESSIBILITY_ENABLED" = 1 ] && [ "$PATH" = "$1" ]"#,
+                "probe",
+                &path,
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             startup_wm_class: None,
             path: PathBuf::new(),
         };
-        launch(&entry).unwrap().wait().unwrap();
-        let environ = std::fs::read(&file).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
-        let vars: Vec<String> = environ
-            .split(|&b| b == 0)
-            .filter(|v| !v.is_empty())
-            .map(|v| String::from_utf8_lossy(v).into_owned())
-            .collect();
-        let named = |name: &str| -> Vec<&str> {
-            let prefix = format!("{name}=");
-            vars.iter()
-                .map(String::as_str)
-                .filter(|v| v.starts_with(&prefix))
-                .collect()
-        };
-        assert_eq!(named("ACCESSIBILITY_ENABLED"), ["ACCESSIBILITY_ENABLED=1"]);
-        let path = format!("PATH={}", std::env::var("PATH").unwrap());
-        assert_eq!(named("PATH"), [path.as_str()], "the engine's own environment");
+        let status = launch(&entry).unwrap().wait().unwrap();
+        assert!(status.success(), "the launched program saw {status}");
+        if std::env::var_os(AGAIN).is_some() {
+            assert_eq!(
+                std::env::var("ACCESSIBILITY_ENABLED").as_deref(),
+                Ok("0"),
+                "the engine's own value"
+            );
+            return;
+        }
+        let again = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "apps::launched_tests::a_launched_program_has_accessibility_enabled_whatever_the_engine_has",
+                "--test-threads",
+                "1",
+            ])
+            .env(AGAIN, "1")
+            .env(LAUNCH_ACCESSIBILITY, "0")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&again.stdout);
+        assert!(again.status.success() && said.contains("1 passed"), "{said}");
     }
 
     /// The stop signals' numbers on Linux.

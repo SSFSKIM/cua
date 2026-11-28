@@ -8,8 +8,9 @@
 //!   found;
 //! - `engine.rs`'s `own_route_read`, which reads such a frame and confirms it, returns no `Result` and holds no leave.
 //!
-//! What the types cannot say, this source assertion pins, on the lexed source (comments and strings removed): leave is
-//! made only in `atspi.rs`; its one public constructor, for an error the vendor's own steps raised, is called once, in
+//! What the types cannot say, this source assertion pins, on the lexed source (comments and strings removed): the leave's
+//! field stays private, and leave is made only in `atspi.rs` (any `Fallback(..)` but the engine's `Observed::Fallback`,
+//! whatever its argument); its one public constructor, for an error the vendor's own steps raised, is called once, in
 //! the state read's arm for an error from the bus; `fallback_tree` is called only by the state read; and
 //! `own_route_read` names no `Fallback`. Each rule has a negative control.
 
@@ -31,6 +32,36 @@ fn count(code: &str, needle: &str) -> usize {
         .count()
 }
 
+/// How often `code` constructs leave: the identifier `Fallback` called as a tuple struct, whatever its argument and
+/// however it is spelled (`Fallback(..)`, `atspi::Fallback (..)`), except the engine's own `Observed::Fallback`, its
+/// variant's declaration included.
+fn leave_made(code: &str) -> usize {
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let observed = code.find("enum Observed {").and_then(|start| {
+        let end = code[start..].find("\n}\n")?;
+        Some(start..start + end)
+    });
+    code.match_indices("Fallback")
+        .filter(|(at, _)| !observed.as_ref().is_some_and(|block| block.contains(at)))
+        .filter(|(at, needle)| {
+            let before = &code[..*at];
+            let after = &code[at + needle.len()..];
+            !before.as_bytes().last().copied().is_some_and(ident)
+                && after.trim_start().starts_with('(')
+                && !before.ends_with("Observed::")
+        })
+        .count()
+}
+
+/// Whether atspi.rs declares the leave's field private: `struct Fallback(<field>)` with no `pub` in it.
+fn field_private(atspi: &str) -> bool {
+    atspi
+        .find("struct Fallback(")
+        .map(|at| &atspi[at + "struct Fallback(".len()..])
+        .and_then(|rest| rest.find(')').map(|end| &rest[..end]))
+        .is_some_and(|field| count(field, "pub") == 0)
+}
+
 /// The body of `fn name` in `code`, up to its closing brace at the start of a line.
 fn body<'a>(code: &'a str, name: &str) -> Option<&'a str> {
     let start = code.find(&format!("fn {name}("))?;
@@ -46,8 +77,11 @@ fn violations(files: &[(PathBuf, String)]) -> Vec<String> {
     for (path, code) in files {
         let name = path.to_string_lossy();
         let is = |p: &str| Path::new(p) == path;
-        if !is("atspi.rs") && count(code, "Fallback(Why") > 0 {
+        if !is("atspi.rs") && leave_made(code) > 0 {
             found.push(format!("{name} makes leave for the X11 fallback"));
+        }
+        if is("atspi.rs") && !field_private(code) {
+            found.push("atspi.rs's Fallback field is public".into());
         }
         let constructor = count(code, "after_vendor_error");
         if is("atspi.rs") {
@@ -125,10 +159,29 @@ fn each_rule_fails_where_it_should() {
         "{found:?}"
     );
     assert!(found.iter().any(|v| v.contains("2 times, not once")), "{found:?}");
+    // leave made outside atspi.rs, whatever the constructor's argument or spelling (#228 T3's review)
+    for leak in [
+        "Fallback(())",
+        "Fallback(Why::NoProvider)",
+        "Fallback(if every_one_named { Why::NoProvider } else { Why::Other })",
+        "atspi::Fallback(Why::Other)",
+        "Fallback (Why::Other)",
+    ] {
+        let found = with("engine/paste.rs", &|c| {
+            format!("{c}\nfn leak() {{ let _ = {leak}; }}\n")
+        });
+        assert!(found.iter().any(|v| v.contains("makes leave")), "{leak}: {found:?}");
+    }
+    // the engine's own `Observed::Fallback` is not leave
     let found = with("engine/paste.rs", &|c| {
-        format!("{c}\nfn leak() {{ let _ = Fallback(Why::NoProvider); }}\n")
+        format!("{c}\nfn seen(leave: atspi::Fallback) -> Observed {{ Observed::Fallback(leave) }}\n")
     });
-    assert!(found.iter().any(|v| v.contains("makes leave")), "{found:?}");
+    assert!(!found.iter().any(|v| v.contains("makes leave")), "{found:?}");
+    // the leave's field public, which would let any module make it
+    let found = with("atspi.rs", &|c| {
+        c.replacen("struct Fallback(Why)", "struct Fallback(pub Why)", 1)
+    });
+    assert!(found.iter().any(|v| v.contains("field is public")), "{found:?}");
     let found = with("engine/elements.rs", &|c| {
         format!("{c}\nfn leak(x: &X11) {{ x.fallback_tree(1, atspi::Fallback::after_vendor_error()); }}\n")
     });

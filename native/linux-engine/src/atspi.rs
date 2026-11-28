@@ -194,6 +194,17 @@ fn refs_of(result: &CallResult) -> std::result::Result<Vec<ObjRef>, String> {
         .collect())
 }
 
+/// Whether a `GetChildren` reply lists every child as an object reference: `refs_of` leaves out an entry of another
+/// shape, so a listing that had one is not the whole of what was there (#228 T3's review).
+fn listed_whole(result: &CallResult) -> bool {
+    match result.as_ref().ok().and_then(|values| values.first()) {
+        Some(Value::Array(items)) => items.iter().all(
+            |item| matches!(item, Value::Struct(parts) if matches!(parts.as_slice(), [Value::Str(_), Value::Path(_)])),
+        ),
+        _ => false,
+    }
+}
+
 fn children_call(obj: &ObjRef) -> MethodCall<'_> {
     MethodCall {
         dest: &obj.bus,
@@ -727,7 +738,8 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
         bus: REGISTRY.into(),
         path: ROOT_PATH.into(),
     };
-    let apps = match refs_of(&bus.call(&children_call(&registry))?) {
+    let listing = bus.call(&children_call(&registry))?;
+    let apps = match refs_of(&listing) {
         Ok(apps) => apps,
         Err(error) => return refused(error),
     };
@@ -743,7 +755,7 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
         })
         .collect();
     let pids = call_all(bus, &pid_calls)?;
-    let matching = match of_process(pid, &apps, &pids) {
+    let matching = match of_process(pid, &apps, listed_whole(&listing), &pids) {
         Ok(matching) => matching,
         Err(leave) => {
             return Ok(Association::Refused(
@@ -794,9 +806,15 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
 
 /// The registry's applications (`apps`) that are process `pid`'s, by the process the bus named for each one's
 /// connection (`pids`, in the same order); when there are none, the leave for the X11 tree. That leave says the process
-/// has no application on the bus ([`Fallback::no_provider`]) only when the bus named every application's process: one
-/// it could not name might have been the window's.
-fn of_process<'a>(pid: u32, apps: &'a [ObjRef], pids: &[CallResult]) -> std::result::Result<Vec<&'a ObjRef>, Fallback> {
+/// has no application on the bus ([`Fallback::no_provider`]) only when the registry's listing was `whole`
+/// ([`listed_whole`]) and the bus named every application's process: an entry left out, or a process it could not name,
+/// might have been the window's.
+fn of_process<'a>(
+    pid: u32,
+    apps: &'a [ObjRef],
+    whole: bool,
+    pids: &[CallResult],
+) -> std::result::Result<Vec<&'a ObjRef>, Fallback> {
     let named = |r: &CallResult| match r.as_ref().ok().and_then(|v| v.first()) {
         Some(Value::U32(p)) => Some(*p),
         _ => None,
@@ -810,7 +828,7 @@ fn of_process<'a>(pid: u32, apps: &'a [ObjRef], pids: &[CallResult]) -> std::res
     if !matching.is_empty() {
         return Ok(matching);
     }
-    let every_one_named = pids.iter().all(|r| named(r).is_some());
+    let every_one_named = whole && pids.iter().all(|r| named(r).is_some());
     Err(Fallback(if every_one_named { Why::NoProvider } else { Why::Other }))
 }
 
@@ -1099,7 +1117,10 @@ pub fn role_name(bus: &mut Bus, obj: &ObjRef) -> Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Associated, Association, Told, Unassociated, changed_before_acting, is_active, of_process, own_route};
+    use super::{
+        Associated, Association, Told, Unassociated, changed_before_acting, is_active, listed_whole, of_process,
+        own_route,
+    };
     use crate::dbus::{CallResult, Value};
 
     /// #228 task 3: which applications are the window's process's, and whether none at all is on the bus.
@@ -1115,20 +1136,20 @@ mod tests {
         let buses = |found: Vec<&crate::tree::ObjRef>| found.iter().map(|a| a.bus.clone()).collect::<Vec<_>>();
 
         // the process's applications, in the registry's order: never a leave
-        let found = of_process(20, &apps, &[pid(10), pid(20), pid(20)]).unwrap();
+        let found = of_process(20, &apps, true, &[pid(10), pid(20), pid(20)]).unwrap();
         assert_eq!(buses(found), [":1.2", ":1.3"]);
         // an application whose process the bus could not name is not the window's, and others still match
-        let found = of_process(20, &apps, &[Err("gone".into()), pid(20), pid(30)]).unwrap();
+        let found = of_process(20, &apps, true, &[Err("gone".into()), pid(20), pid(30)]).unwrap();
         assert_eq!(buses(found), [":1.2"]);
 
         // none of them: every process named, so the window's process has no application on the bus
         assert!(
-            of_process(20, &apps, &[pid(10), pid(30), pid(40)])
+            of_process(20, &apps, true, &[pid(10), pid(30), pid(40)])
                 .unwrap_err()
                 .no_provider()
         );
         assert!(
-            of_process(20, &[], &[]).unwrap_err().no_provider(),
+            of_process(20, &[], true, &[]).unwrap_err().no_provider(),
             "nothing on the bus at all"
         );
         // none of them, and the bus could not name one's process: that one might have been the window's
@@ -1137,12 +1158,45 @@ mod tests {
             Ok(vec![]),
             Ok(vec![Value::Str("20".into())]),
         ] {
-            let leave = of_process(20, &apps, &[pid(10), unnamed.clone(), pid(40)]).unwrap_err();
+            let leave = of_process(20, &apps, true, &[pid(10), unnamed.clone(), pid(40)]).unwrap_err();
             assert!(!leave.no_provider(), "{unnamed:?}");
         }
+        // none of them, every process named, but the registry's listing had an entry that was no object reference: the
+        // application it stood for might have been the window's (fix wave 1)
+        assert!(
+            !of_process(20, &apps, false, &[pid(10), pid(30), pid(40)])
+                .unwrap_err()
+                .no_provider()
+        );
+        assert!(!of_process(20, &[], false, &[]).unwrap_err().no_provider());
         // the vendor's other leaves never say so (an error's leave is `Why::Other` by its definition, which
         // tests/identity_boundary.rs keeps the only mention of its constructor in this file)
         assert!(!associated(Told::Title).fallback().unwrap().no_provider());
+    }
+
+    /// #228 T3, fix wave 1: the registry's listing is whole only when every entry is an object reference, which is all
+    /// `refs_of` keeps.
+    #[test]
+    fn a_listing_is_whole_only_when_every_entry_is_an_object_reference() {
+        let entry = |bus: &str| Value::Struct(vec![Value::Str(bus.into()), Value::Path(super::ROOT_PATH.into())]);
+        let listing = |items: Vec<Value>| -> CallResult { Ok(vec![Value::Array(items)]) };
+        assert!(listed_whole(&listing(vec![entry(":1.1"), entry(":1.2")])));
+        assert!(listed_whole(&listing(vec![])), "an empty registry is whole");
+        for odd in [
+            Value::Str(":1.3".into()),
+            Value::Struct(vec![Value::Str(":1.3".into())]),
+            Value::Struct(vec![Value::Path("/a".into()), Value::Str(":1.3".into())]),
+        ] {
+            let partial = listing(vec![entry(":1.1"), odd.clone()]);
+            assert!(!listed_whole(&partial), "{odd:?}");
+            assert_eq!(
+                super::refs_of(&partial).unwrap().len(),
+                1,
+                "refs_of keeps the rest, as before"
+            );
+        }
+        assert!(!listed_whole(&Err("org.freedesktop.DBus.Error.Failed".into())));
+        assert!(!listed_whole(&Ok(vec![])), "no array");
     }
 
     #[test]

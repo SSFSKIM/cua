@@ -59,12 +59,12 @@ import {writeCellResult} from './native-matrix/cell-result.mjs';
 const SCRIPT = fileURLToPath(import.meta.url);
 export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--first-lane vendor|cua] [--run <device dir>] [--dry-run]
        native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] | cell --list
-       native-matrix.mjs compare <dir>... [--out <file>]   (<vendor-dir> <cua-dir>, or a combined dir)
-       native-matrix.mjs summary <dir>... [--out <file>]
+       native-matrix.mjs compare <dir>... [--out <file>] [--proof <cell>,…]   (<vendor-dir> <cua-dir>, or a combined dir)
+       native-matrix.mjs summary <dir>... [--out <file>] [--proof <cell>,…]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
   out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, 'first-lane': {type: 'string'}, only: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
-  preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}, proof: {type: 'string'}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
 const absolute = (value, name) => { if (value !== undefined && (!isAbsolute(value) || value.includes('\n'))) fail(`--${name} needs an absolute path`); return value; };
 // The hold every lane of one hold names (`summary` refuses a run number whose vendor and cua runs name two): required on
@@ -80,6 +80,12 @@ const count = (value, name, fallback) => {
   return Number(value);
 };
 
+// --proof <cell>,… (ruling 1248 A(1)): a proof run's cells, its filtered runs judged alone (./native-matrix/summary.mjs).
+const proofOf = values => {
+  if (values.proof === undefined) return {};
+  const cells = values.proof.split(',').filter(Boolean);
+  return cells.length ? {proof: cells} : fail('--proof names the proof run\'s cells, comma-separated');
+};
 const firstLaneOf = value => (value === undefined || ['vendor', 'cua'].includes(value) ? value : fail('--first-lane takes vendor or cua'));
 
 export function parseCommand(argv) {
@@ -107,14 +113,14 @@ export function parseCommand(argv) {
     // and combined.json beside the lanes): every result under them is judged, as summary judges them.
     case 'compare':
       if (!rest.length) fail('compare needs at least one directory (<vendor-dir> <cua-dir>, or a combined dir)');
-      return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : null};
+      return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : null, ...proofOf(values)};
     case 'combine':
       if (!rest.length) fail('combine needs at least one directory');
       if (!values.out) fail('combine needs --out <dir>');
       return {command, dirs: rest.map(d => resolve(d)), out: resolve(values.out)};
     case 'summary':
       if (!rest.length) fail('summary needs at least one directory');
-      return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : join(resolve(rest[0]), 'summary.md')};
+      return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : join(resolve(rest[0]), 'summary.md'), ...proofOf(values)};
     case 'cleanup':
       if (rest.length) fail(`unexpected ${rest.join(' ')}`);
       if (!values.device) fail('--device is required');
@@ -158,11 +164,11 @@ function combineProblems(dirs) {
 }
 
 // The judgment of results under `dirs`. -> {judged, text}.
-function judgeDirs(dirs) {
+function judgeDirs(dirs, proof = null) {
   for (const dir of dirs) if (!fs.existsSync(dir)) throw new Error(`${dir} does not exist`);
   const {results, problems} = readResults(dirs);
   if (!results.length) throw new Error(`no cell results under ${dirs.join(', ')}`);
-  const judged = judge(results, [...problems, ...combineProblems(dirs)]);
+  const judged = judge(results, [...problems, ...combineProblems(dirs)], {proof});
   return {judged, text: renderSummary(judged)};
 }
 const VERDICT_CODE = {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4};
@@ -171,7 +177,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
   const options = parseCommand(argv);
   if (options.command === 'combine') return combineDirs(options, given?.combine ?? {readResults, writeResult: writeCellResult, writeJson: (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)}, log);
   if (options.command === 'compare' || options.command === 'summary') {
-    const {judged, text} = judgeDirs(options.dirs);
+    const {judged, text} = judgeDirs(options.dirs, options.proof ?? null);
     if (options.out) { fs.writeFileSync(options.out, text); log(`wrote ${options.out}`); }
     if (options.command === 'compare') {
       log(`VERDICT: ${judged.verdict}`);

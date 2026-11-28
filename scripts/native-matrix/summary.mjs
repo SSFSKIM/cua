@@ -86,7 +86,7 @@ import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
 import {cellsOf, manifestOf, SPEED_OPS} from './manifest.mjs';
 import {caseId, casesOf, ENGINE_METHOD, isCaretRow, isPointerdownRow, METHODS, methodTimingId, NOT_APPLICABLE, OWN_EFFECT_IDS, OWNER_OPTIONS, pointerdownReference, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
-import {FULL_PLAN, SPEED_CONTROL_IDS, SPEED_EXTRA_IDS} from './run.mjs';
+import {filteredPlan, FULL_PLAN, SPEED_CONTROL_IDS, SPEED_EXTRA_IDS} from './run.mjs';
 import {exclusionOf, NOT_JUDGED_RULES, notJudgedRefusal, notJudgedRuleOf} from './not-judged.mjs';
 import {CONDITIONS, isAcceptanceRow, isMidSwitchRow, isPressKeyRow, NOT_JUDGED, PRESS_KEY, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 import {runnerKey, runnerProblems} from '../hosted-sittings/runner.mjs';
@@ -122,10 +122,12 @@ const sampleCounts = rows => {
 // for a row of the plan no lane recorded. -> [{id, section, condition, cause, ticket?, recorded, vendor: {ok, valid,
 // invalid, ownerInput?, venue?}, cua: {…}}], by id.
 function notJudgedOf(excluded, plan = FULL_PLAN, rules = NOT_JUDGED_RULES) {
-  const candidates = [...unicodeRowsOf(plan.unicode).map(r => ({section: 'unicode', id: r.id})),
+  // A filtered plan's (a proof run's, ruling 1248) are its listed cells' alone.
+  const candidates = [...unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).map(r => ({section: 'unicode', id: r.id})),
     ...plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'method', id: caseId(t, 'frontmost', c)}))),
     ...plan.background.flatMap(({driven, user}) => casesOf(driven, 'background').map(c => ({section: 'method', id: caseId(driven, 'background', c, user)}))),
-    ...(plan.speed ? plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'speed', id: methodTimingId(t, c)}))) : [])];
+    ...(plan.speed ? plan.frontmost.flatMap(t => casesOf(t, 'frontmost').map(c => ({section: 'speed', id: methodTimingId(t, c)}))) : [])]
+    .filter(r => !plan.only || plan.only.has(`${r.section} ${r.id}`));
   const entryOf = r => {
     const rule = notJudgedRuleOf(r, rules);
     return {id: r.id, section: r.section, condition: rule.condition, cause: rule.cause, ...(rule.ticket ? {ticket: rule.ticket} : {})};
@@ -252,7 +254,7 @@ export function splitJobRunners(full) {
 export const renderRunners = runners => (runners ? ['## Runners by run (sitting C split into jobs, ruling 1228)', '',
   'Each run\'s pair stood on one runner; the runs did not need to.', '', ...runners.map(r => `- run ${r.run}: ${r.runner}; ${r.os}`), ''] : []);
 
-export function proofProblems(full) {
+export function proofProblems(full, plan = FULL_PLAN) {
   const missing = [];
   const one = (what, values) => {
     const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
@@ -276,7 +278,7 @@ export function proofProblems(full) {
       const unusable = metadataProblems(result);
       if (unusable.length) { missing.push(`${path}: ${unusable.join('; ')}: its rows cannot be checked against the manifest`); continue; }
       const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
-      const absent = manifestOf({run: result.meta?.run, samples: result.meta?.samples}).filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`));
+      const absent = manifestOf({run: result.meta?.run, samples: result.meta?.samples}, plan).filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`));
       if (absent.length) missing.push(`${path}: ${absent.length} row(s) of the manifest missing (${absent.slice(0, 3).map(e => `${e.section} ${e.id}#${e.sample}`).join(', ')}${absent.length > 3 ? ', …' : ''})`);
     }
   }
@@ -354,10 +356,15 @@ function speedExtrasOf(results, own, pairable = () => true) {
 // declared-departures file's entries (./departures.mjs). -> {problems, runs, narrowed, methods, launch, speed, finding,
 // findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures, cells, others, owner, blocking,
 // missing, options, desktop, verdict}.
-export function judge(results, problems = [], {departures: entries = readDepartures(), acceptedMisses: acceptances = readAcceptedMisses(), knownDefects = KNOWN_DEFECTS, notJudgedRules = NOT_JUDGED_RULES} = {}) {
+// `proof` (ruling 1248 A(1)): the cells of a proof run, a filtered split with no base. Its filtered matrix runs are then
+// the runs judged, pairwise and alone, never over a base: the manifest, the coverage and the missing proof are the proof
+// cells' (./run.mjs filteredPlan), a row of another cell those runs hold is not counted, and every other record (a full
+// run, the save sheet's, the speed extras') is listed, never counted.
+export function judge(results, problems = [], {departures: entries = readDepartures(), acceptedMisses: acceptances = readAcceptedMisses(), knownDefects = KNOWN_DEFECTS, notJudgedRules = NOT_JUDGED_RULES, proof = null} = {}) {
+  const plan = proof ? filteredPlan(proof) : FULL_PLAN, inPlan = row => !proof || plan.only.has(`${row.section} ${row.id}`);
   const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
-  const fullRuns = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
-  const narrowed = results.filter(r => own(r) && !fullRuns.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
+  const fullRuns = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === (proof ? 'filtered' : 'full'));
+  const narrowed = results.filter(r => (proof || own(r)) && !fullRuns.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
   // Ruling 1149: a run whose lane attests another engine than the side it measured is no measurement of that side (the
   // cua side on the vendor's engine, state 1, would compare the vendor with itself): its rows are not judged and the
   // missing proof names it (unmeasuredSide).
@@ -371,15 +378,15 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // stood on its rerun's frames, which combine checked: the full run's whole-run split is not its. An `evidence` no
   // recorded replacement backs is no replacement.
   const replaced = (result, row) => Boolean(row.evidence) && (result.meta?.reruns ?? []).some(r => r?.runId === row.evidence.runId && r?.attempt === row.evidence.attempt);
-  const all = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true,
+  const all = full.flatMap(({result}) => result.rows.filter(inPlan).map(row => ({...row, cell: result.cell, run: result.meta?.run, hosted: result.meta?.hosted === true,
     ...(split.has(result.meta?.run) && !replaced(result, row) ? {frameSplit: split.get(result.meta.run)}
       : panelSplit.get(result.meta?.run)?.has(row.opening) ? {frameSplit: `the panel opening ${row.opening}: ${panelSplit.get(result.meta.run).get(row.opening)}`} : {})})));
   // The rows a ruling put out of the judged matrix go to the not-judged list and nowhere else.
   const rows = all.filter(r => !exclusionOf(r, notJudgedRules));
-  const notJudgedRows = full.length ? notJudgedOf(all.filter(r => exclusionOf(r, notJudgedRules)), FULL_PLAN, notJudgedRules) : [];
+  const notJudgedRows = full.length ? notJudgedOf(all.filter(r => exclusionOf(r, notJudgedRules)), plan, notJudgedRules) : [];
   const runs = {vendor: 0, cua: 0};
   for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
-  const missingProof = [...problems, ...unmeasured.map(([{path}, problem]) => `${path}: ${problem}; its rows are not judged`), ...proofProblems(full)];
+  const missingProof = [...problems, ...unmeasured.map(([{path}, problem]) => `${path}: ${problem}; its rows are not judged`), ...proofProblems(full, plan)];
   // Marks the rules do not allow, on results that reached the judge without the reader's check: an `excluded` mark on a
   // row no ruling puts out (the row is judged as it read), a declaration on a full run's row (judged on its raw outcome).
   const misMarked = all.filter(r => r.excluded !== undefined && !exclusionOf(r, notJudgedRules)).length;
@@ -447,7 +454,8 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const lower = measured.filter(f => ['resolved', 'share', 'ids'].some(k => f.cua[k] < f.vendor[k]));
   const sum = engine => measured.reduce((n, f) => n + f[engine].resolved, 0);
   // Lower on the paired samples is shown whether or not every row qualifies, as a method sample proven worse is.
-  const findingVerdict = !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : finding.some(f => !f.qualifies) ? 'no-verdict'
+  // A proof run measures no finding elements: they are not in its proof.
+  const findingVerdict = proof ? 'not in the proof' : !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : finding.some(f => !f.qualifies) ? 'no-verdict'
     : sum('cua') > sum('vendor') ? 'pass' : 'parity';
 
   // Interference, on the oracle's rows with a verdict; one without its reading is missing proof.
@@ -516,7 +524,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const found = new Map([...judgedCells, ...speed].map(c => [`${c.section} ${c.id}`, {verdict: c.section === 'speed' ? speedVerdict(c) : c.verdict, account: c.account, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})}]));
   for (const f of findingRows) found.set(`${f.section} ${f.id}`, {verdict: f.account.qualifies ? 'measured' : 'no-verdict', account: f.account});
   const empty = {vendor: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, cua: {verdicts: 0, runs: 0, byRun: {}, noVerdict: {}}, pairs: 0, pairRuns: [], qualifies: false};
-  const cells = cellsOf().map(({section, id}) => {
+  const cells = cellsOf(plan).map(({section, id}) => {
     const c = found.get(`${section} ${id}`) ?? {verdict: 'no-verdict', account: empty};
     return {section, id, verdict: c.verdict, account: c.account, qualifies: c.account.qualifies, ...(c.unreferenced ? {unreferenced: c.unreferenced} : {})};
   });
@@ -524,7 +532,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   // Other cells (implemented elsewhere), by cell and engine.
   const others = [];
   for (const {result, path} of results) {
-    if (own({result})) continue;
+    if (own({result}) || proof) continue;
     for (const [engine, list] of groupBy(result.rows, r => r.engine)) {
       const valid = list.filter(r => !r.invalid);
       others.push({cell: result.cell, path, engine, sections: [...new Set(list.map(r => r.section))], verdict: result.verdict, ok: valid.filter(r => r.ok).length, valid: valid.length, invalid: list.length - valid.length});
@@ -598,7 +606,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, acceptedMisses, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
-    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), verdict};
+    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
 }
 
 // Ruling 1228 (E): the jobs each run's evidence came from, the full runs combined with filtered reruns (./combine.mjs):
@@ -840,8 +848,8 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     j.shared.length && `${j.shared.length} shared limit${j.shared.length === 1 ? '' : 's'}: Shared limits (vendor has them too)`].filter(Boolean);
   const departures = apart.length ? ` (${apart.join('; ')})` : '';
   const note = {PASS: departures, OWNER: ` (nothing failed; the owner's calls below remain)${departures}`, 'NO VERDICT': ' (nothing failed, but the proof below is missing: it blocks M5 as a failure does)'};
-  const out = [`# ${title}`, '', `Verdict: **${j.verdict}**${note[j.verdict] ?? ''}`, '',
-    `Full matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, desktopLine(j.desktop), ''];
+  const out = [`# ${title}${j.proof ? ` (proof run: ${j.proof.cells} cells, no base)` : ''}`, '', `Verdict: **${j.verdict}**${note[j.verdict] ?? ''}`, '',
+    `${j.proof ? 'Proof runs (filtered, judged alone, ruling 1248)' : 'Full matrix runs'}: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule)${j.proof ? `; the verdict is about these ${j.proof.cells} cells alone` : ''}.`, desktopLine(j.desktop), ''];
   if (j.blocking.length) out.push('## Blocking', '', ...j.blocking.map(b => `- ${b}`), '');
   if (j.missing.length) out.push('## Missing proof (no verdict)', '', ...j.missing.map(b => `- ${b}`), '');
   if (j.options.length) out.push('## Owner options (not run; not part of the verdict)', '', ...j.options.map(o => `- ${o.option} (${o.section} ${o.id}): ${o.reason}`), '');

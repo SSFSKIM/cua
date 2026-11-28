@@ -259,6 +259,43 @@ struct ReadbackIdentity: Equatable {
   var secure: Bool
 }
 
+/// #600: one reading of the paste's effect watch on type_text's paste route: the reading the paste judges its effect by,
+/// the role and subrole its batch read (role nil: unread, or no focused element) and the element it read them of.
+struct EffectSample<Element> {
+  var reading: EffectReading
+  var role: String? = nil
+  var subrole: ReadbackSubrole = .absent
+  var element: Element? = nil
+}
+
+/// #600 (ruling 1272): the tests' recorder of the classifying reads: how deep the transport's hold and the read-back's own
+/// points are as each read runs, and each hold as it starts (`onHold`, given its number and kind).
+final class ReadbackTrace {
+  var inHold = 0
+  var inReadback = 0
+  private(set) var holds: [String] = []
+  /// Whether each hold compared a classification with the baseline (a sample with no role, or no baseline, compares none).
+  private(set) var comparedAt: [Bool] = []
+  var onHold: (Int, String) -> Void = { _, _ in }
+  /// Each gate of R3 as it starts, before its reads.
+  var onGate: () -> Void = {}
+  func compared() { if !comparedAt.isEmpty { comparedAt[comparedAt.count - 1] = true } }
+  /// R3's proof: the gates and (the tests' harness adds them) the input events posted, in order.
+  private(set) var log: [String] = []
+  func note(_ entry: String) { log.append(entry) }
+  func hold<Element>(_ read: TypeReadback<Element>.TransportRead) {
+    let kind: String
+    switch read {
+    case .effect: kind = "effect"
+    case .field: kind = "field"
+    }
+    holds.append(kind)
+    comparedAt.append(false)
+    onHold(holds.count, kind)
+    inHold += 1
+  }
+}
+
 /// The focus check after the poll (`ReadbackReads.stillFocused`): whether the field is still the focus, and the role the
 /// walk read of it when the walk found it again (ruling 1254: R1 compares it), nil when no walk did.
 struct ReadbackRefocus: Equatable {
@@ -345,6 +382,17 @@ struct ReadbackReads<Element> {
   /// read that succeeded with a value of the wrong type), read straight after that read. Nil when not known (a fake
   /// that does not say).
   var lastError: () -> Int32? = { nil }
+  /// #600: the paste's effect reading with what its batch classified (`EffectSample`), type_text's paste route's only
+  /// classifying read of the transport, taken through `TypeReadback.transportHold` alone; nil where none is made (the
+  /// fakes that do not say, and the plain reading then stands).
+  var effect: ((AXUIElement, Double) -> EffectSample<Element>?)? = nil
+  /// #600 (R3): the application's focused element, read of the paste's prepared application element; a fake that does
+  /// not say answers none.
+  var applicationFocus: (AXUIElement) -> ReadbackWalkRead<Element> = { _ in .absent }
+  /// Whether two elements are the same (the effect's sampled element and the field).
+  var same: (Element, Element) -> Bool = { _, _ in false }
+  /// #600: the tests' recorder of where each classifying read runs (nil live).
+  var trace: ReadbackTrace? = nil
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
 }
@@ -421,7 +469,10 @@ extension ReadbackReads where Element == AXUIElement {
         return nil
       }
       return NSRange(location: location, length: length)
-    }, batch: { ax.batch($0, $1) }, lastError: { failed.last })
+    }, batch: { ax.batch($0, $1) }, lastError: { failed.last },
+       effect: { effectSample(of: $0, withinMs: $1, focused: { element($0, kAXFocusedUIElementAttribute) }, batch: { ax.batch($0, $1) }) },
+       applicationFocus: { read($0, kAXFocusedUIElementAttribute, asElement) },
+       same: { CFEqual($0, $1) })
   }
 }
 
@@ -558,6 +609,9 @@ enum ReadbackPlan<Element> {
   /// #587 (rulings 1219, 1247): the application's focus is an element that is no text field (`notTextField`): a literal
   /// request is typed and answered success with `readbackUnreadNote`.
   case unread(TypeReadbackReason)
+  /// #600 (ruling 1275), the latch: an R1 refusal of an element the lookup found, made at the snapshot (a transition,
+  /// a read of it that failed, a closed claim): terminal, nothing typed, on the keyed and the paste route alike.
+  case latched(TypeReadbackReason)
   case expect(field: Element, identity: ReadbackIdentity, before: String, range: NSRange, returnIsText: Bool, found: ReadbackLookup)
   /// #414: a password field, confirmed by its length from `basis`, which holds its count and range and nothing else
   /// holds them (TypeReadbackLength.swift).
@@ -573,7 +627,7 @@ enum ReadbackPlan<Element> {
   /// Whether something is expected of the field, by its value or its length.
   var expects: Bool {
     switch self {
-    case .refused, .unread: return false
+    case .refused, .unread, .latched: return false
     case .expect, .expectLength: return true
     }
   }
@@ -581,7 +635,7 @@ enum ReadbackPlan<Element> {
   /// Whether the field takes a Return as text (`readbackReturnIsText`).
   var returnIsText: Bool {
     switch self {
-    case .refused, .unread: return false
+    case .refused, .unread, .latched: return false
     case .expect(_, _, _, _, let returnIsText, _), .expectLength(_, _, _, let returnIsText, _): return returnIsText
     }
   }
@@ -612,25 +666,40 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
 /// R2 (ruling 1250): under select_text's range, the snapshot's one answer that lets anything be typed is a field whose
 /// range was read as select_text's (`.expect`); every other answer is `selectionChanged`, decided here alone, so
 /// nothing is typed or pasted.
+///
+/// The latch (ruling 1275), decided here alone too: once the lookup found an element, the snapshot's R1 refusal of it is
+/// terminal (`.latched`), nothing typed: a transition (`fieldChanged`, `becameSecure`, `noLongerSecure`), a read of it
+/// that failed (`roleUnreadable`, `fieldUnreadable`), and a claim the marker route closed. Only a lookup that found no
+/// element at all (`noFocusedElement`) types on, as before: #597's declared exemption.
+///
+/// `classified` is handed the field, its classification and how it was found, as soon as the snapshot has them,
+/// whatever it then answers (#600: R3's post gate holds that field).
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
-                               waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>? = nil) -> ReadbackPlan<Element> {
+                               waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>? = nil,
+                               classified: (Element, ReadbackIdentity, ReadbackLookup) -> Void = { _, _, _ in }) -> ReadbackPlan<Element> {
+  var foundElement = false
   let plan = readbackSnapshotPlan(reads: reads, settle: &settle, baseline: baseline, waited: &waited, secure: &secure,
-                                  retry: retry ?? ReadbackRetry(reads: reads, retries: 0))
+                                  retry: retry ?? ReadbackRetry(reads: reads, retries: 0), classified: classified, foundElement: &foundElement)
   if case .selection? = baseline, !plan.verifiedRange { return .refused(.selectionChanged) }
+  if foundElement, case .refused(let why) = plan, readbackLatches.contains(why) { return .latched(why) }
   return plan
 }
 
 /// The snapshot's reads and what they allow, before R2's gate (`readbackSnapshot`).
 private func readbackSnapshotPlan<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
-                                           waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>) -> ReadbackPlan<Element> {
+                                           waited: inout RangeWait?, secure: inout Bool, retry: ReadbackRetry<Element>,
+                                           classified: (Element, ReadbackIdentity, ReadbackLookup) -> Void,
+                                           foundElement: inout Bool) -> ReadbackPlan<Element> {
   let field: Element, found: ReadbackLookup, claimed: ReadbackIdentity?
   switch reads.focused() {
   case nil: return .refused(.noFocusedElement)
   case .closed(let reason, let password)?:  // the marker route's classification: nothing more is read
     if password { secure = true }
-    return .refused(reason)
+    foundElement = true
+    return .latched(reason)  // a closed claim: the latch, whatever its reason
   case .field(let element, let by, let identity)?: (field, found, claimed) = (element, by, identity)
   }
+  foundElement = true
   let claimedSecure = claimed?.secure ?? false
   if claimedSecure {
     secure = true
@@ -653,6 +722,7 @@ private func readbackSnapshotPlan<Element>(reads: ReadbackReads<Element>, settle
   } else {
     identity = ReadbackIdentity(role: role, subrole: subrole, secure: readbackSecure(role: role, subrole: subrole))
   }
+  classified(field, identity, found)
   if identity.secure {
     // #414: a password field is confirmed by its length; any other element closed is refused unread, as before.
     guard readbackPasswordField(role: role, subrole: subrole) else { return .refused(.secure) }
@@ -891,6 +961,8 @@ final class TypeReadback<Element> {
   /// The request's time left, in ms (#361: the paste route's; the keyed route's is unbounded): every poll's budget is
   /// the lesser of `typeReadbackBudgetMs` and this, read when the poll starts.
   private let remainingMs: () -> Double
+  /// #600: the field the snapshot classified, its classification and how it was found, whatever the plan (R3's gate).
+  private let held: (field: Element, identity: ReadbackIdentity, found: ReadbackLookup)?
   /// #590: the retries of failed reads, the snapshot's and every poll's, and what they found.
   private let retry: ReadbackRetry<Element>
   private(set) var record = TypeReadbackRecord()
@@ -902,6 +974,8 @@ final class TypeReadback<Element> {
     self.concealed = concealed
     self.remainingMs = remainingMs
     record.concealed = concealed
+    reads.trace?.inReadback += 1
+    defer { reads.trace?.inReadback -= 1 }
     let started = reads.now()
     let retry = ReadbackRetry(reads: reads)
     // The snapshot's retries leave a messaging timeout of the request's time for the keys (#590).
@@ -910,7 +984,10 @@ final class TypeReadback<Element> {
     var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
     var waited: RangeWait?
     var secure = false
-    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited, secure: &secure, retry: retry)
+    var held: (field: Element, identity: ReadbackIdentity, found: ReadbackLookup)?
+    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited, secure: &secure, retry: retry,
+                            classified: { held = ($0, $1, $2) })
+    self.held = held
     record.secure = secure
     record.snapshotMs = reads.now() - started
     record.baseline = baseline
@@ -918,8 +995,7 @@ final class TypeReadback<Element> {
     record.settleReads = settled?.reads ?? 0
     record.settleCapped = settled?.capped ?? false
     switch plan {
-    case .refused(let reason): record.reason = reason
-    case .unread(let reason): record.reason = reason
+    case .refused(let reason), .unread(let reason), .latched(let reason): record.reason = reason
     case .expect, .expectLength: break
     }
     keepRetries()
@@ -934,12 +1010,155 @@ final class TypeReadback<Element> {
   /// When a key event of the text was posted, on the reads' clock: a failed read after it says how long after (#590).
   func keyPosted(at time: Double) { retry.lastKeyAt = time }
 
+  /// #600 (rulings 1272, 1273): type_text's paste transport as the read-back holds it. Two holds, both R1's
+  /// (`readbackClassify`) against the field the snapshot classified (`held`):
+  /// - `transportHold`, at every reading of the paste's effect watch (`ReadbackReads.effect`, the watch's only read on
+  ///   this route): for the answer's sake, so a line or a Return the watch saw change is not counted. A sample of the field
+  ///   is classified at once; of another element, a field found as the application's focus has changed, and any other
+  ///   has the field's own role and subrole classified there and then. A notification, which reads nothing, has the field
+  ///   classified (`.field`). The first transition is kept for `transportStop`.
+  /// - `transportGate`, R3's post gate, immediately before every ⌘V and Return: safety rests on it alone.
+  enum TransportRead { case effect(Double), field }
+  private var transportChange: TypeReadbackReason?
+
+  /// #600 (ruling 1276): the secure latch, the one rule of the whole paste route. Every role and subrole any of its
+  /// samples or the gate reads, of any element, is handed here, role and subrole each as read (one that failed never
+  /// skips the other): an explicit secure observation (AXSecureTextField by role or by subrole), where the field the
+  /// snapshot holds is not a password field, or no field is held, latches `becameSecure`, and `transportStop` (the gate
+  /// before every ⌘V and Return, and the stops after a wait and a settle) posts nothing more. An inconclusive one (a
+  /// read that failed, no element, an answer that is not secure) latches nothing: with no field held it posts under
+  /// #597, and with one the field's own classification decides.
+  private func transportObserve(role: String?, subrole: ReadbackSubrole?) {
+    guard transportChange == nil, held?.identity.secure != true else { return }
+    if role == "AXSecureTextField" || subrole == .value("AXSecureTextField") { transportChange = .becameSecure }
+  }
+
+  func transportHold(_ read: TransportRead, application: AXUIElement) -> EffectReading? {
+    reads.trace?.hold(read)
+    defer { reads.trace?.inHold -= 1 }
+    func keep(_ check: ReadbackClassCheck) {
+      reads.trace?.compared()
+      if transportChange == nil, case .changed(let why) = check { transportChange = why }
+    }
+    func classifyField(_ held: (field: Element, identity: ReadbackIdentity, found: ReadbackLookup)) {
+      let role = reads.role(held.field), subrole = reads.subrole(held.field)  // each read, whatever the other answered
+      transportObserve(role: role, subrole: subrole)
+      guard let role else { return }  // a read that failed: the gate decides
+      keep(readbackClassify(held.identity, role: role, subrole: subrole))
+    }
+    switch read {
+    case .field:
+      if let held { classifyField(held) }
+      return nil
+    case .effect(let budget):
+      guard let sample = reads.effect?(application, budget) else { return nil }
+      if sample.element != nil { transportObserve(role: sample.role, subrole: sample.subrole) }  // ruling 1276, any element
+      guard let held else { return sample.reading }
+      // Identity first: a field found as the application's focus whose focus is now another element has changed,
+      // whatever that element's role read answered (ruling 1275).
+      if let element = sample.element, !reads.same(element, held.field), held.found == .focus {
+        keep(.changed(.fieldChanged))
+      } else if sample.role != nil {
+        if let element = sample.element, reads.same(element, held.field) {
+          keep(readbackClassify(held.identity, role: sample.role, subrole: sample.subrole))
+        } else {
+          classifyField(held)
+        }
+      }
+      return sample.reading
+    }
+  }
+
+  /// #600 (ruling 1273), R3's post gate: run by the paste's one posting function immediately before every ⌘V and Return
+  /// of type_text, with nothing posted in between. A classification-only read of the field the snapshot classified, its
+  /// role and subrole, held to it by `readbackClassify`; where the snapshot found it as the application's focus, that
+  /// focus read too, which must still be the field; where the walk or the marker route found it, its own AXFocused
+  /// (`fieldFocused`), which must still be true. It fails closed: a read it cannot complete (an AX error, a timeout,
+  /// a destroyed element, a focus that names no element, a subrole that cannot be read) stops the paste as
+  /// `fieldUnreadable`, and any difference with R1's reason, before the post (`transportStop`).
+  ///
+  /// Rulings 1274 and 1275: a request whose lookup found no element at all (`noFocusedElement`; the latch refuses every
+  /// other snapshot that classified no field) holds "no field" as its baseline, and the one change that can be told against it is a password field
+  /// appearing: the gate reads the application's focus once, and a focused element that is AXSecureTextField by role or
+  /// by subrole stops the paste `becameSecure`. Any other answer posts as before, a read that fails included: with no
+  /// baseline there is nothing to fail closed against. That is #597's declared exemption, deliberately.
+  func transportGate(beforeKey: Bool, application: AXUIElement) throws {
+    reads.trace?.onGate()
+    reads.trace?.inHold += 1
+    defer {
+      reads.trace?.inHold -= 1
+      reads.trace?.note(transportChange != nil ? "gate stopped" : held != nil ? "gate" : "gate no field")
+    }
+    // Ruling 1275: no field is held only where the lookup found no element at all (`noFocusedElement`; the latch has
+    // refused every other snapshot that held none).
+    guard let held else {
+      // #597's exemption (ruling 1274): only a password field appearing is told, by the latch; a failed read posts.
+      if case .value(let focused) = reads.applicationFocus(application) {
+        transportObserve(role: reads.role(focused), subrole: reads.subrole(focused))
+      }
+      try transportStop(beforeKey: beforeKey)
+      return
+    }
+    func stop(_ why: TypeReadbackReason) {
+      if transportChange == nil { transportChange = why }
+    }
+    if held.found == .focus {
+      switch reads.applicationFocus(application) {
+      case .value(let focused): if !reads.same(focused, held.field) { stop(.fieldChanged) }
+      case .absent, .failed: stop(.fieldUnreadable)
+      }
+    } else {
+      // A field the walk or the marker route found must still read AXFocused true (ruling 1275, P1-3): one still there
+      // and open but no longer focused (the focus moved to a password field) has changed.
+      switch reads.fieldFocused(held.field, held.found) {
+      case .focused: break
+      case .moved: stop(.fieldChanged)
+      case .unknown: stop(.fieldUnreadable)
+      }
+    }
+    if transportChange == nil {
+      // Role and subrole each read, whatever the other answered; an explicit secure one latches first (ruling 1276).
+      let role = reads.role(held.field), subrole = reads.subrole(held.field)
+      transportObserve(role: role, subrole: subrole)
+      if transportChange != nil {
+      } else if let role {
+        if case .failed = subrole {
+          stop(.fieldUnreadable)
+        } else {
+          switch readbackClassify(held.identity, role: role, subrole: subrole) {
+          case .same: break
+          case .changed(let why): stop(why)
+          case .unreadable: stop(.fieldUnreadable)
+          }
+        }
+      } else {
+        stop(.fieldUnreadable)
+      }
+    }
+    try transportStop(beforeKey: beforeKey)
+  }
+
+  /// #600: after every reading of the paste's effect watch, and before the paste relies on it: a change the hold kept
+  /// ends the read-back with R1's reason, `beforeKey` when the next Return is withheld; before anything was posted, it
+  /// says nothing was typed (`readbackNothingTyped`).
+  func transportStop(beforeKey: Bool) throws {
+    guard let why = transportChange else { return }
+    guard retry.lastKeyAt != nil else {
+      record.reason = why
+      keepRetries()
+      throw readbackNothingTyped(why, secure: record.secure, pasted: true, concealed: concealed)
+    }
+    throw unconfirmed(why, beforeKey)
+  }
+
   /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back. Never inside a
   /// `{{secret:…}}` substitution (the design session's ruling 1ea561bc:593, on the review of af1860ef..a8e55870, P2):
   /// each checkpoint is a confirmation wait, and the reply's time would tell how the secret's text is segmented. The
   /// wrapper expands a secret only as the whole text of a type_text, so a concealed request is all secret: its keys are
   /// posted with the rest of it, unconfirmed (a flag), and it is read back once, after the last unit.
   func beforeUnit(_ index: Int) throws {
+    reads.trace?.inReadback += 1
+    defer { reads.trace?.inReadback -= 1 }
     guard plan.expects else { return }
     if leaves(units[index]) {
       if unchecked, !concealed {
@@ -952,10 +1171,19 @@ final class TypeReadback<Element> {
     }
   }
 
-  /// Whether nothing may be typed (#359): select_text's range was gone at the snapshot, so the text would go elsewhere.
+  /// Whether nothing may be typed: select_text's range was gone at the snapshot, so the text would go elsewhere (#359),
+  /// or the latch (ruling 1275) made an R1 refusal terminal.
   var refusesTyping: Bool {
-    if case .refused(.selectionChanged) = plan { return true }
-    return false
+    switch plan {
+    case .refused(.selectionChanged), .latched: return true
+    default: return false
+    }
+  }
+
+  /// The answer when nothing may be typed (`refusesTyping`): #359's, or the latch's "Nothing was typed" with R1's reason.
+  func refusal(pasted: Bool) -> EngineError {
+    if case .latched(let why) = plan { return readbackNothingTyped(why, secure: record.secure, pasted: pasted, concealed: concealed) }
+    return typeUnconfirmed(.selectionChanged)
   }
 
   /// A poll's budget: `typeReadbackBudgetMs`, or less when the request has less time left.
@@ -967,6 +1195,8 @@ final class TypeReadback<Element> {
   /// at once; failures found during delivery (an input-source change, an intervention, an event not made) throw before
   /// this, #354's path.
   func finish(postedAt: Double? = nil) throws {
+    reads.trace?.inReadback += 1
+    defer { reads.trace?.inReadback -= 1 }
     let cutoff = min((postedAt ?? reads.now()) + typeReadbackBudgetMs, reads.now() + max(0, remainingMs()))
     guard plan.expects else {
       // #587: no text field, as the vendor answers it: a literal request's success with `readbackUnreadNote`,
@@ -1260,10 +1490,11 @@ func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Boo
   let readback = TypeReadback(units: units, concealed: concealed, settle: settle, baseline: baseline, reads: reads, remainingMs: remainingMs)
   defer { meta.typeReadback = readback.record }
   // #359: select_text's range gone, nothing is typed, so no text lands where the caret moved to.
+  // The latch (ruling 1275): an R1 refusal at the snapshot, nothing typed either.
   if readback.refusesTyping {
     if !concealed { meta.entered = 0 }
     meta.beforeInput = true  // #602: no key was posted
-    throw typeUnconfirmed(.selectionChanged)
+    throw readback.refusal(pasted: false)
   }
   // B, the read-back's origin (#414): the instant the last key event was posted, on the read-back's clock, taken where
   // the posting stamps `endedAt` (`InputMeta.posting`), so its cutoff counts from what an observer sees; the
@@ -1297,6 +1528,33 @@ func readbackUnreadNote(_ reason: TypeReadbackReason) -> String? {
 let readbackConcealedRemedy = "Because it is a secret and may have gone in where it can be seen, do not capture the screen or read the app's accessibility state to check, and do not type it again; ask the person to check where it went."
 /// The same for a password field that may have stopped being one (#414): the field may now show the secret.
 let readbackConcealedMayShowRemedy = "The field may now show its text: do not capture the screen or read the app's accessibility state; put it right with setValue, and do not type the text again."
+
+/// #600 (rulings 1272, 1275): the reasons the latch makes terminal at the snapshot, once the lookup found an element.
+let readbackLatches: Set<TypeReadbackReason> = [.fieldChanged, .becameSecure, .noLongerSecure, .roleUnreadable, .fieldUnreadable]
+
+/// #600 (rulings 1272, 1275): type_text stopped by R1 before its first key, ⌘V or Return, by the latch or the paste's
+/// post gate: R1's reason, or the read that failed, and that nothing was typed (`pasted`: the paste route's words).
+/// A password field's (`secure`), or one that stopped being one, may now show its text: no observation is advised.
+/// A concealed request's never is either.
+func readbackNothingTyped(_ reason: TypeReadbackReason, secure: Bool = false, pasted: Bool = true, concealed: Bool = false) -> EngineError {
+  let what: String
+  switch reason {
+  case .becameSecure: what = "the field turned into a password field"
+  case .noLongerSecure: what = "the password field turned into another kind of field"
+  case .roleUnreadable, .fieldUnreadable: what = secure ? "the password field could not be read" : "the focused field could not be read"
+  case .secure: what = "the focused element is a secure element that is not a text field"
+  default: what = "the focused field changed"
+  }
+  let remedy: String
+  if reason == .noLongerSecure || secure {
+    remedy = "The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); check the field with the person before typing again."
+  } else if concealed {
+    remedy = "Check the field with the person before typing the secret again."
+  } else {
+    remedy = "Observe the app (take a screenshot or call getAXState()) before typing it again."
+  }
+  return EngineError(name: "typeUnconfirmed", "Nothing was typed: \(what) before the text was \(pasted ? "pasted" : "typed"), so none of it was sent. \(remedy)")
+}
 
 /// #590: the reasons a failed read gives, whose record names that read (`TypeReadbackRecord.readFailure`).
 let typeReadbackFailedReadReasons: Set<TypeReadbackReason> = [.roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable]

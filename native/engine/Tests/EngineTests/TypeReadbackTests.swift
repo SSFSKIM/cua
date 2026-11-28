@@ -182,16 +182,42 @@ final class FakeApp {
                     return self.focused.map { .field($0, by: .focus) }
                   },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  role: { $0.onClassify?($0, "role"); self.clock += $0.roleReadMs; $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
-                  subrole: { $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
+                  fieldFocused: { field, _ in
+                    self.record("fieldFocused")
+                    self.focused?.calls.append("focused")
+                    return self.focused === field ? .focused : .moved
+                  },
+                  role: { self.record("role"); $0.onClassify?($0, "role"); self.clock += $0.roleReadMs; $0.calls.append("role")
+                    return $0.fails("role") ? nil : $0.role },
+                  subrole: { self.record("subrole"); $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.readRange() },
                   batch: { field, _ in field.readLength() },
                   lastError: { self.focused?.lastError },
+                  effect: effect.map { effect in { _, budget in self.record("effect"); return effect(budget) } },
+                  applicationFocus: { _ in
+                    self.record("focus")
+                    if let applicationFocus = self.applicationFocus { return applicationFocus() }
+                    return self.focused.map { .value($0) } ?? .absent
+                  },
+                  same: { $0 === $1 }, trace: trace,
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
+  }
+
+  /// #600: the paste transport's effect reading of this app (nil: none, the plain reading stands), and the recorder of
+  /// every classifying read: its name, and whether it ran inside the transport's hold or the read-back's own points.
+  var effect: ((Double) -> EffectSample<FakeField>?)?
+  /// #600 (R3): what the application's focus answers to the post gate, when not `focused` (another element, none).
+  var applicationFocus: (() -> ReadbackWalkRead<FakeField>)?
+  /// #600 (ruling 1276): the element the next effect sample names, once.
+  var nextSample: FakeField?
+  var trace: ReadbackTrace?
+  private(set) var classifying: [(read: String, inHold: Bool, inReadback: Bool)] = []
+  private func record(_ read: String) {
+    guard let trace else { return }
+    classifying.append((read, trace.inHold > 0, trace.inReadback > 0))
   }
 }
 
@@ -789,7 +815,7 @@ final class TypeReadbackTests: XCTestCase {
       var settle: ReadbackSettle?
       let plan = readbackSnapshot(reads: reads, settle: &settle)
       if claimed == "AXSecureTextField" {
-        guard case .refused(.noLongerSecure) = plan else { return XCTFail("refused noLongerSecure: \(plan)") }
+        guard case .latched(.noLongerSecure) = plan else { return XCTFail("latched noLongerSecure: \(plan)") }  // ruling 1275
         XCTAssertEqual(valueReads, 0)
         XCTAssertEqual(batches, 0)
       } else {
@@ -1180,12 +1206,71 @@ final class TypeReadbackTests: XCTestCase {
             continue
           }
           XCTAssertEqual(reason, expected(point, transition), label)
+          // The latch (ruling 1275): every R1 refusal at the snapshot is terminal, nothing typed.
+          if point.snapshot, let reason, readbackLatches.contains(TypeReadbackReason(rawValue: reason)!) {
+            XCTAssertEqual(keys, 0, "\(label): latched, nothing posted")
+            XCTAssertEqual(meta.beforeInput, true, label)
+            XCTAssertTrue(thrown?.message.hasPrefix("Nothing was typed: ") ?? false, "\(label): \(thrown?.message ?? "")")
+            continue
+          }
           let stoppedBeforeTab = point.text.hasSuffix("\t") && reason != nil
           XCTAssertEqual(keys, stoppedBeforeTab ? 1 : point.keys, "\(label): keys posted")
         }
       }
     }
     XCTAssertEqual(runs, 11 * 7 * 2 + 7 * 7 * 2, "points × transitions × pending")
+  }
+
+  /// Ruling 1275, the latch on the keyed route: once the lookup found an element, the snapshot's R1 refusal of it is
+  /// terminal, nothing typed: a walk's claim read as another role (round 3's P1-1), a claim whose role re-read fails,
+  /// and a change the stable wait saw that reverted before the first key (P1-2). Each answers "Nothing was typed" with
+  /// R1's reason and beforeInput. No focused element at all still types (#597).
+  func testTheLatchTypesNothingAfterASnapshotR1Refusal() {
+    func run(_ field: FakeField?, claim: ReadbackIdentity?, baseline: BaselineWait? = nil) -> (EngineError?, Int, InputMeta) {
+      var reads = FakeApp(field).reads
+      if let field, let claim { reads.focused = { .field(field, by: .walk, identity: claim) } }
+      var keys = 0
+      var meta = meta()
+      var thrown: EngineError?
+      do {
+        try keyTextReadBack(units("abc"), concealed: false, baseline: baseline, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
+                            post: { event in if event.kind == .down { keys += 1; if let text = event.text { field?.deliver(text) } }; return true },
+                            pause: {}, meta: &meta)
+      } catch { thrown = error as? EngineError }
+      return (thrown, keys, meta)
+    }
+    let changed = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    changed.role = "AXTextArea"
+    let (changedError, changedKeys, changedMeta) = run(changed, claim: walkClaim("AXTextField"))
+    XCTAssertEqual(changedError?.message, "Nothing was typed: the focused field changed before the text was typed, so none of it was sent. Observe the app (take a screenshot or call getAXState()) before typing it again.")
+    XCTAssertEqual(changedKeys, 0)
+    XCTAssertEqual(changedMeta.beforeInput, true)
+    XCTAssertEqual(record(changedMeta)["reason"] as? String, "fieldChanged")
+
+    let unread = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    unread.role = "AXTextField"
+    unread.failing["role"] = .max
+    let (unreadError, unreadKeys, unreadMeta) = run(unread, claim: walkClaim("AXTextField"))
+    XCTAssertTrue(unreadError?.message.hasPrefix("Nothing was typed: the focused field could not be read") ?? false, unreadError?.message ?? "")
+    XCTAssertEqual(unreadKeys, 0)
+    XCTAssertEqual(record(unreadMeta)["reason"] as? String, "roleUnreadable")
+
+    // The stable wait sees the field turn secure: refused there, nothing typed, whatever the field reads afterwards
+    // (the keyed route has no post gate to compare it again; the paste route's test reverts it before the first ⌘V).
+    let flicker = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    flicker.role = "AXTextField"
+    flicker.onClassify = { field, read in
+      guard read == "role" else { return }
+      if field.count("role") == 1 { field.subrole = .value("AXSecureTextField") }
+    }
+    let (flickerError, flickerKeys, flickerMeta) = run(flicker, claim: nil, baseline: .stable)
+    XCTAssertEqual(record(flickerMeta)["reason"] as? String, "becameSecure")
+    XCTAssertEqual(flickerKeys, 0)
+    XCTAssertTrue(flickerError?.message.hasPrefix("Nothing was typed: the field turned into a password field") ?? false, flickerError?.message ?? "")
+
+    let (noFocusError, noFocusKeys, _) = run(nil, claim: nil)
+    XCTAssertEqual(noFocusKeys, 3, "#597: no element found still types")
+    XCTAssertTrue(noFocusError?.message.hasPrefix("The text was typed") ?? false)
   }
 
   /// Round 4 (a), (b) and (c), by name. (a) A field the marker route took for a password field by its subrole whose
@@ -1343,10 +1428,13 @@ final class TypeReadbackTests: XCTestCase {
       if phase == "snapshot" { field.failing[name] = .max } else { field.failingAfterTyping[name] = .max }
       let (error, meta) = type("c", into: FakeApp(field))
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", label)
-      XCTAssertTrue(error?.message.contains("the field's text could not be read back") ?? false, label)
       XCTAssertEqual(record(meta)["reason"] as? String, reason, label)
       XCTAssertEqual(record(meta)["readFailure"] as? NSDictionary, expect as NSDictionary, label)
-      XCTAssertEqual(meta.entered, 1, "\(label): the text was sent")
+      // The latch (ruling 1275): the snapshot's role read of the element it found failing types nothing.
+      let latched = phase == "snapshot" && readbackLatches.contains(TypeReadbackReason(rawValue: reason)!)
+      XCTAssertTrue(error?.message.contains(latched ? "Nothing was typed: the focused field could not be read" : "the field's text could not be read back") ?? false,
+                    "\(label): \(error?.message ?? "")")
+      XCTAssertEqual(meta.entered, latched ? 0 : 1, "\(label): the text was sent unless latched")
     }
     // A concealed request's record names the read, never its retries or time.
     let field = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
@@ -1416,7 +1504,8 @@ final class TypeReadbackTests: XCTestCase {
     var meta = meta()
     XCTAssertThrowsError(try keyTextReadBack(units("pass"), concealed: false, reads: reads, checkSource: { _, _ in }, checkIntervention: {},
                                              post: { _ in true }, pause: {}, meta: &meta)) {
-      XCTAssertTrue(($0 as? EngineError)?.message.contains("the password field could not be read, so it may no longer hide its text") ?? false)
+      // The latch (ruling 1275): nothing typed; the failed read and the password field's remedy.
+      XCTAssertEqual(($0 as? EngineError)?.message, "Nothing was typed: the password field could not be read before the text was typed, so none of it was sent. The field may now show its text, so if it holds a secret, do not take a screenshot of it or call getAXState(); check the field with the person before typing again.")
     }
     XCTAssertEqual(record(meta)["reason"] as? String, "roleUnreadable")
     XCTAssertEqual(record(meta)["secure"] as? Bool, true)

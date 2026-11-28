@@ -676,7 +676,9 @@ final class SecureTypeReadbackTests: XCTestCase {
       XCTAssertEqual(reason(meta), expected, label)
       XCTAssertEqual(meta.typeReadback?.pollMs, pollMs, "\(label): when it is known")
       XCTAssertEqual(app.batches, batches, "\(label): nothing more read")
-      XCTAssertTrue(app.log.contains("post"), "\(label): the keys were posted")
+      // The latch (ruling 1275): an R1 refusal at the snapshot types nothing; any other refusal types, as before.
+      let latched = label.hasPrefix("refused:") && readbackLatches.contains(TypeReadbackReason(rawValue: expected)!)
+      XCTAssertEqual(app.log.contains("post"), !latched, "\(label): the keys were posted unless latched")
     }
     // A concealed success ends once the match has held and the focus check passed.
     let success = field()

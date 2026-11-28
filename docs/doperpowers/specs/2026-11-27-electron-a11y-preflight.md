@@ -565,3 +565,11 @@ its own.
   - **What is remembered.** Only real `ToolkitName` answers are cached, per application per connection; a timeout or error is not. An error reply to `GetAttributes` counts as a failed send and is not remembered.
   - **Live tests 5 to 8 fail closed.** Each observation is bracketed by `GetAttributes` markers sent to the registry's desktop object, which no application receives. An engine that asks on a screenshot turns test 5 red. §G7 counts every method on the engine's connections against main.
   - **Consequence for the facade:** engine 0.4.6 refuses the unknown `tree_wanted`. `MIN_ENGINE_VERSION` goes to 0.4.7 together with the 0.4.7 pin, because the pin alone doesn't refuse an older installed or override binary.
+- **2026-11-28, T4 as built (task 182, reviewed clean).**
+  - **The launch variable.** `launchLinux` puts `ACCESSIBILITY_ENABLED=1` in gio's environment, replacing a supervisor's own `0`.
+  - **The screenshot.** `getScreenshot` sends `tree_wanted: false`, and no read that wants the tree sends anything new.
+  - **The sentences.** `<app>` is the answered window's `app` field, escaped as in the drag notice. The sentence is the last line, after the tree and the truncation line. A reason that isn't one of the two strings renders nothing.
+  - **Linux `launch_app` takes exactly `{app: <string>}`.** Any other shape is refused before approval and before the service with `launch_app on Linux takes exactly one input, {app: <application id>}, and nothing else; nothing was launched`. A malformed call can't fall through to the engine's own launcher. T3 also sets the variable there, so every route has it.
+  - **The vendor differential.** The first Linux facade scenario is split. Tree reads stay compared to the vendor, and the screenshot is a declared difference whose record, minus `tree_wanted`, must equal the vendor's. The two sentences are a declared difference. Run against the comparator fixture's `@oai/cua`, 250 of 250 pass.
+  - **The version.** It ships only with the 0.4.7 pin and `MIN_ENGINE_VERSION` 0.4.7 (T6), because an older engine refuses `tree_wanted`.
+- **2026-11-28, §G 10's substitution (T2's review).** §G 10 is proved on an Electron window with no page (role `browser-window`, Chromium-drawn controls), not on CEF's dialog, which ruling 1251 leaves unasked. The ask rule is not widened for the test.

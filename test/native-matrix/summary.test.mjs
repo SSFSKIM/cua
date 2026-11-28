@@ -1574,3 +1574,21 @@ test('ruling 1228: the report names each run\'s jobs and the rerun cells, and a 
   assert.match(text, /^## Vendor-only changes between the base and the rerun \(ruling 1231\)$/m);
   assert.match(text, new RegExp(`^- method ${NAME.replace(/[./]/g, c => `\\${c}`)}, run 2: the vendor's row failed in the full run \\(job 45468052791, attempt 1\\) and passes in the rerun \\(job 777, attempt 2\\); cua's row and the pair's verdict unchanged$`, 'm'));
 });
+
+// Ruling 1278 (b): the warm-up each run recorded is reported per lane and run, after the composing retries, and never
+// judged: a warm-up whose cell failed or whose field was not put back changes no verdict.
+test('ruling 1278 (b): the warm-up section renders from the runs\' records and a failed warm-up changes no verdict', () => {
+  const step = (venue, kind, extra = {}) => ({venue, kind, at: [1, 2], ok: true, errorName: null, actMs: 30, neutral: {emptied: true, count: 1, settable: true, write: 0, readBack: 0, reads: 1}, ...extra});
+  const steps = [step('chrome', 'typeText'), step('chrome', 'composition', {ended: true, korean: true})];
+  const failing = [step('chrome', 'typeText', {ok: false, errorName: 'typeUnconfirmed'}), step('chrome', 'composition', {ended: true, korean: true, neutral: {emptied: false, count: 1, reason: 'the field\'s value read back 1 characters after the write (AXError 0)'}})];
+  const plain = judged({vendor: {resolved: 9, axMs: 50}, cua: {axMs: 40}});
+  const j = judged({vendor: {resolved: 9, axMs: 50, meta: () => ({warmUp: {steps}})}, cua: {axMs: 40, meta: run => ({warmUp: {steps: run === 2 ? failing : steps}})}});
+  assert.equal(j.verdict, plain.verdict);
+  assert.deepEqual([j.blocking, j.missing], [plain.blocking, plain.missing]);
+  assert.deepEqual(j.warmUp.shown.map(s => [s.engine, s.run, s.venue, s.kind]), [['cua', 2, 'chrome', 'typeText'], ['cua', 2, 'chrome', 'composition']]);
+  const text = renderSummary(j);
+  assert.match(text, /^## Warm-up \(ruling 1278\)$/m);
+  assert.match(text, /^\| cua \| 2 \| - \| chrome typeText \| \*\*failed\*\* \(typeUnconfirmed\) \| emptied \|$/m);
+  assert.ok(text.indexOf('## Warm-up (ruling 1278)') < text.indexOf('## Speed (in-cell ms)'), 'apart from the speed section, before it');
+  assert.doesNotMatch(renderSummary(plain), /Warm-up \(ruling 1278\)/, 'nothing when no run recorded one');
+});

@@ -81,6 +81,7 @@ import {isOsRecord, readCellResults} from './cell-result.mjs';
 import {findingSamples, judgeCell, judgeRemeasured, judgeSpeed, remeasuredStats, runOf} from './cell-verdict.mjs';
 import {noteLine, readCapabilityNotes} from './capability-notes.mjs';
 import {composingRetriesOf, renderComposingRetries} from './composing-retries.mjs';
+import {renderWarmUp, warmUpOf} from './warm-up.mjs';
 import {acceptanceExceeded, acceptedMissProblems, departureProblems, readAcceptedMisses, readDepartures, usableAcceptedMisses, usableDepartures, vendorAnsweredOk} from './departures.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {NO_VERDICT_CAUSES, sampleCause} from './front-key.mjs';
@@ -615,7 +616,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, acceptedMisses, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.filter(inPlan).map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
-    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
+    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), warmUp: warmUpOf(full), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
 }
 
 // Ruling 1228 (E): the jobs each run's evidence came from, the full runs combined with filtered reruns (./combine.mjs):
@@ -917,6 +918,7 @@ export function renderSummary(j, {title = 'Native matrix summary', notes = readC
 
   out.push(...renderFirstLaneSplit(j.firstLane));
   out.push(...renderComposingRetries(j.composingRetries));
+  out.push(...renderWarmUp(j.warmUp));
   out.push(...renderEvidence(j.evidence));
   out.push(...renderRunners(j.runners));
   out.push('## Speed (in-cell ms)', '');

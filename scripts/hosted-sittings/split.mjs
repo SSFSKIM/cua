@@ -76,17 +76,25 @@ export function jobsCheck(jobs, {base = null, scenesOf, lastJudged = null} = {})
 // a reason to stop it: the newest docs/evidence/<date>-m5-sitting-c-* directory whose records name a cua build, read
 // from whatever records it holds (`resultsOf(name)`: every cell record under it, in any layout; a proof run's evidence
 // may be committed later in one of its own), its cua builds as a job's are named. A newer directory that names none, or
-// whose records cannot be read, is skipped and said so. -> {dir, cua: [build], skipped: [{dir, why}]} |
-// {unavailable: why, skipped}.
+// whose records cannot be read, is skipped and said so. Newest by the directory's date, and among directories of one
+// date by the GitHub run id their records name (ids only grow), since a name after the date says nothing of order (a
+// proof run's `-proof-587` sorts after the later full run's `-full-0.3.3`); one whose records cannot be read stands
+// first in its date, so it is said as skipped. -> {dir, cua: [build], skipped: [{dir, why}]} | {unavailable: why,
+// skipped}.
 export function lastJudgedOf({list, resultsOf}) {
   let names;
   try { names = list(); } catch (error) { return {unavailable: `docs/evidence could not be listed: ${error.message}`, skipped: []}; }
-  const candidates = names.filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().reverse(), skipped = [];
-  if (!candidates.length) return {unavailable: 'no docs/evidence/*-m5-sitting-c-* directory is committed', skipped};
-  for (const name of candidates) {
+  const read = names.filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort().reverse().map(name => {
     const dir = `docs/evidence/${name}`;
-    let cua;
-    try { cua = jobOf({dir, results: resultsOf(name)}).cua; } catch (error) { skipped.push({dir, why: `its records could not be read: ${error.message}`}); continue; }
+    try {
+      const job = jobOf({dir, results: resultsOf(name)}), id = Number(job.runId);
+      return {name, dir, cua: job.cua, runId: Number.isSafeInteger(id) ? id : -1};
+    } catch (error) { return {name, dir, error: `its records could not be read: ${error.message}`, runId: Infinity}; }
+  });
+  const candidates = read.sort((a, b) => b.name.slice(0, 10).localeCompare(a.name.slice(0, 10)) || b.runId - a.runId || b.name.localeCompare(a.name)), skipped = [];
+  if (!candidates.length) return {unavailable: 'no docs/evidence/*-m5-sitting-c-* directory is committed', skipped};
+  for (const {dir, cua, error} of candidates) {
+    if (error) { skipped.push({dir, why: error}); continue; }
     if (cua.length) return {dir, cua, skipped};
     skipped.push({dir, why: 'its records name no cua build'});
   }

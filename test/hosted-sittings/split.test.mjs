@@ -679,13 +679,29 @@ test('the last judged sitting C: the newest *-m5-sitting-c-* directory whose rec
     /^The cua engine against the last judged sitting C: last judged C unavailable: docs\/evidence could not be listed: EACCES \(recorded, never refused; ruling 1248\)\.$/m);
 });
 
+// Two sittings of one date: the later run (the larger run id) is the last judged, whatever its name sorts as.
+test('the last judged sitting C among directories of one date is the one whose records name the later run', () => {
+  const records = {
+    '2026-11-28-m5-sitting-c-proof-587': job('/x', {build: 'b1', id: '46095539139'}).results,
+    '2026-11-28-m5-sitting-c-full-0.3.3': job('/x', {build: 'b3', id: '46165236186'}).results,
+    '2026-11-27-m5-sitting-c-split': job('/x', {build: 'b0', id: '46069842660'}).results,
+  };
+  assert.deepEqual(lastJudgedOf({list: () => Object.keys(records), resultsOf: name => records[name]}),
+    {dir: 'docs/evidence/2026-11-28-m5-sitting-c-full-0.3.3', cua: ['0.3.0 build b3'], skipped: []});
+});
+
 test('jobs-check with no base reads the last judged sitting C\'s build from the committed evidence', () => {
   const cli = (...args) => spawnSync(process.execPath, ['scripts/hosted-sittings.mjs', ...args], {encoding: 'utf8'});
   const root = fs.mkdtempSync(join(tmpdir(), 'split-last-')), out = join(root, 'jobs.json');
   try {
-    // The newest committed sitting C is whichever was committed last, so it is read here, not named: its own run jobs,
-    // checked against it, are the same build.
-    const newest = `docs/evidence/${fs.readdirSync('docs/evidence').filter(d => /-m5-sitting-c-/.test(d)).sort().at(-1)}`;
+    // The newest committed sitting C is whichever was committed last, so it is read here, not named (the newest date,
+    // then the largest run id its jobs' records name): its own run jobs, checked against it, are the same build.
+    const runIdOf = d => Math.max(-1, ...(fs.existsSync(`docs/evidence/${d}/jobs`) ? fs.readdirSync(`docs/evidence/${d}/jobs`) : [])
+      .map(n => `docs/evidence/${d}/jobs/${n}/sitting/cua`).filter(c => fs.existsSync(c))
+      .map(c => Number(JSON.parse(fs.readFileSync(`${c}/${fs.readdirSync(c)[0]}/result.json`, 'utf8')).meta?.runner?.run?.id ?? -1)));
+    const dated = fs.readdirSync('docs/evidence').filter(d => /^\d{4}-\d{2}-\d{2}-m5-sitting-c-/.test(d)).sort();
+    const day = dated.at(-1).slice(0, 10);
+    const newest = `docs/evidence/${dated.filter(d => d.startsWith(day)).sort((a, b) => runIdOf(b) - runIdOf(a))[0]}`;
     const jobs = fs.readdirSync(`${newest}/jobs`).sort().map(n => `${newest}/jobs/${n}/sitting`).filter(d => fs.existsSync(`${d}/cua`));
     const r = cli('jobs-check', '--jobs', jobs.join(','), '--out', out);
     assert.equal(r.status, 0, r.stdout + r.stderr);

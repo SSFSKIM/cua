@@ -39,9 +39,10 @@
 // application "<app>" was not found`); its desktop entry is found as the XDG specification finds a desktop file id
 // (desktopEntryFor), and the supervisor launches it outside the sandbox (nodeRepl.launchServices.openApplication,
 // src/repl-host/launch-services.mjs). It answers as the vendor's launch_app does (undefined). Any other launch_app shape
-// is refused with LINUX_LAUNCH_SHAPE_REFUSED before anything is asked or sent (#228): only the supervisor's launch gives
-// the application ACCESSIBILITY_ENABLED=1, and a launch delegated to the service would reach the engine's own
-// launch_app, which the confined worker's environment starts. On macOS every shape goes to the vendor unchanged. With
+// is refused with LINUX_LAUNCH_SHAPE_REFUSED before anything is asked or sent (#228): a launch delegated to the service
+// would reach the engine's own launch_app, which starts the application from the confined worker, inside its sandbox.
+// Both routes give the application ACCESSIBILITY_ENABLED=1 (#228); the supervisor's is kept because it launches
+// outside the sandbox. On macOS every shape goes to the vendor unchanged. With
 // cua's own Linux service (#171), whose engine refuses the first request
 // that acts after a late drag and drop it has not reported yet, the launch acts too: just before it, the wrapper calls
 // the service's `beforeLaunch` (the engine's `preflight`), whose refusal is the launch's answer; the vendor's service has

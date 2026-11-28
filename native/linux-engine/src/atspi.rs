@@ -365,16 +365,32 @@ pub enum Association {
 
 /// Leave to answer a state read with the vendor's one-node X11 tree (`X11::fallback_tree` takes one). Only the
 /// vendor's own failures make one: none of cua's own association routes ever does, whatever follows, so a window whose
-/// association met duplicates can never end in a tree that looks like an empty window (F5; Acceptance 7).
+/// association met duplicates can never end in a tree that looks like an empty window (F5; Acceptance 7). It also says
+/// whether the window's process has no application on the bus at all ([`Fallback::no_provider`]), which the answer
+/// may tell (`unavailable.rs`, #228).
 #[derive(Debug)]
-pub struct Fallback(());
+pub struct Fallback(Why);
+
+/// Which of the vendor's failures gave the leave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Why {
+    /// No application on the bus is the window's process's, and the bus named every application's process.
+    NoProvider,
+    Other,
+}
 
 impl Fallback {
     /// For an error the vendor's own steps raised (no bus, a broken connection, a failed call before any route of cua's
     /// own): the vendor answers it with the X11 tree. cua's own routes never return an error to be taken for one of
     /// these: they answer [`Association::Identity`] instead, and a read on their frame refuses (`engine.rs`).
     pub fn after_vendor_error() -> Fallback {
-        Fallback(())
+        Fallback(Why::Other)
+    }
+
+    /// Whether association found no application on the bus for the window's process: the registry listed its
+    /// applications, the bus named every one's process, and none was the window's ([`of_process`]).
+    pub fn no_provider(&self) -> bool {
+        self.0 == Why::NoProvider
     }
 }
 
@@ -433,7 +449,7 @@ impl Associated {
 
     /// Leave for the X11 fallback when the frame's tree cannot be read: only on the vendor's own match.
     pub fn fallback(&self) -> Option<Fallback> {
-        (!self.own_route()).then_some(Fallback(()))
+        (!self.own_route()).then_some(Fallback(Why::Other))
     }
 
     /// Whether the window's association still names this frame, on what the server and the bus say now. Run just
@@ -701,7 +717,7 @@ struct Subject<'a> {
 /// leave for the fallback.
 pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Association> {
     let id = info.id;
-    let refused = |sentence: String| Ok(Association::Refused(sentence, Fallback(())));
+    let refused = |sentence: String| Ok(Association::Refused(sentence, Fallback(Why::Other)));
     let Some(pid) = x.pid(id) else {
         return refused(format!("X11 window {id} has no usable _NET_WM_PID"));
     };
@@ -727,17 +743,15 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
         })
         .collect();
     let pids = call_all(bus, &pid_calls)?;
-    let matching: Vec<&ObjRef> = apps
-        .iter()
-        .zip(&pids)
-        .filter(|(_, r)| matches!(r.as_ref().ok().and_then(|v| v.first()), Some(Value::U32(p)) if *p == pid))
-        .map(|(a, _)| a)
-        .collect();
-    if matching.is_empty() {
-        return refused(format!(
-            "AT-SPI provider with process ID {pid} is unavailable for X11 window {id}"
-        ));
-    }
+    let matching = match of_process(pid, &apps, &pids) {
+        Ok(matching) => matching,
+        Err(leave) => {
+            return Ok(Association::Refused(
+                format!("AT-SPI provider with process ID {pid} is unavailable for X11 window {id}"),
+                leave,
+            ));
+        }
+    };
     let subject = Subject {
         info,
         pid,
@@ -772,10 +786,32 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
     if candidates.is_empty() {
         return Ok(own_route(|| match by_caption(bus, x, info, &matching, &frames)? {
             Some((frame, at)) => verify(bus, x, &subject, frame, Told::Caption, None, Some(at)),
-            None => Ok(Association::NoMatch(Fallback(()))),
+            None => Ok(Association::NoMatch(Fallback(Why::Other))),
         }));
     }
     pick(bus, x, &subject, &matching, &candidates)
+}
+
+/// The registry's applications (`apps`) that are process `pid`'s, by the process the bus named for each one's
+/// connection (`pids`, in the same order); when there are none, the leave for the X11 tree. That leave says the process
+/// has no application on the bus ([`Fallback::no_provider`]) only when the bus named every application's process: one
+/// it could not name might have been the window's.
+fn of_process<'a>(pid: u32, apps: &'a [ObjRef], pids: &[CallResult]) -> std::result::Result<Vec<&'a ObjRef>, Fallback> {
+    let named = |r: &CallResult| match r.as_ref().ok().and_then(|v| v.first()) {
+        Some(Value::U32(p)) => Some(*p),
+        _ => None,
+    };
+    let matching: Vec<&ObjRef> = apps
+        .iter()
+        .zip(pids)
+        .filter(|(_, r)| named(r) == Some(pid))
+        .map(|(a, _)| a)
+        .collect();
+    if !matching.is_empty() {
+        return Ok(matching);
+    }
+    let every_one_named = pids.iter().all(|r| named(r).is_some());
+    Err(Fallback(if every_one_named { Why::NoProvider } else { Why::Other }))
 }
 
 /// `associate` for a request that acts on the window: its frame with the proof, or the sentence that refuses it (a
@@ -821,7 +857,7 @@ fn pick(bus: &mut Bus, x: &mut X11, subject: &Subject, apps: &[&ObjRef], candida
     let ambiguous = |reason: String| {
         Ok(Association::Refused(
             format!("ambiguous AT-SPI window identity for X11 window {id}: {reason}"),
-            Fallback(()),
+            Fallback(Why::Other),
         ))
     };
     if candidates.len() == 1 && siblings.is_empty() {
@@ -905,7 +941,7 @@ fn verify(
     let id = info.id;
     let changed = || {
         Ok(if told == Told::Title {
-            Association::Refused(identity_changed(id), Fallback(()))
+            Association::Refused(identity_changed(id), Fallback(Why::Other))
         } else {
             Association::Identity(Unassociated::Changed(id))
         })
@@ -1063,8 +1099,51 @@ pub fn role_name(bus: &mut Bus, obj: &ObjRef) -> Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Associated, Association, Told, Unassociated, changed_before_acting, is_active, own_route};
-    use crate::dbus::Value;
+    use super::{Associated, Association, Told, Unassociated, changed_before_acting, is_active, of_process, own_route};
+    use crate::dbus::{CallResult, Value};
+
+    /// #228 task 3: which applications are the window's process's, and whether none at all is on the bus.
+    #[test]
+    fn a_process_has_no_application_on_the_bus_only_when_the_bus_named_every_applications_process() {
+        let apps: Vec<crate::tree::ObjRef> = (1..=3)
+            .map(|n| crate::tree::ObjRef {
+                bus: format!(":1.{n}"),
+                path: super::ROOT_PATH.into(),
+            })
+            .collect();
+        let pid = |p: u32| -> CallResult { Ok(vec![Value::U32(p)]) };
+        let buses = |found: Vec<&crate::tree::ObjRef>| found.iter().map(|a| a.bus.clone()).collect::<Vec<_>>();
+
+        // the process's applications, in the registry's order: never a leave
+        let found = of_process(20, &apps, &[pid(10), pid(20), pid(20)]).unwrap();
+        assert_eq!(buses(found), [":1.2", ":1.3"]);
+        // an application whose process the bus could not name is not the window's, and others still match
+        let found = of_process(20, &apps, &[Err("gone".into()), pid(20), pid(30)]).unwrap();
+        assert_eq!(buses(found), [":1.2"]);
+
+        // none of them: every process named, so the window's process has no application on the bus
+        assert!(
+            of_process(20, &apps, &[pid(10), pid(30), pid(40)])
+                .unwrap_err()
+                .no_provider()
+        );
+        assert!(
+            of_process(20, &[], &[]).unwrap_err().no_provider(),
+            "nothing on the bus at all"
+        );
+        // none of them, and the bus could not name one's process: that one might have been the window's
+        for unnamed in [
+            Err::<Vec<Value>, String>("org.freedesktop.DBus.Error.NameHasNoOwner".into()),
+            Ok(vec![]),
+            Ok(vec![Value::Str("20".into())]),
+        ] {
+            let leave = of_process(20, &apps, &[pid(10), unnamed.clone(), pid(40)]).unwrap_err();
+            assert!(!leave.no_provider(), "{unnamed:?}");
+        }
+        // the vendor's other leaves never say so
+        assert!(!super::Fallback::after_vendor_error().no_provider());
+        assert!(!associated(Told::Title).fallback().unwrap().no_provider());
+    }
 
     #[test]
     fn the_active_state_is_read_from_the_state_words_themselves() {

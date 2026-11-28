@@ -65,9 +65,10 @@ test('Linux launch_app: an id sky_linux does not list, or without a desktop entr
   assert.deepEqual(asked, [], 'nothing found, nothing asked');
 });
 
-// #228 (review of T4): the supervisor's route is the only one that sets ACCESSIBILITY_ENABLED=1, so a launch_app in any
-// shape but the pinned one is refused here, before an approval is asked and before the service is reached: it would
-// otherwise reach cua-engine's own launch_app, which the confined worker's environment starts.
+// #228 (review of T4): a launch_app in any shape but the pinned one is refused here, before an approval is asked and
+// before the service is reached: it would otherwise reach cua-engine's own launch_app, which starts the application
+// from the confined worker, inside its sandbox. Both routes set ACCESSIBILITY_ENABLED=1; the supervisor's is kept
+// because it launches outside the sandbox.
 test('Linux launch_app in any other shape is refused before anything is asked or sent; macOS goes to the vendor', async t => {
   const {service, received, launched, asked} = harness(t);
   for (const request of [launchApp({app: 'org.gnome.gedit.desktop', extra: 1}), launchApp({app: 'org.gnome.gedit.desktop'}, {more: 1}),

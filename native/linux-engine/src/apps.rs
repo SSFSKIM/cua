@@ -253,11 +253,19 @@ pub fn find_launchable<'e>(entries: &'e [Entry], app: &str) -> Result<&'e Entry,
         .ok_or_else(|| format!("launchable application {app:?} was not found"))
 }
 
+/// The variable that starts a Chromium application's accessibility bridge at its start, whatever the session's
+/// `org.a11y.Status` switch says (the pre-flight's §A); on the hosts searched only Chromium's family reads it (§E2).
+pub const LAUNCH_ACCESSIBILITY: &str = "ACCESSIBILITY_ENABLED";
+
 /// Starts the entry's program with its arguments, its standard streams on `/dev/null`, in the engine's directory and
 /// environment; the answer does not wait for it. The caller reaps the child once it has exited (`Launched`).
 /// The engine blocks its stop signals in every thread (serve.rs), and a child keeps its parent's signal mask (the
 /// standard library's `Command` does not reset it; `a_launched_program_starts_with_the_stop_signals_unblocked`), so the
 /// program unblocks them before it runs: without that, it would ignore SIGTERM.
+///
+/// The environment gains [`LAUNCH_ACCESSIBILITY`], set to `1` whatever the engine's own value, as cua's supervisor
+/// sets it on the launches it makes (#228, the pre-flight's §E2 and taste call 2: every application `launch_app`
+/// starts, whatever the route).
 pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
@@ -270,6 +278,7 @@ pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
     }
     command
         .args(&entry.argv[1..])
+        .env(LAUNCH_ACCESSIBILITY, "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -400,6 +409,45 @@ mod launched_tests {
             "a plain Command keeps the mask: {plain}"
         );
         assert_eq!(blocked(&launched) & stops, 0, "{launched}");
+    }
+
+    /// #228 (the pre-flight's §E2, taste call 2): every application `launch_app` starts has `ACCESSIBILITY_ENABLED=1`,
+    /// so a Chromium application's bridge starts whatever the session's switch says, and the rest of the engine's
+    /// environment is passed on as it is.
+    #[test]
+    fn a_launched_program_has_accessibility_enabled_and_the_rest_of_the_engines_environment() {
+        let dir = std::env::temp_dir().join(format!("cua-engine-launch-env-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("environ");
+        let target = file.display().to_string();
+        let entry = Entry {
+            id: "probe.desktop".into(),
+            name: "probe".into(),
+            argv: ["/bin/cp", "/proc/self/environ", &target]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            startup_wm_class: None,
+            path: PathBuf::new(),
+        };
+        launch(&entry).unwrap().wait().unwrap();
+        let environ = std::fs::read(&file).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        let vars: Vec<String> = environ
+            .split(|&b| b == 0)
+            .filter(|v| !v.is_empty())
+            .map(|v| String::from_utf8_lossy(v).into_owned())
+            .collect();
+        let named = |name: &str| -> Vec<&str> {
+            let prefix = format!("{name}=");
+            vars.iter()
+                .map(String::as_str)
+                .filter(|v| v.starts_with(&prefix))
+                .collect()
+        };
+        assert_eq!(named("ACCESSIBILITY_ENABLED"), ["ACCESSIBILITY_ENABLED=1"]);
+        let path = format!("PATH={}", std::env::var("PATH").unwrap());
+        assert_eq!(named("PATH"), [path.as_str()], "the engine's own environment");
     }
 
     /// The stop signals' numbers on Linux.

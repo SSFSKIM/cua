@@ -60,11 +60,13 @@ final class NullClassifyingSlotTests: XCTestCase {
     let reads = ReadbackReads<Int>(focused: { nil }, stillFocused: { _, _ in .unknown }, role: { _ in kAXTextFieldRole },
                                    subrole: { _ in .failed }, value: { _ in nil }, valueUnits: { _ in nil }, range: { _ in nil },
                                    batch: { _, _ in read })
-    guard case .closed(let reason) = readbackLength(1, role: kAXTextFieldRole, reads: reads, presumeSecure: false) else {
+    // A password field whose subrole failed at the snapshot too: secure, presumed so (R1's baseline).
+    let identity = ReadbackIdentity(role: kAXTextFieldRole, subrole: .failed, secure: true)
+    guard case .closed(let reason) = readbackLength(1, identity: identity, reads: reads, presumeSecure: false) else {
       return XCTFail("a null subrole read as a classified field")
     }
     XCTAssertEqual(reason, .fieldUnreadable)
-    guard case .read = readbackLength(1, role: kAXTextFieldRole, reads: reads) else { return XCTFail("the poll's batch stops") }
+    guard case .read = readbackLength(1, identity: identity, reads: reads) else { return XCTFail("the poll's batch stops") }
   }
 
   /// The walk: a text field and a text area whose subrole slot is null keep nothing of their value and say `secure`; a

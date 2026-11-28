@@ -243,8 +243,9 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
       // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
       const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
-      // #414: cua's engine typed into a password field that stopped being one, which may now show the secret.
-      const mayShow = method === 'type_text' && error?.name === 'SkyComputerUseError' && secretMayShow(error.meta);
+      // Which warning a failure that may have entered part of the secret carries (secretMayShow): a password field that
+      // may now show it (#414), or text not confirmed where it went, which every other such failure gets too.
+      const mayShow = (method === 'type_text' && error?.name === 'SkyComputerUseError' ? secretMayShow(error.meta) : null) ?? 'unplaced';
       // The user intervened: which of its two sentences, so the model knows whether to wait or to re-query.
       const intervened = kind === 'userIntervened' ? interventionKind(error.message) : null;
       if (intervened) throw userIntervened(method, reference.label, intervened, unentered, mayShow);

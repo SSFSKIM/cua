@@ -618,3 +618,5 @@
 - **A frontmost-only proof run cannot pass** (#506, review of 66404dbfb, 2026-11-27; P3). summary.mjs:599 applies the full matrix's "not interfering: a background row judged on cua" coverage to any proof, so e.g. `compare --proof electron/frontmost/click.point` exits NO VERDICT. #587's proof holds background cells. Fix: scope background coverage to proofs that select a background cell.
 
 - **A save-sheet-only proof run claims the sitting's Acceptances 3, 4 and 7** (#506, review of daec17c36, 2026-11-27; P3). plan.mjs:267 sizes the claim by the matrix proof cells, which exclude the external save-sheet cell. No planned run is save-sheet-only. Fix: scope the sitting's claim to the selected filter.
+
+- **lastJudgedOf takes a newer C directory whose cua record has no build as "0.3.0 build unrecorded"** (#506, review of 73f5db24e, 2026-11-27; P3, informational only). split.mjs:84 should require a nonempty `lanes[0].build` before choosing a comparator. Every committed and planned C record carries its build, and the verdict never reads this line. Fix: skip such a directory, as it does one with no record.

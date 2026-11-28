@@ -33,7 +33,7 @@ export const USER = 'cua';
 export const UID = '4242';
 // cua 0.30.0's `cua install --json` on a home that needs nothing: no `vendor` key (#171 M6b, the pre-flight's §3.3).
 // The sourced unit tests' canned answer; the whole-script runs get the real CLI's.
-export const INSTALL_JSON = {ok: true, release: 'cua-linux-x64-e0.4.5-n24.22.0-s0.163.0-mb71dc1f8185d', changed: false,
+export const INSTALL_JSON = {ok: true, release: 'cua-linux-x64-e0.4.6-n24.22.0-s0.163.0-mb71dc1f8185d', changed: false,
   sessions: {browser: true, computer: true}, retired: []};
 
 // No user or system git configuration reaches any git here (a signing or hooks setting of the host's would).

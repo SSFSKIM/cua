@@ -1,0 +1,655 @@
+{
+  "ruling": 1198,
+  "approvedRuntime": "/Users/runner/Library/Application Support/cua",
+  "approvedEngine": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+  "sitting": "hosted-46095539139-2-c",
+  "started": "2026-11-28T03:29:05.786Z",
+  "clock": {
+    "jobStartedMs": 1795836374000,
+    "deadlineMs": 1795840145786
+  },
+  "tap": {
+    "app": "/Users/runner/Library/Caches/cua-harness/key-route/KeyRouteTap.app",
+    "bundleId": "io.github.ssfskim.cua.key-route-tap",
+    "grant": {
+      "decision": {
+        "entry": "Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner's Macs (O0; ruling 1111)), docs/doperpowers/specs/2026-10-18-own-native-engine-design.md",
+        "commit": "db775127652ebae5e0c7d90b5f5e2785f8e5711e"
+      },
+      "client": "io.github.ssfskim.cua.key-route-tap",
+      "service": "kTCCServiceListenEvent",
+      "granted": true
+    }
+  },
+  "inventory": {
+    "ready": true
+  },
+  "tcc": {
+    "engines": {
+      "unchanged": true,
+      "rows": 8,
+      "bookkeepingColumns": [
+        "last_modified",
+        "pid",
+        "pid_version",
+        "boot_uuid",
+        "last_reminded"
+      ]
+    }
+  },
+  "engines": {
+    "vendor": {
+      "exit": 1,
+      "complete": true,
+      "verdict": "no-verdict",
+      "problems": [],
+      "putBack": {
+        "ok": true,
+        "stopped": true,
+        "steps": {
+          "scenes-down": {
+            "ok": true,
+            "down": true
+          },
+          "engine-stop": {
+            "ok": true,
+            "wasRunning": false
+          },
+          "apps-check": {
+            "ok": true,
+            "running": {
+              "textedit": 0,
+              "chromeForTesting": 0,
+              "electronFixture": 0
+            }
+          },
+          "finder-check": {
+            "ok": true,
+            "runWindowGone": true,
+            "windowsAsAtBegin": true,
+            "keysAsSaved": true
+          },
+          "front-app": {
+            "ok": true,
+            "bundleId": "com.apple.UserNotificationCenter",
+            "reactivated": true,
+            "inFront": true
+          }
+        }
+      },
+      "capture": {
+        "state": "seen",
+        "window": [
+          1795836588910,
+          1795836589467
+        ],
+        "failures": [],
+        "events": [
+          {
+            "label": "panelService",
+            "tapPid": 22917,
+            "target": 22917,
+            "source": 23616,
+            "at": 1795836588967
+          }
+        ],
+        "unmatched": []
+      },
+      "keyRoute": {
+        "engine": "vendor",
+        "opened": {
+          "ok": true
+        },
+        "ax": {
+          "actualPid": 22917,
+          "actualPidAvailable": true,
+          "chain": [
+            {
+              "actualPid": 22917,
+              "depth": 0,
+              "pid": 22901,
+              "role": "AXList"
+            },
+            {
+              "actualPid": 22917,
+              "depth": 1,
+              "pid": 22901,
+              "role": "AXScrollArea"
+            },
+            {
+              "actualPid": 22917,
+              "depth": 2,
+              "pid": 22901,
+              "role": "AXScrollArea"
+            },
+            {
+              "actualPid": 22917,
+              "depth": 3,
+              "pid": 22901,
+              "role": "AXBrowser"
+            },
+            {
+              "actualPid": 22917,
+              "depth": 4,
+              "pid": 22901,
+              "role": "AXSplitGroup"
+            },
+            {
+              "actualPid": 22917,
+              "depth": 5,
+              "pid": 22901,
+              "role": "AXSplitGroup"
+            },
+            {
+              "actualPid": 22901,
+              "depth": 6,
+              "pid": 22901,
+              "role": "AXWindow"
+            },
+            {
+              "actualPid": 22901,
+              "depth": 7,
+              "pid": 22901,
+              "role": "AXApplication"
+            }
+          ],
+          "cuaKeyboardTarget": 22917,
+          "cuaPublicPidTarget": 22901,
+          "focused": {
+            "found": true,
+            "status": 0
+          },
+          "panel": {
+            "frame": {
+              "height": 448,
+              "width": 880,
+              "x": 520,
+              "y": 162
+            },
+            "up": true
+          },
+          "pid": 22901,
+          "processes": {
+            "22901": {
+              "activationPolicy": "regular",
+              "bundleId": "com.apple.TextEdit",
+              "finishedLaunching": true,
+              "running": true
+            },
+            "22917": {
+              "activationPolicy": "prohibited",
+              "bundleId": "com.apple.appkit.xpc.openAndSavePanelService",
+              "finishedLaunching": true,
+              "running": true
+            }
+          },
+          "routes": [
+            {
+              "how": "kCGWindowOwnerPID of each on-screen window whose bounds are the panel's AX frame (within 2 pt)",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "windowListAtPanelFrame"
+            },
+            {
+              "how": "kCGWindowOwnerPID of the frontmost layer-0 window under the panel's centre",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "windowListTopAtPanelCenter"
+            },
+            {
+              "how": "kCGWindowOwnerPID of the frontmost layer-0 on-screen window",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "frontmostWindowOwner"
+            },
+            {
+              "how": "NSRunningApplication.runningApplications(withBundleIdentifier: com.apple.appkit.xpc.openAndSavePanelService)",
+              "matchesActual": true,
+              "matchesSelected": true,
+              "pids": [
+                22917
+              ],
+              "read": true,
+              "route": "runningApplicationsPanelService"
+            },
+            {
+              "how": "AXUIElementGetPid of the focused element's AXWindow",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [],
+              "read": true,
+              "route": "axWindowPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the app's AXFocusedWindow",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "appFocusedWindowPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the system-wide AXFocusedUIElement",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "systemWideFocusedElementPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the system-wide AXFocusedApplication",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "systemWideFocusedApplicationPid"
+            },
+            {
+              "how": "NSWorkspace.shared.frontmostApplication",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                22901
+              ],
+              "read": true,
+              "route": "frontmostApplication"
+            }
+          ],
+          "selectedAncestor": {
+            "depth": 0,
+            "pid": 22917
+          },
+          "staticReadingTarget": 22917,
+          "trusted": true
+        },
+        "tap": {
+          "start": {
+            "launched": true,
+            "ready": true,
+            "pid": 24282,
+            "listenAccess": true,
+            "taps": [
+              {
+                "created": true,
+                "label": "textedit",
+                "pid": 22901
+              },
+              {
+                "created": true,
+                "label": "panelService",
+                "pid": 22917
+              }
+            ]
+          },
+          "stop": {
+            "exited": true,
+            "killed": false,
+            "why": "stop",
+            "logRead": true,
+            "ready": true,
+            "rawEvents": [
+              {
+                "label": "panelService",
+                "tapPid": 22917,
+                "target": 22917,
+                "source": 23616,
+                "at": 1795836588967
+              }
+            ]
+          }
+        },
+        "press": {
+          "sent": true,
+          "at": [
+            1795836588960,
+            1795836588967
+          ],
+          "threw": null,
+          "closedByEngineView": true,
+          "route": null
+        },
+        "after": {
+          "ax": false,
+          "frame": null,
+          "trusted": true,
+          "unread": [],
+          "up": false,
+          "windowAtFrame": false
+        },
+        "cancel": null,
+        "closed": true,
+        "cleanup": []
+      }
+    },
+    "cua": {
+      "exit": 1,
+      "complete": true,
+      "verdict": "no-verdict",
+      "problems": [],
+      "putBack": {
+        "ok": true,
+        "stopped": true,
+        "steps": {
+          "scenes-down": {
+            "ok": true,
+            "down": true
+          },
+          "engine-stop": {
+            "ok": true,
+            "wasRunning": true,
+            "pid": 26205
+          },
+          "apps-check": {
+            "ok": true,
+            "running": {
+              "textedit": 0,
+              "chromeForTesting": 0,
+              "electronFixture": 0
+            }
+          },
+          "finder-check": {
+            "ok": true,
+            "runWindowGone": true,
+            "windowsAsAtBegin": true,
+            "keysAsSaved": true
+          },
+          "front-app": {
+            "ok": true,
+            "bundleId": "com.apple.UserNotificationCenter",
+            "reactivated": true,
+            "inFront": true
+          }
+        }
+      },
+      "capture": {
+        "state": "seen",
+        "window": [
+          1795836617785,
+          1795836618343
+        ],
+        "failures": [],
+        "events": [
+          {
+            "label": "panelService",
+            "tapPid": 25837,
+            "target": 25837,
+            "source": 26205,
+            "at": 1795836617843
+          }
+        ],
+        "unmatched": []
+      },
+      "keyRoute": {
+        "engine": "cua",
+        "opened": {
+          "ok": true
+        },
+        "ax": {
+          "actualPid": 25837,
+          "actualPidAvailable": true,
+          "chain": [
+            {
+              "actualPid": 25837,
+              "depth": 0,
+              "pid": 25518,
+              "role": "AXList"
+            },
+            {
+              "actualPid": 25837,
+              "depth": 1,
+              "pid": 25518,
+              "role": "AXScrollArea"
+            },
+            {
+              "actualPid": 25837,
+              "depth": 2,
+              "pid": 25518,
+              "role": "AXScrollArea"
+            },
+            {
+              "actualPid": 25837,
+              "depth": 3,
+              "pid": 25518,
+              "role": "AXBrowser"
+            },
+            {
+              "actualPid": 25837,
+              "depth": 4,
+              "pid": 25518,
+              "role": "AXSplitGroup"
+            },
+            {
+              "actualPid": 25837,
+              "depth": 5,
+              "pid": 25518,
+              "role": "AXSplitGroup"
+            },
+            {
+              "actualPid": 25518,
+              "depth": 6,
+              "pid": 25518,
+              "role": "AXWindow"
+            },
+            {
+              "actualPid": 25518,
+              "depth": 7,
+              "pid": 25518,
+              "role": "AXApplication"
+            }
+          ],
+          "cuaKeyboardTarget": 25837,
+          "cuaPublicPidTarget": 25518,
+          "focused": {
+            "found": true,
+            "status": 0
+          },
+          "panel": {
+            "frame": {
+              "height": 448,
+              "width": 880,
+              "x": 520,
+              "y": 162
+            },
+            "up": true
+          },
+          "pid": 25518,
+          "processes": {
+            "25518": {
+              "activationPolicy": "regular",
+              "bundleId": "com.apple.TextEdit",
+              "finishedLaunching": true,
+              "running": true
+            },
+            "25837": {
+              "activationPolicy": "prohibited",
+              "bundleId": "com.apple.appkit.xpc.openAndSavePanelService",
+              "finishedLaunching": true,
+              "running": true
+            }
+          },
+          "routes": [
+            {
+              "how": "kCGWindowOwnerPID of each on-screen window whose bounds are the panel's AX frame (within 2 pt)",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "windowListAtPanelFrame"
+            },
+            {
+              "how": "kCGWindowOwnerPID of the frontmost layer-0 window under the panel's centre",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "windowListTopAtPanelCenter"
+            },
+            {
+              "how": "kCGWindowOwnerPID of the frontmost layer-0 on-screen window",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "frontmostWindowOwner"
+            },
+            {
+              "how": "NSRunningApplication.runningApplications(withBundleIdentifier: com.apple.appkit.xpc.openAndSavePanelService)",
+              "matchesActual": true,
+              "matchesSelected": true,
+              "pids": [
+                25837
+              ],
+              "read": true,
+              "route": "runningApplicationsPanelService"
+            },
+            {
+              "how": "AXUIElementGetPid of the focused element's AXWindow",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [],
+              "read": true,
+              "route": "axWindowPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the app's AXFocusedWindow",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "appFocusedWindowPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the system-wide AXFocusedUIElement",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "systemWideFocusedElementPid"
+            },
+            {
+              "how": "AXUIElementGetPid of the system-wide AXFocusedApplication",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "systemWideFocusedApplicationPid"
+            },
+            {
+              "how": "NSWorkspace.shared.frontmostApplication",
+              "matchesActual": false,
+              "matchesSelected": false,
+              "pids": [
+                25518
+              ],
+              "read": true,
+              "route": "frontmostApplication"
+            }
+          ],
+          "selectedAncestor": {
+            "depth": 0,
+            "pid": 25837
+          },
+          "staticReadingTarget": 25837,
+          "trusted": true
+        },
+        "tap": {
+          "start": {
+            "launched": true,
+            "ready": true,
+            "pid": 26811,
+            "listenAccess": true,
+            "taps": [
+              {
+                "created": true,
+                "label": "textedit",
+                "pid": 25518
+              },
+              {
+                "created": true,
+                "label": "panelService",
+                "pid": 25837
+              }
+            ]
+          },
+          "stop": {
+            "exited": true,
+            "killed": false,
+            "why": "stop",
+            "logRead": true,
+            "ready": true,
+            "rawEvents": [
+              {
+                "label": "panelService",
+                "tapPid": 25837,
+                "target": 25837,
+                "source": 26205,
+                "at": 1795836617843
+              }
+            ]
+          }
+        },
+        "press": {
+          "sent": true,
+          "at": [
+            1795836617835,
+            1795836617843
+          ],
+          "threw": null,
+          "closedByEngineView": true,
+          "route": null
+        },
+        "after": {
+          "ax": false,
+          "frame": null,
+          "trusted": true,
+          "unread": [],
+          "up": false,
+          "windowAtFrame": false
+        },
+        "cancel": null,
+        "closed": true,
+        "cleanup": []
+      }
+    }
+  },
+  "leftovers": {
+    "tap": [],
+    "textedit": [],
+    "panels": 0
+  },
+  "cleanup": {
+    "ok": true,
+    "failures": []
+  },
+  "finished": "2026-11-28T03:30:25.046Z"
+}

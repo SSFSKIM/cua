@@ -1,0 +1,888 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "key-route",
+  "device": "hosted-macos",
+  "started": "2026-11-28T03:29:55.735Z",
+  "finished": "2026-11-28T03:30:24.935Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3",
+      "version": "0.3.1"
+    }
+  ],
+  "complete": true,
+  "verdict": "no-verdict",
+  "judgesInterference": true,
+  "problems": [],
+  "rows": [],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 26205
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.UserNotificationCenter",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 1,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hosted-46095539139-2-c",
+    "planId": "key-route",
+    "plan": {
+      "frontmost": [],
+      "background": [],
+      "launch": [],
+      "speed": false,
+      "finding": false,
+      "concurrent": [],
+      "sheet": false,
+      "intervention": [],
+      "unicode": null
+    },
+    "elicitations": [
+      {
+        "t": "2026-11-28T03:30:09.049Z",
+        "app": "com.apple.TextEdit",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "hosted": true,
+    "desktopMode": "shared",
+    "controller": {
+      "commit": "3f3792de469aa14854c75dfb62e66e404454ef53",
+      "dirty": false
+    },
+    "runDir": "/Users/runner/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          4.85,
+          7.41,
+          9.79
+        ],
+        "uptimeS": 866,
+        "cpus": 3
+      },
+      "after": {
+        "loadavg": [
+          5.41,
+          7.27,
+          9.65
+        ],
+        "uptimeS": 893,
+        "cpus": 3
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.UserNotificationCenter",
+      "now": "com.apple.UserNotificationCenter",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "cua",
+      "approved": {
+        "bundlePath": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.3.1",
+        "build": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3",
+        "signature": {
+          "kind": "adhoc",
+          "identityMatches": null
+        }
+      },
+      "checkoutBuild": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3",
+      "attested": [
+        {
+          "engine": "cua",
+          "version": "0.3.1",
+          "build": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "3f3792de469aa14854c75dfb62e66e404454ef53",
+    "hardware": {
+      "model": "VirtualMac2,1",
+      "chip": "Apple M1 (Virtual)",
+      "memoryBytes": 7516192768
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0.1",
+      "build": "26A434"
+    },
+    "display": null,
+    "runner": {
+      "kind": "github-hosted",
+      "image": {
+        "name": "macos27",
+        "version": "20261123.0387.2"
+      },
+      "run": {
+        "id": "46095539139",
+        "attempt": "2"
+      },
+      "vm": {
+        "id": "2a779a20-529b-4653-b6d8-1235d4a0cd82",
+        "platformUuid": "C5A3496E-6140-5911-9168-E007A05F9861",
+        "bootedAt": "2026-11-28T03:15:31.000Z"
+      },
+      "install": {
+        "home": "/Users/runner/Library/Application Support/cua",
+        "release": "26.928.40906-darwin-arm64"
+      },
+      "engine": {
+        "bundle": "/Users/runner/Library/Application Support/cua/engine/cua Engine.app",
+        "build": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3",
+        "engineVersion": "0.3.1"
+      },
+      "writtenAt": "2026-11-28T03:29:04.375Z"
+    },
+    "venue": {
+      "alerts": [
+        {
+          "number": 59,
+          "bounds": {
+            "height": 364,
+            "width": 260,
+            "x": 893,
+            "y": 244
+          }
+        },
+        {
+          "number": 32,
+          "bounds": {
+            "height": 348,
+            "width": 260,
+            "x": 830,
+            "y": 188
+          }
+        }
+      ],
+      "display": {
+        "height": 1080,
+        "width": 1920,
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "chrome": {
+          "x": 22,
+          "y": 60,
+          "width": 800,
+          "height": 760
+        },
+        "electron": {
+          "x": 102,
+          "y": 100,
+          "width": 720,
+          "height": 560
+        },
+        "finder": {
+          "x": 22,
+          "y": 80,
+          "width": 800,
+          "height": 520
+        },
+        "openPanel": {
+          "x": 80,
+          "y": 80,
+          "width": 720,
+          "height": 440
+        }
+      },
+      "textEdit": {
+        "domain": "com.apple.TextEdit",
+        "container": "/Users/runner/Library/Containers/com.apple.TextEdit/Data/Library/Preferences/com.apple.TextEdit",
+        "writes": [
+          {
+            "key": "WidthInChars",
+            "value": "60",
+            "written": true,
+            "readBack": "60",
+            "container": {
+              "readBack": "60",
+              "readBackBefore": null,
+              "written": true
+            },
+            "matched": true
+          },
+          {
+            "key": "NSRequiresOpenUntitledWindowAtLaunch",
+            "value": "NO",
+            "readsAs": "0",
+            "written": true,
+            "readBack": "0",
+            "container": {
+              "readBack": "0"
+            },
+            "matched": true
+          },
+          {
+            "key": "ApplePersistenceIgnoreState",
+            "value": "YES",
+            "readsAs": "1",
+            "written": true,
+            "readBack": "1",
+            "container": {
+              "readBack": "1"
+            },
+            "matched": true
+          },
+          {
+            "key": "NSWindow Frame NSNavPanelAutosaveName",
+            "value": "80 560 720 440 0 0 1920 1055 ",
+            "written": true,
+            "readBack": "80 560 720 440 0 0 1920 1055",
+            "container": {
+              "readBack": "80 560 720 440 0 0 1920 1055"
+            },
+            "matched": true
+          },
+          {
+            "key": "NSNavPanelExpandedSizeForOpenMode",
+            "value": "{720, 440}",
+            "written": true,
+            "readBack": "{720, 440}",
+            "container": {
+              "readBack": "{720, 440}"
+            },
+            "matched": true
+          }
+        ],
+        "ok": true,
+        "savedState": [
+          {
+            "path": "/Users/runner/Library/Saved Application State/com.apple.TextEdit.savedState",
+            "existed": false,
+            "removed": false
+          }
+        ]
+      },
+      "textEditDocument": {
+        "document": "cua-scene.rtf",
+        "view": {
+          "width": 480,
+          "height": 792
+        },
+        "controlWords": "\\vieww9600\\viewh15840",
+        "sha256": {
+          "default": {
+            "mini": "e3703ac3a303696332910efb44330a6604f403849695ca011bfacf2a23ad4a76",
+            "hosted": "dff8383ef0c0a5142279fd1d536a562bff45a4f06be68bbd5d603e270e988ffd"
+          },
+          "wide-page": {
+            "mini": "e228c76974983f74cbd27e31eefca527584ceb5eac25771eecab205446a391a3",
+            "hosted": "f32e9d20e9a2c43fe0f76ebb08e70a0b7e14dbc3b2629e7c913a8af9248e08ef"
+          }
+        }
+      },
+      "differences": [
+        {
+          "scene": "chrome",
+          "mini": {
+            "x": 80,
+            "y": 60,
+            "width": 1000,
+            "height": 760
+          },
+          "hosted": {
+            "x": 22,
+            "y": 60,
+            "width": 800,
+            "height": 760
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 59 (893,244 260x364), alert 32 (830,188 260x348); the mini's 80,60 1000x760 would overlap them; Chrome is 800x760 on a hosted runner (ruling 1169); the frame 22,60 800x760",
+          "grounding": "window points grounded on the notes field's frame as read in the run's window, toolbar and infobars whatever they are (../native-matrix/plan.mjs chromeDragFromField, ruling 1226); a frame not read leaves the drag invalid",
+          "cells": [
+            "chrome/frontmost/drag.select",
+            "chrome/background/drag.select@textedit",
+            "native-mac chrome (its tree: the page in the window, both lanes alike)"
+          ]
+        },
+        {
+          "scene": "electron",
+          "mini": {
+            "x": 140,
+            "y": 100,
+            "width": 720,
+            "height": 560
+          },
+          "hosted": {
+            "x": 102,
+            "y": 100,
+            "width": 720,
+            "height": 560
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 59 (893,244 260x364), alert 32 (830,188 260x348); the mini's 140,100 720x560 would overlap them; the frame 102,100 720x560",
+          "grounding": "window points on the fixture's size, unchanged at 720x560: its drag's layout (ELECTRON_FIELD_LAYOUT) holds as it is; #259's point is grounded on the field's frame as read (../native-matrix/plan.mjs electronPointFromField, ruling 1228); only the origin moved",
+          "cells": [
+            "electron/frontmost/drag.select",
+            "electron/frontmost/click.point",
+            "electron/background/drag.select@finder",
+            "native-mac electron (its tree)"
+          ]
+        },
+        {
+          "scene": "finder",
+          "mini": {
+            "x": 80,
+            "y": 80,
+            "width": 920,
+            "height": 520
+          },
+          "hosted": {
+            "x": 22,
+            "y": 80,
+            "width": 800,
+            "height": 520
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 59 (893,244 260x364), alert 32 (830,188 260x348); the mini's 80,80 920x520 would overlap them; the frame 22,80 800x520",
+          "grounding": "element-addressed rows; the height is the mini's, so the same rows are visible",
+          "cells": [
+            "finder/frontmost/click.row",
+            "finder/frontmost/pressKey.down",
+            "finder/frontmost/typeText.typeSelect",
+            "finder/frontmost/scroll.down",
+            "finder/frontmost/performSecondaryAction.down",
+            "finder/background/click.row@textedit",
+            "finder/background/pressKey.down@textedit",
+            "finder/background/typeText.typeSelect@textedit",
+            "finder/background/scroll.down@textedit",
+            "finder/background/performSecondaryAction.down@textedit",
+            "finder/background/click.row@electron",
+            "finder/background/pressKey.down@electron",
+            "finder/background/typeText.typeSelect@electron",
+            "finder/background/scroll.down@electron",
+            "finder/background/performSecondaryAction.down@electron",
+            "native-mac finder (its tree: the rows its height shows; the diff pairs equal frames only)"
+          ]
+        },
+        {
+          "scene": "textedit",
+          "mini": {
+            "WidthInChars": 75,
+            "NSRequiresOpenUntitledWindowAtLaunch": "YES (AppKit's default)",
+            "ApplePersistenceIgnoreState": "NO (AppKit's default: windows restored)"
+          },
+          "hosted": {
+            "WidthInChars": 60,
+            "NSRequiresOpenUntitledWindowAtLaunch": "NO",
+            "ApplePersistenceIgnoreState": "YES",
+            "saved application state": "to be removed after the warm-ups, outside the container (venue.textEdit.savedState says what was)"
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 59 (893,244 260x364), alert 32 (830,188 260x348); at 1920x1080 TextEdit's default width put its new document at 242,107 603x505 (pilot A, run 45252131587), over alert 31; its origin is AppKit's cascade, read back by each run; the untitled document AppKit opens at launch stood at 241,87 586x488 on the runner's first TextEdit launch and 213,78 387x505 on the next (pilot A, run 45272465181), so none is opened (the design session); vv-1's launch window again stood at 241,87 586x488 with that key in force and its new document took 603x505, the default width, though the domain read WidthInChars 60 back (pilot A's re-run, run 45277221729): a window the warm-ups' saved state restored, and a domain write the sandboxed TextEdit does not read, so restoration is turned off, removing the saved state outside the container is attempted (venue.textEdit.savedState records the outcome) and every key is read back from TextEdit's container",
+          "grounding": "fractions of the document window (its drag) and its own rows: valid at any width the text view fills, the prepare's clicks proving each end",
+          "cells": [
+            "textedit/frontmost/drag.select",
+            "textedit/background/drag.select@finder",
+            "textedit/background/drag.select@chrome",
+            "native-mac textedit (its tree)"
+          ]
+        },
+        {
+          "scene": "textedit document",
+          "mini": {
+            "view size": "none: TextEdit takes the paper's width",
+            "sha256 default": "e3703ac3a303696332910efb44330a6604f403849695ca011bfacf2a23ad4a76",
+            "sha256 wide-page": "e228c76974983f74cbd27e31eefca527584ceb5eac25771eecab205446a391a3"
+          },
+          "hosted": {
+            "view size": "480x792 (\\vieww9600\\viewh15840)",
+            "sha256 default": "dff8383ef0c0a5142279fd1d536a562bff45a4f06be68bbd5d603e270e988ffd",
+            "sha256 wide-page": "f32e9d20e9a2c43fe0f76ebb08e70a0b7e14dbc3b2629e7c913a8af9248e08ef"
+          },
+          "reason": "the scene's cua-scene.rtf, opened as a file with no view size, stood at 213,78 627x877 on both sides (pilot B, run 45274556933): the paper's width, which WidthInChars does not change, its right edge 840 over alert 31; a view 480 wide ends left of the strip's 822 from the cascade origins read so far, one step more; its origin is AppKit's cascade, read back by each run",
+          "grounding": "the window's size only: the file is the mini's with the view size inserted, so its text and attribute runs are the mini's (textutil's text and HTML of both files are equal, test/repl-parity/scenes-mac.test.mjs); the cells' fractions and rows hold as for TextEdit's preferences; the wide page stays wider than the window (its 200% zoom)",
+          "cells": [
+            "textedit/frontmost/drag.select",
+            "textedit/background/drag.select@finder",
+            "textedit/background/drag.select@chrome",
+            "native-mac textedit (its tree)",
+            "hscroll/textedit-wide-page/right (the wide-page layout: its page wider than the window)"
+          ]
+        },
+        {
+          "scene": "openPanel",
+          "mini": "AppKit's: centred on the screen",
+          "hosted": {
+            "x": 80,
+            "y": 80,
+            "width": 720,
+            "height": 440
+          },
+          "reason": "the capture alerts read fresh after the mode switch: alert 59 (893,244 260x364), alert 32 (830,188 260x348); the mini leaves the panel centred, where the alerts are; the frame 80,80 720x440",
+          "grounding": "element-addressed (its Cancel, its search field, the Save sheet's name field, A's New Document): the frame decides only whether the guard refuses them; on a hosted runner the matrix moves each opening into the strip by Accessibility (ruling 1195), and a read-back outside it is NO VERDICT venue",
+          "cells": [
+            "openPanel/frontmost/getAXState.panel",
+            "openPanel/frontmost/typeText.search",
+            "openPanel/frontmost/pressKey.escape",
+            "openPanel/frontmost/click.cancel",
+            "openPanel/background/getAXState.panel@finder",
+            "openPanel/background/click.cancel@finder",
+            "savePanel/frontmost/pressKey.escape",
+            "savePanel/frontmost/typeText.name",
+            "savePanel/frontmost/setValue.name",
+            "native-baseline setup.newDocument (the panel at TextEdit's launch, where one shows: the mini's)"
+          ]
+        }
+      ],
+      "inputSources": {
+        "via": "TISEnableInputSource (./input-sources.swift)",
+        "restored": "nothing: the VM is thrown away (ruling 1189)",
+        "sources": [
+          {
+            "id": "com.apple.keylayout.ABC",
+            "selects": true,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardLayout",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": true
+            },
+            "preference": true,
+            "held": true
+          },
+          {
+            "id": "com.apple.inputmethod.Korean",
+            "selects": false,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardInputMethodModeEnabled",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": false
+            },
+            "preference": true,
+            "held": true
+          },
+          {
+            "id": "com.apple.inputmethod.Korean.2SetKorean",
+            "selects": true,
+            "enable": {
+              "status": 0
+            },
+            "tis": {
+              "installed": true,
+              "type": "TISTypeKeyboardInputMode",
+              "enabled": true,
+              "listed": true,
+              "selectCapable": true
+            },
+            "preference": true,
+            "held": true
+          }
+        ],
+        "preference": [
+          {
+            "InputSourceKind": "Keyboard Layout",
+            "KeyboardLayout ID": 0,
+            "KeyboardLayout Name": "U.S."
+          },
+          {
+            "Bundle ID": "com.apple.CharacterPaletteIM",
+            "InputSourceKind": "Non Keyboard Input Method"
+          },
+          {
+            "InputSourceKind": "Keyboard Layout",
+            "KeyboardLayout ID": 252,
+            "KeyboardLayout Name": "ABC"
+          },
+          {
+            "Bundle ID": "com.apple.inputmethod.Korean",
+            "InputSourceKind": "Keyboard Input Method"
+          },
+          {
+            "Bundle ID": "com.apple.inputmethod.Korean",
+            "Input Mode": "com.apple.inputmethod.Korean.2SetKorean",
+            "InputSourceKind": "Input Mode"
+          }
+        ],
+        "missing": [],
+        "reads": 1
+      },
+      "keyWindowTrust": {
+        "trusted": true,
+        "via": "loopback ssh"
+      }
+    },
+    "fixtures": {},
+    "placement": {
+      "alerts": [
+        {
+          "height": 364,
+          "width": 260,
+          "x": 893,
+          "y": 244
+        },
+        {
+          "height": 348,
+          "width": 260,
+          "x": 830,
+          "y": 188
+        }
+      ],
+      "scenes": {
+        "textedit": {
+          "from": {
+            "height": 877,
+            "width": 507,
+            "x": 213,
+            "y": 78
+          },
+          "moved": false
+        }
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": false
+    },
+    "hostAttestation": {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.3"
+      },
+      "_meta": {
+        "cua/errorName": null,
+        "cua/serviceMs": 3.684,
+        "codex/nodeReplExecutionDurationMs": 93,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.3"
+        },
+        "cua/nativeEngine": {
+          "engine": "cua",
+          "version": "0.3.1",
+          "build": "4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+        },
+        "cua/taskId": "425806cc-33c9-4f8f-9212-1b34d27779e2",
+        "cua/nativeExecution": {
+          "path": "/Users/runner/Library/Application Support/cua/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "keyRoute": {
+      "engine": "cua",
+      "opened": {
+        "ok": true
+      },
+      "ax": {
+        "actualPid": 25837,
+        "actualPidAvailable": true,
+        "chain": [
+          {
+            "actualPid": 25837,
+            "depth": 0,
+            "pid": 25518,
+            "role": "AXList"
+          },
+          {
+            "actualPid": 25837,
+            "depth": 1,
+            "pid": 25518,
+            "role": "AXScrollArea"
+          },
+          {
+            "actualPid": 25837,
+            "depth": 2,
+            "pid": 25518,
+            "role": "AXScrollArea"
+          },
+          {
+            "actualPid": 25837,
+            "depth": 3,
+            "pid": 25518,
+            "role": "AXBrowser"
+          },
+          {
+            "actualPid": 25837,
+            "depth": 4,
+            "pid": 25518,
+            "role": "AXSplitGroup"
+          },
+          {
+            "actualPid": 25837,
+            "depth": 5,
+            "pid": 25518,
+            "role": "AXSplitGroup"
+          },
+          {
+            "actualPid": 25518,
+            "depth": 6,
+            "pid": 25518,
+            "role": "AXWindow"
+          },
+          {
+            "actualPid": 25518,
+            "depth": 7,
+            "pid": 25518,
+            "role": "AXApplication"
+          }
+        ],
+        "cuaKeyboardTarget": 25837,
+        "cuaPublicPidTarget": 25518,
+        "focused": {
+          "found": true,
+          "status": 0
+        },
+        "panel": {
+          "frame": {
+            "height": 448,
+            "width": 880,
+            "x": 520,
+            "y": 162
+          },
+          "up": true
+        },
+        "pid": 25518,
+        "processes": {
+          "25518": {
+            "activationPolicy": "regular",
+            "bundleId": "com.apple.TextEdit",
+            "finishedLaunching": true,
+            "running": true
+          },
+          "25837": {
+            "activationPolicy": "prohibited",
+            "bundleId": "com.apple.appkit.xpc.openAndSavePanelService",
+            "finishedLaunching": true,
+            "running": true
+          }
+        },
+        "routes": [
+          {
+            "how": "kCGWindowOwnerPID of each on-screen window whose bounds are the panel's AX frame (within 2 pt)",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "windowListAtPanelFrame"
+          },
+          {
+            "how": "kCGWindowOwnerPID of the frontmost layer-0 window under the panel's centre",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "windowListTopAtPanelCenter"
+          },
+          {
+            "how": "kCGWindowOwnerPID of the frontmost layer-0 on-screen window",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "frontmostWindowOwner"
+          },
+          {
+            "how": "NSRunningApplication.runningApplications(withBundleIdentifier: com.apple.appkit.xpc.openAndSavePanelService)",
+            "matchesActual": true,
+            "matchesSelected": true,
+            "pids": [
+              25837
+            ],
+            "read": true,
+            "route": "runningApplicationsPanelService"
+          },
+          {
+            "how": "AXUIElementGetPid of the focused element's AXWindow",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [],
+            "read": true,
+            "route": "axWindowPid"
+          },
+          {
+            "how": "AXUIElementGetPid of the app's AXFocusedWindow",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "appFocusedWindowPid"
+          },
+          {
+            "how": "AXUIElementGetPid of the system-wide AXFocusedUIElement",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "systemWideFocusedElementPid"
+          },
+          {
+            "how": "AXUIElementGetPid of the system-wide AXFocusedApplication",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "systemWideFocusedApplicationPid"
+          },
+          {
+            "how": "NSWorkspace.shared.frontmostApplication",
+            "matchesActual": false,
+            "matchesSelected": false,
+            "pids": [
+              25518
+            ],
+            "read": true,
+            "route": "frontmostApplication"
+          }
+        ],
+        "selectedAncestor": {
+          "depth": 0,
+          "pid": 25837
+        },
+        "staticReadingTarget": 25837,
+        "trusted": true
+      },
+      "tap": {
+        "start": {
+          "launched": true,
+          "ready": true,
+          "pid": 26811,
+          "listenAccess": true,
+          "taps": [
+            {
+              "created": true,
+              "label": "textedit",
+              "pid": 25518
+            },
+            {
+              "created": true,
+              "label": "panelService",
+              "pid": 25837
+            }
+          ]
+        },
+        "stop": {
+          "exited": true,
+          "killed": false,
+          "why": "stop",
+          "logRead": true,
+          "ready": true,
+          "rawEvents": [
+            {
+              "label": "panelService",
+              "tapPid": 25837,
+              "target": 25837,
+              "source": 26205,
+              "at": 1795836617843
+            }
+          ]
+        }
+      },
+      "press": {
+        "sent": true,
+        "at": [
+          1795836617835,
+          1795836617843
+        ],
+        "threw": null,
+        "closedByEngineView": true,
+        "route": null
+      },
+      "after": {
+        "ax": false,
+        "frame": null,
+        "trusted": true,
+        "unread": [],
+        "up": false,
+        "windowAtFrame": false
+      },
+      "cancel": null,
+      "closed": true,
+      "cleanup": []
+    },
+    "keyWindowRead": {
+      "key-route:open": 1
+    },
+    "activations": {
+      "accounted": [],
+      "unaccounted": []
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [
+        "state",
+        "run"
+      ],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine",
+          "kind": "cua",
+          "origin": "approved engine",
+          "ageSeconds": 1,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-11-28T03:30:24.935Z"
+  }
+}

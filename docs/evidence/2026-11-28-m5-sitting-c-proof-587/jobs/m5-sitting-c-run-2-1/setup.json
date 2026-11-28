@@ -1,0 +1,48 @@
+{
+  "ok": false,
+  "steps": [
+    {
+      "step": "loopback",
+      "ok": true,
+      "detail": "hosted-macos reaches this runner with node v24.22.3"
+    },
+    {
+      "step": "harness checkout",
+      "ok": true,
+      "detail": "/Users/runner/Developer/GitHub/cua-parity holds 3f3792de469aa14854c75dfb62e66e404454ef53"
+    },
+    {
+      "step": "prepare",
+      "ok": true,
+      "detail": "prepared at 3f3792de469aa14854c75dfb62e66e404454ef53"
+    },
+    {
+      "step": "install",
+      "ok": true,
+      "detail": "26.928.40906-darwin-arm64 at /Users/runner/Library/Application Support/cua"
+    },
+    {
+      "step": "engine",
+      "ok": true,
+      "detail": "/Users/runner/Library/Application Support/cua/engine/pending/cua Engine.app (the build job's, unpacked), signature verified"
+    },
+    {
+      "step": "vendor helper not running",
+      "ok": true,
+      "detail": "not running"
+    },
+    {
+      "step": "vendor rows",
+      "ok": false,
+      "detail": "Command failed: /usr/bin/sudo -n /usr/bin/sqlite3 /Library/Application Support/com.apple.TCC/TCC.db insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags, indirect_object_identifier, last_modified) values ('kTCCServiceAccessibility', 'com.openai.sky.CUAService', 0, 2, 4, 1, X'fade0c00000000a800000001000000060000000600000006000000060000000200000019636f6d2e6f70656e61692e736b792e435541536572766963650000000000000f0000000e000000010000000a2a864886f763640602060000000000000000000e000000000000000a2a864886f7636406010d0000000000000000000b000000000000000a7375626a6563742e4f550000000000010000000a324443343332474c4c320000', 0, 'UNUSED', 1795832277);\nError in 2nd command line argument: database is locked\n"
+    }
+  ],
+  "approve": null,
+  "warmUps": [],
+  "modeSwitch": null,
+  "placement": null,
+  "venue": null,
+  "engineStop": null,
+  "record": null,
+  "approved": null
+}

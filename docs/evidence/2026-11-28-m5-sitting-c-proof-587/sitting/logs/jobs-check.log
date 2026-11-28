@@ -1,0 +1,130 @@
+{
+  "refused": [],
+  "jobs": [
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-1-1/sitting",
+      "runs": [
+        1
+      ],
+      "runId": "46095539139",
+      "attempt": "1",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "7689eda3-e656-4565-89c4-05b9ea79125d",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "3f3792de469aa14854c75dfb62e66e404454ef53"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.1 build 4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "electron"
+      ],
+      "saveSheet": []
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-2-2/sitting",
+      "runs": [
+        2
+      ],
+      "runId": "46095539139",
+      "attempt": "2",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "a443c934-403d-4255-abf1-dc4f51ad33cf",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "3f3792de469aa14854c75dfb62e66e404454ef53"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.1 build 4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "electron"
+      ],
+      "saveSheet": []
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-3-1/sitting",
+      "runs": [
+        3
+      ],
+      "runId": "46095539139",
+      "attempt": "1",
+      "planIds": [
+        "filtered"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "0be28e93-0ebd-4664-84db-d8b36b09231b",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "3f3792de469aa14854c75dfb62e66e404454ef53"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.1 build 4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "electron"
+      ],
+      "saveSheet": []
+    }
+  ],
+  "base": null,
+  "commits": {
+    "jobs": [
+      "3f3792de469aa14854c75dfb62e66e404454ef53"
+    ],
+    "base": null
+  },
+  "lastJudged": {
+    "dir": "docs/evidence/2026-11-27-m5-sitting-c-split",
+    "cua": [
+      "0.3.0 build 2de28fcc909d75779e8fea9563aae6551d5ec7c5d7809922f1f77158a0bc949e"
+    ],
+    "jobs": [
+      "0.3.1 build 4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+    ],
+    "same": false
+  }
+}

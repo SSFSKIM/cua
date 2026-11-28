@@ -1,0 +1,2 @@
+run 3: the owner's front app (com.apple.UserNotificationCenter) is saved on the device and the engine stopped; if this run dies: node scripts/native-matrix.mjs cleanup --device hosted-macos --run '/Users/runner/Library/Caches/cua-harness/native-matrix' --preparation '/Users/runner/work/_temp/m5-out/sitting/cua/run-3/preparation.json'
+run 3 PASS: /Users/runner/work/_temp/m5-out/sitting/cua/run-3/result.json

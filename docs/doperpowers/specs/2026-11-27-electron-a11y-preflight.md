@@ -573,3 +573,13 @@ its own.
   - **The vendor differential.** The first Linux facade scenario is split. Tree reads stay compared to the vendor, and the screenshot is a declared difference whose record, minus `tree_wanted`, must equal the vendor's. The two sentences are a declared difference. Run against the comparator fixture's `@oai/cua`, 250 of 250 pass.
   - **The version.** It ships only with the 0.4.7 pin and `MIN_ENGINE_VERSION` 0.4.7 (T6), because an older engine refuses `tree_wanted`.
 - **2026-11-28, §G 10's substitution (T2's review).** §G 10 is proved on an Electron window with no page (role `browser-window`, Chromium-drawn controls), not on CEF's dialog, which ruling 1251 leaves unasked. The ask rule is not widened for the test.
+- **2026-11-28, T2 as built (task 180, reviewed clean after two fix waves).**
+  - **The bound.** The wait is bounded at 2 s of wall time from the request's reply. Through the engine, the waits measured 27 to 42 ms on the fixture, 39 to 826 ms on VS Code, and 24 to 32 ms on an Electron window with no page. Only an app that never shows content pays the full bound, once per application per connection.
+  - **What the bound covers:** the pauses and every accessibility-bus call. A reply or a tree completed after the deadline is rejected, and an unwritten call is dropped without breaking the connection.
+  - **What it does not cover:** the X server's own replies, which block without a deadline everywhere in the engine. That is a tracker line, and making X11 deadline-aware is outside #228.
+  - **The end of the wait.**
+    - A `document web` with children: the page.
+    - Content beyond the structural roles (`panel`, `filler`, `redundant object`, `unknown`, `section`), with no failed node and no failed child listing: no page.
+    - Anything else is inconclusive and is read again.
+  - **Each replacement read is confirmed again** against the window's association within the deadline. A changed association ends the wait with the read before it.
+  - **§G 10** is met by substitution, as recorded above.

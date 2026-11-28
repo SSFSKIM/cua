@@ -1630,7 +1630,7 @@ row is `skip`.
 
 - **Electron** (#228). Three things, in order. A fresh `launch_app` puts an Electron app on the accessibility bus, and
   there it shows only its window until its accessibility is turned on. A read of such a window that finds the window
-  alone asks the app to turn its accessibility on; once the app answers, cua waits up to 2 s for the elements, so that
+  alone can ask the app to turn its accessibility on; once the app answers, cua waits up to 2 s for the elements, so that
   read can take longer than later ones, and the elements come with it when they arrive in time. A screenshot never
   asks, cua adds no flag to any command line, and only Electron's windows are asked: Chrome, CEF apps and NW.js are read
   as before. Two answers, at the end of the observation, say there is still no tree:

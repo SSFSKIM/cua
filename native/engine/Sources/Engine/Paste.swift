@@ -528,7 +528,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
               focusEnforcement: PasteFocusEnforcement? = nil, activationNow: () -> Double = monotonicMilliseconds,
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
               deliver: (() -> Void) throws -> DeliveryGuardOutcome? = { $0(); return nil },
-              beforePart: ((Int) throws -> Void)? = nil,
+              beforePart: ((Int) throws -> Void)? = nil, holdsField: ((_ beforeKey: Bool) throws -> Void)? = nil,
               checkInFlight: () throws -> Void, beforeFirstKey: () throws -> Void = {}, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
   let state = pasteboard.snapshot()
@@ -595,6 +595,9 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
   let lastContent = parts.lastIndex { if case .content = $0 { return true } else { return false } }
   do {
     for (index, part) in parts.enumerated() {
+      // #600: R1 at the effect's readings, before every ⌘V and Return, whatever `lastSeen` says: a classification change
+      // any of them saw stops type_text's paste here (a Return withheld).
+      if case .returnKey = part { try holdsField?(true) } else { try holdsField?(false) }
       // #361: the read-back before each line, and its checkpoint before a Return no effect showed the text before land.
       if case .returnKey = part, lastSeen {} else { try beforePart?(index) }
       // #361: no part of type_text's goes out past the request's deadline.
@@ -603,6 +606,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
       case .content(let representations, let units):
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
+        try holdsField?(false)  // #600: the line's baseline reading, before its ⌘V
         beginLine(line)
         probe = nil
         guard let item = provider.item() else { throw clipboardWriteFailed }
@@ -693,6 +697,8 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         entered += units
       }
     }
+    // #600: the last line's readings, before the read-back's final poll: no line is confirmed across a change they saw.
+    try holdsField?(false)
   } catch let error as EngineError {
     // #602: stopped before its first ⌘V or Return went out (a write refused, the guard, the deadline, a first event that
     // could not be created), nothing of the text was posted.
@@ -849,7 +855,8 @@ extension Engine {
       // #359: select_text's range gone, nothing is pasted and the pasteboard is never touched.
       if made.refusesTyping { throw typeUnconfirmed(.selectionChanged) }
     }, beforePart: { try readback?.beforeUnit($0) }, finish: { try readback?.finish() },
-       posted: { readback?.keyPosted(at: reads.now()) })
+       posted: { readback?.keyPosted(at: reads.now()) },
+       saw: { readback?.transportSaw(role: $0, subrole: $1) }, holds: { try readback?.transportHolds(beforeKey: $0) })
     do {
       try pasteOperation(parts, target, context, typing: typing, entered: &entered, meta: &meta)
     } catch let error as EngineError {
@@ -943,7 +950,14 @@ extension Engine {
       // wait then runs first), and before the pasteboard is touched, so a refusal leaves it alone.
       try typing?.snapshot(standing.map { activationClickPending($0, now: system.now()) } ?? false)
       let reading = pasteEffectReading ?? { effectReading(of: $0, withinMs: $1) }
-      let effect = PasteEffect(readWithin: { reading(application, $0) }, now: system.now, sleep: system.sleep)
+      // #600: type_text's effect readings carry their classification to the read-back (R1); standalone paste's do not.
+      let effect: PasteEffect
+      if let typing, pasteEffectReading == nil || pasteEffectClassified != nil {
+        let classifying = pasteEffectClassified ?? { effectReading(of: $0, withinMs: $1, classified: $2) }
+        effect = PasteEffect(readWithin: { classifying(application, $0, typing.saw) }, now: system.now, sleep: system.sleep)
+      } else {
+        effect = PasteEffect(readWithin: { reading(application, $0) }, now: system.now, sleep: system.sleep)
+      }
       let observer = NotificationObserver(pid: target.pid, names: ["AXSelectedTextChanged", "AXValueChanged"], keep: false) { _ in
         effect.notification()
       }
@@ -969,7 +983,7 @@ extension Engine {
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: keyboard, application: application, window: window, system: system) },
                    focusEnforcement: enforcement, activationNow: system.now, deliver: deliver,
-                   beforePart: typing?.beforePart,
+                   beforePart: typing?.beforePart, holdsField: typing?.holds,
                    checkInFlight: target.guarding.checkInFlight,
                    beforeFirstKey: { try refuseLateKeys(deadline: context.deadline) },
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
@@ -1011,7 +1025,10 @@ private let commandV = KeyPress(keyCode: 0x09, modifiers: .command)
 /// Bounded by `withinMs` (the effect wait's time left, #187 review): each of its three requests gets the time left then
 /// as its messaging timeout (`boundedMessagingTimeout`), and nil is answered, with no request sent, once it is spent.
 /// The application element's usual timeout is put back after.
-func effectReading(of application: AXUIElement, withinMs budget: Double = .infinity) -> EffectReading? {
+///
+/// `classified`, type_text's paste route's alone (#600), is handed the role and subrole the batch read, for R1.
+func effectReading(of application: AXUIElement, withinMs budget: Double = .infinity,
+                   classified: ((String?, ReadbackSubrole) -> Void)? = nil) -> EffectReading? {
   let end = monotonicMilliseconds() + budget
   func bound(_ element: AXUIElement) -> Bool {
     guard budget.isFinite else { return true }
@@ -1023,7 +1040,7 @@ func effectReading(of application: AXUIElement, withinMs budget: Double = .infin
   guard bound(application) else { return nil }
   guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return EffectReading() }
   // The batch keeps the timeout `bound` set: `fetchAttributes` would put back the usual one.
-  return focusedEffectReading(focused, bound: bound) { fetchAttributesAsTimed($0, $1) }
+  return focusedEffectReading(focused, bound: bound, batch: { fetchAttributesAsTimed($0, $1) }, classified: classified)
 }
 
 /// The focused element's reading, its request `bound` first (nil once the budget is spent). #405: its role, subrole,
@@ -1031,9 +1048,11 @@ func effectReading(of application: AXUIElement, withinMs budget: Double = .infin
 /// or a role or subrole that cannot be read) is marked `secure`: its numbers judge the paste here and never leave the
 /// engine. A batch that fails is no reading (nil), as a poll the budget stopped is, never one that lost its numbers.
 func focusedEffectReading<Element>(_ focused: Element, bound: (Element) -> Bool,
-                                   batch: (Element, [String]) -> AttributeRead?) -> EffectReading? {
+                                   batch: (Element, [String]) -> AttributeRead?,
+                                   classified: ((String?, ReadbackSubrole) -> Void)? = nil) -> EffectReading? {
   guard bound(focused) else { return nil }
   guard let read = batch(focused, classifyingAttributes + [kAXSelectedTextRangeAttribute, kAXNumberOfCharactersAttribute]) else { return nil }
+  classified?(readbackBatchRole(read), readbackBatchSubrole(read))
   var reading = EffectReading()
   reading.secure = valueReadClosed(read)
   if let range = rangeWire(read.values[kAXSelectedTextRangeAttribute]), let location = range["location"], let length = range["length"] {
@@ -1064,6 +1083,10 @@ struct PasteTyping {
   let finish: () throws -> Void
   /// After each ⌘V or Return that was posted: a failed read after it says how long after (#590).
   var posted: () -> Void = {}
+  /// #600: each effect reading's classification (its role and subrole), and R1's hold before the next ⌘V or Return
+  /// (`TypeReadback.transportSaw`, `transportHolds`), which throws R1's reason for a change a reading saw.
+  var saw: (String?, ReadbackSubrole) -> Void = { _, _ in }
+  var holds: (_ beforeKey: Bool) throws -> Void = { _ in }
 }
 
 /// type_text's text as the read-back's units, one for one with `pasteParts(typing:)`'s parts, split the same way, so a

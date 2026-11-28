@@ -934,6 +934,44 @@ final class TypeReadback<Element> {
   /// When a key event of the text was posted, on the reads' clock: a failed read after it says how long after (#590).
   func keyPosted(at time: Double) { retry.lastKeyAt = time }
 
+  /// #600: R1 at the paste transport's effect reading (Paste.swift `focusedEffectReading`), type_text's paste route's
+  /// alone. The reading classifies the application's focused element. Where the snapshot found the field as that focus
+  /// (`.focus`), the reading is the field's, and its role and subrole are held to the baseline by `readbackClassify`: the
+  /// first transition is kept for `transportHolds`. Where the field was found otherwise (the walk, the marker route), the
+  /// application named no focused element at the snapshot, so a reading that now classifies one cannot be taken for the
+  /// field's: `transportHolds` classifies the field itself instead. A reading whose role could not be read is a read that
+  /// failed, no transition.
+  private var transportChange: TypeReadbackReason?
+  private var transportUnattributed = false
+  private var baselineField: (field: Element, identity: ReadbackIdentity, found: ReadbackLookup)? {
+    switch plan {
+    case .expect(let field, let identity, _, _, _, let found), .expectLength(let field, let identity, _, _, let found): return (field, identity, found)
+    case .refused, .unread: return nil
+    }
+  }
+
+  func transportSaw(role: String?, subrole: ReadbackSubrole) {
+    guard transportChange == nil, role != nil, let baseline = baselineField else { return }
+    guard baseline.found == .focus else {
+      transportUnattributed = true
+      return
+    }
+    if case .changed(let why) = readbackClassify(baseline.identity, role: role, subrole: subrole) { transportChange = why }
+  }
+
+  /// #600: before each ⌘V and Return of type_text's paste, and before its final poll: a transition an effect reading saw
+  /// ends the read-back with R1's reason, `beforeKey` when a Return is withheld; a reading that was not the field's has
+  /// the field's own role and subrole classified first.
+  func transportHolds(beforeKey: Bool) throws {
+    if transportChange == nil, transportUnattributed, let baseline = baselineField {
+      transportUnattributed = false
+      if let role = reads.role(baseline.field), case .changed(let why) = readbackClassify(baseline.identity, role: role, subrole: reads.subrole(baseline.field)) {
+        transportChange = why
+      }
+    }
+    if let why = transportChange { throw unconfirmed(why, beforeKey) }
+  }
+
   /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back. Never inside a
   /// `{{secret:…}}` substitution (the design session's ruling 1ea561bc:593, on the review of af1860ef..a8e55870, P2):
   /// each checkpoint is a confirmation wait, and the reply's time would tell how the secret's text is segmented. The

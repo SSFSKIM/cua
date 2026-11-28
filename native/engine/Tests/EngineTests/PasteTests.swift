@@ -1785,6 +1785,7 @@ extension PasteActivationTests {
                              onKeyDown: @escaping (CGKeyCode) -> Void = { _ in }, keyboard: pid_t? = nil,
                              reread: (() throws -> KeyTarget)? = nil, deadlineMs: Int64 = 60_000,
                              effectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
+                             classifiedReading: ((AXUIElement, Double, (String?, ReadbackSubrole) -> Void) -> EffectReading?)? = nil,
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
@@ -1807,7 +1808,7 @@ extension PasteActivationTests {
     let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
                         intervention: intervention, screenLocked: { false },
                         pasteboard: { pasteboard.access }, pasteActivation: system, pasteEffectReading: effectReading,
-                        keyTargetReads: keyTargetReads)
+                        pasteEffectClassified: classifiedReading, keyTargetReads: keyTargetReads)
     let context = ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: unixMilliseconds() + deadlineMs, lineage: nil)
     let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
     let prepared = try prepare?(engine, app, context)
@@ -1939,6 +1940,108 @@ extension PasteActivationTests {
       }
     }
     XCTAssertEqual(runs, 3 * 7 * 2 + 7)
+  }
+
+  /// #600: R1 at the paste transport's effect reading. A multiline type_text on the paste route, its effect readings
+  /// those of the fake field (its count and caret, and the role and subrole its batch reads), × the reading a transition
+  /// is first seen at (a line's baseline before its ⌘V, a line's effect wait, a Return's settle) × every R1 transition
+  /// × how the snapshot found the field (the application's focus, whose reading is the field's; the walk, whose is not,
+  /// so the field itself is classified) × a text area (Returns are text, settled between lines) or a single-line field
+  /// (a last Return, the checkpoint a seen line skipped). A transition ends the read-back with R1's reason before the
+  /// next ⌘V or Return, whatever the line's effect showed: the exact ⌘V and Return counts are asserted, and a stop before
+  /// anything was posted, and only that one, is `beforeInput` (#602).
+  func testTypeTextsPasteRouteHoldsItsEffectReadingsClassification() throws {
+    // (kind, role, text, the readings, by number, and what was posted before the next part: ⌘Vs, Returns)
+    let kinds: [(String, String, String, [(String, Int, Int, Int)])] = [
+      ("a text area", "AXTextArea", "ab\ncd", [
+        ("line 1's baseline", 1, 0, 0), ("line 1's effect wait", 2, 1, 0), ("the Return's settle", 4, 1, 1),
+        ("line 2's baseline", 6, 1, 1), ("line 2's effect wait", 7, 2, 1),
+      ]),
+      ("a single-line field", "AXTextField", "ab\n", [("line 1's baseline", 1, 0, 0), ("line 1's effect wait", 2, 1, 0)]),
+    ]
+    let transitions: [(String, String?, ReadbackSubrole?, Bool, TypeReadbackReason?)] = [
+      ("unchanged", nil, nil, false, nil),
+      ("a role change, text → text", "AXSearchField", nil, false, .fieldChanged),
+      ("text → non-text", "AXGroup", nil, false, .fieldChanged),
+      ("open → secure by role", "AXSecureTextField", nil, false, .becameSecure),
+      ("open → secure by subrole", nil, .value("AXSecureTextField"), false, .becameSecure),
+      ("a subrole change while open", nil, .value("AXSearchField"), false, .fieldChanged),
+      ("the reading's role unread", nil, nil, true, nil),
+    ]
+    var runs = 0
+    for (kind, role, text, readings) in kinds {
+      let total = (commandVs: text.split(separator: "\n").count, returns: text.filter { $0 == "\n" }.count)
+      for (point, number, commandVsBefore, returnsBefore) in readings {
+        for (transition, newRole, newSubrole, unread, reason) in transitions {
+          for walked in [false, true] {
+            let label = "\(kind) × \(point) × \(transition) × \(walked ? "found by the walk" : "the application's focus")"
+            let seam = GuardSeam(frontmost: user)
+            seam.targetAbove = false
+            let pasteboard = TestPasteboard()
+            pasteboard.userCopies("the owner's")
+            let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+            field.role = role
+            field.returnInserts = role == "AXTextArea"  // a single-line field's Return submits, adding nothing
+            var readingsTaken = 0, applied = false, roleUnread = false
+            let classified: (AXUIElement, Double, (String?, ReadbackSubrole) -> Void) -> EffectReading? = { _, _, saw in
+              readingsTaken += 1
+              if readingsTaken == number {
+                applied = true
+                if let newRole { field.role = newRole }
+                if let newSubrole { field.subrole = newSubrole }
+                roleUnread = unread
+              }
+              let subrole = field.subrole
+              saw(roleUnread ? nil : field.role, subrole)
+              let range = field.reportedRange
+              return EffectReading(range: range.map { [$0.location, $0.length] }, characters: field.value.map { ($0 as NSString).length },
+                                   secure: field.role.map { readbackSecure(role: $0, subrole: subrole) } ?? true)
+            }
+            var error: Error?
+            var commandVs = 0, returns = 0
+            let meta = try pasteToItsEnd(text, typed: true, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                         onKeyDown: { code in
+                                           if code == 0x09 { commandVs += 1 }
+                                           if code == returnKeyCode { returns += 1 }
+                                         }, classifiedReading: classified, field: field,
+                                         claim: walked ? ReadbackIdentity(role: role, subrole: nil, secure: false) : nil, thrown: { error = $0 })
+            runs += 1
+            XCTAssertTrue(applied, "\(label): the reading was taken")
+            XCTAssertEqual(pasteboard.strings(), ["the owner's"], "\(label): the pasteboard restored")
+            guard let reason else {
+              XCTAssertNil(error, label)
+              XCTAssertEqual(meta.typeReadback?.confirmed, true, label)
+              XCTAssertEqual([commandVs, returns], [total.commandVs, total.returns], "\(label): everything posted")
+              continue
+            }
+            XCTAssertEqual((error as? EngineError)?.errorName, "typeUnconfirmed", label)
+            XCTAssertEqual(meta.typeReadback?.reason, reason, label)
+            XCTAssertEqual([commandVs, returns], [commandVsBefore, returnsBefore], "\(label): nothing posted after the reading")
+            XCTAssertEqual(meta.beforeInput, commandVs == 0 && returns == 0, "\(label): beforeInput only when nothing was posted")
+          }
+        }
+      }
+    }
+    XCTAssertEqual(runs, (5 + 2) * 7 * 2)
+  }
+
+  /// #600: standalone paste (the `paste` method, no read-back) never takes type_text's classified reading and holds
+  /// nothing: a field whose reading turns secure with its count moved by the paste is confirmed by #405's count rule, as
+  /// before.
+  func testStandalonePasteKeepsItsEffectRule() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    var readings = 0, classifiedCalls = 0
+    let meta = try pasteToItsEnd("ab", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: TestPasteboard(),
+                                 effectReading: { _, _ in
+                                   readings += 1
+                                   // The baseline open and empty; after ⌘V a password field holding exactly the paste.
+                                   return readings == 1 ? EffectReading(range: [0, 0], characters: 0) : EffectReading(range: [2, 0], characters: 2, secure: true)
+                                 },
+                                 classifiedReading: { _, _, _ in classifiedCalls += 1; return nil })
+    XCTAssertEqual(classifiedCalls, 0, "type_text's reading is never standalone paste's")
+    XCTAssertEqual(meta.paste?.confirmed, true, "#405's count rule confirms it, as before")
+    XCTAssertNil(meta.typeReadback)
   }
 
   /// #590 on the paste route: a read after the ⌘V that keeps failing is timed from that ⌘V, the paste's last key.

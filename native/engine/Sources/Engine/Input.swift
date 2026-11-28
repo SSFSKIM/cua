@@ -178,8 +178,8 @@ struct InputMeta {
   /// The action interval's one rule, for every method that posts events: `post` posts one event (or one group posted
   /// back to back) and answers whether it was posted. `startedAt` is stamped as the first post that succeeds begins and
   /// `endedAt` after the last one that succeeded, so a request that posts nothing (refused, stopped before its first
-  /// event, empty, or whose first event could not be created) keeps both null, which is how the service and the wrapper
-  /// know it posted nothing; the wrapper reads `beforeInput` instead, which the stretch that knows sets (#602).
+  /// event, empty, or whose first event could not be created) keeps both null (`cua/actionInterval`). The secret wrapper
+  /// does not read "nothing entered" from that: only from `beforeInput`, which the stretch that knows sets (#602).
   @discardableResult
   mutating func posting(_ post: () -> Bool) -> Bool {
     let begun = unixMilliseconds()

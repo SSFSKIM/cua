@@ -1021,6 +1021,18 @@ final class TypeReadback<Element> {
   enum TransportRead { case effect(Double), field }
   private var transportChange: TypeReadbackReason?
 
+  /// #600 (ruling 1276): the secure latch, the one rule of the whole paste route. Every role and subrole any of its
+  /// samples or the gate reads, of any element, is handed here, role and subrole each as read (one that failed never
+  /// skips the other): an explicit secure observation (AXSecureTextField by role or by subrole), where the field the
+  /// snapshot holds is not a password field, or no field is held, latches `becameSecure`, and `transportStop` (the gate
+  /// before every ⌘V and Return, and the stops after a wait and a settle) posts nothing more. An inconclusive one (a
+  /// read that failed, no element, an answer that is not secure) latches nothing: with no field held it posts under
+  /// #597, and with one the field's own classification decides.
+  private func transportObserve(role: String?, subrole: ReadbackSubrole?) {
+    guard transportChange == nil, held?.identity.secure != true else { return }
+    if role == "AXSecureTextField" || subrole == .value("AXSecureTextField") { transportChange = .becameSecure }
+  }
+
   func transportHold(_ read: TransportRead, application: AXUIElement) -> EffectReading? {
     reads.trace?.hold(read)
     defer { reads.trace?.inHold -= 1 }
@@ -1029,8 +1041,10 @@ final class TypeReadback<Element> {
       if transportChange == nil, case .changed(let why) = check { transportChange = why }
     }
     func classifyField(_ held: (field: Element, identity: ReadbackIdentity, found: ReadbackLookup)) {
-      guard let role = reads.role(held.field) else { return }  // a read that failed: the gate decides
-      keep(readbackClassify(held.identity, role: role, subrole: reads.subrole(held.field)))
+      let role = reads.role(held.field), subrole = reads.subrole(held.field)  // each read, whatever the other answered
+      transportObserve(role: role, subrole: subrole)
+      guard let role else { return }  // a read that failed: the gate decides
+      keep(readbackClassify(held.identity, role: role, subrole: subrole))
     }
     switch read {
     case .field:
@@ -1038,6 +1052,7 @@ final class TypeReadback<Element> {
       return nil
     case .effect(let budget):
       guard let sample = reads.effect?(application, budget) else { return nil }
+      if sample.element != nil { transportObserve(role: sample.role, subrole: sample.subrole) }  // ruling 1276, any element
       guard let held else { return sample.reading }
       // Identity first: a field found as the application's focus whose focus is now another element has changed,
       // whatever that element's role read answered (ruling 1275).
@@ -1077,11 +1092,9 @@ final class TypeReadback<Element> {
     // Ruling 1275: no field is held only where the lookup found no element at all (`noFocusedElement`; the latch has
     // refused every other snapshot that held none).
     guard let held else {
-      // #597's exemption (ruling 1274): only a password field appearing is told; a failed read posts.
-      if case .value(let focused) = reads.applicationFocus(application), let role = reads.role(focused) {
-        if role == "AXSecureTextField" || reads.subrole(focused) == .value("AXSecureTextField"), transportChange == nil {
-          transportChange = .becameSecure
-        }
+      // #597's exemption (ruling 1274): only a password field appearing is told, by the latch; a failed read posts.
+      if case .value(let focused) = reads.applicationFocus(application) {
+        transportObserve(role: reads.role(focused), subrole: reads.subrole(focused))
       }
       try transportStop(beforeKey: beforeKey)
       return
@@ -1104,8 +1117,11 @@ final class TypeReadback<Element> {
       }
     }
     if transportChange == nil {
-      if let role = reads.role(held.field) {
-        let subrole = reads.subrole(held.field)
+      // Role and subrole each read, whatever the other answered; an explicit secure one latches first (ruling 1276).
+      let role = reads.role(held.field), subrole = reads.subrole(held.field)
+      transportObserve(role: role, subrole: subrole)
+      if transportChange != nil {
+      } else if let role {
         if case .failed = subrole {
           stop(.fieldUnreadable)
         } else {

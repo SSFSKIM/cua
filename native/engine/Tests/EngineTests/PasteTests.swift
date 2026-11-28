@@ -2006,6 +2006,10 @@ extension PasteActivationTests {
     var focusFails = false
     /// Ruling 1275 (P1-3): the focus moves to another field, a password field B, while A stays present and open.
     var focusMovedOff = false
+    /// Ruling 1276: the next effect sample names another element classified so (an explicit secure observation).
+    var sampleSecure: (role: String?, subrole: ReadbackSubrole)? = nil
+    /// The element the application's focus names appears with its role read failing.
+    var focusOnRoleFails = false
     func apply(to field: FakeField, _ app: FakeApp, decoy: FakeField) {
       if let role { field.role = role }
       if let subrole { field.subrole = subrole }
@@ -2013,10 +2017,17 @@ extension PasteActivationTests {
       if subroleFails { field.failing["subrole"] = .max; field.failingAfterTyping["subrole"] = .max }
       if focusElsewhere { app.applicationFocus = { .value(decoy) } }
       if focusNone { app.applicationFocus = { .absent } }
+      if let sampleSecure {
+        let sampled = FakeField(value: nil, range: nil)
+        sampled.role = sampleSecure.role
+        sampled.subrole = sampleSecure.subrole
+        app.nextSample = sampled
+      }
       if let focusOn {
         let appeared = FakeField(value: "", range: NSRange(location: 0, length: 0))
         appeared.role = focusOn.role
         appeared.subrole = focusOn.subrole
+        if focusOnRoleFails { appeared.failing["role"] = .max; appeared.failingAfterTyping["role"] = .max }
         app.applicationFocus = { .value(appeared) }
       }
       if focusFails { app.applicationFocus = { .failed } }
@@ -2053,7 +2064,14 @@ extension PasteActivationTests {
       if let (at, change) = holdChange, at == number { change.apply(to: field, app, decoy: decoy) }
     }
     app.trace = trace
-    app.effect = { _ in
+    app.effect = { [unowned app] _ in
+      if let sampled = app.nextSample {
+        // One sample of another element, as it classifies, over the field's numbers.
+        app.nextSample = nil
+        let range = field.reportedRange
+        let reading = EffectReading(range: range.map { [$0.location, $0.length] }, characters: field.value.map { ($0 as NSString).length })
+        return EffectSample(reading: reading, role: sampled.role, subrole: sampled.subrole, element: sampled)
+      }
       switch lookup {
       case .marker, .noFocus, .roleUnread, .closedClaim: return EffectSample(reading: EffectReading())
       case .focus, .walk:
@@ -2213,6 +2231,9 @@ extension PasteActivationTests {
       // Ruling 1275 (P1-3): A still there and open, the focus on a password field B: the application's focus for a
       // focus lookup, A's own AXFocused for a walk's or the marker's.
       (TransportChange(name: "the focus moved off a still-open field to a password field", focusMovedOff: true), .fieldChanged, .fieldChanged),
+      // Ruling 1276: the role read failing never skips the subrole's: a secure subrole latches becameSecure.
+      (TransportChange(name: "its role unreadable, its subrole a password field's", subrole: .value("AXSecureTextField"), roleFails: true),
+       .becameSecure, .becameSecure),
     ]
     var runs = 0, positions = 0
     for shape in transportShapes {
@@ -2256,6 +2277,8 @@ extension PasteActivationTests {
       (TransportChange(name: "a password field appearing, by subrole", focusOn: ("AXTextField", .value("AXSecureTextField"))), .becameSecure),
       (TransportChange(name: "a plain field appearing", focusOn: ("AXTextField", .absent)), nil),
       (TransportChange(name: "the focus read failing", focusFails: true), nil),
+      (TransportChange(name: "a password field appearing, its role unreadable and its subrole secure",
+                       focusOn: ("AXTextField", .value("AXSecureTextField")), focusOnRoleFails: true), .becameSecure),
     ]
     var runs = 0, positions = 0
     for shape in allTransportShapes where shape.lookup == .noFocus {
@@ -2286,6 +2309,32 @@ extension PasteActivationTests {
     }
     XCTAssertGreaterThan(positions, 30)
     XCTAssertEqual(runs, positions * changes.count)
+  }
+
+  /// Ruling 1276, the secure latch, at every sample point of every shape, for every lookup that types (a field held, or
+  /// no element found): a sample naming an element that is AXSecureTextField by role, or by subrole, latches
+  /// `becameSecure`, and with the application reporting no focus at the gate from then on, nothing more is posted: the
+  /// counts are those at the sample; before anything was posted it says nothing was typed and is `beforeInput`.
+  func testAnExplicitSecureSampleLatchesWhateverTheGateReadsAfter() throws {
+    var runs = 0
+    for shape in allTransportShapes where !shape.lookup.latched {
+      let unchanged = try transportRun(shape.text, role: shape.role, lookup: shape.lookup)
+      for (number, hold) in unchanged.holds.enumerated().map({ ($0.offset + 1, $0.element) }) where hold.kind == "effect" {
+        for (by, secure) in [("by role", ("AXSecureTextField", ReadbackSubrole.absent)), ("by subrole", ("AXTextField", .value("AXSecureTextField")))] as [(String, (String, ReadbackSubrole))] {
+          let label = "\(shapeName(shape)) × sample \(number) (after \(hold.commandVs) ⌘V, \(hold.returns) Return) × a password field \(by)"
+          let run = try transportRun(shape.text, role: shape.role, lookup: shape.lookup,
+                                     holdChange: (number, TransportChange(name: by, focusNone: true, sampleSecure: secure)))
+          runs += 1
+          XCTAssertEqual(run.reason, .becameSecure, label)
+          XCTAssertEqual([run.commandVs, run.returns], [hold.commandVs, hold.returns], "\(label): nothing posted after the sample")
+          let nothing = hold.commandVs == 0 && hold.returns == 0
+          XCTAssertEqual(run.meta.beforeInput, nothing, label)
+          XCTAssertEqual(run.error?.message.hasPrefix("Nothing was typed: "), nothing, "\(label): \(run.error?.message ?? "")")
+          XCTAssertEqual(run.pasteboard, ["the owner's"], label)
+        }
+      }
+    }
+    XCTAssertGreaterThan(runs, 200)
   }
 
   /// For the answer, a transition one of the effect watch's readings saw stops the paste no later than the next post: the

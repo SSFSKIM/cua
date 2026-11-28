@@ -211,6 +211,8 @@ final class FakeApp {
   var effect: ((Double) -> EffectSample<FakeField>?)?
   /// #600 (R3): what the application's focus answers to the post gate, when not `focused` (another element, none).
   var applicationFocus: (() -> ReadbackWalkRead<FakeField>)?
+  /// #600 (ruling 1276): the element the next effect sample names, once.
+  var nextSample: FakeField?
   var trace: ReadbackTrace?
   private(set) var classifying: [(read: String, inHold: Bool, inReadback: Bool)] = []
   private func record(_ read: String) {

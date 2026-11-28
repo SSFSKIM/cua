@@ -26,3 +26,18 @@ under `locked.sh t185`.
 - The fix's other cases cannot be made on demand by a real application: a frame whose own `GetChildren` fails, a
   request written and left unanswered, a padded `WM_WINDOW_ROLE`, and a read cut by the element or depth limit beside
   a document. The unit tests prove them. These runs prove that none of the fixes changes what the real windows get.
+
+## Fix wave 2
+
+At `1e54749bd` (`cua-engine 0.4.6 (1e54749bd5b1)`), T1's runner again with its control (`out/wave2/`).
+- `rule.jsonl` exited 0. `fixture-bare`, `fixture-flag`, `others`, `chrome-tabbed` and `chrome-popup` passed. §G 7
+  is still main's count: the bare GTK 3 frame's `{Properties.Get: +1}` on its first read and `{}` on its second, and
+  the others equal.
+- The control (`rule-control.jsonl`) exited 1, as before.
+- The confirmation right before the request now runs on the vendor's title match too. So the fixture's asking
+  observation makes two associations (two `GetConnectionUnixProcessID` calls), against one for each observation after
+  it. Every other window is left before the request and pays nothing.
+- The race it closes is proved in the engine's own live test,
+  `engine::ask_faults::a_same_title_sibling_that_appears_during_the_lookups_stops_the_request`. It uses a real GTK 3
+  window, unique at the first read. A same-title, same-size sibling is shown at the same place during the toolkit
+  lookup, and no `GetAttributes` is sent.

@@ -490,6 +490,22 @@ impl Associated {
         }
     }
 
+    /// The confirmation right before #228's request (`ask.rs`; task 185's fix wave 2): the whole association runs again
+    /// on every route, the vendor's own title match included, and holds only when it again names this frame, of this
+    /// application root, unambiguously. The request turns on accessibility for the whole process and cannot be taken
+    /// back, so a window that was unique at the read and has since gained a same-title sibling is not asked. The reads
+    /// and the input keep [`Associated::confirm`].
+    pub fn confirm_for_ask(&self, bus: &mut Bus, x: &mut X11) -> Result<bool> {
+        let Ok(info) = x.get_window(self.window) else {
+            return Ok(false);
+        };
+        match associate(bus, x, &info)? {
+            Association::Frame(again) => Ok(again.frame == self.frame && again.app == self.app),
+            Association::Identity(Unassociated::Failed(error)) => Err(error),
+            _ => Ok(false),
+        }
+    }
+
     /// Why the Copy may not go through a context menu for this window, on one of cua's own routes. The route finds
     /// the menu it opened as a new child of the application, not of the window: Chrome's (the elements that take this
     /// route) is a frame under the application root with no relation to the element or the browser frame, and its X11

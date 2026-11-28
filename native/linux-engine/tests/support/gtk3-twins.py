@@ -18,7 +18,8 @@ closes every open context menu, `focus <entry|other> <n>` moves window n's focus
 detection (candidate 3): `ignore` makes `showContextMenu` answer true and open nothing, as an application that ignores
 it does, `unshow <n>` takes `showing` from `menu-n`'s states, so a right click on it finds no visible point and falls
 back to the action, and `late <ms>` delays a menu Copy's clipboard change by `ms`, as Chrome served one late once
-continued (task 77's forced stall). Killed by the test.
+continued (task 77's forced stall); and `twin` shows one more window of the same title and size at the same place
+(#228's task 185: a sibling that appears during a request). Killed by the test.
 
 usage: gtk3-twins.py <title> <count> <width> <height> [entry|menu] [labels, comma-separated]
 """
@@ -145,10 +146,13 @@ def command(source, _condition):
         widgets[int(words[1])]['menu'].unshown = True
     elif words[:1] == ['late']:
         behaviour['late'] = int(words[1])
+    elif words[:1] == ['twin']:
+        GLib.idle_add(make, len(widgets) + 1)
     return True
 
 
-for n in range(1, count + 1):
+def make(n):
+    """Window n, shown: at the start, and on `twin`."""
     window = Gtk.Window(title=title)
     window.set_default_size(width, height)
     window.move(0, 0)
@@ -181,6 +185,11 @@ for n in range(1, count + 1):
     else:
         entry.grab_focus()
         entry.select_region(0, -1)
+    return False
+
+
+for n in range(1, count + 1):
+    make(n)
 GLib.io_add_watch(sys.stdin, GLib.IO_IN | GLib.IO_HUP, command)
 Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text('before', -1)
 Gtk.main()

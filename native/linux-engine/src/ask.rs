@@ -16,7 +16,8 @@
 //! - the window's `WM_WINDOW_ROLE` is exactly `browser-window` (`X11::role_exactly`), Electron's own role: Chrome's
 //!   windows are `browser` and `pop-up`, and CEF's sample sets none, so a browser and other embedders are left as they
 //!   are (taste call 3);
-//! - right before the request, the window's association still names this frame (`Application::confirm`).
+//! - right before the request, the window's association, run again on every route, the vendor's title match included,
+//!   still names this frame of this application, unambiguously (`Application::confirm`, `Associated::confirm_for_ask`).
 //!
 //! A request not written, one the application refused, and one skipped because the association changed are not
 //! remembered, so the next observation tries again; one written and left unanswered is, since it may have changed the

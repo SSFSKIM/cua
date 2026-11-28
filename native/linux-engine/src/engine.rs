@@ -2,6 +2,8 @@
 //! input is in the child modules: keys (`keyboard`), the pointer (`pointer`, and `handle` for `drag_handle`), element
 //! actions (`elements`), the window and application requests (`windows`) and the clipboard's (`clipboard`).
 
+#[cfg(test)]
+mod ask_faults;
 mod clipboard;
 mod elements;
 mod handle;
@@ -423,15 +425,16 @@ impl crate::ask::Application for FrameApp<'_> {
         self.engine.x.role_exactly(self.window)
     }
 
-    /// The association again, right before the request (the whole-change review of #228, P1): on cua's own routes
-    /// the whole association runs again and must name the same frame, its bus calls ending by [`ASK_CONFIRM_BOUND`];
-    /// the vendor's own match is confirmed by nothing, as for every effect.
+    /// The association again, right before the request (the whole-change review of #228, P1; task 185's fix wave 2):
+    /// on every route, the vendor's title match included, the whole association runs again and must name the same
+    /// frame of the same application, unambiguously (`Associated::confirm_for_ask`), its bus calls ending by
+    /// [`ASK_CONFIRM_BOUND`].
     fn confirm(&mut self) -> Result<bool> {
         let deadline = Instant::now() + ASK_CONFIRM_BOUND;
         let associated = self.associated;
         let confirmed = self
             .engine
-            .on_this_connection_with_x(|bus, x| bus.by(deadline, |bus| associated.confirm(bus, x)));
+            .on_this_connection_with_x(|bus, x| bus.by(deadline, |bus| associated.confirm_for_ask(bus, x)));
         if Instant::now() >= deadline {
             return Ok(false);
         }
@@ -444,7 +447,7 @@ impl crate::ask::Application for FrameApp<'_> {
         let app = &self.associated.app;
         Ok(
             match self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))? {
-                Answer::Replied(_) => Delivery::Answered,
+                Answer::Replied(_) | Answer::Unreadable(_) => Delivery::Answered,
                 Answer::Refused(error) => Delivery::Rejected(error),
                 Answer::Unanswered(error) => Delivery::Unanswered(error),
             },

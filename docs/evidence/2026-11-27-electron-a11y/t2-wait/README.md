@@ -124,3 +124,33 @@ wait), `vscode` 5/5 (393 nodes after 145 to 203 ms), `no-page` 6/6 (27 to 32 ms)
 fails `fixture-started`, `fixture-disabled` and `no-page`. `early.py` (`out/early.jsonl`) walked each window with no
 pause right after the request and found no shape between the frame alone and the whole views tree: the panel-only
 record is a window that has nothing else.
+
+## Fix wave 2
+
+At `20d2eb476` (`cua-engine 0.4.6 (20d2eb476839)`; rows in `out/wave2/`).
+
+- **A failed child listing makes a read inconclusive.** A node whose `GetChildren` fails still shows no children, as
+  the vendor's read does, and the read now counts it (`ReadStats::listings_failed`, internal). The wait adds it to
+  the read's lost subtrees (`wait::lost`). So a read in which the panel holding the document failed its listing,
+  while the window's controls read whole, is `views`, not `no_page`, and the wait reads again. This is proved by unit
+  tests: a failed listing then the page, and a failed listing to the bound. No real window here fails a listing on
+  demand. Live, the windows with no page still end `no_page` at once (`no-page`, 6/6, 25 to 29 ms), so Chromium's
+  listings do not fail in normal reads.
+- **What the bound covers** is the pauses and every call on the accessibility bus. It does not cover the X server's
+  replies, which block unbounded everywhere in the engine (ruled don't-fix for #228; `tech-debt-tracker.md`).
+
+The final pass (`out/wave2/wait.jsonl`) exited 0:
+
+| Scenario | Passed | Result |
+|---|---:|---|
+| `fixture-started` | 10/10 | page after 28 to 34 ms |
+| `fixture-disabled` | 3/3 | bound, then no wait |
+| `vscode` | 5/5 | 393 nodes after 183 to 209 ms |
+| `no-page` | 6/6 | 25 to 29 ms |
+| `panels` | 3/3 | bound, `views` |
+| `twins` | 3/3 | each window its own page, 3 associations against 2 |
+| `cef-dialog` | 1/1 | not asked, not waited on |
+| `vscode-early` | 3/3 | 146 to 254 ms |
+
+Both controls exited 1. Task 1's engine fails `fixture-started`, `fixture-disabled` and `no-page`. The wait before
+fix wave 1 (`59d106de9`) fails `panels` (`no_page` in 24 ms) and `twins` (2 associations against 2).

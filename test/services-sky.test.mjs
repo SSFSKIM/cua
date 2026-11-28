@@ -451,6 +451,10 @@ const CASE_LINE = new RegExp(`^\\s*case\\s+(${CASE_ITEM}(?:\\s*,\\s*${CASE_ITEM}
 function inputEffectCases(swift) {
   const body = swift.match(/^enum InputEffect: String, CaseIterable \{\n([\s\S]*?)^\}/m)?.[1];
   assert.ok(body, 'InputEffect found in Intervention.swift');
+  // Raw (#"…"#) and multi-line ("""…""") strings are not tokenized here: one holding a quote and a brace would throw the
+  // depth count off and skip a later case, so their syntax in the enum fails closed.
+  const form = blankSwiftComments(body).match(/#+"|"""/)?.[0];
+  assert.ok(!form, `an InputEffect string form the parser can't tokenize: ${form}`);
   const cases = [];
   let depth = 0;
   for (const line of blankSwiftComments(body).split('\n')) {
@@ -505,6 +509,11 @@ test('ruling 1269: the InputEffect parser reads a raw value, a trailing comment 
   for (const line of ['  case caretMove,', '  case caretMove; case caretJump', '  @available(*, deprecated) case caretMove', '  case caretMove(Int)',
     '  indirect case caretMove', '  case caretMove = caretRaw', '  case `caretMove`']) {
     await t.test(`unreadable: ${line.trim()}`, () => assert.throws(() => inputEffectCases(withCase(line)), /an InputEffect case line not parsed/, line));
+  }
+  // A raw or multi-line string can hold a quote and a brace the depth count cannot see past, so a later case would be
+  // skipped: its syntax anywhere in the enum fails closed instead.
+  for (const line of ['  static let note = #"Use "{" to open"#\n  case caretMove', '  static let note = """\n  {\n  """\n  case caretMove']) {
+    await t.test(`string form: ${line.split('\n')[0].trim()}`, () => assert.throws(() => inputEffectCases(withCase(line)), /an InputEffect string form the parser can't tokenize/, line));
   }
 });
 

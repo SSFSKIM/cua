@@ -288,8 +288,10 @@ export function guardLane(ctx, lane) {
 // own activation is accounted to it. Before all that, a key the alert holds is refused (the alert guard, ruling 1154:
 // AlertGuarded), the keys unsent: an alert with the key and some other app in front would take them; and so is one whose
 // scene's app does not hold the scene window as its key window (keyWindowGuard).
-// -> the cell's answer, or null when it was not sent.
-export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
+// `keysAs`: what the record and every message name the keys by instead of their list (the warm-up's, ruling 1278 (b):
+// a public record keeps no key), the skip keeping their count. -> the cell's answer, or null when it was not sent.
+export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`, keysAs = null}) {
+  const named = keysAs ? [keysAs] : keys;
   const owned = keyWindowScene(ctx, scene);
   // Under ruling 1203's fallback (a key case's cells, the close's Escape) every check reads afresh, the front included.
   const elementGuard = ctx.elementGuard ?? null;
@@ -307,18 +309,18 @@ export async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind 
     ...(userWindow ? {userWindow} : {})});
   if (out.sent) { sheetSent(ctx, exempt); return out.result; }
   const seen = out.skipped.frontmost;
-  const skip = {keys, scene, front: seen === 'unreadable' ? 'unreadable' : {bundleId: seen.bundleId ?? null, owned: seen.owned === true}};
+  const skip = {...(keysAs ? {kind: keysAs, keyCount: keys.length} : {keys}), scene, front: seen === 'unreadable' ? 'unreadable' : {bundleId: seen.bundleId ?? null, owned: seen.owned === true}};
   ctx.meta.keySkipped.push(skip);
   if (ctx.meta.hosted === true && seen !== 'unreadable' && seen.owned !== true && seen.bundleId === CAPTURE_ALERT_PROCESS) {
-    const check = alertCheck(ctx, `at the key guard for ${keys.join(', ')}`);
-    if (!(check.export?.held?.count > 0)) throw new KeyGuardStop(`${keys.join(', ')} not sent: UserNotificationCenter is in front and the alert watch holds no capture alert; the run stopped`, 'invalid');
+    const check = alertCheck(ctx, `at the key guard for ${named.join(', ')}`);
+    if (!(check.export?.held?.count > 0)) throw new KeyGuardStop(`${named.join(', ')} not sent: UserNotificationCenter is in front and the alert watch holds no capture alert; the run stopped`, 'invalid');
     skip.held = true;
     const r = read(ctx, null, {frontKey: true});
     const ends = ctx.windows.map(w => w.at[1]);
     if (Array.isArray(r?.at)) mark(ctx, kind === 'row' ? 'row' : 'setup', key, [ends.length ? Math.max(...ends) : r.at[0], r.at[1]]);
-    throw new AlertHeld(keys, {front: seen.bundleId, key: keyReading(r).key});
+    throw new AlertHeld(named, {front: seen.bundleId, key: keyReading(r).key});
   }
-  if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${keys.join(', ')} not sent: the front is not one of the run\'s windows${seen === 'unreadable' ? ': it was unread' : ''} (#162); the run stopped`, seen === 'unreadable' ? 'unread' : 'invalid');
+  if (seen === 'unreadable' || seen.owned !== true) throw new KeyGuardStop(`${named.join(', ')} not sent: the front is not one of the run\'s windows${seen === 'unreadable' ? ': it was unread' : ''} (#162); the run stopped`, seen === 'unreadable' ? 'unread' : 'invalid');
   return null;
 }
 

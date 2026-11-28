@@ -70,12 +70,14 @@
 //       recorded window -> {answer: {emptied, count, settable, write, readBack, reads, reason?}, at}: numbers and
 //       booleans only. Hosted only -> {answer: {emptied: false, refused}, at} off a runner
 //   field-caret --run <dir> --scene <id>
-//   field-strip --run <dir> --scene <id> --length <n> --digest <hex>
+//   field-strip --run <dir> --scene <id>
 //       TextEdit's document kept around the warm-up's typing (ruling 1278 (b)), by the same helper: the caret put at the
-//       field's start, with the field's length and digest read (./panel-ax.swift caret) -> {answer: {placed, count,
-//       write, caret, length, digest, reason?}, at}; then what stands before the field's own text (the digest's) removed
-//       and the field read back as it was (./panel-ax.swift strip) -> {answer: {restored, count, removed, select, write,
-//       readBack, reads, reason?}, at}. Numbers, booleans and the digest only. Hosted only, as field-empty
+//       field's start, with the field's length and digest read and kept in the run directory (./panel-ax.swift caret)
+//       -> {answer: {placed, count, write, caret, length, why?, reason?}, at}; then, the kept pair handed to the helper on
+//       its stdin, what stands before the field's own text removed once the typed range reads back selected, and the
+//       field read back as it was (./panel-ax.swift strip) -> {answer: {restored, count, removed, select, selected,
+//       write, readBack, reads, why?, reason?}, at}. Numbers, booleans and a fixed `why` code; the digest never leaves
+//       the device. Hosted only, as field-empty. Every field command's failure names its `why` (FIELD_WHY)
 //   text-range --run <dir> --scene <id>
 //       the selected range of the scene's text field (the first text area of the scene's process) and whether the app's
 //       focused element is that field, by the approved bundle's `--probe text-view`, outside either engine (the caret
@@ -294,6 +296,10 @@ export function documentState({scene, window}, io) {
 // Chromium names them).
 export const USER_FIELDS = Object.freeze({textedit: {role: 'AXTextArea', name: 'First Text View'}, chrome: {role: 'AXTextArea', name: 'Scene notes'},
   electron: {role: 'AXTextArea', name: 'Fixture text'}});
+// Why a field write did not hold, as a fixed code beside the reason's sentence (`why`): what a public record keeps
+// (./warm-up-run.mjs), never the sentence.
+export const FIELD_WHY = Object.freeze(['off-hosted', 'scene-not-up', 'windows-unread', 'window-off-screen', 'untrusted', 'no-window', 'windows-ambiguous', 'no-field',
+  'fields-ambiguous', 'not-empty', 'value-unread', 'caret-elsewhere', 'not-kept', 'not-own-text', 'shorter', 'selection-unconfirmed', 'read-back']);
 // The one field the AX helper would write in `scene`'s recorded window, or why there is none to write (`fail`: the
 // command's answer, `failed` with the reason or the refusal). Hosted only, as every helper write. -> {field, pid,
 // bounds} | {fail}.
@@ -301,31 +307,32 @@ function userFieldOf(scene, io, command, failed) {
   const field = USER_FIELDS[scene];
   if (!field) throw new Error(`${command} names a user window's scene (${Object.keys(USER_FIELDS).join(', ')})`);
   const refused = moveRefusal(io, null);
-  if (refused) return {fail: {...failed, refused: refused.refused}};
+  if (refused) return {fail: {...failed, why: 'off-hosted', refused: refused.refused}};
   const record = io.state().scenes?.[scene], pid = record?.pid, number = record?.window?.number;
-  if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(number)) return {fail: {...failed, reason: 'the scene is not up in this run'}};
+  if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(number)) return {fail: {...failed, why: 'scene-not-up', reason: 'the scene is not up in this run'}};
   let windows = null;
   try { windows = io.windows(); } catch { windows = null; }
-  if (!Array.isArray(windows)) return {fail: {...failed, reason: 'the window list was unread'}};
+  if (!Array.isArray(windows)) return {fail: {...failed, why: 'windows-unread', reason: 'the window list was unread'}};
   const w = sceneWindowOf(windows, {pid, number});
-  if (!w) return {fail: {...failed, reason: `window ${number} is not on screen`}};
+  if (!w) return {fail: {...failed, why: 'window-off-screen', reason: `window ${number} is not on screen`}};
   return {field, pid, bounds: rectArg(w.bounds)};
 }
 const num = v => (Number.isSafeInteger(v) ? v : null);
 // What the helper's answer says of the window before anything of its field: null when it was trusted and found exactly
-// one of the app's windows at the bounds, else the command's answer ({...failed, reason}).
+// one of the app's windows at the bounds, else the command's answer ({...failed, why, reason}).
 function windowFound(a, failed) {
-  if (a?.trusted !== true) return {...failed, reason: 'the helper is not trusted for Accessibility'};
-  if (a.found !== true || a.kind !== 'window') return {...failed, reason: 'Accessibility lists no window at the scene window\'s bounds'};
+  if (a?.trusted !== true) return {...failed, why: 'untrusted', reason: 'the helper is not trusted for Accessibility'};
+  if (a.found !== true || a.kind !== 'window') return {...failed, why: 'no-window', reason: 'Accessibility lists no window at the scene window\'s bounds'};
   // The helper writes only under exactly one of the app's windows at the bounds (./panel-ax.swift windowMatches).
-  if (a.windowMatches !== 1) return {...failed, windowMatches: num(a.windowMatches), reason: `Accessibility lists ${num(a.windowMatches) ?? 'an unread number of'} of the app's windows at the scene window's bounds: which one is the scene's cannot be told`};
+  if (a.windowMatches !== 1) return {...failed, windowMatches: num(a.windowMatches), why: 'windows-ambiguous', reason: `Accessibility lists ${num(a.windowMatches) ?? 'an unread number of'} of the app's windows at the scene window's bounds: which one is the scene's cannot be told`};
   return null;
 }
-const countReason = count => (count === 0 ? 'Accessibility lists no matching field in the window' : `Accessibility lists ${count} matching fields in the window: which one is the field cannot be told`);
+const countFailure = count => (count === 0 ? {why: 'no-field', reason: 'Accessibility lists no matching field in the window'}
+  : {why: 'fields-ambiguous', reason: `Accessibility lists ${count} matching fields in the window: which one is the field cannot be told`});
 // The user window's field emptied by the harness's AX helper (./panel-ax.swift empty), outside either engine (ruling
 // 1229(b)): emptied only when exactly one field matched and its value read back empty. Hosted only, as every helper
-// write. io: {state, windows, panelAx(args), env?, platform?}. -> {emptied, count, settable, write, readBack, reads,
-// reason?} | {emptied: false, reason} | {emptied: false, refused}.
+// write. io: {state, windows, panelAx(args), env?, platform?}. -> {emptied, count, settable, write, readBack, reads, why?,
+// reason?} | {emptied: false, why, reason} | {emptied: false, why, refused}.
 export function emptyUserField({scene}, io) {
   const found = userFieldOf(scene, io, 'field-empty', {emptied: false});
   if (found.fail) return found.fail;
@@ -333,50 +340,68 @@ export function emptyUserField({scene}, io) {
   const unfound = windowFound(a, {emptied: false});
   if (unfound) return unfound;
   const read = {count: num(a.count) ?? 0, settable: typeof a.settable === 'boolean' ? a.settable : null, write: num(a.write), readBack: num(a.readBack), reads: num(a.reads) ?? 0};
-  if (read.count !== 1) return {emptied: false, ...read, reason: countReason(read.count)};
+  if (read.count !== 1) return {emptied: false, ...read, ...countFailure(read.count)};
   if (read.readBack === 0) return {emptied: true, ...read};
-  return {emptied: false, ...read, reason: `the field's value read back ${read.readBack === null ? 'nothing' : `${read.readBack} characters`} after the write (AXError ${read.write ?? 'none'})`};
+  return {emptied: false, ...read, why: 'not-empty', reason: `the field's value read back ${read.readBack === null ? 'nothing' : `${read.readBack} characters`} after the write (AXError ${read.write ?? 'none'})`};
 }
 
 // TextEdit's document kept as the scene made it around the warm-up's typing (ruling 1278 (b), ./warm-up-run.mjs): it is
 // the frontmost cases' fixed text, so it is never emptied. The harness's AX helper puts the caret at the field's start
-// and reads the field's length and digest (./panel-ax.swift caret); the warm-up types there through the lane's engine;
-// then the helper removes exactly what stands before the field's own text, found by that digest, and reads the field
-// back as it was (./panel-ax.swift strip). The digest is the controller's to pass back, never a record's.
+// and reads the field's length and digest (./panel-ax.swift caret), which stay on the device, in the run directory
+// (KEPT_FILE, mode 600); the warm-up types there through the lane's engine; then the helper, handed them on its stdin
+// (never its command line), removes exactly what stands before the field's own text and reads the field back as it was
+// (./panel-ax.swift strip). The digest leaves neither the device nor any answer.
 const DIGEST = /^[0-9a-f]{64}$/;
-// io as emptyUserField's. -> {placed, count, write, caret, length, digest, reason?} | {placed: false, reason} | {placed:
-// false, refused}.
+export const KEPT_FILE = scene => `field-${scene}.kept`;
+// io as emptyUserField's, with `dir` (the run directory). -> {placed, count, write, caret, length, why?, reason?} |
+// {placed: false, why, reason} | {placed: false, why, refused}.
 export function caretUserField({scene}, io) {
+  const kept = join(io.dir, KEPT_FILE(scene));
+  fs.rmSync(kept, {force: true});
   const found = userFieldOf(scene, io, 'field-caret', {placed: false});
   if (found.fail) return found.fail;
   const a = io.panelAx(['caret', String(found.pid), found.bounds, found.field.role, found.field.name]);
   const unfound = windowFound(a, {placed: false});
   if (unfound) return unfound;
   const caret = Number.isSafeInteger(a.caret?.location) && Number.isSafeInteger(a.caret?.length) ? {location: a.caret.location, length: a.caret.length} : null;
-  const read = {count: num(a.count) ?? 0, write: num(a.write), caret, length: num(a.length), digest: typeof a.digest === 'string' && DIGEST.test(a.digest) ? a.digest : null};
-  if (read.count !== 1) return {placed: false, ...read, reason: countReason(read.count)};
-  if (read.length === null || read.digest === null) return {placed: false, ...read, reason: 'the field\'s value was unread'};
-  if (caret?.location !== 0 || caret.length !== 0) return {placed: false, ...read, reason: `the caret read back ${caret ? `at ${caret.location} (length ${caret.length})` : 'unread'} after the write (AXError ${read.write ?? 'none'}), not at the field's start`};
+  const read = {count: num(a.count) ?? 0, write: num(a.write), caret, length: num(a.length)};
+  const digest = typeof a.digest === 'string' && DIGEST.test(a.digest) ? a.digest : null;
+  if (read.count !== 1) return {placed: false, ...read, ...countFailure(read.count)};
+  if (read.length === null || digest === null) return {placed: false, ...read, why: 'value-unread', reason: 'the field\'s value was unread'};
+  if (caret?.location !== 0 || caret.length !== 0) return {placed: false, ...read, why: 'caret-elsewhere', reason: `the caret read back ${caret ? `at ${caret.location} (length ${caret.length})` : 'unread'} after the write (AXError ${read.write ?? 'none'}), not at the field's start`};
+  fs.writeFileSync(kept, `${JSON.stringify({length: read.length, digest})}\n`, {mode: 0o600});
   return {placed: true, ...read};
 }
-// `length` and `digest`: field-caret's answer. -> {restored, count, removed, select, write, readBack, reads, reason?} |
-// {restored: false, reason} | {restored: false, refused}.
-export function stripUserField({scene, length, digest}, io) {
-  if (!/^\d+$/.test(String(length ?? ''))) throw new Error('--length takes the field-caret answer\'s length');
-  if (!DIGEST.test(String(digest ?? ''))) throw new Error('--digest takes the field-caret answer\'s digest');
+// The field-caret answer kept for `scene`. -> {length, digest} | null.
+function keptOf(io, scene) {
+  try {
+    const k = JSON.parse(fs.readFileSync(join(io.dir, KEPT_FILE(scene)), 'utf8'));
+    return Number.isSafeInteger(k?.length) && k.length >= 0 && DIGEST.test(String(k?.digest ?? '')) ? k : null;
+  } catch { return null; }
+}
+const STRIP_REFUSED = Object.freeze({
+  other: {why: 'not-own-text', reason: 'the field did not read as its own text with the typing before it: nothing was removed'},
+  shorter: {why: 'shorter', reason: 'the field read shorter than its own text: nothing was removed'},
+  unread: {why: 'value-unread', reason: 'the field\'s value was unread: nothing was removed'},
+  select: {why: 'selection-unconfirmed', reason: 'the selection did not read back as the typed range: nothing was removed'},
+});
+// -> {restored, count, removed, select, selected, write, readBack, reads, why?, reason?} | {restored: false, why, reason}
+// | {restored: false, why, refused}.
+export function stripUserField({scene}, io) {
+  if (!USER_FIELDS[scene]) throw new Error(`field-strip names a user window's scene (${Object.keys(USER_FIELDS).join(', ')})`);
+  const kept = keptOf(io, scene);
   const found = userFieldOf(scene, io, 'field-strip', {restored: false});
   if (found.fail) return found.fail;
-  const a = io.panelAx(['strip', String(found.pid), found.bounds, found.field.role, found.field.name, String(length), digest]);
+  if (!kept) return {restored: false, why: 'not-kept', reason: 'no field-caret answer is kept for the scene: nothing was removed'};
+  const a = io.panelAx(['strip', String(found.pid), found.bounds, found.field.role, found.field.name], {input: `${kept.length}\n${kept.digest}\n`});
   const unfound = windowFound(a, {restored: false});
   if (unfound) return unfound;
-  const read = {count: num(a.count) ?? 0, removed: num(a.removed), select: num(a.select), write: num(a.write), readBack: num(a.readBack), reads: num(a.reads) ?? 0};
-  if (read.count !== 1) return {restored: false, ...read, reason: countReason(read.count)};
+  const read = {count: num(a.count) ?? 0, removed: num(a.removed), select: num(a.select), selected: typeof a.selected === 'boolean' ? a.selected : null, write: num(a.write),
+    readBack: num(a.readBack), reads: num(a.reads) ?? 0};
+  if (read.count !== 1) return {restored: false, ...read, ...countFailure(read.count)};
   if (a.restored === true) return {restored: true, ...read};
-  const reason = a.refused === 'other' ? 'the field did not read as its own text with the typing before it: nothing was removed'
-    : a.refused === 'shorter' ? 'the field read shorter than its own text: nothing was removed'
-      : a.refused === 'unread' ? 'the field\'s value was unread: nothing was removed'
-        : `the field did not read back as its own text after the removal (${read.readBack === null ? 'unread' : `${read.readBack} characters`}, AXError ${read.write ?? 'none'})`;
-  return {restored: false, ...read, reason};
+  return {restored: false, ...read, ...(STRIP_REFUSED[a.refused]
+    ?? {why: 'read-back', reason: `the field did not read back as its own text after the removal (${read.readBack === null ? 'unread' : `${read.readBack} characters`}, AXError ${read.write ?? 'none'})`})};
 }
 
 // The frame of the one element of `role` in the scene's window, in that window's points (top-left origin), read by
@@ -957,7 +982,8 @@ export async function main(argv, {io: given = {}} = {}) {
     axDocument: (pid, bounds) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['document', String(pid), bounds])),
     axText: pid => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['text', String(pid)])),
     axField: (pid, bounds, role) => JSON.parse(run(compiled(AX_STATE_SCRIPT, dir), ['field', String(pid), bounds, role])),
-    panelAx: args => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args)),
+    // `input`: what the helper reads on its stdin (strip's kept length and digest), never on its command line.
+    panelAx: (args, {input} = {}) => JSON.parse(run(compiled(PANEL_AX_SCRIPT, dir), args, input === undefined ? {} : {input, stdio: ['pipe', 'pipe', 'pipe']})),
     // A background row's user window raised to the top when its activation's wait missed (ruling 1221, H2), hosted only.
     raiseWindow: (pid, bounds) => {
       assertGithubHosted(process.env, process.platform, 'the raise of the run\'s window');
@@ -1022,7 +1048,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'field-frame': return timed(() => fieldFrame({scene: flags.scene, role: flags.role}, io));
     case 'field-empty': return timed(() => emptyUserField({scene: flags.scene}, io));
     case 'field-caret': return timed(() => caretUserField({scene: flags.scene}, io));
-    case 'field-strip': return timed(() => stripUserField({scene: flags.scene, length: flags.length, digest: flags.digest}, io));
+    case 'field-strip': return timed(() => stripUserField({scene: flags.scene}, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

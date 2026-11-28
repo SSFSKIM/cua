@@ -39,18 +39,21 @@
 //       there, `write` the AXError of the write (0 is success, null when not attempted), `readBack` the value's length
 //       read back (null when unread), never the value.
 //   panel-ax caret <pid> <x,y,w,h> <role> <name>
-//   panel-ax strip <pid> <x,y,w,h> <role> <name> <length> <digest>
+//   panel-ax strip <pid> <x,y,w,h> <role> <name>    (stdin: <length> and <digest>, a line each)
 //       TextEdit's document kept around the warm-up's typing (ruling 1278 (b)): it is the scene's fixed text, so it is
 //       never emptied. The field found as `empty` finds it. `caret` writes its AXSelectedTextRange at its start and
 //       reads its value's length (UTF-16 units) and SHA-256 digest (hex, of its UTF-8) -> {"trusted", "found",
 //       "windows", "kind", "windowMatches", "count", "walked", "write", "caret": {"location", "length"} | null,
-//       "length", "digest"}. `strip` takes those two: when the field reads its own text (the digest's, `length` units)
-//       with something before it, that much is selected from the start and AXSelectedText written "", then the value
-//       read back up to 4 times 250 ms apart until its digest is the one given; nothing is written when the field does
-//       not end with its own text (`refused` "other"), reads shorter ("shorter") or is unread ("unread"), nor when it
-//       reads its own text alone (`removed` 0, `restored` true). -> {..., "removed", "select", "write", "readBack",
-//       "reads", "restored", "refused"?}: `select` and `write` the AXErrors (null when not attempted), `readBack` the
-//       length read back. A digest only, never the value.
+//       "length", "digest"} (to ./matrix-device.mjs, which keeps them on the device). `strip` takes those two on its
+//       stdin, so the digest is on no command line: when the field reads its own text (the digest's, `length` units)
+//       with something before it, that much is selected from the start and the selection read back; only when it reads
+//       back as exactly that range is AXSelectedText written "", then the value read back up to 4 times 250 ms apart
+//       until its digest is the one given. Nothing is written when the field does not end with its own text
+//       (`refused` "other"), reads shorter ("shorter"), is unread ("unread"), or the selection did not read back as the
+//       range ("select"), nor when it reads its own text alone (`removed` 0, `restored` true). -> {..., "removed",
+//       "select", "selected", "write", "readBack", "reads", "restored", "refused"?}: `select` and `write` the AXErrors
+//       (null when not attempted), `selected` whether the selection read back as the range, `readBack` the length read
+//       back. Never the value, and never the digest.
 //   panel-ax raise <pid> <x,y,w,h>
 //       That top-level window (never a sheet) raised: its AXRaise action (ruling 1221, H2: a background row's user
 //       window that its activation left under another, ../repl-parity/scenes-mac.mjs activateScene `top`).
@@ -70,12 +73,20 @@ func emit(_ object: [String: Any]) {
 }
 let args = CommandLine.arguments
 // The verbs that write into one text field of one top-level window, and their argument counts.
-let fieldVerbs = ["empty": 6, "caret": 6, "strip": 8]
+let fieldVerbs = ["empty": 6, "caret": 6, "strip": 6]
 guard args.count >= 4, ["move", "cancel", "element", "empty", "caret", "strip", "raise"].contains(args[1]), let pid = Int32(args[2]),
       args.count == (["cancel", "raise"].contains(args[1]) ? 4 : fieldVerbs[args[1]] ?? 5) || (args[1] == "element" && args.count == 6 && args[5] == "hit" && args[4] != "focused"),
-      args[1] != "element" || ["focused", "search", "name"].contains(args[4]),
-      args[1] != "strip" || ((Int(args[6]).map { $0 >= 0 } ?? false) && args[7].count == 64) else {
-  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax empty|caret <pid> <x,y,w,h> <role> <name> | panel-ax strip <pid> <x,y,w,h> <role> <name> <length> <digest> | panel-ax raise <pid> <x,y,w,h>\n".utf8))
+      args[1] != "element" || ["focused", "search", "name"].contains(args[4]) else {
+  FileHandle.standardError.write(Data("usage: panel-ax move <pid> <x,y,w,h> <x,y,w,h> | panel-ax element <pid> <x,y,w,h> focused|search|name | panel-ax cancel <pid> <x,y,w,h> | panel-ax empty|caret|strip <pid> <x,y,w,h> <role> <name> (strip: <length> and <digest> on stdin, a line each) | panel-ax raise <pid> <x,y,w,h>\n".utf8))
+  exit(64)
+}
+// strip's length and digest, read from stdin, so the digest is on no command line.
+let stripInput: (length: Int, digest: String)? = args[1] != "strip" ? nil : {
+  guard let length = readLine().flatMap({ Int($0) }), length >= 0, let digest = readLine(), digest.count == 64 else { return nil }
+  return (length, digest)
+}()
+if args[1] == "strip" && stripInput == nil {
+  FileHandle.standardError.write(Data("usage: panel-ax strip reads <length> and <digest> on stdin, a line each\n".utf8))
   exit(64)
 }
 if ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] != "github-hosted" {
@@ -188,6 +199,7 @@ func writeRange(_ e: AXUIElement, _ location: Int, _ length: Int) -> Int? {
   guard let wire = AXValueCreate(.cfRange, &range) else { return nil }
   return Int(AXUIElementSetAttributeValue(e, kAXSelectedTextRangeAttribute as CFString, wire).rawValue)
 }
+func selectedRange(_ e: AXUIElement) -> CFRange? { axValue(read(e, kAXSelectedTextRangeAttribute), .cfRange, CFRange()) }
 
 if fieldVerbs[args[1]] != nil {
   let wanted = args[5]
@@ -203,15 +215,15 @@ if fieldVerbs[args[1]] != nil {
     answer["write"] = NSNull(); answer["caret"] = NSNull(); answer["length"] = NSNull(); answer["digest"] = NSNull()
     if let field {
       answer["write"] = writeRange(field, 0, 0).map { $0 as Any } ?? NSNull()
-      if let range = axValue(read(field, kAXSelectedTextRangeAttribute), .cfRange, CFRange()) { answer["caret"] = ["location": range.location, "length": range.length] }
+      if let range = selectedRange(field) { answer["caret"] = ["location": range.location, "length": range.length] }
       if let text = value(field) { answer["length"] = text.utf16.count; answer["digest"] = digest(text) }
     }
     emit(answer)
     exit(0)
   }
   if args[1] == "strip" {
-    let length = Int(args[6])!, own = args[7]
-    answer["removed"] = NSNull(); answer["select"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0; answer["restored"] = false
+    let (length, own) = stripInput!
+    answer["removed"] = NSNull(); answer["select"] = NSNull(); answer["selected"] = NSNull(); answer["write"] = NSNull(); answer["readBack"] = NSNull(); answer["reads"] = 0; answer["restored"] = false
     if let field {
       if let text = value(field) {
         let units = Array(text.utf16), extra = units.count - length
@@ -219,8 +231,14 @@ if fieldVerbs[args[1]] != nil {
         else if digest(String(decoding: units[extra...], as: UTF16.self)) != own { answer["refused"] = "other" }
         else if extra == 0 { answer["removed"] = 0; answer["restored"] = true; answer["readBack"] = units.count }
         else {
-          answer["removed"] = extra
+          // The typed range selected, then read back: only a selection that reads back exactly as that range is deleted,
+          // so a write the field took elsewhere never removes the document's own text.
           answer["select"] = writeRange(field, 0, extra).map { $0 as Any } ?? NSNull()
+          let range = selectedRange(field)
+          let selected = range.map { $0.location == 0 && $0.length == extra } ?? false
+          answer["selected"] = selected
+          if !selected { answer["refused"] = "select"; emit(answer); exit(0) }
+          answer["removed"] = extra
           answer["write"] = Int(AXUIElementSetAttributeValue(field, kAXSelectedTextAttribute as CFString, "" as CFString).rawValue)
           var now: String? = nil, reads = 0
           while reads < 4, now.map({ digest($0) != own }) ?? true {

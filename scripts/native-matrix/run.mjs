@@ -83,7 +83,7 @@ import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {malformedBaseline, ownerInputNow, venueInputMarks} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
-import {typingWarmUp} from './warm-up-run.mjs';
+import {FixtureChanged, typingWarmUp} from './warm-up-run.mjs';
 
 export {PASTING};
 
@@ -387,6 +387,11 @@ async function runOnce(options, io) {
       // cause, its message naming what the device's cancel then left.
       meta.panelCloseStop = {cause: error.guard.category, detail: error.guard.detail, device: error.device};
       recordUnrun(ctx, plan, error.guard, 'the key guard stopped a panel\'s close');
+    } else if (error instanceof FixtureChanged) {
+      // A fixture the warm-up's typing changed and the harness could not put back (ruling 1278 (b), ./warm-up-run.mjs):
+      // every planned sample NO VERDICT by that cause, none judged on the changed fixture.
+      meta.warmUpStop = {venue: error.venue, why: error.why};
+      recordUnrun(ctx, plan, null, `the warm-up left ${error.venue}'s fixture changed (${error.why})`);
     } else if (error instanceof PanelStuck) {
       // A panel nothing closed (./panels.mjs closePanel, ruling 1195): its samples after are recorded, invalid by it.
       recordUnrun(ctx, plan, null, error.message);

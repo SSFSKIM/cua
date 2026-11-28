@@ -23,7 +23,7 @@ import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInp
 import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop, userWindowSeen} from './steps.mjs';
 import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, PRESS_KEY, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
-import {COMPOSITION_VENUES, recordWarmUp, warmUpAct, warmUpComposeCell, warmUpStep} from './warm-up-run.mjs';
+import {COMPOSITION_VENUES, neutral, recordWarmUp, warmUpAct, warmUpComposeCell, warmUpStep} from './warm-up-run.mjs';
 
 const j = JSON.stringify;
 // A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
@@ -166,13 +166,17 @@ async function frontmostRows(ctx, field, rows, source) {
 
 // Ruling 1278 (b): sitting C's Korean pressKey rows read ㄱ on whichever lane ran first in the run's shared web
 // processes, so each web field composes once, through the lane's engine, before its first Korean row
-// (./warm-up-run.mjs). The pressKey row's keys (r k under 2-Set) as a harness cell; the composition ended as behindUser
-// ends one, the Latin source selected with the field in front, then Korean established again (koreanIn, whose refocus
-// ends a composition that selection did not reach), and only then the field emptied on the neutral path, the harness's
-// own Accessibility write (harnessEmptyOf), never the engine. Off a hosted runner nothing selects a source and the
-// harness's write refuses, so nothing composes: recorded skipped, as is a field whose Korean condition does not run
-// (noWarmUp). The step's record is never a row's: a composition that failed or a field not read back empty is kept on
-// meta.warmUp, the rows run. -> null when Korean holds again for the rows, else {why}: Korean did not engage again.
+// (./warm-up-run.mjs). The field cleared first on the neutral path (the harness's own Accessibility write, field-empty),
+// then the pressKey row's keys (r k under 2-Set) as a harness cell, and what composed read once it settles
+// (composedOutcome: a category, never text or a hash). Only when the keys were sent is anything put back: the
+// composition ended as behindUser ends one, the Latin source selected with the field in front, then Korean established
+// again (koreanIn, whose refocus ends a composition that selection did not reach; tried once more when it does not
+// engage), and only then the field emptied on the neutral path, never the engine. That last emptying is record-only:
+// every Korean row's prepare sets its own field (./unicode-plan.mjs unicodeCase: emptyField). Off a hosted runner
+// nothing selects a source and the harness's write refuses, so nothing composes: recorded skipped, as is a field whose
+// Korean condition does not run (noWarmUp). The step's record is never a row's: a composition that failed or a field
+// not read back empty is kept on meta.warmUp and the rows run; only a Korean source that did not engage again leaves
+// them invalid, by their own precondition. -> null when Korean holds for the rows, else {why}.
 const NOT_PLANNED = 'the Korean condition does not run for this field in the plan';
 const rowsDidNotRun = why => `the Korean condition's rows did not run: ${why}`;
 function noWarmUp(ctx, condition, field, skipped) {
@@ -183,13 +187,39 @@ async function koreanWarmUp(ctx, field, when) {
     : ctx.meta.hosted !== true ? 'off a GitHub-hosted runner the harness\'s own Accessibility write refuses (ruling 1229(b)), so nothing could empty the field: not composed' : null;
   if (off) { noWarmUp(ctx, 'korean', field, off); return null; }
   let again = null;
-  await warmUpStep(ctx, {venue: field, kind: 'composition'}, async () => {
-    const out = await warmUpAct(ctx, field, {act: warmUpComposeCell(field, PRESS_KEY.keys), keys: PRESS_KEY.keys.split(' ')});
-    const ended = useSource(ctx, ABC, `${when} warm-up:end`);
+  await warmUpStep(ctx, {venue: field, kind: 'composition'}, async seen => {
+    let cleared = null;
+    const clear = () => { cleared = neutral(ctx, ['field-empty', '--scene', field], 'emptied'); return {cleared}; };
+    Object.assign(seen, await warmUpAct(ctx, field, {act: warmUpComposeCell(field, PRESS_KEY.keys), keys: PRESS_KEY.keys.split(' '), keysAs: 'composition', between: clear}));
+    // Nothing sent, nothing composed: the source as Korean held it, nothing to end or empty.
+    if (!seen.sent) return {ended: null, korean: null, retried: false};
+    Object.assign(seen, cleared?.emptied === true ? await composedOutcome(ctx, field) : {composed: null});
+    seen.ended = useSource(ctx, ABC, `${when} warm-up:end`);
     again = koreanIn(ctx, field, `${when} after the warm-up`);
-    return {...out, ended, korean: again === null, neutral: harnessEmptyOf(ctx, field)};
+    seen.retried = again !== null;
+    if (again) again = koreanIn(ctx, field, `${when} after the warm-up, again`);
+    seen.korean = again === null;
+    seen.neutral = neutral(ctx, ['field-empty', '--scene', field], 'emptied');
+    return {};
   });
   return again;
+}
+// What the warm-up's keys composed in the field the harness had cleared, read by the focus probe until it settles (two
+// reads agreeing, or the syllable, SETTLE_READS at most): complete (가), partial (ㄱ alone, the first-lane effect sitting
+// C showed), empty, other, or unread. The hashes are compared here and only the category is recorded.
+const COMPOSED_AS = Object.freeze({[sha256Hex(PRESS_KEY.expected.korean)]: 'complete', [sha256Hex(COMPOSITION.composed)]: 'partial', [EMPTY_HASH]: 'empty'});
+async function composedOutcome(ctx, field) {
+  const top = userWindowOf(read(ctx, null, {frontKey: true})?.reading, ctx.records[field].pid);
+  if (!top) return {composed: 'unread', composedReads: 0};
+  let hash = null, reads = 0;
+  while (reads < SETTLE_READS) {
+    if (reads) await ctx.sleep(SETTLE_READ_MS);
+    const last = hash;
+    hash = read(ctx, focusOf(top)).focus?.valueHash ?? null;
+    reads += 1;
+    if (COMPOSED_AS[hash] === 'complete' || (reads > 1 && hash !== null && hash === last)) break;
+  }
+  return {composed: hash === null ? 'unread' : COMPOSED_AS[hash] ?? 'other', composedReads: reads};
 }
 
 // The user window in front with its field emptied and focused, read back empty by the focus probe; the driven field

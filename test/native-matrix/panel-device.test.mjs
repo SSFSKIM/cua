@@ -176,7 +176,7 @@ test('the AX helper\'s field writes (empty, caret, strip) write only with exactl
   const verb = source.slice(source.indexOf('if fieldVerbs[args[1]] != nil {'), source.indexOf('if args[1] == "element" {'));
   const scans = [...source.matchAll(/windows\.(first|filter)\(where: atBounds\)|windows\.filter\(atBounds\)/g)].map(m => m[0]);
   assert.deepEqual(scans, ['windows.filter(atBounds)', 'windows.first(where: atBounds)'], 'one scan per verb: the field verbs\' list, or the others\' first match');
-  assert.match(source, /let fieldVerbs = \["empty": 6, "caret": 6, "strip": 8\]/);
+  assert.match(source, /let fieldVerbs = \["empty": 6, "caret": 6, "strip": 6\]/);
   assert.match(source, /let emptyMatches: \[AXUIElement\]\? = fieldVerbs\[args\[1\]\] != nil \? windows\.filter\(atBounds\) : nil/);
   assert.match(source, /let topLevel: AXUIElement\? = emptyMatches\.map \{ \$0\.first \} \?\? windows\.first\(where: atBounds\)/);
   assert.doesNotMatch(source, /near\(\$0, bounds\)[^\n]*\.count/, 'no count from a scan of its own');
@@ -259,20 +259,20 @@ test('field-empty: a write the field refuses, a read-back not empty, or a field 
   await withScenes(async dir => {
     const answerOf = async (answer, scene = 'electron') => (await main(['field-empty', '--run', dir, '--scene', scene], {io: emptier(answer).io})).answer;
     assert.deepEqual(await answerOf({settable: false, write: -25205, readBack: 3, reads: 4}),
-      {emptied: false, count: 1, settable: false, write: -25205, readBack: 3, reads: 4, reason: 'the field\'s value read back 3 characters after the write (AXError -25205)'});
+      {emptied: false, count: 1, settable: false, write: -25205, readBack: 3, reads: 4, why: 'not-empty', reason: 'the field\'s value read back 3 characters after the write (AXError -25205)'});
     assert.deepEqual((await answerOf({write: 0, readBack: null})).reason, 'the field\'s value read back nothing after the write (AXError 0)');
     assert.deepEqual(await answerOf({count: 2, settable: null, write: null, readBack: null, reads: 0}),
-      {emptied: false, count: 2, settable: null, write: null, readBack: null, reads: 0, reason: 'Accessibility lists 2 matching fields in the window: which one is the field cannot be told'});
+      {emptied: false, count: 2, settable: null, write: null, readBack: null, reads: 0, why: 'fields-ambiguous', reason: 'Accessibility lists 2 matching fields in the window: which one is the field cannot be told'});
     assert.equal((await answerOf({count: 0, settable: null, write: null, readBack: null, reads: 0})).reason, 'Accessibility lists no matching field in the window');
-    assert.deepEqual(await answerOf({found: false, kind: null, count: 0, write: null, readBack: null}), {emptied: false, reason: 'Accessibility lists no window at the scene window\'s bounds'});
-    assert.deepEqual(await answerOf({trusted: false}), {emptied: false, reason: 'the helper is not trusted for Accessibility'});
+    assert.deepEqual(await answerOf({found: false, kind: null, count: 0, write: null, readBack: null}), {emptied: false, why: 'no-window', reason: 'Accessibility lists no window at the scene window\'s bounds'});
+    assert.deepEqual(await answerOf({trusted: false}), {emptied: false, why: 'untrusted', reason: 'the helper is not trusted for Accessibility'});
     // The review of 5da67ce0a: two of the app's windows within the bounds' tolerance, so which is the scene's cannot be told.
     assert.deepEqual(await answerOf({windowMatches: 2, count: null, settable: null, write: null, readBack: null, reads: 0}),
-      {emptied: false, windowMatches: 2, reason: 'Accessibility lists 2 of the app\'s windows at the scene window\'s bounds: which one is the scene\'s cannot be told'});
+      {emptied: false, windowMatches: 2, why: 'windows-ambiguous', reason: 'Accessibility lists 2 of the app\'s windows at the scene window\'s bounds: which one is the scene\'s cannot be told'});
     // A scene that is not up, or a window not on screen: nothing asked of the helper.
     const none = {...HOSTED, windows: () => [DOCUMENT], panelAx: () => assert.fail('the helper is not asked')};
-    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'electron'], {io: none})).answer, {emptied: false, reason: 'window 20 is not on screen'});
-    await withRun(async only => assert.deepEqual((await main(['field-empty', '--run', only, '--scene', 'electron'], {io: none})).answer, {emptied: false, reason: 'the scene is not up in this run'}));
+    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'electron'], {io: none})).answer, {emptied: false, why: 'window-off-screen', reason: 'window 20 is not on screen'});
+    await withRun(async only => assert.deepEqual((await main(['field-empty', '--run', only, '--scene', 'electron'], {io: none})).answer, {emptied: false, why: 'scene-not-up', reason: 'the scene is not up in this run'}));
     await assert.rejects(main(['field-empty', '--run', dir, '--scene', 'finder'], {io: none}), /field-empty names a user window's scene/);
   });
 });
@@ -280,7 +280,7 @@ test('field-empty: a write the field refuses, a read-back not empty, or a field 
 test('field-empty off a GitHub-hosted runner: refused before anything is read or asked of the helper', async () => {
   await withScenes(async dir => {
     const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), windows: () => assert.fail('nothing read')};
-    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {emptied: false, refused: MOVE_REFUSED_OFF_HOSTED});
+    assert.deepEqual((await main(['field-empty', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {emptied: false, why: 'off-hosted', refused: MOVE_REFUSED_OFF_HOSTED});
   });
 });
 
@@ -306,42 +306,69 @@ test('field-empty names Chrome\'s field too: the page\'s textarea by its aria-la
   });
 });
 
-test('field-caret: the caret put at the field\'s start by the AX helper, its length and digest read with it for the strip to check against', async () => {
+test('field-caret: the caret put at the field\'s start by the AX helper; the field\'s length and digest kept in the run directory, never in the answer', async () => {
   await withWebScenes(async dir => {
     const asked = [];
     const helper = answer => ({...HOSTED, windows: () => [DOCUMENT, PAGE],
-      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST, ...answer}; }});
+      panelAx: (args, options) => { asked.push([args, options ?? null]); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST, ...answer}; }});
     const out = await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: helper()});
-    assert.deepEqual(asked, [['caret', '300', '213,78,507,877', 'AXTextArea', 'First Text View']]);
-    assert.deepEqual(out.answer, {placed: true, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST});
+    assert.deepEqual(asked, [[['caret', '300', '213,78,507,877', 'AXTextArea', 'First Text View'], null]]);
+    assert.deepEqual(out.answer, {placed: true, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512});
+    assert.ok(!JSON.stringify(out).includes(DIGEST), 'the digest stays on the device');
+    assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'field-textedit.kept'), 'utf8')), {length: 512, digest: DIGEST});
+    assert.equal(fs.statSync(join(dir, 'field-textedit.kept')).mode & 0o777, 0o600);
     const answerOf = async answer => (await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: helper(answer)})).answer;
     assert.deepEqual(await answerOf({write: -25200, caret: {location: 40, length: 0}}),
-      {placed: false, count: 1, write: -25200, caret: {location: 40, length: 0}, length: 512, digest: DIGEST, reason: 'the caret read back at 40 (length 0) after the write (AXError -25200), not at the field\'s start'});
-    assert.equal((await answerOf({length: null, digest: null})).reason, 'the field\'s value was unread');
-    assert.equal((await answerOf({count: 2, write: null, caret: null, length: null, digest: null})).reason, 'Accessibility lists 2 matching fields in the window: which one is the field cannot be told');
-    assert.deepEqual(await answerOf({digest: 'not a digest'}), {placed: false, count: 1, write: 0, caret: {location: 0, length: 0}, length: 512, digest: null, reason: 'the field\'s value was unread'});
+      {placed: false, count: 1, write: -25200, caret: {location: 40, length: 0}, length: 512, why: 'caret-elsewhere', reason: 'the caret read back at 40 (length 0) after the write (AXError -25200), not at the field\'s start'});
+    assert.equal((await answerOf({length: null, digest: null})).why, 'value-unread');
+    assert.equal((await answerOf({digest: 'not a digest'})).why, 'value-unread');
+    assert.equal((await answerOf({count: 2, write: null, caret: null, length: null, digest: null})).why, 'fields-ambiguous');
+    assert.ok(!fs.existsSync(join(dir, 'field-textedit.kept')), 'a caret not placed keeps nothing for a strip to trust');
   });
 });
 
-test('field-strip: what was typed before the field\'s own text removed by the AX helper, the field read back as it was by its digest', async () => {
+test('field-strip: the kept length and digest handed to the AX helper on its stdin, never its command line; what was typed before the field\'s own text removed and read back', async () => {
   await withWebScenes(async dir => {
     const asked = [];
     const helper = answer => ({...HOSTED, windows: () => [DOCUMENT, PAGE],
-      panelAx: args => { asked.push(args); return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, removed: 7, select: 0, write: 0, readBack: 512, reads: 1, restored: true, ...answer}; }});
-    const out = await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: helper()});
-    assert.deepEqual(asked, [['strip', '300', '213,78,507,877', 'AXTextArea', 'First Text View', '512', DIGEST]]);
-    assert.deepEqual(out.answer, {restored: true, count: 1, removed: 7, select: 0, write: 0, readBack: 512, reads: 1});
-    const answerOf = async answer => (await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: helper(answer)})).answer;
-    assert.deepEqual(await answerOf({removed: 0, select: null, write: null, readBack: 512, reads: 0, restored: true}), {restored: true, count: 1, removed: 0, select: null, write: null, readBack: 512, reads: 0});
-    assert.equal((await answerOf({removed: null, select: null, write: null, readBack: null, reads: 0, restored: false, refused: 'other'})).reason,
-      'the field did not read as its own text with the typing before it: nothing was removed');
-    assert.equal((await answerOf({removed: null, select: null, write: null, readBack: null, reads: 0, restored: false, refused: 'shorter'})).reason,
-      'the field read shorter than its own text: nothing was removed');
-    assert.equal((await answerOf({restored: false, readBack: 509, reads: 4, write: -25205})).reason, 'the field did not read back as its own text after the removal (509 characters, AXError -25205)');
-    await assert.rejects(main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', 'abc'], {io: helper()}), /--digest takes the field-caret answer's digest/);
-    await assert.rejects(main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '-1', '--digest', DIGEST], {io: helper()}), /--length takes the field-caret answer's length/);
+      panelAx: (args, options) => {
+        asked.push([args, options ?? null]);
+        if (args[0] === 'caret') return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, write: 0, caret: {location: 0, length: 0}, length: 512, digest: DIGEST};
+        return {trusted: true, found: true, windows: 1, kind: 'window', windowMatches: 1, count: 1, walked: 12, removed: 7, select: 0, selected: true, write: 0, readBack: 512, reads: 1, restored: true, ...answer};
+      }});
+    // Nothing kept yet: nothing is asked of the helper.
+    assert.deepEqual((await main(['field-strip', '--run', dir, '--scene', 'textedit'], {io: helper()})).answer, {restored: false, why: 'not-kept', reason: 'no field-caret answer is kept for the scene: nothing was removed'});
+    assert.deepEqual(asked, []);
+    await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: helper()});
+    const out = await main(['field-strip', '--run', dir, '--scene', 'textedit'], {io: helper()});
+    assert.deepEqual(asked.at(-1), [['strip', '300', '213,78,507,877', 'AXTextArea', 'First Text View'], {input: `512\n${DIGEST}\n`}]);
+    assert.ok(asked.every(([args]) => !args.includes(DIGEST)), 'the digest never on a command line');
+    assert.deepEqual(out.answer, {restored: true, count: 1, removed: 7, select: 0, selected: true, write: 0, readBack: 512, reads: 1});
+    assert.ok(!JSON.stringify(out).includes(DIGEST));
+    const answerOf = async answer => (await main(['field-strip', '--run', dir, '--scene', 'textedit'], {io: helper(answer)})).answer;
+    assert.deepEqual(await answerOf({removed: 0, select: null, selected: null, write: null, readBack: 512, reads: 0, restored: true}),
+      {restored: true, count: 1, removed: 0, select: null, selected: null, write: null, readBack: 512, reads: 0});
+    const refused = {removed: null, select: null, selected: null, write: null, readBack: null, reads: 0, restored: false};
+    assert.deepEqual([(await answerOf({...refused, refused: 'other'})).why, (await answerOf({...refused, refused: 'shorter'})).why, (await answerOf({...refused, refused: 'unread'})).why],
+      ['not-own-text', 'shorter', 'value-unread']);
+    // The selection not read back as the intended range: nothing deleted.
+    const unconfirmed = await answerOf({removed: null, select: 0, selected: false, write: null, readBack: null, reads: 0, restored: false, refused: 'select'});
+    assert.deepEqual([unconfirmed.why, unconfirmed.reason], ['selection-unconfirmed', 'the selection did not read back as the typed range: nothing was removed']);
+    assert.equal((await answerOf({restored: false, readBack: 509, reads: 4, write: -25205})).why, 'read-back');
     const off = {env: {}, platform: 'darwin', panelAx: () => assert.fail('the helper is not asked'), windows: () => assert.fail('nothing read')};
-    assert.deepEqual((await main(['field-strip', '--run', dir, '--scene', 'textedit', '--length', '512', '--digest', DIGEST], {io: off})).answer, {restored: false, refused: MOVE_REFUSED_OFF_HOSTED});
-    assert.deepEqual((await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {placed: false, refused: MOVE_REFUSED_OFF_HOSTED});
+    assert.deepEqual((await main(['field-strip', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {restored: false, why: 'off-hosted', refused: MOVE_REFUSED_OFF_HOSTED});
+    assert.deepEqual((await main(['field-caret', '--run', dir, '--scene', 'textedit'], {io: off})).answer, {placed: false, why: 'off-hosted', refused: MOVE_REFUSED_OFF_HOSTED});
   });
+});
+
+// The review of the warm-up (finding 1): the strip deletes only once the typed range is set and read back as set.
+test('the AX helper\'s strip reads its length and digest from stdin and deletes only after the selection read back as the typed range', () => {
+  const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
+  const strip = source.slice(source.indexOf('if args[1] == "strip" {'), source.indexOf('answer["settable"] = NSNull()'));
+  assert.match(source, /let fieldVerbs = \["empty": 6, "caret": 6, "strip": 6\]/, 'no length or digest among its arguments');
+  assert.match(source, /let stripInput: \(length: Int, digest: String\)\? = args\[1\] != "strip" \? nil : \{\n\s+guard let length = readLine\(\)[^\n]*let digest = readLine\(\)/);
+  assert.match(strip, /let \(length, own\) = stripInput!/);
+  const select = strip.indexOf('writeRange(field, 0, extra)'), confirm = strip.indexOf('selectedRange(field)'), remove = strip.indexOf('kAXSelectedTextAttribute');
+  assert.ok(select > 0 && confirm > select && remove > confirm, 'set, read back, then delete');
+  assert.match(strip, /answer\["refused"\] = "select"/);
 });

@@ -143,7 +143,8 @@ test('the frontmost regime: a scene that is not front and key before its act is 
   assert.deepEqual(row.frontKey, {apps: [TEXTEDIT], activate: {app: TEXTEDIT, front: true, key: true}, before: {front: TEXTEDIT, key: TEXTEDIT}, after: {front: TEXTEDIT, key: TEXTEDIT}});
   assert.equal(row.ok, true);
   const activations = matrixSteps(steps, 'step').filter(s => s[1] === 'activate' && s[2] === 'textedit').length;
-  const baseline = matrixSteps((await runWith({plan: planOf('method', {scene: 'textedit'})})).steps, 'step').filter(s => s[1] === 'activate' && s[2] === 'textedit').length;
+  // The baseline hosted too: a hosted run's warm-up activates TextEdit once before any row (ruling 1278 (b)).
+  const baseline = matrixSteps((await runWith({env: HOSTED, plan: planOf('method', {scene: 'textedit'})})).steps, 'step').filter(s => s[1] === 'activate' && s[2] === 'textedit').length;
   assert.equal(activations, baseline + 1, 'one activation more, for that row');
   // The Open panel's rows list its service among the cell's own apps, and are never activated again (TextEdit would come
   // up over its own panel).
@@ -153,7 +154,10 @@ test('the frontmost regime: a scene that is not front and key before its act is 
   const panelActivations = steps => matrixSteps(steps, 'step').filter(s => s[1] === 'activate' && s[2] === 'textedit').length;
   // The baseline also closes its background pairing's panel with TextEdit activated first (T8e review, Minor 1): a panel
   // the held ⌘O never opened in the alert's run.
-  assert.equal(panelActivations(panel.steps), panelActivations((await runWith({plan: planOf('method', {scene: 'openPanel'})})).steps) - 1, 'the panel\'s key elsewhere activates TextEdit no more');
+  // The hosted run's warm-up activates TextEdit before any row (ruling 1278 (b)): not the rows', so not counted.
+  const warmUp = panel.result.meta.warmUp.steps.filter(s => s.venue === 'textedit' && !s.skipped).length;
+  assert.equal(warmUp, 1);
+  assert.equal(panelActivations(panel.steps) - warmUp, panelActivations((await runWith({plan: planOf('method', {scene: 'openPanel'})})).steps) - 1, 'the panel\'s key elsewhere activates TextEdit no more');
 });
 
 test('the engine\'s own error name is recorded from the act\'s meta, not the plain Error the REPL hands the cell', async () => {

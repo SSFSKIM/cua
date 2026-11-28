@@ -22,7 +22,8 @@ import {exclusionOf} from './not-judged.mjs';
 import {ownerInputCause, ownerInputNow, readOnlyMarks, venueInputCause, venueInputMarks} from './owner-input.mjs';
 import {INPUT_WRITES_HOSTED_ONLY} from './hitoolbox.mjs';
 import {activate, activationOf, AlertGuarded, AlertHeld, alertCheck, caseRow, device, errorNameOf, focusOf, js, keyReading, keyWindowScene, mark, notActivated, push, quiet, read, readKey, sendKeys, Stop, userWindowSeen} from './steps.mjs';
-import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {ABC, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, PRESS_KEY, UNICODE_USERS, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {COMPOSITION_VENUES, recordWarmUp, warmUpAct, warmUpComposeCell, warmUpStep} from './warm-up-run.mjs';
 
 const j = JSON.stringify;
 // A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
@@ -37,6 +38,7 @@ export async function unicodeSection(ctx, plan) {
   try {
     for (const condition of CONDITIONS) {
       const mine = rows.filter(r => r.condition === condition);
+      if (condition === 'korean') for (const field of COMPOSITION_VENUES) if (!mine.some(r => r.field === field)) noWarmUp(ctx, condition, field, NOT_PLANNED);
       if (!mine.length) continue;
       const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
       const venue = venueInputCause(ctx.venueMissing, SELECTS[condition]);
@@ -44,14 +46,14 @@ export async function unicodeSection(ctx, plan) {
         const ofField = mine.filter(r => r.field === field);
         if (!ofField.length) continue;
         await ctx.checkpoint();
-        if (venue) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
+        if (venue) { noWarmUp(ctx, condition, field, rowsDidNotRun(venue)); for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...venueInputMarks(venue)}); continue; }
         // Off a hosted runner the owner's values are read again at each field: they may have changed since the last.
         if (ctx.ownerInput) ownerInputNow(ctx, device(ctx, ['source', 'state']), `unicode ${condition}:${field}`);
         const owned = ctx.ownerInput ? ownerInputCause(ctx.ownerInput, OWNER_NEEDS[condition], ctx.venueReadOnly) : null;
         const unset = condition !== 'perContext' && ctx.perContextOff !== true
           ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
-        if (owned) { for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, owned)}); continue; }
-        if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
+        if (owned) { noWarmUp(ctx, condition, field, rowsDidNotRun(owned)); for (const r of ofField) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, owned)}); continue; }
+        if (unset) { noWarmUp(ctx, condition, field, rowsDidNotRun(unset)); for (const r of ofField) invalidRow(ctx, r, unset); continue; }
         if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
         else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
         else if (condition === 'composing') await composingRows(ctx, field, ofField);
@@ -136,25 +138,58 @@ const rowBase = (ctx, r) => ({section: 'unicode', id: r.id, engine: ctx.engine, 
 const invalidRow = (ctx, r, reason, focus, seen) => push(ctx, {...rowBase(ctx, r), invalid: reason, ...(focus === undefined ? {} : {focus}), ...(seen ? {userWindowSeen: seen} : {})});
 const options = r => ({section: 'unicode', id: r.id, extra: {condition: r.condition}});
 
-// The Latin or Korean source: the field's scene in front reading it, each row a frontmost case.
+// The Latin or Korean source: the field's scene in front reading it, each row a frontmost case. Under Korean, a web
+// field's warm-up (ruling 1278 (b), koreanWarmUp) comes once Korean holds and before the field's first row.
 async function frontmostRows(ctx, field, rows, source) {
+  const condition = rows[0].condition;
   await quiet(ctx, field);
   const front = activate(ctx, field);
   const skipped = notActivated(ctx, field);
-  if (skipped) { for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: skipped}); return; }
-  if (!front?.ok) { for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
-  const when = `${rows[0].condition}:${field}`;
+  if (skipped) { noWarmUp(ctx, condition, field, rowsDidNotRun(`${field}'s activation did not take front and key`)); for (const r of rows) push(ctx, {...rowBase(ctx, r), frontKey: skipped}); return; }
+  if (!front?.ok) { noWarmUp(ctx, condition, field, rowsDidNotRun(`${field} did not come to the front`)); for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
+  const when = `${condition}:${field}`;
   let failed = null;
   if (source === KOREAN_2SET) failed = koreanIn(ctx, field, when);
   else { const latin = establishSource(ctx, source, when); if (!latin.held) failed = {why: notHeld(source, field), mismatch: mismatchOf(source, latin.read, `with ${field} in front`)}; }
   // Off a hosted runner nothing was selected: another source read, before or after a refocus, is the owner's switch.
   if (failed?.mismatch && ctx.ownerInput) {
     const cause = `${ctx.venueReadOnly ?? INPUT_WRITES_HOSTED_ONLY}; the row needs the input source ${source}, and ${failed.mismatch.text}`;
+    noWarmUp(ctx, condition, field, rowsDidNotRun(cause));
     for (const r of rows) push(ctx, {...rowBase(ctx, r), ...readOnlyMarks(ctx, cause)});
     return;
   }
+  if (!failed && condition === 'korean' && COMPOSITION_VENUES.includes(field)) failed = await koreanWarmUp(ctx, field, when);
+  else if (failed) noWarmUp(ctx, condition, field, rowsDidNotRun(failed.why));
   if (failed) { for (const r of rows) invalidRow(ctx, r, failed.why); return; }
   for (const r of rows) await caseRow(ctx, field, 'frontmost', unicodeCase(r), options(r));
+}
+
+// Ruling 1278 (b): sitting C's Korean pressKey rows read ㄱ on whichever lane ran first in the run's shared web
+// processes, so each web field composes once, through the lane's engine, before its first Korean row
+// (./warm-up-run.mjs). The pressKey row's keys (r k under 2-Set) as a harness cell; the composition ended as behindUser
+// ends one, the Latin source selected with the field in front, then Korean established again (koreanIn, whose refocus
+// ends a composition that selection did not reach), and only then the field emptied on the neutral path, the harness's
+// own Accessibility write (harnessEmptyOf), never the engine. Off a hosted runner nothing selects a source and the
+// harness's write refuses, so nothing composes: recorded skipped, as is a field whose Korean condition does not run
+// (noWarmUp). The step's record is never a row's: a composition that failed or a field not read back empty is kept on
+// meta.warmUp, the rows run. -> null when Korean holds again for the rows, else {why}: Korean did not engage again.
+const NOT_PLANNED = 'the Korean condition does not run for this field in the plan';
+const rowsDidNotRun = why => `the Korean condition's rows did not run: ${why}`;
+function noWarmUp(ctx, condition, field, skipped) {
+  if (condition === 'korean' && COMPOSITION_VENUES.includes(field)) recordWarmUp(ctx, {venue: field, kind: 'composition', skipped});
+}
+async function koreanWarmUp(ctx, field, when) {
+  const off = ctx.ownerInput ? `${ctx.venueReadOnly ?? INPUT_WRITES_HOSTED_ONLY}: nothing could end the composition, so none is made`
+    : ctx.meta.hosted !== true ? 'off a GitHub-hosted runner the harness\'s own Accessibility write refuses (ruling 1229(b)), so nothing could empty the field: not composed' : null;
+  if (off) { noWarmUp(ctx, 'korean', field, off); return null; }
+  let again = null;
+  await warmUpStep(ctx, {venue: field, kind: 'composition'}, async () => {
+    const out = await warmUpAct(ctx, field, {act: warmUpComposeCell(field, PRESS_KEY.keys), keys: PRESS_KEY.keys.split(' ')});
+    const ended = useSource(ctx, ABC, `${when} warm-up:end`);
+    again = koreanIn(ctx, field, `${when} after the warm-up`);
+    return {...out, ended, korean: again === null, neutral: harnessEmptyOf(ctx, field)};
+  });
+  return again;
 }
 
 // The user window in front with its field emptied and focused, read back empty by the focus probe; the driven field

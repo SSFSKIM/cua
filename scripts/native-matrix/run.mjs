@@ -14,6 +14,9 @@
 //      and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
 //   4. the activation watcher started (`watch start`, its pid kept), the lane connected (./lane.mjs), every scene bound
 //      by path with its window brought to the front first, so the bind's text (getApp emits it) is the run's own window
+//   4a. the warm-up (ruling 1278 (b), ./warm-up-run.mjs): one typeText through the lane's engine into each text venue up,
+//      each field put back by the harness's own Accessibility write, recorded (meta.warmUp) and never judged; on a
+//      GitHub-hosted runner only
 //   5. the frontmost regime: each target's app activated (a harness step), its speed cells (getAXState, getScreenshot,
 //      listApps; --samples each) and finding-elements cell, then its method cases (./plan.mjs); TextEdit's Open panel
 //      and Save sheet each case on an opening of its own, placed in the strip and closed by the harness (./panels.mjs);
@@ -80,6 +83,7 @@ import {activate, activated, activationOf, AlertGuarded, appsOf, caseRow, device
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {malformedBaseline, ownerInputNow, venueInputMarks} from './owner-input.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
+import {typingWarmUp} from './warm-up-run.mjs';
 
 export {PASTING};
 
@@ -354,6 +358,9 @@ async function runOnce(options, io) {
       if (!bound.ok) throw new Error(`${id} could not be bound: ${bound.error}`);
     }
     snapshot();
+    // Ruling 1278 (b): each text venue typed into once through the lane's engine and put back by the harness, before any
+    // judged row (./warm-up-run.mjs); the Korean composition's is the input sections' (./unicode-run.mjs).
+    await typingWarmUp(ctx, scenes);
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
     await inputSections(ctx, plan);

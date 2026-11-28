@@ -352,6 +352,28 @@ session's to add on `docs/117-progress`).
     - each field left empty through the neutral path (panel-ax, as in 1229(b)), never through the engine under test.
     It must not hide what was seen. The parity record states the first-lane effect as measured (Surprises & Discoveries,
     2026-11-28).
+    Built in 2f42e662c, 585a8d2d0 and 8b1bdaf82, with two review fix waves (0ccdbc93f..dd73b8c1d, 7a8fdc60b,
+    90f467ec4). Where the build settles what (b) did not:
+    - The typing warm-up runs after the binds and before plan.frontmost: "Warm up" through each lane's engine, one per
+      text venue the plan brings up.
+    - TextEdit's document is kept, not emptied. The frontmost cases need its fixed text. The harness puts the caret at
+      the start (field-caret), and after the typing removes exactly what was typed (field-strip). It deletes only once
+      the selected range reads back equal, then checks the document against the digest it kept. The digest stays in
+      the device's run directory and goes to the helper on stdin.
+    - Chrome's field joins field-empty: the textarea, by its aria-label.
+    - A put-back that fails is tried once more. If it fails again, the run stops (FixtureChanged): its run job fails
+      and jobs-check refuses it, and the answer is `gh run rerun --failed`, as for 1227's infrastructure stops. The
+      speed and finding cells read the web fields with no prepare of their own, so the web fields stop the run too.
+    - The Korean warm-up sits in the Korean condition, for chrome and electron, after koreanIn holds and before the
+      field's first row. After the composition it switches to ABC, then runs koreanIn again, retried once, and
+      field-empty. That final empty is record-only, because every Korean row's prepare empties its own field.
+    - It records what composed, as a category only: complete, partial, empty, other or unread.
+    - The one intended exception to "invalidates nothing": if Korean cannot be re-established after two tries, that
+      field's Korean rows stay invalid. No row is judged under a source the harness could not verify.
+    - Off a hosted runner nothing is typed or composed; each step is recorded skipped.
+    - The record (meta.warmUp, and on a combined base meta.warmUps with job and lane provenance) holds times, kinds,
+      codes and counts, never text, keys or digests. The judge's "Warm-up (ruling 1278)" section reports it and never
+      judges it.
   - (c) SPEED_EXTRA also times chrome typeText.replace, and keeps textedit's (0e6df4463). The judging is fixed before
     the data, as in 1232: both rows are judged on their n=30 samples alone.
     - textedit stays #593 unless its n=30 is worse than C's n=30 (cua 300.7/442 against the vendor's 304.9/406).
@@ -359,6 +381,8 @@ session's to add on `docs/117-progress`).
       (0.986 for the median, 1.089 for p95). It is departures.json's bound, read by departures.mjs
       acceptanceExceeded. A row that exceeds it becomes the owner's, with its ratios.
     - chrome either passes or becomes an owner question, with its numbers.
+    - A re-measurement qualifies only when every re-measured run holds exactly samples 1..10 on both lanes, each usable
+      once (7a8fdc60b). Short of that, the op is not qualified, and the bound is not evaluated.
   - (d) One filtered split over base 46165236186, with speed_extra=true, on the cells:
     textedit/concurrent.sheet@electron, chrome/korean/pressKey.rk, electron/korean/pressKey.rk,
     textedit/midSwitch/typeText.long, and chrome typeText.replace's frontmost cell.

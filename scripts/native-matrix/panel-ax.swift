@@ -96,10 +96,13 @@ func near(_ a: CGRect, _ b: CGRect) -> Bool {
 
 guard let bounds = rect(args[3]) else { emit(["trusted": true, "found": false, "failed": "bounds"]); exit(64) }
 let windows = (read(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
-let topLevel = windows.first { frame($0).map { near($0, bounds) } ?? false }
-// How many of the app's top-level windows lie at the bounds: `empty`, the one write into a window's contents, needs
-// exactly one, so a same-app window within the tolerance is never the one written; the other commands take the first.
-let windowMatches = windows.filter { frame($0).map { near($0, bounds) } ?? false }.count
+let atBounds = { (w: AXUIElement) -> Bool in frame(w).map { near($0, bounds) } ?? false }
+// `empty`, the one write into a window's contents, needs exactly one of the app's top-level windows at the bounds, so a
+// same-app window within the tolerance is never the one written: its target and its count come from one scan, so a
+// window whose frame moved between two scans cannot be the one written. The other commands take the first match, in
+// one scan of their own.
+let emptyMatches: [AXUIElement]? = args[1] == "empty" ? windows.filter(atBounds) : nil
+let topLevel: AXUIElement? = emptyMatches.map { $0.first } ?? windows.first(where: atBounds)
 // A Save sheet has a window of its own in the window list but is an AXSheet child of its document in AX
 // (scripts/cursor-sitting/ax-state.swift reads it so): with no top-level window at the bounds, the sheet at them, by
 // role and frame, under one of the app's windows.
@@ -165,6 +168,7 @@ if args[1] == "empty" {
   let wanted = args[5]
   let named = { (e: AXUIElement) -> Bool in [kAXIdentifierAttribute, kAXDescriptionAttribute, kAXTitleAttribute].contains { (read(e, $0) as? String) == wanted } }
   var matches: [AXUIElement] = []
+  let windowMatches = emptyMatches?.count ?? 0
   // Every match counted (the walk's own bound), so a name two fields share is refused rather than the first written.
   answer["windowMatches"] = windowMatches
   if windowMatches == 1, let topLevel { _ = walk(topLevel, { e in if role(e) == args[4] && named(e) { matches.append(e) }; return false }) }

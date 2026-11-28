@@ -166,11 +166,18 @@ test('panel element: the focused element\'s or the search field\'s frame read by
 // Review finding 2 (ruling 1203): the move writes the panel's position and nothing else; no AXSize write exists for any
 // read of its size to enable.
 // The review of 5da67ce0a: `empty` writes only when exactly one of the app's top-level windows lies at the bounds, the
-// count on its answer; the other commands keep their first-match lookup.
-test('the AX helper\'s empty writes only with exactly one window at the bounds, and says how many it found', () => {
+// count on its answer; the other commands keep their first-match lookup. The review of the 1248 round: the window
+// written and the windows counted come from one frame scan, so geometry moving between two scans cannot make the
+// window written another than the one counted unique; the other commands make no second scan.
+test('the AX helper\'s empty writes only with exactly one window at the bounds, its target and its count from one scan, and says how many it found', () => {
   const source = fs.readFileSync(new URL('../../scripts/native-matrix/panel-ax.swift', import.meta.url), 'utf8');
   const verb = source.slice(source.indexOf('if args[1] == "empty" {'), source.indexOf('if args[1] == "element" {'));
-  assert.match(source, /let windowMatches = windows\.filter \{ frame\(\$0\)\.map \{ near\(\$0, bounds\) \} \?\? false \}\.count/);
+  const scans = [...source.matchAll(/windows\.(first|filter)\(where: atBounds\)|windows\.filter\(atBounds\)/g)].map(m => m[0]);
+  assert.deepEqual(scans, ['windows.filter(atBounds)', 'windows.first(where: atBounds)'], 'one scan per verb: empty\'s list, or the others\' first match');
+  assert.match(source, /let emptyMatches: \[AXUIElement\]\? = args\[1\] == "empty" \? windows\.filter\(atBounds\) : nil/);
+  assert.match(source, /let topLevel: AXUIElement\? = emptyMatches\.map \{ \$0\.first \} \?\? windows\.first\(where: atBounds\)/);
+  assert.doesNotMatch(source, /near\(\$0, bounds\)[^\n]*\.count/, 'no count from a scan of its own');
+  assert.match(verb, /let windowMatches = emptyMatches\?\.count \?\? 0/);
   assert.match(verb, /answer\["windowMatches"\] = windowMatches/);
   assert.match(verb, /if windowMatches == 1, let topLevel \{/, 'the walk, and so the write, only under exactly one window');
 });

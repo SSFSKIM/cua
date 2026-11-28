@@ -611,12 +611,32 @@ its own.
   and dated (§J 1; its Decision Log and Surprises entries stay as written). `scripts/linux-engine-diff/families.mjs`'s
   Electron comment (§J 4). `test/cua-api/linux-engine-document.test.mjs` pins the new sentences to the facade's text
   and the launch variable to the code.
-- **The release and the pin (T5), pending.** The engine's release, its pin and `MIN_ENGINE_VERSION` 0.4.7 together,
-  filled in from T5. At T6's base the pin is 0.4.6 with a minimum of 0.4.5; none of that is T6's.
+- **The release and the pin (T5).**
+  - `linux-engine-v0.4.7` was built from 3944622de by run 46181361665, with all five jobs passing first time.
+  - SHA256SUMS: x64 `05b9cac46a266f70e280fad533f96f4b9dd5d725348b1ebf2217b9f0b16632cc`, arm64
+    `cd1ac299e5ee7d546b7535c0695368a3ed2830591838ffc1766b1e53afc8d631`. Both attestations verify.
+  - It is pinned in `runtime/engine/linux-engine.json` and `runtime/linux-runtime.json`, and `MIN_ENGINE_VERSION` is
+    0.4.7: the facade sends `tree_wanted`, which 0.4.6 refuses. The plugin is 0.31.0.
 
 **The acceptance** (§G's live tests 1 and 3 through the confined service on the VM, T5):
 
-(T5's results, to be filled in.)
+At 47c565ce9, through `cua serve` over MCP, with the kernel in the default scoped sandbox and the apps outside it
+(evidence `docs/evidence/2026-11-27-electron-a11y/t5-acceptance/`):
+- **§G 1, launched by cua: pass.** Both switches off. `launch_app` of the fixture's desktop entry, then the first
+  observation: `at_spi`, with `push button Fixture button`, after exactly one `GetAttributes` to the fixture. This is
+  the ticket's first criterion.
+- **§G 3, started by hand off the bus: pass.** Both observations end with `No accessibility tree: cua-electron-fixture,
+  an Electron app by its window's role, …`, word for word, and nothing was asked. This is the ticket's second criterion.
+- **§G 5 through the service: pass.** A screenshot as the first observation sent no `GetAttributes`; the next
+  `getAXState` sent one and had the button.
+- **§G 7 through the service: pass.** gedit's observation at this head, at main and at this head again: byte for byte
+  equal, with no request.
+- **The controls.**
+  - The head with a 0.4.6 engine named as the override is refused `engine_outdated` before `initialize`.
+  - The 0.4.6 binary itself answers a `get_window_state` carrying `tree_wanted: false` with "unknown field
+    `tree_wanted`".
+  - Main, without #228, fails §G 1, §G 3 and the screenshot check on their content.
+- §G 2, 4, 6, 8, 9 and 10 ran engine-only, in T1 to T3. Every run was on x86-64.
 
 **What is left.**
 - **The tracker line** (`tech-debt-tracker.md`, T2's review): the engine's X server replies block without a deadline,

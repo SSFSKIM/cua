@@ -183,15 +183,28 @@ final class FakeApp {
                   },
                   stillFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
                   fieldFocused: { field, _ in self.focused?.calls.append("focused"); return self.focused === field ? .focused : .moved },
-                  role: { $0.onClassify?($0, "role"); self.clock += $0.roleReadMs; $0.calls.append("role"); return $0.fails("role") ? nil : $0.role },
-                  subrole: { $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
+                  role: { self.record("role"); $0.onClassify?($0, "role"); self.clock += $0.roleReadMs; $0.calls.append("role")
+                    return $0.fails("role") ? nil : $0.role },
+                  subrole: { self.record("subrole"); $0.calls.append("subrole"); return $0.fails("subrole") ? .failed : $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.readRange() },
                   batch: { field, _ in field.readLength() },
                   lastError: { self.focused?.lastError },
+                  effect: effect.map { effect in { budget in self.record("effect"); return effect(budget) } },
+                  same: { $0 === $1 }, trace: trace,
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
+  }
+
+  /// #600: the paste transport's effect reading of this app (nil: none, the plain reading stands), and the recorder of
+  /// every classifying read: its name, and whether it ran inside the transport's hold or the read-back's own points.
+  var effect: ((Double) -> EffectSample<FakeField>?)?
+  var trace: ReadbackTrace?
+  private(set) var classifying: [(read: String, inHold: Bool, inReadback: Bool)] = []
+  private func record(_ read: String) {
+    guard let trace else { return }
+    classifying.append((read, trace.inHold > 0, trace.inReadback > 0))
   }
 }
 

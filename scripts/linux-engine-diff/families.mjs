@@ -309,10 +309,13 @@ export const FAMILIES = {
     title: 'Electron (cua fixture)',
     kind: 'electron',
     geometry: [900, 700],
-    // Chromium's web contents expose no tree on Linux without --force-renderer-accessibility (neither
-    // ACCESSIBILITY_ENABLED=1 nor the bus's ScreenReaderEnabled turned it on; M0.4 probe), and its ATK bridge none without
-    // ACCESSIBILITY_ENABLED=1 on the run's session bus, which has no org.a11y.Status on a person's display (chrome.mjs
-    // `CHROME_ENV`; B2, task 47)
+    // Chromium's web contents expose no tree on Linux until its accessibility mode is set: --force-renderer-accessibility
+    // sets it at the start, and so does one AT-SPI GetAttributes request from any client at any time (cua-engine's own
+    // observation sends it since 0.4.7, #228; the pre-flight docs/doperpowers/specs/2026-11-27-electron-a11y-preflight.md,
+    // A). ACCESSIBILITY_ENABLED=1 and the bus's ScreenReaderEnabled do not set the mode (M0.4 probe), and the flag does
+    // not start the ATK bridge: that needs ACCESSIBILITY_ENABLED=1 on the run's session bus, which has no org.a11y.Status
+    // on a person's display (chrome.mjs `CHROME_ENV`; B2, task 47). The harness keeps the flag, so a cell's tree does not
+    // depend on the request.
     launch: (ctx) =>
       ctx.page
         ? {

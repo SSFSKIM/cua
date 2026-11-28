@@ -1044,17 +1044,30 @@ final class TypeReadback<Element> {
   /// role and subrole, held to it by `readbackClassify`; where the snapshot found it as the application's focus, that
   /// focus read too, which must still be the field. It fails closed: a read it cannot complete (an AX error, a timeout,
   /// a destroyed element, a focus that names no element, a subrole that cannot be read) stops the paste as
-  /// `fieldUnreadable`, and any difference with R1's reason, before the post (`transportStop`). A request whose snapshot
-  /// classified no field (no focused element found, its role unreadable, a closed claim) has no field to hold, and its
-  /// refusal answers it as before.
+  /// `fieldUnreadable`, and any difference with R1's reason, before the post (`transportStop`).
+  ///
+  /// Ruling 1274: a request whose snapshot classified no field (no focused element found, its role unreadable, a closed
+  /// claim) holds "no field" as its baseline, and the one change that can be told against it is a password field
+  /// appearing: the gate reads the application's focus once, and a focused element that is AXSecureTextField by role or
+  /// by subrole stops the paste `becameSecure`. Any other answer posts as before, a read that fails included: with no
+  /// baseline there is nothing to fail closed against. That is #597's declared exemption, deliberately.
   func transportGate(beforeKey: Bool, application: AXUIElement) throws {
     reads.trace?.onGate()
     reads.trace?.inHold += 1
     defer {
       reads.trace?.inHold -= 1
-      reads.trace?.note(transportChange == nil && held != nil ? "gate" : "gate unheld")
+      reads.trace?.note(transportChange != nil ? "gate stopped" : held != nil ? "gate" : "gate no field")
     }
-    guard let held else { return }
+    guard let held else {
+      // #597's exemption (ruling 1274): only a password field appearing is told; a failed read posts.
+      if case .value(let focused) = reads.applicationFocus(application), let role = reads.role(focused) {
+        if role == "AXSecureTextField" || reads.subrole(focused) == .value("AXSecureTextField"), transportChange == nil {
+          transportChange = .becameSecure
+        }
+      }
+      try transportStop(beforeKey: beforeKey)
+      return
+    }
     func stop(_ why: TypeReadbackReason) {
       if transportChange == nil { transportChange = why }
     }

@@ -1581,10 +1581,12 @@ final class PasteOperationTests: XCTestCase {
 @discardableResult
 private func typeByPaste(_ engine: Engine, _ text: String, _ target: PasteTarget, _ context: ExecutionContext,
                          field: FakeField = FakeField(value: "", range: NSRange(location: 0, length: 0)), selection: NSRange? = nil,
-                         noFocus: Bool = false, claim: ReadbackIdentity? = nil, app given: FakeApp? = nil, meta: inout InputMeta) throws -> String? {
+                         noFocus: Bool = false, claim: ReadbackIdentity? = nil, app given: FakeApp? = nil,
+                         lookup: (() -> ReadbackFound<FakeField>?)? = nil, meta: inout InputMeta) throws -> String? {
   var reads = (given ?? FakeApp(noFocus ? nil : field)).reads
   // Found by the walk (its role alone) or the marker route (its role and subrole), which classified it.
   if let claim { reads.focused = { .field(field, by: claim.subrole == nil ? .walk : .marker, identity: claim) } }
+  if let lookup { reads.focused = lookup }
   return try engine.typeTextByPaste(text, target, context, selection: selection, settle: { false }, pointerPending: { false },
                                     reads: reads, meta: &meta)
 }
@@ -1786,6 +1788,7 @@ extension PasteActivationTests {
                              reread: (() throws -> KeyTarget)? = nil, deadlineMs: Int64 = 60_000,
                              effectReading: ((AXUIElement, Double) -> EffectReading?)? = nil,
                              app fakeApp: FakeApp? = nil, notifies: Bool = false, onEvent: @escaping (CGEvent) -> Void = { _ in },
+                             lookup: (() -> ReadbackFound<FakeField>?)? = nil,
                              intervention: InterventionMonitor = InterventionMonitor(listenGranted: { false }),
                              keyTargetReads: KeyTargetReads = .live(),
                              prepare: ((Engine, ResolvedApp, ExecutionContext) throws -> (guarding: InterventionGuard, keyboard: pid_t))? = nil,
@@ -1825,7 +1828,7 @@ extension PasteActivationTests {
     if typed, let thrown {
       do {
         try typeByPaste(engine, text, pasteTarget, context, field: field, selection: selection, noFocus: noFocus, claim: claim, app: fakeApp,
-                        meta: &meta)
+                        lookup: lookup, meta: &meta)
       } catch { thrown(error) }
     } else if typed {
       try typeByPaste(engine, text, pasteTarget, context, field: field, meta: &meta)
@@ -1952,7 +1955,12 @@ extension PasteActivationTests {
   /// How the snapshot found the field: the application's focus (the effect samples the field itself), the walk (the
   /// effect samples another element), or the marker route (the application names no focused element: the effect samples
   /// none, and only the field's notifications report it).
-  private enum TransportLookup: String, CaseIterable { case focus, walk, marker }
+  private enum TransportLookup: String, CaseIterable {
+    case focus, walk, marker
+    /// Ruling 1274: snapshots that classified no field: no focused element found, its role unreadable, a closed claim.
+    case noFocus = "no focused element", roleUnread = "an unreadable role", closedClaim = "a closed claim"
+    var holdsAField: Bool { [.focus, .walk, .marker].contains(self) }
+  }
 
   /// One type_text through the paste route over a fake field, every classifying read and every hold recorded, and the
   /// trace's log holding R3's gates and the keyboard events posted, in order.
@@ -1981,6 +1989,10 @@ extension PasteActivationTests {
     /// The application's focus moves to another element, or names none (the post gate reads it for a focus lookup).
     var focusElsewhere = false
     var focusNone = false
+    /// Ruling 1274: the application's focus names this element now (a password field appearing, a plain one), or its
+    /// read fails.
+    var focusOn: (role: String, subrole: ReadbackSubrole)? = nil
+    var focusFails = false
     func apply(to field: FakeField, _ app: FakeApp, decoy: FakeField) {
       if let role { field.role = role }
       if let subrole { field.subrole = subrole }
@@ -1988,6 +2000,13 @@ extension PasteActivationTests {
       if subroleFails { field.failing["subrole"] = .max; field.failingAfterTyping["subrole"] = .max }
       if focusElsewhere { app.applicationFocus = { .value(decoy) } }
       if focusNone { app.applicationFocus = { .absent } }
+      if let focusOn {
+        let appeared = FakeField(value: "", range: NSRange(location: 0, length: 0))
+        appeared.role = focusOn.role
+        appeared.subrole = focusOn.subrole
+        app.applicationFocus = { .value(appeared) }
+      }
+      if focusFails { app.applicationFocus = { .failed } }
     }
   }
 
@@ -2013,7 +2032,7 @@ extension PasteActivationTests {
     app.trace = trace
     app.effect = { _ in
       switch lookup {
-      case .marker: return EffectSample(reading: EffectReading())
+      case .marker, .noFocus, .roleUnread, .closedClaim: return EffectSample(reading: EffectReading())
       case .focus, .walk:
         let subrole = field.subrole
         let range = field.reportedRange
@@ -2029,6 +2048,20 @@ extension PasteActivationTests {
     case .focus: claim = nil
     case .walk: claim = ReadbackIdentity(role: role, subrole: nil, secure: false)
     case .marker: claim = ReadbackIdentity(role: role, subrole: .absent, secure: false)
+    case .noFocus, .roleUnread, .closedClaim: claim = nil
+    }
+    // The snapshots that classify no field.
+    let found: (() -> ReadbackFound<FakeField>?)?
+    switch lookup {
+    case .noFocus:
+      found = { nil }
+      app.applicationFocus = { .absent }
+    case .roleUnread:
+      found = nil
+      field.failing["role"] = .max
+      field.failingAfterTyping["role"] = .max
+    case .closedClaim: found = { .closed(.secure) }
+    case .focus, .walk, .marker: found = nil
     }
     // The change is made as the n-th gate starts, before its reads.
     let gateHook = { (number: Int) in
@@ -2043,7 +2076,7 @@ extension PasteActivationTests {
                                  onEvent: { event in
                                    let code = event.getIntegerValueField(.keyboardEventKeycode)
                                    trace.note("event \(event.type == .keyDown ? "down" : event.type == .keyUp ? "up" : "flags") \(code)")
-                                 }, field: field, claim: claim, thrown: { run.error = $0 as? EngineError })
+                                 }, lookup: found, field: field, claim: claim, thrown: { run.error = $0 as? EngineError })
     run.classifying = app.classifying
     run.log = trace.log
     run.pasteboard = pasteboard.strings()
@@ -2053,6 +2086,11 @@ extension PasteActivationTests {
   /// The text shapes R3's proof runs, generated: leading, trailing and doubled newlines, a CRLF, an empty line between
   /// two, a single line; each in a text area and a single-line field, for every lookup.
   private var transportShapes: [(text: String, role: String, lookup: TransportLookup)] {
+    allTransportShapes.filter { $0.lookup.holdsAField }
+  }
+
+  /// The same shapes for the snapshots that classified no field too (ruling 1274).
+  private var allTransportShapes: [(text: String, role: String, lookup: TransportLookup)] {
     let texts = ["\nab", "ab\n", "ab\n\n", "a\n\nb", "ab\r\ncd", "ab\n\ncd", "ab", "ab\ncd"]
     return texts.flatMap { text in ["AXTextArea", "AXTextField"].flatMap { role in TransportLookup.allCases.map { (text, role, $0) } } }
   }
@@ -2068,16 +2106,21 @@ extension PasteActivationTests {
   /// points) runs inside a hold or the gate.
   func testEveryPostOfThePasteRouteIsImmediatelyPrecededByAGateThatCompared() throws {
     var posts = 0
-    for shape in transportShapes {
+    for shape in allTransportShapes {
       let name = shapeName(shape)
       let run = try transportRun(shape.text, role: shape.role, lookup: shape.lookup)
+      // A field's snapshot is gated by a gate that compared it; one that classified no field by its focus read (1274).
+      let gate = shape.lookup.holdsAField ? "gate" : "gate no field"
+      XCTAssertTrue(run.log.allSatisfy { !$0.hasPrefix("gate") || $0 == gate }, "\(name): only \(gate) entries: \(run.log)")
+      XCTAssertEqual(run.classifying.contains { $0.read == "focus" && $0.inHold }, !shape.lookup.holdsAField || shape.lookup == .focus,
+                     "\(name): the gate's focus read")
       // A segment of the log starts at a gate; each press's events must lie in a segment of their own, after a gate that
       // compared, with nothing before the first gate.
       var gated = false, downs = 0
       for entry in run.log {
         switch entry {
-        case "gate": (gated, downs) = (true, 0)
-        case "gate unheld": (gated, downs) = (false, 0)
+        case gate: (gated, downs) = (true, 0)
+        case "gate", "gate no field", "gate stopped": (gated, downs) = (false, 0)
         default:
           XCTAssertTrue(gated, "\(name): \(entry) with no gate that compared before it: \(run.log)")
           if entry.hasPrefix("event down") {
@@ -2093,7 +2136,7 @@ extension PasteActivationTests {
         if read.read == "effect" || read.read == "focus" { XCTAssertTrue(read.inHold, "\(name): \(read.read) outside a hold or the gate") }
       }
     }
-    XCTAssertGreaterThan(posts, 100)
+    XCTAssertGreaterThan(posts, 200)
   }
 
   /// R3's table, over the same generated shapes × every gate position (each shape's unchanged run lists its gates) ×
@@ -2141,6 +2184,48 @@ extension PasteActivationTests {
           if !nothing {
             XCTAssertEqual(run.meta.typeReadback?.stoppedBeforeKey, isReturn, "\(label): a withheld Return is stoppedBeforeKey")
           }
+        }
+      }
+    }
+    XCTAssertGreaterThan(positions, 100)
+    XCTAssertEqual(runs, positions * changes.count)
+  }
+
+  /// Ruling 1274: a snapshot that classified no field holds "no field" as its baseline, and its gate reads the
+  /// application's focus before every ⌘V and Return: a password field appearing (by role or by subrole) stops the paste
+  /// `becameSecure` before that event (the counts those before the gate); a plain field appearing, or a focus read that
+  /// fails, posts as before (#597's exemption: with no baseline there is nothing to fail closed against).
+  func testTheNoFieldGateStopsOnlyAPasswordFieldAppearing() throws {
+    let changes: [(TransportChange, TypeReadbackReason?)] = [
+      (TransportChange(name: "a password field appearing, by role", focusOn: ("AXSecureTextField", .absent)), .becameSecure),
+      (TransportChange(name: "a password field appearing, by subrole", focusOn: ("AXTextField", .value("AXSecureTextField"))), .becameSecure),
+      (TransportChange(name: "a plain field appearing", focusOn: ("AXTextField", .absent)), nil),
+      (TransportChange(name: "the focus read failing", focusFails: true), nil),
+    ]
+    var runs = 0, positions = 0
+    for shape in allTransportShapes where !shape.lookup.holdsAField {
+      let unchanged = try transportRun(shape.text, role: shape.role, lookup: shape.lookup)
+      XCTAssertNotNil(unchanged.reason, "\(shapeName(shape)): its refusal answers it")
+      positions += unchanged.gates.count
+      for (number, gate) in unchanged.gates.enumerated().map({ ($0.offset + 1, $0.element) }) {
+        let isReturn = unchanged.log.split(separator: "gate no field", omittingEmptySubsequences: false).dropFirst(number).first?
+          .contains { $0.hasPrefix("event down 36") } ?? false
+        for (change, reason) in changes {
+          let label = "\(shapeName(shape)) × gate \(number) (after \(gate.commandVs) ⌘V, \(gate.returns) Return) × \(change.name)"
+          let run = try transportRun(shape.text, role: shape.role, lookup: shape.lookup, gateChange: (number, change))
+          runs += 1
+          XCTAssertEqual(run.pasteboard, ["the owner's"], "\(label): the pasteboard restored")
+          guard let reason else {
+            XCTAssertEqual([run.commandVs, run.returns], [unchanged.commandVs, unchanged.returns], "\(label): posts as before")
+            XCTAssertEqual(run.reason, unchanged.reason, label)
+            continue
+          }
+          XCTAssertEqual(run.reason, reason, label)
+          XCTAssertEqual([run.commandVs, run.returns], [gate.commandVs, gate.returns], "\(label): nothing posted at or after the gate")
+          let nothing = gate.commandVs == 0 && gate.returns == 0
+          XCTAssertEqual(run.meta.beforeInput, nothing, "\(label): beforeInput only when nothing was posted")
+          XCTAssertEqual(run.error?.message.hasPrefix("Nothing was typed: "), nothing, "\(label): \(run.error?.message ?? "")")
+          if !nothing { XCTAssertEqual(run.meta.typeReadback?.stoppedBeforeKey, isReturn, "\(label): a withheld Return") }
         }
       }
     }

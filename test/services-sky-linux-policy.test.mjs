@@ -223,8 +223,8 @@ test('launch_app asks keyed by its app id once sky_linux lists it, then launches
   await assert.rejects(declined.service.handleRpc(execute('launch_app', {app: 'org.gnome.gedit.desktop'})), {message: 'Computer Use was not approved to use org.gnome.gedit.desktop'});
   assert.deepEqual(declined.launched, []);
 
-  // Any other launch_app shape is refused before it is asked about or delivered (#228: only the supervisor's route sets
-  // the launch's ACCESSIBILITY_ENABLED=1; test/services-sky-linux-launch.test.mjs).
+  // Any other launch_app shape is refused before it is asked about or delivered (#228: only the supervisor's route
+  // launches outside the sandbox; test/services-sky-linux-launch.test.mjs).
   const other = linux({apps, env: d.env});
   for (const request of [execute('launch_app', {app: 'org.gnome.gedit.desktop', extra: 1}), execute('launch_app', {app: 7}), execute('launch_app')])
     assert.equal((await rejection(other.service.handleRpc(request))).message, LINUX_LAUNCH_SHAPE_REFUSED);

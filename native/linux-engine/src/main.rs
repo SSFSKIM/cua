@@ -45,6 +45,7 @@ mod shm;
 mod stray;
 mod table;
 mod tree;
+mod unavailable;
 mod vcl;
 mod wait;
 mod wire;

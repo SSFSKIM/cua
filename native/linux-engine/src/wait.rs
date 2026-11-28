@@ -28,7 +28,8 @@ use anyhow::Result;
 
 use crate::tree::{AxNode, ReadStats};
 
-/// How long the wait may take, from the request's reply to the answer, its reads included.
+/// How long the wait may take, from the request's reply to the answer: its pauses and every call it makes on the
+/// accessibility bus. The X server's replies the confirmation reads are not inside it (the module's doc).
 pub const BOUND: Duration = Duration::from_millis(2000);
 
 /// The pause before each read: a bare frame's read costs a few calls, a frame with views a few hundred.

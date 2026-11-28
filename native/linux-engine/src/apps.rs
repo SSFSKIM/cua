@@ -253,11 +253,19 @@ pub fn find_launchable<'e>(entries: &'e [Entry], app: &str) -> Result<&'e Entry,
         .ok_or_else(|| format!("launchable application {app:?} was not found"))
 }
 
+/// The variable that starts a Chromium application's accessibility bridge at its start, whatever the session's
+/// `org.a11y.Status` switch says (the pre-flight's §A); on the hosts searched only Chromium's family reads it (§E2).
+pub const LAUNCH_ACCESSIBILITY: &str = "ACCESSIBILITY_ENABLED";
+
 /// Starts the entry's program with its arguments, its standard streams on `/dev/null`, in the engine's directory and
 /// environment; the answer does not wait for it. The caller reaps the child once it has exited (`Launched`).
 /// The engine blocks its stop signals in every thread (serve.rs), and a child keeps its parent's signal mask (the
 /// standard library's `Command` does not reset it; `a_launched_program_starts_with_the_stop_signals_unblocked`), so the
 /// program unblocks them before it runs: without that, it would ignore SIGTERM.
+///
+/// The environment gains [`LAUNCH_ACCESSIBILITY`], set to `1` whatever the engine's own value, as cua's supervisor
+/// sets it on the launches it makes (#228, the pre-flight's §E2 and taste call 2: every application `launch_app`
+/// starts, whatever the route).
 pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
@@ -270,6 +278,7 @@ pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
     }
     command
         .args(&entry.argv[1..])
+        .env(LAUNCH_ACCESSIBILITY, "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -400,6 +409,58 @@ mod launched_tests {
             "a plain Command keeps the mask: {plain}"
         );
         assert_eq!(blocked(&launched) & stops, 0, "{launched}");
+    }
+
+    /// #228 (the pre-flight's §E2, taste call 2): every application `launch_app` starts has `ACCESSIBILITY_ENABLED=1`,
+    /// so a Chromium application's bridge starts whatever the session's switch says, and the rest of the engine's
+    /// environment is passed on as it is. The launched program checks the two variables itself and answers by its exit
+    /// status, so nothing of the environment leaves it. The test then runs again in a process of its own whose
+    /// environment says `ACCESSIBILITY_ENABLED=0`, as a supervisor's might, and the launch still gives `1`.
+    #[test]
+    fn a_launched_program_has_accessibility_enabled_whatever_the_engine_has() {
+        const AGAIN: &str = "CUA_ENGINE_TEST_LAUNCH_ENV_AGAIN";
+        let path = std::env::var("PATH").unwrap();
+        let entry = Entry {
+            id: "probe.desktop".into(),
+            name: "probe".into(),
+            argv: [
+                "/bin/sh",
+                "-c",
+                r#"[ "$ACCESSIBILITY_ENABLED" = 1 ] && [ "$PATH" = "$1" ]"#,
+                "probe",
+                &path,
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            startup_wm_class: None,
+            path: PathBuf::new(),
+        };
+        let status = launch(&entry).unwrap().wait().unwrap();
+        assert!(status.success(), "the launched program saw {status}");
+        if std::env::var_os(AGAIN).is_some() {
+            assert_eq!(
+                std::env::var("ACCESSIBILITY_ENABLED").as_deref(),
+                Ok("0"),
+                "the engine's own value"
+            );
+            return;
+        }
+        let again = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "apps::launched_tests::a_launched_program_has_accessibility_enabled_whatever_the_engine_has",
+                "--test-threads",
+                "1",
+            ])
+            .env(AGAIN, "1")
+            .env(LAUNCH_ACCESSIBILITY, "0")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&again.stdout);
+        assert!(again.status.success() && said.contains("1 passed"), "{said}");
     }
 
     /// The stop signals' numbers on Linux.

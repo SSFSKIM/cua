@@ -1016,6 +1016,7 @@ impl Engine {
                 None => Ok(own_route_read(id, associated.told, read, || associated.confirm(bus, x))),
             }
         });
+        let mut no_provider = false;
         let (tree, source, told) = match at_spi {
             Ok(Observed::Tree(tree, told)) => (tree, "at_spi", Some(told)),
             // never the X11 fallback, which would look like an empty window (Design, Window association)
@@ -1024,7 +1025,10 @@ impl Engine {
                     .insert("tree".into(), json!({ "identity": unassociated.name() }));
                 return Err(unassociated.into_error());
             }
-            Ok(Observed::Fallback(leave)) => (self.x.fallback_tree(id, leave)?, "x11", None),
+            Ok(Observed::Fallback(leave)) => {
+                no_provider = leave.no_provider();
+                (self.x.fallback_tree(id, leave)?, "x11", None)
+            }
             // cua's own routes answer no error here (`atspi::associate`, `own_route_read`): this is the vendor's
             Err(_) => (
                 self.x.fallback_tree(id, atspi::Fallback::after_vendor_error())?,
@@ -1034,7 +1038,7 @@ impl Engine {
         };
         // a bare frame of an Electron application is asked to turn its accessibility on (#228), and the frame read
         // again until its content comes or the wait's bound passes (`wait.rs`)
-        let tree = if source == "at_spi"
+        let (tree, waited) = if source == "at_spi"
             && let Some(associated) = frame_app.as_ref()
         {
             let mut on = FrameApp {
@@ -1044,16 +1048,22 @@ impl Engine {
             };
             let (tree, stats, outcome) = crate::ask::after_read(input.tree_wanted(), tree, read_stats, &mut on);
             read_stats = stats;
-            // #228 task 3's point: a wait that ended with the page not there (`outcome.waited`'s end `Bound` or
-            // `Failed`, its shape `Bare`, `Pending` or `Views`) is where the answer gains `tree_unavailable: {reason:
-            // "asked"}`. An application asked before is answered as its read came, with no wait and no reason.
             if let Some(record) = outcome.record() {
                 self.extra.insert("ask".into(), record);
             }
-            tree
+            (tree, outcome.waited)
         } else {
-            tree
+            (tree, None)
         };
+        // an Electron window's tree that is not there says why (#228, `unavailable.rs`): its process is not on the bus,
+        // or its application was asked and its frame was still alone at the wait's bound; the role is read only for a
+        // window whose process is not on the bus
+        let report = crate::unavailable::Report {
+            tree_wanted: input.tree_wanted(),
+            no_provider,
+            waited: waited.as_ref(),
+        };
+        let unavailable = crate::unavailable::reason(&report, || self.x.role(id));
         self.extra.insert(
             "tree".into(),
             json!({
@@ -1097,6 +1107,9 @@ impl Engine {
             json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info });
         if let Some(truncated) = reported_truncation(source, read_stats.truncated) {
             state["truncated"] = json!(truncated);
+        }
+        if let Some(reason) = unavailable {
+            state["tree_unavailable"] = reason.field();
         }
         Ok(state)
     }

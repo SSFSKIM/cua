@@ -55,6 +55,14 @@ the panel cells. C-6 runs the same pilot with these additions:
 - the front read skipping both engines' windows.
 C-6's report gives, per scene and lane, the waited/raised counts and the cells still failing after a raise.
 
+**The next full sitting after 1278 (ruling 1280).** Fix 1278 (a) (R3's positive control posted before the launch
+rows, 7c11a0925) stays "fixed, not yet proven". The filtered rerun 46183449035 has no launch row, so it cannot prove
+it.
+- The next full sitting must run `electron/background/launch@finder` together with
+  `textedit/concurrent.sheet@electron` in the same runs.
+- Its report must say whether (a) held: on both lanes, the witness's Electron control was seen, and no
+  concurrent.sheet@electron sample was invalid for an unseen control.
+
 **The owner's sitting (PF §5, O1 to O6): a prerequisite this wave adds.** #560 lands first: the device side's read of
 the hosted venue is bound to the runner's VM (`vm.platformUuid`, `vm.bootedAt`), beside the direct
 `RUNNER_ENVIRONMENT=github-hosted` checks every hosted-only write already makes. Until #560 is on the branch the owner
@@ -342,6 +350,16 @@ session's to add on `docs/117-progress`).
     scripts check only the error code `secret_input_failed` and that the message leaks nothing.
   - The merged engine is 0.3.1: #601's fix plus feat's M5 engine changes. The proof run 46095539139 tests that combined
     engine, not #601's main tree alone.
+- 2026-11-28, ruling 1280: go on 1278 (d). It was dispatched as run 46183449035 at 69d98efa8. Design accepts both (b)
+  choices: TextEdit's document is kept and put back by the harness's AX writes, and a second failed put-back fails
+  closed. The judging is fixed before the data:
+  - pressKey.rk at 6/6 on both engines, with the warm-up's own record classifying what the first lane composed,
+    accounts for the venue effect. The parity record states it as 1278 says.
+  - One engine failing and the other not, with no lane pattern, is a finding against that engine. Both still failing
+    on the first lane goes to design too. Either way, the per-run, per-lane table goes to design.
+  - typeText.replace: the ratio bound applies at n=30 only, and only with exactly samples 1–10 per lane per run.
+  - A field that the Korean re-establishment invalidates is reported INVALID, never as a pass by omission.
+  - Fix (a) stays "fixed, not yet proven" until the next full sitting (Plan of Work).
 - 2026-11-28, ruling 1278: the full split C on engine 0.3.3 (46165236186 @ 4a0a82b13, after #611 merged into feat as
   ruling 1277 allowed) is the record. Its evidence is docs/evidence/2026-11-28-m5-sitting-c-full-0.3.3 (8f0f186c1),
   verdict FAIL. What follows from it:

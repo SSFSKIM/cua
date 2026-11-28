@@ -291,6 +291,33 @@ fn own_route_read(
     }
 }
 
+/// A read of the frame made in the wait (`wait::Frame::read_by`), as the wait may take it: only once the window's
+/// association is confirmed again (`confirm`, by the deadline), as `own_route_read` takes the first read, so a frame
+/// chosen on evidence that has since changed never answers. A read the deadline cut, or a confirmation it outran, is no
+/// answer (None); a changed association ends the wait (an error), and the wait answers the read before it. A frame
+/// whose own role failed is passed on as it is, for the wait to end on.
+fn confirmed_by(
+    window: u32,
+    read: Option<(Option<tree::AxNode>, tree::ReadStats)>,
+    deadline: Instant,
+    now: impl Fn() -> Instant,
+    confirm: impl FnOnce() -> Result<bool>,
+) -> Result<Option<(Option<tree::AxNode>, tree::ReadStats)>> {
+    let Some((Some(tree), stats)) = read else {
+        return Ok(read);
+    };
+    let confirmed = confirm();
+    if now() >= deadline {
+        return Ok(None);
+    }
+    match confirmed? {
+        true => Ok(Some((Some(tree), stats))),
+        false => Err(anyhow!(
+            "window identity changed during the wait for X11 window {window}'s accessibility tree"
+        )),
+    }
+}
+
 /// A `--stats` line no request wrote (an idle handle's release): `record`'s fields, with the engine's settles over its
 /// life (`drop_settles`, every count), so a run's records tell whether a settle ran there too.
 pub(crate) fn standalone_stats_line(
@@ -341,12 +368,11 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
 }
 
 /// A frame's application as `ask::after_read` reaches it: on the bus connection whose read found it, never another
-/// (`Engine::on_this_connection`), and the window's role from the X server; and the frame itself, as the wait reads it
-/// again on that connection.
+/// (`Engine::on_this_connection`), and the window's role from the X server; and the window's association, whose frame
+/// the wait reads again on that connection and confirms again after each read.
 struct FrameApp<'a> {
     engine: &'a mut Engine,
-    app: &'a tree::ObjRef,
-    frame: &'a tree::ObjRef,
+    associated: &'a atspi::Associated,
     window: u32,
 }
 
@@ -359,16 +385,24 @@ impl crate::wait::Frame for FrameApp<'_> {
         std::thread::sleep(length);
     }
 
+    /// The frame read by `deadline`, kept only once its association is confirmed again by it (`confirmed_by`): on
+    /// cua's own routes (same-title duplicates, the caption) the whole association runs again, its calls ending by the
+    /// deadline (`Bus::by`); the vendor's own match is confirmed by nothing, as for the first read.
     fn read_by(&mut self, deadline: Instant) -> Result<Option<(Option<tree::AxNode>, tree::ReadStats)>> {
-        let (frame, calls) = (self.frame, self.engine.cfg.window);
-        self.engine
-            .on_this_connection(|bus| atspi::read_by(bus, frame, calls, deadline))
+        let (associated, calls) = (self.associated, self.engine.cfg.window);
+        let read = self
+            .engine
+            .on_this_connection(|bus| atspi::read_by(bus, &associated.frame, calls, deadline))?;
+        let engine = &mut *self.engine;
+        confirmed_by(self.window, read, deadline, Instant::now, || {
+            engine.on_this_connection_with_x(|bus, x| bus.by(deadline, |bus| associated.confirm(bus, x)))
+        })
     }
 }
 
 impl crate::ask::Application for FrameApp<'_> {
     fn bus_name(&self) -> &str {
-        &self.app.bus
+        &self.associated.app.bus
     }
 
     fn asked(&mut self) -> &mut crate::ask::Asked {
@@ -376,7 +410,7 @@ impl crate::ask::Application for FrameApp<'_> {
     }
 
     fn read_toolkit(&mut self) -> Result<Option<String>> {
-        let app = self.app;
+        let app = &self.associated.app;
         self.engine.on_this_connection(|bus| atspi::toolkit_name(bus, app))
     }
 
@@ -385,7 +419,7 @@ impl crate::ask::Application for FrameApp<'_> {
     }
 
     fn send(&mut self) -> Result<crate::dbus::CallResult> {
-        let app = self.app;
+        let app = &self.associated.app;
         self.engine.on_this_connection(|bus| atspi::ask_attributes(bus, app))
     }
 }
@@ -738,7 +772,13 @@ impl Engine {
     /// object that connection found. A broken connection is dropped, not replaced; the next observation connects and
     /// associates again.
     fn on_this_connection<T>(&mut self, f: impl FnOnce(&mut Bus) -> Result<T>) -> Result<T> {
-        let (result, broken) = crate::dbus::on_this_connection(&mut self.bus, f);
+        self.on_this_connection_with_x(|bus, _| f(bus))
+    }
+
+    /// [`Engine::on_this_connection`], for a call that needs the X server too (an association confirmed again).
+    fn on_this_connection_with_x<T>(&mut self, f: impl FnOnce(&mut Bus, &mut X11) -> Result<T>) -> Result<T> {
+        let x = &mut self.x;
+        let (result, broken) = crate::dbus::on_this_connection(&mut self.bus, |bus| f(bus, x));
         if broken.is_some() {
             self.forget_bus(broken);
         }
@@ -959,7 +999,7 @@ impl Engine {
                 Association::Identity(unassociated) => return Ok(Observed::Refused(unassociated)),
                 Association::NoMatch(leave) | Association::Refused(_, leave) => return Ok(Observed::Fallback(leave)),
             };
-            frame_app = Some((associated.app.clone(), associated.frame.clone()));
+            frame_app = Some(associated.clone());
             let read = tree::read(bus, &associated.frame, window).map(|(tree, stats)| {
                 read_stats = stats;
                 tree
@@ -994,18 +1034,17 @@ impl Engine {
         // a bare frame of an Electron application is asked to turn its accessibility on (#228), and the frame read
         // again until its content comes or the wait's bound passes (`wait.rs`)
         let tree = if source == "at_spi"
-            && let Some((app, frame)) = frame_app.as_ref()
+            && let Some(associated) = frame_app.as_ref()
         {
             let mut on = FrameApp {
                 engine: self,
-                app,
-                frame,
+                associated,
                 window: id,
             };
             let (tree, stats, outcome) = crate::ask::after_read(input.tree_wanted(), tree, read_stats, &mut on);
             read_stats = stats;
-            // #228 task 3's point: a wait that ended with the page not there (`outcome.waited`'s end `Bound`, or
-            // `Failed`, with its shape `Bare` or `Pending`) is where the answer gains `tree_unavailable: {reason:
+            // #228 task 3's point: a wait that ended with the page not there (`outcome.waited`'s end `Bound` or
+            // `Failed`, its shape `Bare`, `Pending` or `Views`) is where the answer gains `tree_unavailable: {reason:
             // "asked"}`. An application asked before is answered as its read came, with no wait and no reason.
             if let Some(record) = outcome.record() {
                 self.extra.insert("ask".into(), record);
@@ -1349,11 +1388,13 @@ mod settle_mark_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        Observed, acts, input_window, minimized_sentence, modal_sentence, own_route_read, reported_truncation,
+        Observed, acts, confirmed_by, input_window, minimized_sentence, modal_sentence, own_route_read,
+        reported_truncation,
     };
     use crate::atspi::{Told, Unassociated};
-    use crate::tree::{AxNode, Truncated};
+    use crate::tree::{self, AxNode, Truncated};
     use serde_json::json;
+    use std::time::{Duration, Instant};
 
     fn node() -> AxNode {
         AxNode {
@@ -1411,6 +1452,45 @@ mod tests {
             Ok(true)
         });
         assert!(!asked, "no tree, nothing to confirm");
+    }
+
+    /// Fix wave 1 of #228 T2: a read the wait makes is the answer only once the association is confirmed again, by the
+    /// wait's deadline.
+    #[test]
+    fn a_read_in_the_wait_is_kept_only_once_its_frame_is_confirmed_again_by_the_deadline() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(100);
+        let read = || Some((Some(node()), tree::ReadStats::default()));
+        let before = || start + Duration::from_millis(50);
+        let after = || deadline + Duration::from_millis(1);
+        let kept = confirmed_by(7, read(), deadline, before, || Ok(true)).unwrap();
+        assert_eq!(kept.map(|(tree, _)| tree), Some(Some(node())));
+        let changed = confirmed_by(7, read(), deadline, before, || Ok(false)).unwrap_err();
+        assert!(
+            changed.to_string().contains("identity changed") && changed.to_string().contains("7"),
+            "{changed}"
+        );
+        assert!(confirmed_by(7, read(), deadline, before, || anyhow::bail!("bus timeout")).is_err());
+        // a confirmation that outran the deadline, whatever it said, is no answer: the wait ends at its bound
+        for said in [true, false] {
+            assert!(confirmed_by(7, read(), deadline, after, || Ok(said)).unwrap().is_none());
+        }
+        assert!(
+            confirmed_by(7, read(), deadline, after, || anyhow::bail!("past"))
+                .unwrap()
+                .is_none()
+        );
+        // a read cut by the deadline, or a frame whose role failed, has nothing to confirm
+        for nothing in [None, Some((None, tree::ReadStats::default()))] {
+            let mut asked = false;
+            let passed = confirmed_by(7, nothing.clone(), deadline, before, || {
+                asked = true;
+                Ok(true)
+            })
+            .unwrap();
+            assert_eq!(passed.map(|(tree, _)| tree.is_none()), nothing.map(|_| true));
+            assert!(!asked);
+        }
     }
 
     #[test]

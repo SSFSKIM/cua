@@ -57,14 +57,25 @@ impl std::fmt::Display for PastDeadline {
 
 impl std::error::Error for PastDeadline {}
 
-/// The bus as a tree-read transport whose every wait ends by `deadline`.
+/// The bus as a tree-read transport that ends the read at `deadline`: every wait ends by it, and once it has passed no
+/// call is queued and no reply already in is handed out, so the read stops wherever its processing has got to.
 struct ReadBy<'a> {
     bus: &'a mut Bus,
     deadline: std::time::Instant,
 }
 
+impl ReadBy<'_> {
+    fn in_time(&self) -> Result<()> {
+        if std::time::Instant::now() >= self.deadline {
+            return Err(PastDeadline.into());
+        }
+        Ok(())
+    }
+}
+
 impl Transport for ReadBy<'_> {
     fn send(&mut self, obj: &ObjRef, field: Field) -> Result<u32> {
+        self.in_time()?;
         Transport::send(self.bus, obj, field)
     }
 
@@ -73,6 +84,7 @@ impl Transport for ReadBy<'_> {
     }
 
     fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
+        self.in_time()?;
         self.bus.try_recv()
     }
 
@@ -90,7 +102,8 @@ impl Transport for ReadBy<'_> {
 }
 
 /// The tree under `root` (`tree::read`), read no later than `deadline`: None when the deadline cut it, its calls then
-/// abandoned. Nothing else may be outstanding on `bus`, as between the engine's requests.
+/// abandoned (`Bus::abandon`) and the connection kept, and None for a tree built only after the deadline. Nothing else
+/// may be outstanding on `bus`, as between the engine's requests.
 pub fn read_by(
     bus: &mut Bus,
     root: &ObjRef,
@@ -102,9 +115,14 @@ pub fn read_by(
         0,
         "a read by a deadline abandons every outstanding call"
     );
-    match tree::read(&mut ReadBy { bus, deadline }, root, window) {
+    let read = tree::read(&mut ReadBy { bus, deadline }, root, window);
+    match read {
+        Ok(_) if std::time::Instant::now() >= deadline => Ok(None),
         Ok(read) => Ok(Some(read)),
-        Err(error) if error.downcast_ref::<PastDeadline>().is_some() => Ok(None),
+        Err(error) if error.downcast_ref::<PastDeadline>().is_some() => {
+            bus.abandon();
+            Ok(None)
+        }
         Err(error) => Err(error),
     }
 }

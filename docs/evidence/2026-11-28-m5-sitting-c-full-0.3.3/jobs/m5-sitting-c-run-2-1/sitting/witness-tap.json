@@ -1,0 +1,43 @@
+{
+  "ruling": 1225,
+  "tap": {
+    "app": "/Users/runner/Library/Caches/cua-harness/key-route/KeyRouteTap.app",
+    "bundleId": "io.github.ssfskim.cua.key-route-tap",
+    "grant": {
+      "decision": {
+        "entry": "Decision (2026-11-23, the owner: TCC rows may be written by kits on GitHub-hosted runners only, never on any of the owner's Macs (O0; ruling 1111)), docs/doperpowers/specs/2026-10-18-own-native-engine-design.md",
+        "commit": "db775127652ebae5e0c7d90b5f5e2785f8e5711e"
+      },
+      "client": "io.github.ssfskim.cua.key-route-tap",
+      "service": "kTCCServiceListenEvent",
+      "granted": true,
+      "sqlite": [
+        {
+          "op": "insert kTCCServiceListenEvent io.github.ssfskim.cua.key-route-tap",
+          "attempts": 1
+        },
+        {
+          "op": "read back",
+          "attempts": 1
+        }
+      ]
+    }
+  },
+  "tcc": {
+    "engines": {
+      "unchanged": true,
+      "rows": 8,
+      "bookkeepingColumns": [
+        "last_modified",
+        "pid",
+        "pid_version",
+        "boot_uuid",
+        "last_reminded"
+      ]
+    }
+  },
+  "cleanup": {
+    "ok": true,
+    "failures": []
+  }
+}

@@ -1,0 +1,2 @@
+CUA_HOSTED_DECISION_FILE=/Users/runner/work/_temp/hosted-sittings-decision/design-db775127652ebae5e0c7d90b5f5e2785f8e5711e.md
+CUA_HOSTED_DECISION_SHA=db775127652ebae5e0c7d90b5f5e2785f8e5711e

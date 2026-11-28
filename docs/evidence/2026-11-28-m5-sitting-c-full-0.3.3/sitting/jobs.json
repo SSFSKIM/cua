@@ -1,0 +1,166 @@
+{
+  "refused": [],
+  "jobs": [
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-1-1/sitting",
+      "runs": [
+        1
+      ],
+      "runId": "46165236186",
+      "attempt": "1",
+      "planIds": [
+        "full"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "63591d6e-e6df-4c77-a8d7-d672aecb4288",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "4a0a82b13fd6dc06e1095c29690348e483bed153"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.3 build 30101ea8bbe09a50f5c0de23c390b2918bd8bf4156b38dd4c09865607c56204a"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-vendor-1",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-1 sample 1 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-cua-1",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-1 sample 1 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-2-1/sitting",
+      "runs": [
+        2
+      ],
+      "runId": "46165236186",
+      "attempt": "1",
+      "planIds": [
+        "full"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "b32ae11e-3ce1-4cdf-8a75-e932b6ed70fd",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "4a0a82b13fd6dc06e1095c29690348e483bed153"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.3 build 30101ea8bbe09a50f5c0de23c390b2918bd8bf4156b38dd4c09865607c56204a"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-cua-2",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-2 sample 2 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-vendor-2",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-2 sample 2 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    },
+    {
+      "dir": "/Users/runner/work/_temp/m5-jobs/m5-sitting-c-run-3-1/sitting",
+      "runs": [
+        3
+      ],
+      "runId": "46165236186",
+      "attempt": "1",
+      "planIds": [
+        "full"
+      ],
+      "image": "macos27 20261123.0387.2",
+      "vm": "a84699a0-bdc0-4a34-9c9b-09e9d80995a2",
+      "hardware": {
+        "model": "VirtualMac2,1",
+        "cpu": "Apple M1 (Virtual)",
+        "cpus": 3,
+        "memoryGB": 7,
+        "macOS": "27.0.1",
+        "image": "macos27 20261123.0387.2"
+      },
+      "commit": [
+        "4a0a82b13fd6dc06e1095c29690348e483bed153"
+      ],
+      "vendor": [
+        "26.924.1001281"
+      ],
+      "cua": [
+        "0.3.3 build 30101ea8bbe09a50f5c0de23c390b2918bd8bf4156b38dd4c09865607c56204a"
+      ],
+      "scenes": [
+        "textedit",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "saveSheet": [
+        {
+          "id": "save-sheet-vendor-3",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: vendor run-3 sample 3 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        },
+        {
+          "id": "save-sheet-cua-3",
+          "status": "PASS",
+          "reason": "1 sample over 1 run: cua run-3 sample 3 PASS; the run's folder empty; AXDocument none, AXEdited false (closeButton); Go To closed (Escape 0x)"
+        }
+      ]
+    }
+  ],
+  "base": null,
+  "commits": {
+    "jobs": [
+      "4a0a82b13fd6dc06e1095c29690348e483bed153"
+    ],
+    "base": null
+  },
+  "lastJudged": {
+    "dir": "docs/evidence/2026-11-28-m5-sitting-c-proof-587",
+    "cua": [
+      "0.3.1 build 4c3b5768105094fad946513cd755bbf639287bf4a63d899fc87541d478e1ffb3"
+    ],
+    "jobs": [
+      "0.3.3 build 30101ea8bbe09a50f5c0de23c390b2918bd8bf4156b38dd4c09865607c56204a"
+    ],
+    "same": false
+  }
+}

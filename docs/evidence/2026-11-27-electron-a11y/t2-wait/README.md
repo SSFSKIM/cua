@@ -12,12 +12,18 @@ its accessibility on, the frame is read again until its content comes or the bou
   a Chromium window shows its views within some 20 ms, and a window with a page shows a `document web` among them at
   once, empty until the renderer sends the page.
   - A `document web` with children ends it: the page.
-  - Content with no `document web` ends it at once: a window with no page (an Electron `BaseWindow`, CEF's terms
-    dialog).
-  - The frame alone, or an empty document (`about:blank`, a page still to come), waits on.
+  - No `document web`, something beyond panels (a control) and no node lost ends it at once: a window with no page
+    (an Electron `BaseWindow` with its controls, CEF's terms dialog).
+  - The frame alone, an empty document (`about:blank`, a page still to come), panels alone (`out/shapes-panels.jsonl`:
+    a `BaseWindow` with no menu and no controls) or a read that lost a node whose role failed (it may have been the
+    document) waits on.
 - **Its bound is 2 s of wall time from the request's reply, the reads included.** Each read is made by the deadline
-  (`atspi::read_by` over `Bus::recv_until`); a read the deadline cuts is abandoned, and the answer is the last whole
-  read. A read every 20 ms (`GAP`), so a read that answers in a few ms is not made 100 times a second.
+  (`atspi::read_by` over `Bus::recv_until`). Past it no reply already in is handed out and no call is queued; a read
+  the deadline cuts, or whose tree is built only after it, is abandoned, and the answer is the last whole read. Calls
+  the deadline caught unwritten are dropped, so the connection stays. A read every 20 ms (`GAP`).
+- **Each read is confirmed.** On cua's own association routes (same-title duplicates, the caption) a read in the wait
+  is the answer only once the window's association is run again and names the same frame, its calls ending by the
+  deadline (`Bus::by`, `engine::confirmed_by`), as the first read is confirmed.
 - **Once per application per bus connection.** The wait follows a request that went out, and the request goes out
   once (task 1's rule), so an application asked before is answered from the read it gave, with no wait. Nothing else
   waits: a frame with content, a screenshot, and every window the rule does not ask go as they did.
@@ -71,7 +77,7 @@ Under the lock: `locked.sh t180 timeout -s TERM -k 60 40m python3 -I wait.py <ou
 | `fixture-started` | 2 | 10 (10) | The first `get_window_state` sends one `GetAttributes`, waits 29 to 42 ms and answers 28 nodes with `Fixture button`, the whole request 34 to 50 ms. The second asks and waits for nothing. |
 | `fixture-disabled` | 4 | 3 (3) | The first observation asks, waits the bound (1,992 to 2,000 ms, 93 or 94 reads) and answers the frame alone. The second and third are `asked_before`, ask nothing and answer in 4 to 9 ms. |
 | `vscode` | 9 | 5 (5) | The first observation has VS Code's page, 393 nodes, after a wait of 146 to 163 ms; the second has it with no request and no wait; `argv.json` has no `force-renderer-accessibility`. |
-| `no-page` | 10 | 6 (6) | An Electron `BaseWindow` with Chromium's own window controls (`browser-window`): answered after 25 to 29 ms, ended as a window with no page, with Close, Minimize, Maximize and Restore. |
+| `no-page` | 10, by substitution (below) | 6 (6) | An Electron `BaseWindow` with Chromium's own window controls (`browser-window`): answered after 25 to 29 ms, ended as a window with no page, with Close, Minimize, Maximize and Restore. |
 | `cef-dialog` | 10, ruling 1251 | 1 (1) | CEF's terms dialog, Chromium's own: the engine finds no frame for it (its window has neither a class nor a role) and answers from X11; no request, no wait. Under ruling 1251 it is not asked; were its frame found, the rule would leave it at its role. |
 | `vscode-3s`, `vscode-early`, `vscode-flag-early` | measurement | 5, 3, 3 (all) | VS Code observed 3 s and 1 s after it joined the bus, and the flag's control (above). |
 
@@ -85,3 +91,36 @@ workbench, and the flag's control shows the same course. One first observation w
 yet matching VS Code's window to its application; the rule never ran, and the next observation asked and waited. So
 §G 9 is the `vscode` scenario, on a VS Code that has loaded, and `vscode-3s` became a measurement with the wait's own
 checks. Every other scenario passed in both passes.
+
+**§G 10 is met by substitution** (accepted by the coordinator in fix wave 1). §G 10 names "a dialog of Chromium's
+own". Under ruling 1251 the engine asks only `browser-window` windows, and CEF's terms dialog has no role, so it is
+never asked and never waited on (`cef-dialog`). The wait's no-page end is proved on an Electron window with no page
+instead (`no-page`), whose role is Electron's. The ask rule is not widened for it.
+
+## Fix wave 1
+
+The review's four items, at `bd5caab4f`: the rows are `out/wave1/wait.jsonl` (`cua-engine 0.4.6 (bd5caab4fce2)`),
+which exited 0, with two controls that exited 1.
+
+1. **The deadline governs the read itself.** Replies already in no longer outrun it, and a tree built after it is
+   rejected. Calls queued after it are dropped unwritten and the connection stays. Unit tests cover each path in
+   `dbus.rs` (buffered replies past the deadline; calls queued past it, by `recv_until`, `calls_until` and a tree read;
+   calls inside `Bus::by`) and in `wait/tests.rs` (a read whose tree completes after the deadline).
+2. **Each replacement read is confirmed again**, by the deadline, on cua's own routes. `twins` (`twins/`: one process,
+   two windows of the same title, told apart by position) passed 3/3: each window answers its own page (`Left button`,
+   `Right button`), and the first observation, which waited, made one association more than the plain observations
+   after it (3 `GetConnectionUnixProcessID` calls against 2), which is the wait's own confirmation. Against the wait
+   before this wave (`59d106de9`, `out/wave1/control-before-wave1.jsonl`) that check fails: 2 against 2.
+3. **Panels alone wait on.** `panels` (`no-page/ --t180-panels`, 7 nodes of panels) passed 3/3: the wait ends at the
+   bound (1,983 to 1,997 ms) with shape `views`, and the next observation waits for nothing. Before this wave it ended
+   at once as `no_page` (24 ms; the same control file).
+4. **§G 9's fallback** now needs the bare answer (1 node) and a wait at the bound by the stats (at least 1,975 ms), not
+   `end == "bound"` alone. Task 3's `tree_unavailable` will be required too. Every `vscode` run had its page, so the
+   fallback was not taken.
+
+The rest of the final pass: `fixture-started` 10/10 (page after 28 to 35 ms), `fixture-disabled` 3/3 (bound, then no
+wait), `vscode` 5/5 (393 nodes after 145 to 203 ms), `no-page` 6/6 (27 to 32 ms), `cef-dialog` 1/1, `vscode-early`
+3/3 (145 to 826 ms; the slowest wait yet, under the bound). Task 1's engine (`out/wave1/control-no-wait.jsonl`) still
+fails `fixture-started`, `fixture-disabled` and `no-page`. `early.py` (`out/early.jsonl`) walked each window with no
+pause right after the request and found no shape between the frame alone and the whole views tree: the panel-only
+record is a window that has nothing else.

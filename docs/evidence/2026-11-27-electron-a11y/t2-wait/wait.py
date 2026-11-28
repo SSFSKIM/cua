@@ -13,8 +13,9 @@ to the engine to its answer read.
                     within the bound; the second asks and waits for nothing.
   fixture-disabled  §G 4: the fixture with --disable-renderer-accessibility. The first observation waits the bound
                     and is answered bare; the second and third wait for nothing.
-  vscode            §G 9: VS Code from its package, started by hand. The first observation has at least 300 nodes or
-                    ended at the bound; the second has its page; its argv.json has no force-renderer-accessibility.
+  vscode            §G 9: VS Code from its package, started by hand. The first observation has at least 300 nodes, or
+                    is bare after waiting the whole bound; the second has its page; its argv.json has no
+                    force-renderer-accessibility.
   vscode-3s         a measurement: VS Code observed 3 s after it is on the bus (the pre-flight's timing), when its
                     workbench may still be building (some 290 to 300 nodes); the wait's checks, as vscode-early's.
   vscode-early      a measurement: VS Code observed 1 s after it is on the bus, its workbench still loading. The wait
@@ -22,11 +23,15 @@ to the engine to its answer read.
   vscode-flag-early the control for it: VS Code started with --force-renderer-accessibility, observed the same way.
   no-page           §G 10: an Electron window with no page (`no-page/`: a BaseWindow, its controls drawn by Chromium),
                     answered promptly, within the bound, with its buttons.
+  panels            fix wave 1: an Electron window whose views are panels alone (`no-page/ --t180-panels`) waits the
+                    bound, as it tells nothing of a page, and is answered with its panels.
+  twins             fix wave 1: two same-title windows of one process (`twins/`), told apart by cua's own routes;
+                    the wait confirms its read again, and each window answers its own page.
   cef-dialog        §G 10's dialog of Chromium's own, CEF's terms dialog: not asked under ruling 1251 (its window has
                     no role; the engine finds no frame for it at all), so it is answered at once, with no request and
                     no wait.
 
-A scenario may be given as `<name>:<runs>`. Every run's row carries `checks` and `passed`; the run exits 1 when any
+A scenario may be given as `<name>:<runs>`, its runs at least 1. Every run's row carries `checks` and `passed`; the run exits 1 when any
 did not pass or failed to run.
 
 usage: wait.py <out.jsonl> <apps dir> [scenario[:runs] ...]   (ENGINE: the engine; apps dir: the unpacked packages)
@@ -35,6 +40,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -53,12 +59,13 @@ BUTTONS = ('Close', 'Minimize', 'Maximize', 'Restore')
 
 
 class Engine(rule.Engine):
-    """Task 1's engine, each request timed."""
+    """Task 1's engine, each request timed and its stats line kept."""
 
     def ask(self, command, payload):
         started = time.monotonic()
         answer = super().ask(command, payload)
         self.last_ms = round((time.monotonic() - started) * 1000, 1)
+        self.last_stats = answer[1]
         return answer
 
 
@@ -66,7 +73,15 @@ def observe(engine, window):
     read = rule.observe(engine, window)
     read['request_ms'] = engine.last_ms
     read['wait'] = (read['ask'] or {}).get('wait')
+    read['identity'] = (engine.last_stats.get('tree') or {}).get('identity')
     return read
+
+
+def waited_the_bound_bare(read):
+    """An observation answered bare after waiting the whole bound: what §G 9 accepts for a first observation in place of
+    the page (with task 3, the answer's `tree_unavailable` marks it too)."""
+    wait = read['wait'] or {}
+    return wait.get('end') == 'bound' and read['nodes'] == 1 and wait.get('ms', 0) >= BOUND_MS - 25
 
 
 def names(node, role):
@@ -214,7 +229,7 @@ def vscode(out, run, settle, scenario, mode):
             'argv_json_never_forces_accessibility': not any(row['argv_json'].values()),
         })
         if mode == 'g9':
-            checks['first_has_its_page_or_ended_at_the_bound'] = (first['nodes'] or 0) >= 300 or wait.get('end') == 'bound'
+            checks['first_has_its_page_or_is_bare_at_the_bound'] = (first['nodes'] or 0) >= 300 or waited_the_bound_bare(first)
             checks['second_has_its_page'] = (second['nodes'] or 0) >= 300
         else:
             checks['first_ended_on_its_content'] = wait.get('end') in ('page', 'bound')
@@ -243,6 +258,65 @@ def no_page(out, run):
         })
     return run_app(f't180-nopage-{run}', lambda s: [lib.ELECTRON, os.path.join(HERE, 'no-page'), '--t180-overlay'], 't180 base window', 2,
                    body, out, {'scenario': 'no-page', 'test': '§G 10', 'run': run})
+
+
+def panels(out, run):
+    """Fix wave 1: a window whose views are panels alone (`no-page/ --t180-panels`) tells nothing of a page, so the
+    wait does not end on it: the bound, then the panels; the next observation waits for nothing."""
+    def body(engine, window, session, row, checks):
+        first = observe(engine, window)
+        second = observe(engine, window)
+        reads = [first, second]
+        row['reads'] = [rule.strip(r) for r in reads]
+        wait = first['wait'] or {}
+        checks.update({
+            'answered': all(r['ok'] and r['source'] == 'at_spi' for r in reads),
+            'first_asked_once_from_the_engine': first['seen']['GetAttributes'] == 1 and from_engine(engine, first),
+            'first_waited_the_bound_on_views': wait.get('end') == 'bound' and wait.get('shape') == 'views'
+            and BOUND_MS - 25 <= wait.get('ms', 0) <= BOUND_MS + 5,
+            'first_answered_with_the_panels': (first['nodes'] or 0) > 1,
+            'second_asked_nothing_and_waited_for_nothing': second['seen']['GetAttributes'] == 0 and second['ask'] is None
+            and second['request_ms'] < NO_WAIT_MS,
+        })
+    return run_app(f't180-panels-{run}', lambda s: [lib.ELECTRON, os.path.join(HERE, 'no-page'), '--t180-panels'], 't180 base window', 2,
+                   body, out, {'scenario': 'panels', 'test': 'fix wave 1, item 3', 'run': run})
+
+
+def twins(out, run):
+    """Fix wave 1: two windows of one process with the same title (`twins/`), which the engine tells apart by cua's own
+    routes; the wait's read is confirmed again before it is the answer, so each window answers its own page."""
+    def x_of(session, window):
+        done = subprocess.run(['xdotool', 'getwindowgeometry', str(window)], env=session.env(), capture_output=True, text=True, timeout=10)
+        found = re.search(r'Position: (\d+),', done.stdout)
+        return int(found.group(1)) if found else None
+
+    def body(engine, window, session, row, checks):
+        both = rule.listed(engine, lambda w: w.get('title') == 't180 twins')
+        checks['two_windows'] = len(both) == 2
+        if len(both) != 2:
+            return
+        both.sort(key=lambda w: x_of(session, w['id']) or 0)
+        row['windows'] = [{'id': w['id'], 'x': x_of(session, w['id'])} for w in both]
+        # left (asks and waits), right, then each again
+        reads = []
+        for side, w in zip(('Left', 'Right', 'Left', 'Right'), both + both):
+            read = observe(engine, w)
+            read['side'] = side
+            read['buttons'] = names(read['tree'], 'push button')
+            reads.append(read)
+        row['reads'] = [rule.strip(r) for r in reads]
+        calls = lambda r: r['engine_by_member'].get('org.freedesktop.DBus.GetConnectionUnixProcessID', 0)  # noqa: E731
+        checks.update({
+            'answered': all(r['ok'] and r['source'] == 'at_spi' for r in reads),
+            'told_by_cuas_own_routes': all(r['identity'] in ('position', 'active') for r in reads),
+            'first_asked_once_and_waited': reads[0]['seen']['GetAttributes'] == 1 and (reads[0]['wait'] or {}).get('end') == 'page',
+            'no_other_request_and_no_other_wait': all(r['seen']['GetAttributes'] == 0 and r['wait'] is None for r in reads[1:]),
+            # the page's button, beside the menu bar's own (File, Edit, View, Window)
+            'each_window_answers_its_own_page': all([b for b in r['buttons'] if b.endswith(' button')] == [f"{r['side']} button"] for r in reads),
+            'the_wait_confirmed_its_read': calls(reads[0]) > calls(reads[1]),
+        })
+    return run_app(f't180-twins-{run}', lambda s: [lib.ELECTRON, os.path.join(HERE, 'twins')], 't180 twins', 2,
+                   body, out, {'scenario': 'twins', 'test': 'fix wave 1, item 2', 'run': run})
 
 
 def cef_dialog(out, run):
@@ -274,15 +348,30 @@ SCENARIOS = {
     'vscode-early': lambda out, run: vscode(out, run, 1, 'vscode-early', 'loading'),
     'vscode-flag-early': lambda out, run: vscode(out, run, 1, 'vscode-flag-early', 'flag'),
     'no-page': no_page,
+    'panels': panels,
+    'twins': twins,
     'cef-dialog': cef_dialog,
 }
+
+
+def plan(specs):
+    """The scenarios and their runs, every one checked before anything runs: a known name, and at least one run."""
+    planned = []
+    for spec in specs:
+        name, _, runs = spec.partition(':')
+        if name not in SCENARIOS:
+            sys.exit(f'{spec}: no such scenario ({", ".join(SCENARIOS)})')
+        if not re.fullmatch(r'\d*', runs) or int(runs or 1) < 1:
+            sys.exit(f'{spec}: the runs must be a whole number, at least 1')
+        planned.append((name, int(runs or 1)))
+    return planned
+
 
 if __name__ == '__main__':
     out, APPS = sys.argv[1], os.path.abspath(sys.argv[2])
     failed = []
-    for spec in sys.argv[3:] or SCENARIOS:
-        name, _, runs = spec.partition(':')
-        for run in range(1, int(runs or 1) + 1):
+    for name, runs in plan(sys.argv[3:] or SCENARIOS):
+        for run in range(1, runs + 1):
             try:
                 passed = SCENARIOS[name](out, run)
             except Exception as error:

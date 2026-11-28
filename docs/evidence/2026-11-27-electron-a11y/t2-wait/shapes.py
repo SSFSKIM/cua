@@ -10,6 +10,7 @@ once, and a window with no page has none.
   fixture           the Electron fixture (a page)
   basewin           an Electron BaseWindow: no web contents (`no-page/`)
   basewin-overlay   the same with its window controls drawn by Chromium
+  basewin-panels    the same with no menu and no controls: panels alone (fix wave 1)
   blank             an Electron window on about:blank (`blank/`)
   cef-dialog        CEF 152's sample, its first window Chromium's terms dialog
   code              VS Code 1.148 from its package
@@ -41,6 +42,8 @@ def argv_of(name, session, apps):
         return [lib.ELECTRON, os.path.join(HERE, 'no-page')]
     if name == 'basewin-overlay':
         return [lib.ELECTRON, os.path.join(HERE, 'no-page'), '--t180-overlay']
+    if name == 'basewin-panels':
+        return [lib.ELECTRON, os.path.join(HERE, 'no-page'), '--t180-panels']
     if name == 'blank':
         return [lib.ELECTRON, os.path.join(HERE, 'blank')]
     if name == 'cef-dialog':

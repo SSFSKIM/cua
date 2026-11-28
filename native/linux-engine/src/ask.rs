@@ -17,11 +17,16 @@
 //!
 //! A send that fails, or that the application answers with an error, is not remembered, so the next observation tries
 //! again. Any other window gets no new call, beyond the one `ToolkitName` read for a bare frame.
+//!
+//! A request that went out is followed by the wait (`wait.rs`, [`after_read`]): the frame is read again until its
+//! content comes or the bound passes, so the observation that asked answers with the page. It comes with the request,
+//! once per application per connection, and nothing else waits.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::dbus::CallResult;
-use crate::tree::AxNode;
+use crate::tree::{AxNode, ReadStats};
+use crate::wait::{Frame, Summary};
 
 /// The toolkit name every Chromium application gives its accessible application, Electron's and Chrome's alike.
 pub const CHROMIUM_TOOLKIT: &str = "Chromium";
@@ -152,8 +157,9 @@ impl Asked {
 }
 
 /// The application of a frame just read, as [`ask_if_due`] reaches it: the engine's memory, the lookups and the
-/// request, each on the engine's own connections.
-pub trait Application {
+/// request, each on the engine's own connections; and, once asked, the frame as the wait reads it again
+/// (`wait::Frame`).
+pub trait Application: Frame {
     /// The application's bus name, which keys the memory.
     fn bus_name(&self) -> &str;
     fn asked(&mut self) -> &mut Asked;
@@ -177,6 +183,8 @@ pub struct Outcome {
     pub role: Option<Option<String>>,
     /// The request's outcome when it was sent: its failure's text, if it failed.
     pub sent: Option<Result<(), String>>,
+    /// The wait for the frame's content, which follows a request that went out (`wait.rs`).
+    pub waited: Option<Summary>,
 }
 
 impl Outcome {
@@ -201,6 +209,9 @@ impl Outcome {
             if let Err(error) = sent {
                 record.insert("failed".into(), error.clone().into());
             }
+        }
+        if let Some(waited) = &self.waited {
+            record.insert("wait".into(), waited.record());
         }
         Some(record.into())
     }
@@ -248,6 +259,25 @@ pub fn ask_if_due(tree_wanted: bool, bare: bool, app: &mut impl Application) -> 
             }
         }
     }
+}
+
+/// After a state read of a frame of `app` (`tree`, read with `stats`): [`ask_if_due`], and when its request went out,
+/// the wait for the frame's content (`wait::wait`), whose last whole read becomes the answer. The request goes out once
+/// per application per connection, and so does the wait: an application asked before is answered from the read it
+/// gave, with no wait.
+pub fn after_read(
+    tree_wanted: bool,
+    tree: AxNode,
+    stats: ReadStats,
+    app: &mut impl Application,
+) -> (AxNode, ReadStats, Outcome) {
+    let mut outcome = ask_if_due(tree_wanted, bare(&tree), app);
+    if outcome.sent != Some(Ok(())) {
+        return (tree, stats, outcome);
+    }
+    let waited = crate::wait::wait(app, tree, stats);
+    outcome.waited = Some(waited.summary);
+    (waited.tree, waited.stats, outcome)
 }
 
 fn fact(looked: &Option<Option<String>>) -> Fact<'_> {
@@ -427,6 +457,9 @@ mod tests {
         /// How many toolkit reads fail on the bus before one answers.
         toolkit_failures: usize,
         calls: Vec<&'static str>,
+        /// The frame's reads in the wait, in turn, each taking 1 ms of the clock; once they run out, the frame alone.
+        frame_reads: Vec<AxNode>,
+        clock: std::time::Instant,
     }
 
     impl Scripted {
@@ -438,6 +471,8 @@ mod tests {
                 sends: vec![],
                 toolkit_failures: 0,
                 calls: vec![],
+                frame_reads: vec![],
+                clock: std::time::Instant::now(),
             }
         }
 
@@ -472,6 +507,118 @@ mod tests {
                 false => Err(anyhow::anyhow!("the connection broke")),
             }
         }
+    }
+
+    impl Frame for Scripted {
+        fn now(&self) -> std::time::Instant {
+            self.clock
+        }
+        fn pause(&mut self, length: std::time::Duration) {
+            self.calls.push("pause");
+            self.clock += length;
+        }
+        fn read_by(&mut self, _deadline: std::time::Instant) -> anyhow::Result<Option<(Option<AxNode>, ReadStats)>> {
+            self.calls.push("read");
+            self.clock += std::time::Duration::from_millis(1);
+            let tree = match self.frame_reads.is_empty() {
+                true => node(vec![]),
+                false => self.frame_reads.remove(0),
+            };
+            Ok(Some((Some(tree), ReadStats::default())))
+        }
+    }
+
+    /// The fixture's frame once its page has come: a document with children among its views.
+    fn page() -> AxNode {
+        let document = AxNode {
+            role: "document web".into(),
+            ..node(vec![node(vec![])])
+        };
+        node(vec![node(vec![document])])
+    }
+
+    #[test]
+    fn a_bare_electron_frame_is_waited_for_once_and_answered_with_its_page() {
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.sends = vec![true];
+        app.frame_reads = vec![node(vec![]), page()];
+        let (tree, _, outcome) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+        assert_eq!(tree, page(), "the answer is the wait's read");
+        let waited = outcome.waited.clone().expect("the request went out, so the wait came");
+        assert_eq!((waited.end, waited.reads), (crate::wait::End::Page, 2));
+        assert_eq!(
+            app.calls,
+            [
+                "ToolkitName",
+                "WM_WINDOW_ROLE",
+                "GetAttributes",
+                "pause",
+                "read",
+                "pause",
+                "read"
+            ]
+        );
+        let record = outcome.record().unwrap();
+        assert_eq!(record["sent"], true);
+        assert_eq!(record["wait"]["end"], "page");
+    }
+
+    #[test]
+    fn an_application_asked_before_is_never_waited_for_again() {
+        // the frame stays bare: the first observation waits out the bound, and the next ones read nothing more
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.sends = vec![true];
+        let (tree, _, first) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+        assert_eq!(first.waited.as_ref().map(|w| w.end), Some(crate::wait::End::Bound));
+        assert!(bare(&tree));
+        let reads = app.count("read");
+        assert!(reads > 1);
+        let clock = app.clock;
+        for _ in 0..3 {
+            let (tree, _, again) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+            assert_eq!(again.left, Some(Left::AskedBefore));
+            assert_eq!(again.waited, None);
+            assert!(bare(&tree), "answered from the read it gave");
+        }
+        assert_eq!(app.count("read"), reads, "no read after the first observation's wait");
+        assert_eq!(app.clock, clock, "and no pause");
+        assert_eq!(app.count("GetAttributes"), 1);
+    }
+
+    #[test]
+    fn nothing_else_waits() {
+        // a frame with content, a screenshot, and every window the rule does not ask
+        for toolkit in TOOLKITS {
+            for role in ROLES {
+                let case = format!("{toolkit:?} {role:?}");
+                let mut app = Scripted::new(toolkit, role);
+                app.sends = vec![true];
+                let clock = app.clock;
+                after_read(true, page(), ReadStats::default(), &mut app);
+                after_read(false, node(vec![]), ReadStats::default(), &mut app);
+                after_read(false, page(), ReadStats::default(), &mut app);
+                assert!(app.calls.is_empty(), "{case}");
+                if (toolkit, role) != (Some("Chromium"), Some("browser-window")) {
+                    let (_, _, outcome) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+                    assert_eq!(outcome.waited, None, "{case}");
+                    assert_eq!((app.count("read"), app.count("pause")), (0, 0), "{case}");
+                    assert_eq!(app.clock, clock, "{case}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_request_that_failed_to_send_waits_for_nothing_and_its_retry_waits() {
+        let mut app = Scripted::new(Some("Chromium"), Some("browser-window"));
+        app.sends = vec![false, true];
+        let (_, _, failed) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+        assert_eq!(failed.waited, None);
+        assert_eq!(app.count("read"), 0);
+        app.frame_reads = vec![page()];
+        let (tree, _, sent) = after_read(true, node(vec![]), ReadStats::default(), &mut app);
+        assert_eq!(sent.waited.map(|w| w.end), Some(crate::wait::End::Page));
+        assert_eq!(tree, page());
     }
 
     #[test]

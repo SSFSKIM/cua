@@ -573,6 +573,8 @@ pub struct Bus {
     /// The instant the next flush's writes must end by, when its caller has one (`calls_until`): None, the I/O timeout
     /// alone.
     write_by: Option<Instant>,
+    /// The instant every wait of the connection ends by, inside [`Bus::by`]: None, the I/O timeout alone.
+    deadline: Option<Instant>,
     pub unique_name: String,
     pub stats: BusStats,
 }
@@ -697,6 +699,7 @@ impl Bus {
             skip: 0,
             io_timeout: timeout,
             write_by: None,
+            deadline: None,
             unique_name: String::new(),
             stats: BusStats::default(),
         })
@@ -756,14 +759,18 @@ impl Bus {
         };
         // by the caller's deadline: each write waits no longer than what is left of it (a write that blocks returns
         // what it wrote only at its timeout, so `write_all` could wait that long again), and a write that runs out
-        // leaves a message half sent: the connection is `Broken`, for the caller to drop
+        // leaves a message half sent: the connection is `Broken`, for the caller to drop. A deadline that passes
+        // before any byte was written cuts nothing: the calls are dropped unwritten, and their callers find them
+        // outstanding past the deadline (#228 T2, fix wave 1)
         let mut sent = 0;
+        let mut out_of_time = false;
         let written = loop {
             if sent == out.len() {
                 break Ok(());
             }
             let now = Instant::now();
             if now >= by {
+                out_of_time = true;
                 break Err("the accessibility bus did not take the calls in time".to_string());
             }
             if let Err(e) = self.stream.set_write_timeout(Some((by - now).min(self.io_timeout))) {
@@ -773,11 +780,17 @@ impl Bus {
                 Ok(0) => break Err("the accessibility bus closed".to_string()),
                 Ok(n) => sent += n,
                 Err(e) if e.kind() == ErrorKind::Interrupted => {}
-                Err(e) => break Err(e.to_string()),
+                Err(e) => {
+                    out_of_time = matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut);
+                    break Err(e.to_string());
+                }
             }
         };
         self.stream.set_write_timeout(Some(self.io_timeout))?;
-        written.map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")).into())
+        match written {
+            Err(_) if out_of_time && sent == 0 => Ok(()),
+            written => written.map_err(|e| Broken(format!("failed to write to the accessibility bus: {e}")).into()),
+        }
     }
 
     /// Calls sent whose replies have not been handed out.
@@ -811,6 +824,44 @@ impl Bus {
             }
             self.read_more()?;
         }
+    }
+
+    /// Runs `f` with every wait of this connection ending by `deadline`, however its silence timeout is set: a call
+    /// still outstanding then fails as a call, and the connection stays (unless a write the deadline cut left a
+    /// message half sent, which is `Broken`). For a confirmation inside the wait (`engine.rs`, `confirmed_by`).
+    pub fn by<T>(&mut self, deadline: Instant, f: impl FnOnce(&mut Bus) -> T) -> T {
+        let (outer_deadline, outer_write_by) = (self.deadline, self.write_by);
+        let deadline = outer_deadline.map_or(deadline, |outer| outer.min(deadline));
+        self.deadline = Some(deadline);
+        self.write_by = Some(outer_write_by.map_or(deadline, |outer| outer.min(deadline)));
+        let result = f(self);
+        (self.deadline, self.write_by) = (outer_deadline, outer_write_by);
+        result
+    }
+
+    /// [`Bus::recv`], waiting no later than `deadline`: None when it passes first, before or while it waits, even with
+    /// replies already in. Every outstanding call is then abandoned ([`Bus::abandon`]), so this is for a caller whose
+    /// calls are all that is outstanding (`atspi::read_by`). A bus silent for its I/O timeout before the deadline fails
+    /// every outstanding call, as [`Bus::recv`] does.
+    pub fn recv_until(&mut self, deadline: Instant) -> Result<Option<(u32, CallResult)>> {
+        if Instant::now() >= deadline {
+            self.abandon();
+            return Ok(None);
+        }
+        let got = self.by(deadline, Bus::recv)?;
+        if Instant::now() >= deadline {
+            self.abandon();
+            return Ok(None);
+        }
+        Ok(Some(got))
+    }
+
+    /// Drops every outstanding call, its reply discarded when it comes, every reply not yet handed out, and every call
+    /// not yet written (whole messages: a write is all or `Broken`). The connection stays as it was.
+    pub fn abandon(&mut self) {
+        self.pending.clear();
+        self.ready.clear();
+        self.out.clear();
     }
 
     /// A reply that has already arrived, without waiting for the bus.
@@ -851,12 +902,15 @@ impl Bus {
             refuse_text_mutator(call)?;
         }
         let serials = calls.iter().map(|c| self.send(c)).collect::<Result<Vec<u32>>>()?;
+        // inside `Bus::by`, its deadline too
+        let deadline = self.deadline.map_or(deadline, |outer| outer.min(deadline));
         // the writes wait no later than the deadline either (the final review of wave 5: a bus that stopped reading
         // held the flush for the whole IO_TIMEOUT). A write that runs out may leave a message half sent, so it fails
         // as `Broken`, and the caller drops the connection and makes a new one
-        self.write_by = Some(deadline);
+        let outer_write_by = self.write_by;
+        self.write_by = Some(outer_write_by.map_or(deadline, |outer| outer.min(deadline)));
         let flushed = self.flush();
-        self.write_by = None;
+        self.write_by = outer_write_by;
         flushed?;
         loop {
             if serials.iter().all(|s| self.ready.iter().any(|(r, _)| r == s)) {
@@ -1011,7 +1065,31 @@ impl Bus {
         }
     }
 
+    /// Reads what the bus has sent, waiting no longer than its silence timeout, nor than the deadline inside
+    /// [`Bus::by`]: once the deadline has passed every outstanding call fails, as at the silence timeout.
     fn read_more(&mut self) -> Result<()> {
+        let Some(deadline) = self.deadline else {
+            return self.read_more_within_silence();
+        };
+        let now = Instant::now();
+        if now >= deadline {
+            let mut serials: Vec<u32> = self.pending.keys().copied().collect();
+            serials.sort_unstable();
+            for serial in serials {
+                self.pending.remove(&serial);
+                self.ready
+                    .push_back((serial, Err("the call passed its deadline".to_string())));
+            }
+            return Ok(());
+        }
+        self.stream
+            .set_read_timeout(Some((deadline - now).min(self.io_timeout)))?;
+        let read = self.read_more_within_silence();
+        self.stream.set_read_timeout(Some(self.io_timeout))?;
+        read
+    }
+
+    fn read_more_within_silence(&mut self) -> Result<()> {
         let start = self.inbuf.len();
         let want = 64 * 1024;
         self.inbuf.resize(start + want, 0);
@@ -1687,6 +1765,172 @@ mod tests {
         // the late reply is discarded when it comes: the next call gets its own
         assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_receive_with_a_deadline_ends_at_it_abandoning_every_outstanding_call() {
+        // one reply in time, one after the deadline: the bus's silence timeout (5 s here) restarting at each reply must
+        // not stretch the wait, and the late reply is not handed to the next caller
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let calls = read_calls(&mut theirs, 3);
+            theirs
+                .write_all(&answer(METHOD_RETURN, calls[0].0, None, &calls[0].1))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(400));
+            for (serial, member) in &calls[1..] {
+                theirs.write_all(&answer(METHOD_RETURN, *serial, None, member)).unwrap();
+            }
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let first = bus.send(&call("A")).unwrap();
+        bus.send(&call("B")).unwrap();
+        bus.send(&call("C")).unwrap();
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(300);
+        assert_eq!(
+            bus.recv_until(deadline).unwrap(),
+            Some((first, Ok(vec![Value::Str("A".into())])))
+        );
+        assert_eq!(
+            bus.recv_until(deadline).unwrap(),
+            None,
+            "B and C came after the deadline"
+        );
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_millis(290) && waited < Duration::from_millis(390),
+            "{waited:?}"
+        );
+        assert_eq!(bus.in_flight(), 0, "the calls are abandoned");
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    /// Fix wave 1: replies that are already in, or already read into the buffer, do not outrun a deadline that has
+    /// passed; the calls are abandoned and the connection stays.
+    #[test]
+    fn a_receive_past_its_deadline_abandons_replies_already_in_and_keeps_the_connection() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            for (serial, member) in read_calls(&mut theirs, 2) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        bus.send(&call("A")).unwrap();
+        bus.send(&call("B")).unwrap();
+        bus.flush().unwrap();
+        std::thread::sleep(Duration::from_millis(100)); // both replies are on the socket
+        // one of them read into the buffer, then the deadline passes
+        let deadline = Instant::now() + Duration::from_millis(20);
+        assert!(bus.recv_until(deadline).unwrap().is_some());
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(
+            bus.recv_until(deadline).unwrap(),
+            None,
+            "expiry wins over a reply already in"
+        );
+        assert_eq!(bus.in_flight(), 0);
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    /// Fix wave 1: a tree read (`atspi::read_by`) whose deadline passed before its first call was written sends
+    /// nothing, answers no tree, and leaves the connection whole. Here, as the send boundary keeps sockets in `dbus.rs`.
+    #[test]
+    fn a_tree_read_past_its_deadline_writes_nothing_and_keeps_the_connection() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let past = Instant::now();
+        std::thread::sleep(Duration::from_millis(5));
+        let root = crate::tree::ObjRef {
+            bus: ":1.7".into(),
+            path: "/org/a11y/atspi/accessible/1".into(),
+        };
+        let read = crate::atspi::read_by(&mut bus, &root, crate::tree::WINDOW, past).unwrap();
+        assert!(read.is_none());
+        assert_eq!(bus.in_flight(), 0);
+        assert_eq!(peer_received(&mut theirs), 0, "nothing reached the bus");
+    }
+
+    /// Fix wave 1: calls queued after the deadline passed are dropped unwritten, which leaves the connection whole: not
+    /// `Broken`.
+    #[test]
+    fn calls_queued_past_a_deadline_are_dropped_unwritten_and_the_connection_stays() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        bus.send(&call("A")).unwrap();
+        bus.send(&call("B")).unwrap();
+        let past = Instant::now();
+        std::thread::sleep(Duration::from_millis(5));
+        assert_eq!(bus.recv_until(past).unwrap(), None);
+        assert_eq!(bus.in_flight(), 0);
+        assert_eq!(peer_received(&mut theirs), 0, "nothing reached the bus");
+        let got = bus.calls_until(&[call("C")], past).unwrap();
+        assert_eq!(
+            got, None,
+            "a batch past its deadline is not written either, and is not Broken"
+        );
+        assert_eq!(peer_received(&mut theirs), 0);
+        theirs.set_nonblocking(false).unwrap();
+        let server = std::thread::spawn(move || {
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    /// Fix wave 1: every call made inside `Bus::by` ends by its deadline, however the bus's silence timeout is set, and
+    /// fails as a call (not the connection); the connection's own timeout comes back afterwards.
+    #[test]
+    fn calls_inside_a_deadline_fail_at_it_and_the_connection_stays() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let unanswered = read_calls(&mut theirs, 1);
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+            unanswered
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        let result = bus.by(deadline, |bus| bus.call(&call("Silent"))).unwrap();
+        let waited = started.elapsed();
+        assert!(result.is_err(), "{result:?}");
+        assert!(
+            waited >= Duration::from_millis(95) && waited < Duration::from_millis(300),
+            "{waited:?}"
+        );
+        assert_eq!(bus.stream.read_timeout().unwrap(), Some(Duration::from_secs(5)));
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_receive_with_a_deadline_beyond_the_silence_timeout_fails_the_calls_as_a_receive_does() {
+        // a bus silent for its I/O timeout fails every outstanding call (behaviour §19), deadline or not
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_millis(100)).unwrap();
+        let serial = bus.send(&call("A")).unwrap();
+        let started = Instant::now();
+        let (failed, result) = bus
+            .recv_until(started + Duration::from_secs(5))
+            .unwrap()
+            .expect("the silence fails the call before the deadline");
+        assert_eq!(failed, serial);
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_millis(400));
+        assert_eq!(read_calls(&mut theirs, 1)[0].1, "A");
     }
 
     #[test]

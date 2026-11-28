@@ -142,6 +142,8 @@ export function combineReruns(full, reruns) {
       base.meta = carried.meta;
       problems.push(...carried.problems);
       base.meta.reruns = [...(base.meta.reruns ?? []), {...job, commit: rerun.meta.commit ?? null, filter: cells, build: rerun.lanes?.[0]?.build ?? null}];
+      // Ruling 1278 (b): the rerun's warm-up is its job's, beside the full run's own and never as it (../native-matrix/warm-up.mjs).
+      if (Array.isArray(rerun.meta.warmUp?.steps)) base.meta.warmUps = [...(base.meta.warmUps ?? []), {...job, engine, laneOrder: rerun.meta.laneOrder ?? null, steps: rerun.meta.warmUp.steps}];
     }
     combined.push({run, ...job, cells});
   }

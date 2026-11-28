@@ -616,7 +616,7 @@ export function judge(results, problems = [], {departures: entries = readDepartu
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
   return {problems: missingProof, runs, narrowed, methods, launch, speed, speedControls, acceptedMisses, finding, findingVerdict, interference, interferencePass, probe, unicode, notJudged, departures: applied, honest, oracleDepartures, shared, sharedInterference, cells, others, owner,
     blocking, missing, options: OWNER_OPTIONS.filter(inPlan).map(o => ({...o})), desktop, thrownButLanded: thrownButLandedOf(rows), toTop: toTopOf(rows), witness: witnessOf(full),
-    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), warmUp: warmUpOf(full), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
+    firstLane: firstLaneSplitOf(full), composingRetries: composingRetriesOf(full), warmUp: warmUpOf(full, results.filter(r => own(r) && r.result.cell === 'speed-extra')), evidence, runners: splitJobRunners(full), ...(proof ? {proof: {cells: plan.only.size}} : {}), verdict};
 }
 
 // Ruling 1228 (E): the jobs each run's evidence came from, the full runs combined with filtered reruns (./combine.mjs):

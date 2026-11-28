@@ -248,3 +248,27 @@ test('a row carrying an evidence no meta.reruns entry backs keeps the full run\'
   assert.equal(judge(backed, [], {departures: []}).methods.find(m => `method ${m.id}` === A).account.cua.noVerdict.venue ?? 0, 0);
 });
 
+
+// Ruling 1278 (b), review of the warm-up: a filtered rerun's warm-up is its own job's, carried with its job and lane
+// beside the full run's (meta.warmUps), never as the full run's (meta.warmUp), and the judge reports it under that job;
+// a speed-extra cell's warm-up is reported under its own. The planned combine runs over a base that predates the
+// warm-up (46165236186): its runs say they recorded none.
+test('a rerun\'s warm-up is carried with its job and lane, never as the base\'s, and the judge reports it under that job', () => {
+  const step = venue => ({venue, kind: 'typeText', at: [1, 2], sent: true, ok: true, errorName: null, actMs: 40, neutral: {emptied: true, count: 1}});
+  const order = engine => ({laneOrder: {first: 'cua', position: engine === 'cua' ? 1 : 2}});
+  const reruns = ['vendor', 'cua'].map(engine => rerun(2, engine, [row(A, engine), row(B, engine)], {...order(engine), warmUp: {steps: [step('electron')]}}));
+  const out = combineReruns(base(2), reruns);
+  assert.deepEqual(out.problems, []);
+  for (const engine of ['vendor', 'cua']) {
+    const meta = out.results.find(r => r.result.lanes[0].engine === engine).result.meta;
+    assert.equal(meta.warmUp, undefined, 'the base recorded no warm-up of its own');
+    assert.deepEqual(meta.warmUps, [{runId: '777', attempt: '2', engine, laneOrder: order(engine).laneOrder, steps: [step('electron')]}]);
+  }
+  const extra = engine => ({path: `/x/speed-extra/${engine}/run-1/result.json`, result: {cell: 'speed-extra', lanes: [{engine, build: `b-${engine}`, version: 'v'}], rows: [], complete: true, verdict: 'pass',
+    meta: {run: 1, planId: 'speed-extra', commit: 'c3', runner: {run: {id: '888', attempt: '1'}}, warmUp: {steps: [step('textedit')]}}}});
+  const j = judge([...out.results, extra('vendor'), extra('cua')], [], {departures: []});
+  assert.deepEqual(j.warmUp.runs.map(r => [r.engine, r.run, r.source, r.job, r.lane]), [
+    ['vendor', 1, 'speed-extra', {runId: '888', attempt: '1'}, null], ['cua', 1, 'speed-extra', {runId: '888', attempt: '1'}, null],
+    ['vendor', 2, 'rerun', {runId: '777', attempt: '2'}, 'second'], ['cua', 2, 'rerun', {runId: '777', attempt: '2'}, 'first']]);
+  assert.deepEqual(j.warmUp.unrecorded, [{engine: 'vendor', run: 2}, {engine: 'cua', run: 2}]);
+});

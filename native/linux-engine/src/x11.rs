@@ -621,20 +621,25 @@ impl X11 {
     /// `WM_WINDOW_ROLE` and `WM_CLIENT_MACHINE` as text (`browser.rs`): the role's atom interned only when asked, so a
     /// drag that never needs it sends nothing more.
     pub fn role_and_machine(&self, window: Window) -> (Option<String>, Option<String>) {
-        let role = self
-            .conn
+        let role = self.role(window);
+        let machine = self
+            .get_property(window, AtomEnum::WM_CLIENT_MACHINE.into())
+            .ok()
+            .and_then(|r| property_text(&r.value));
+        (role, machine)
+    }
+
+    /// `WM_WINDOW_ROLE` as text (`browser.rs`, `ask.rs`): its atom interned only when asked, and only if some client
+    /// has interned it already (none then has the property).
+    pub fn role(&self, window: Window) -> Option<String> {
+        self.conn
             .intern_atom(true, b"WM_WINDOW_ROLE")
             .ok()
             .and_then(|c| c.reply().ok())
             .map(|r| r.atom)
             .filter(|&atom| atom != x11rb::NONE)
             .and_then(|atom| self.get_property(window, atom).ok())
-            .and_then(|r| property_text(&r.value));
-        let machine = self
-            .get_property(window, AtomEnum::WM_CLIENT_MACHINE.into())
-            .ok()
-            .and_then(|r| property_text(&r.value));
-        (role, machine)
+            .and_then(|r| property_text(&r.value))
     }
 
     /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its

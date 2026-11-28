@@ -143,6 +143,17 @@ pub struct GetWindowStateInput {
     pub query: Option<String>,
     #[serde(default)]
     pub include_screenshot: Option<bool>,
+    /// cua's addition (#228): false when the caller throws the tree away (the facade's `getScreenshot`), so the
+    /// engine asks no application to turn its accessibility on for it (`ask.rs`). The tree is read and answered as
+    /// ever. Absent is true.
+    #[serde(default)]
+    tree_wanted: Option<bool>,
+}
+
+impl GetWindowStateInput {
+    pub fn tree_wanted(&self) -> bool {
+        self.tree_wanted.unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -547,6 +558,17 @@ mod tests {
         .unwrap();
         assert_eq!(input.window.id, 18874616);
         assert_eq!(input.include_screenshot, Some(false));
+    }
+
+    #[test]
+    fn a_state_read_says_whether_its_tree_is_wanted_and_wants_it_unless_it_says_not() {
+        let window = json!({"id": 7});
+        let read = |input: Value| parse_input::<GetWindowStateInput>(Some(input)).unwrap().tree_wanted();
+        assert!(read(json!({"window": window})));
+        assert!(read(json!({"window": window, "tree_wanted": true})));
+        assert!(!read(
+            json!({"window": window, "include_screenshot": true, "tree_wanted": false})
+        ));
     }
 
     #[test]

@@ -192,6 +192,32 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Too
     }))
 }
 
+/// An application root's `Application.ToolkitName`: one `Properties.Get` (`ask.rs`). None when it is not a string or
+/// the application answers an error.
+pub fn toolkit_name(bus: &mut Bus, app: &ObjRef) -> Result<Option<String>> {
+    const NAME: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
+    Ok(first_str(&bus.call(&MethodCall {
+        dest: &app.bus,
+        path: &app.path,
+        iface: PROPERTIES,
+        member: "Get",
+        args: &NAME,
+    })?))
+}
+
+/// One `Accessible.GetAttributes` to an application root, the request that sets a Chromium application's
+/// accessibility mode (`ask.rs`; the #228 pre-flight's §A). Its reply, the root's attributes, says nothing the engine
+/// uses.
+pub fn ask_attributes(bus: &mut Bus, app: &ObjRef) -> Result<CallResult> {
+    bus.call(&MethodCall {
+        dest: &app.bus,
+        path: &app.path,
+        iface: ACCESSIBLE,
+        member: "GetAttributes",
+        args: &[],
+    })
+}
+
 /// The accessible name of a process's application (the first the registry lists for the PID: its root's `Name`), read
 /// by `deadline` (`browser.rs`, the design session's ruling 899): `Ok(None)` when the process has none on the bus or
 /// its name is not a string, `Err` when a call fails or the deadline passes first (its late replies are discarded).
@@ -306,6 +332,8 @@ fn own_route(route: impl FnOnce() -> Result<Association>) -> Association {
 #[derive(Debug, Clone)]
 pub struct Associated {
     pub frame: ObjRef,
+    /// The frame's application root, as the registry lists it.
+    pub app: ObjRef,
     pub told: Told,
     window: u32,
 }
@@ -569,12 +597,14 @@ fn by_caption(
     Ok(identity::caption_holds(&placement(x, info), screen, at).then(|| ((*only).clone(), at.expect("held"))))
 }
 
-/// The window being associated, as association first described it: what re-verification compares with.
+/// The window being associated, as association first described it: what re-verification compares with. With its
+/// process's applications on the bus, which a frame's index names (`Named`).
 struct Subject<'a> {
     info: &'a WindowInfo,
     pid: u32,
     title: Option<String>,
     wm_name: Option<String>,
+    apps: &'a [&'a ObjRef],
 }
 
 /// Associates X11 window `window` (already described as `info`) with its AT-SPI frame, step by step as the vendor
@@ -588,12 +618,7 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
     let Some(pid) = x.pid(id) else {
         return refused(format!("X11 window {id} has no usable _NET_WM_PID"));
     };
-    let subject = Subject {
-        info,
-        pid,
-        title: info.title.clone(),
-        wm_name: x.wm_name(id),
-    };
+    let wm_name = x.wm_name(id);
 
     let registry = ObjRef {
         bus: REGISTRY.into(),
@@ -626,6 +651,13 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
             "AT-SPI provider with process ID {pid} is unavailable for X11 window {id}"
         ));
     }
+    let subject = Subject {
+        info,
+        pid,
+        title: info.title.clone(),
+        wm_name,
+        apps: &matching,
+    };
     let mut frames: Vec<Named> = Vec::new();
     for (index, app) in matching.iter().enumerate() {
         let children = match refs_of(&bus.call(&children_call(app))?) {
@@ -819,6 +851,7 @@ fn verify(
     }
     Ok(Association::Frame(Associated {
         frame: frame.0,
+        app: subject.apps[frame.2].clone(),
         told,
         window: id,
     }))
@@ -972,6 +1005,10 @@ mod tests {
             frame: crate::tree::ObjRef {
                 bus: ":1.2".into(),
                 path: "/frame".into(),
+            },
+            app: crate::tree::ObjRef {
+                bus: ":1.2".into(),
+                path: super::ROOT_PATH.into(),
             },
             told,
             window: 7,

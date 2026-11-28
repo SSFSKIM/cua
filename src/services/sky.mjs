@@ -51,9 +51,9 @@
 // it will not expand fails without asking), before a secret is read, and for launch_app once the id is found in
 // sky_linux's inventory. A request the user did not approve reaches nothing. On macOS the service asks for itself (cua's
 // engine service and the vendor's alike), so the wrapper asks nothing there.
-import {statSync} from 'node:fs';
+import {realpathSync, statSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {createLinuxPolicy} from './engine/policy.mjs';
 import {
@@ -179,8 +179,10 @@ function launchAppId(request) {
 // names the XDG data directories it is found in. On Linux the approvals are asked through `nodeRepl` (the trusted
 // worker's: createElicitation, requestMeta).
 // On macOS every request's time through handleRpc, success or failure, is set as `cua/serviceMs` through
-// `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`.
-export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env,
+// `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`. `cuaEngine` says
+// the service is cua's own macOS engine's (isCuaEngineService), whose record that nothing was posted a failure's
+// diagnostic may rest on; with any other service every failure after substitution may have entered the secret.
+export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env, cuaEngine = false,
   nodeRepl = globalThis.nodeRepl, openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target),
   now = () => performance.now(), setResponseMeta = meta => globalThis.nodeRepl?.setResponseMeta?.(meta)}) {
   const eligible = ELIGIBLE_BY_PLATFORM[platform] ?? {};
@@ -239,10 +241,11 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       return await service.handleRpc({type: 'execute', method, args: [{...input, [field]: value, ...(rule.conceal ? {concealed: true} : {})}]});
     } catch (error) {
       const kind = vendorFailureKind(error);
+      // cua's engine, the selected backend, recorded that nothing of the input was posted (secretUnentered), whatever the
+      // error's name; never read from the vendor's service, which raises the same error class (ruling 1268).
+      const unentered = cuaEngine && error?.name === 'SkyComputerUseError' && secretUnentered(error.meta);
       // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
-      if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
-      // cua's engine recorded that nothing of the input was posted (secretUnentered), whatever the error's name.
-      const unentered = error?.name === 'SkyComputerUseError' && secretUnentered(error.meta);
+      if (kind === 'concealedInputUnavailable' && unentered) throw concealedInputUnavailable(method, reference.label);
       // Which warning a failure that may have entered part of the secret carries (secretMayShow): a password field that
       // may now show it (#414), or text not confirmed where it went, which every other such failure gets too.
       const mayShow = (method === 'type_text' && error?.name === 'SkyComputerUseError' ? secretMayShow(error.meta) : null) ?? 'unplaced';
@@ -265,10 +268,21 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
   return {handleRpc, kernelReset};
 }
 
+// cua's own macOS engine service (./engine/service.mjs), the one selection whose input metas the wrapper reads for what
+// was entered (#602): the module CUA_SKY_SERVICE names is it when both resolve to the same file.
+const CUA_ENGINE_SERVICE = fileURLToPath(new URL('./engine/service.mjs', import.meta.url));
+const realPath = path => { try { return realpathSync(path); } catch { return null; } };
+export function isCuaEngineService(servicePath) {
+  if (typeof servicePath !== 'string' || !isAbsolute(servicePath)) return false;
+  const engine = realPath(CUA_ENGINE_SERVICE);
+  return engine !== null && realPath(servicePath) === engine;
+}
+
 // The service as the trusted worker runs it, configured by the launch environment.
 export function skyServiceFromEnv(env = process.env) {
   const servicePath = env.CUA_SKY_SERVICE;
   return createSkyService({
+    cuaEngine: isCuaEngineService(servicePath),
     loadVendor: async () => {
       if (!servicePath) throw new Error('cua: the sky service is not configured for this runtime (CUA_SKY_SERVICE) [sky_not_configured]');
       return import(pathToFileURL(servicePath).href);

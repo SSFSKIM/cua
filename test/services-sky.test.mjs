@@ -7,7 +7,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createSkyService, skyServiceFromEnv} from '../src/services/sky.mjs';
+import {symlinkSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {createSkyService, isCuaEngineService, skyServiceFromEnv} from '../src/services/sky.mjs';
 import {SecretStoreError} from '../src/secrets/store.mjs';
 
 const VALUES = {'WORK_PASSWORD': 'sentinel-Value-1f9c', 'OTHER_LABEL': 'sentinel-Other-77ab'};
@@ -19,7 +21,9 @@ const setValue = value => ({type: 'execute', method: 'set_value', args: [{app: '
 // A vendor double recording each request it is given, answering with `answer(request)` (which may throw). On Linux the
 // wrapper asks its approvals first (test/services-sky-linux-policy.test.mjs): the double lists LINUX_WINDOWS for the
 // policy's window lookup, which is not recorded, and the client accepts every approval.
-function harness({answer = () => undefined, secretsUnavailable = null, read, platform = 'darwin'} = {}) {
+// `cuaEngine` (the default here) stands for cua's engine as the selected backend, whose input metas the wrapper reads;
+// false for the vendor's service.
+function harness({answer = () => undefined, secretsUnavailable = null, read, platform = 'darwin', cuaEngine = true} = {}) {
   const received = [];
   const reads = [];
   const vendor = {handleRpc: async request => {
@@ -35,7 +39,7 @@ function harness({answer = () => undefined, secretsUnavailable = null, read, pla
       return VALUES[label];
     }),
   };
-  const service = createSkyService({loadVendor: async () => vendor, secrets, secretsUnavailable, platform, nodeRepl});
+  const service = createSkyService({loadVendor: async () => vendor, secrets, secretsUnavailable, platform, nodeRepl, cuaEngine});
   return {service, received, reads};
 }
 
@@ -147,11 +151,19 @@ const UNRECORDED_METAS = [
   ['the record beside a value effect (#212)', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['value']}}],
   ['the record beside an unparsed account', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: 'input'}}],
   ['the record beside an account that is not an object', {...NOTHING_POSTED, interruption: 'inFlight'}],
+  // Ruling 1268: an account counts only with a phase the engine sends and preparation-only effects it names.
+  ['the record beside an unknown phase', {...NOTHING_POSTED, interruption: {phase: 'unknown', effects: []}}],
+  ['the record beside an account with no phase', {...NOTHING_POSTED, interruption: {effects: []}}],
+  ['the record beside an unknown effect', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['focus', 'somethingNew']}}],
+  ['the record beside an effect that is not a string', {...NOTHING_POSTED, interruption: {phase: 'beforeAction', effects: [{effect: 'focus'}]}}],
+  ['the record beside an account with no effects', {...NOTHING_POSTED, interruption: {phase: 'beforeAction'}}],
 ];
 const RECORDED_METAS = [
   ['the record', NOTHING_POSTED],
   ['the record after a focus click posted', {...UNRECORDED, inputRoute: '1', startedAt: 1000, endedAt: 1042, beforeInput: true}],
   ['the record beside an account of preparation only (#212)', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: ['scroll', 'focusClick']}}],
+  ['the record beside a refusal before the action, every preparation step', {...NOTHING_POSTED, interruption: {phase: 'beforeAction',
+    effects: ['scroll', 'activation', 'activationClick', 'focus', 'focusClick', 'activationRelease']}}],
 ];
 
 test('#602: only the engine\'s record that nothing was posted answers "nothing was entered"; startedAt null alone, an unparsed meta and an entering effect answer "may have been entered"', async () => {
@@ -282,6 +294,19 @@ test('ruling 1247 (d): no answer after a secret\'s first key may have posted adv
       [`eventCreationFailed, ${label}`, engine('eventCreationFailed', meta)],
     ]),
     ['userIntervened changed, unrecorded, a password field', engine('userIntervened', {...UNRECORDED, typeReadback: record('noLongerSecure', {secure: true})}, changed)],
+    // Ruling 1268: still interacting and concealedInputUnavailable rest on the record too; and the vendor's record is none.
+    ...UNRECORDED_METAS.flatMap(([label, meta]) => [
+      [`userIntervened still interacting, ${label}`, engine('userIntervened', meta, still)],
+      [`concealedInputUnavailable, ${label}`, engine('concealedInputUnavailable', meta)],
+    ]),
+    ['userIntervened still interacting, the vendor', engine('userIntervened', null, still)],
+    ['concealedInputUnavailable, no meta', engine('concealedInputUnavailable', null)],
+    ...RECORDED_METAS.flatMap(([label, meta]) => [
+      [`the vendor backend: userIntervened changed, ${label}`, engine('userIntervened', meta, changed), {cuaEngine: false}],
+      [`the vendor backend: userIntervened still interacting, ${label}`, engine('userIntervened', meta, still), {cuaEngine: false}],
+      [`the vendor backend: eventCreationFailed, ${label}`, engine('eventCreationFailed', meta), {cuaEngine: false}],
+      [`the vendor backend: concealedInputUnavailable, ${label}`, engine('concealedInputUnavailable', meta), {cuaEngine: false}],
+    ]),
     ['the deadline at a key (keysDeadlinePassed)', engine('keysDeadlinePassed', posted)],
     ['the deadline (timeoutReached)', engine('timeoutReached', posted)],
     ['inputSourceChanged', engine('inputSourceChanged', posted)],
@@ -290,13 +315,93 @@ test('ruling 1247 (d): no answer after a secret\'s first key may have posted adv
     ['a plain error', () => { throw new Error(`boom ${value}`); }],
     ['the vendor, no meta', engine('typeUnconfirmed', null)],
   ];
-  for (const [label, answer] of branches) {
-    const {service} = harness({answer});
+  for (const [label, answer, options = {}] of branches) {
+    const {service} = harness({answer, ...options});
     const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
     assert.equal(error.code, 'secret_input_failed', label);
+    assert.match(error.message, /may have been partly entered/, label);
+    assert.doesNotMatch(error.message, /nothing was entered/, label);
     assert.doesNotMatch(error.message, /screenshot/i, label);
     assert.doesNotMatch(error.message, /getAXState/i, label);
+    assert.doesNotMatch(error.message, /wait 5 seconds|retry/i, label);
     assertValueFree(error);
+  }
+});
+
+// Ruling 1268 (the review of 0c390389a..d87702f58): "nothing was entered" needs cua's engine as the selected backend, its
+// beforeInput record, a recognized phase when an account is present, and only preparation-only effects.
+const STILL = 'Computer Use server error -10016: The user is still interacting with \'/System/Applications/TextEdit.app\'. Wait 5 seconds and retry.';
+const CHANGED = 'Computer Use server error -10016: The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.';
+const failing = (name, meta, message = `${name} ${VALUES['WORK_PASSWORD']}`) => () => {
+  const error = new EngineError(name, message, meta);
+  if (name === 'userIntervened') error.code = -10016;
+  throw error;
+};
+const mayHaveEntered = (error, label) => {
+  assert.equal(error.code, 'secret_input_failed', label);
+  assert.match(error.message, /may have been partly entered/, label);
+  assert.doesNotMatch(error.message, /nothing was entered|wait 5 seconds|retry|getAXState|screenshot|re-query/i, label);
+  assertValueFree(error);
+};
+
+test('P1-1: "still interacting" is nothing entered, wait and retry, only on the record; the sentence alone, or beside an input effect, may have entered it', async () => {
+  const recorded = await rejection(harness({answer: failing('userIntervened', NOTHING_POSTED, STILL)}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  assert.match(recorded.message, /the user is still interacting with the app; wait 5 seconds and retry; nothing was entered/);
+  for (const [label, meta] of [['the vendor, no meta', null], ['no record', UNRECORDED],
+    ['the record beside an input effect', {...NOTHING_POSTED, interruption: {phase: 'beforeAction', effects: ['input']}}]]) {
+    const error = await rejection(harness({answer: failing('userIntervened', meta, STILL)}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    mayHaveEntered(error, label);
+    assert.match(error.message, /ask the user to check where it went/, label);
+  }
+});
+
+test('P1-2: concealedInputUnavailable keeps its remedy only on the record; without it the failure may have entered the secret', async () => {
+  const recorded = await rejection(harness({answer: failing('concealedInputUnavailable', NOTHING_POSTED)}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  assert.equal(recorded.code, 'concealed_input_unavailable');
+  for (const [label, meta, options] of [['no meta', null, {}], ['no record', UNRECORDED, {}], ['the vendor backend', NOTHING_POSTED, {cuaEngine: false}]]) {
+    for (const request of [typeText(REF('WORK_PASSWORD')), paste(REF('WORK_PASSWORD'))]) {
+      const error = await rejection(harness({answer: failing('concealedInputUnavailable', meta), ...options}).service.handleRpc(request));
+      mayHaveEntered(error, `${request.method}: ${label}`);
+      assert.match(error.message, /failed \(concealedInputUnavailable\)/, label);
+    }
+  }
+});
+
+test('P1-3: an account counts only with a phase the engine sends and effects from the preparation-only list', async () => {
+  // The review's reproduction: an unknown phase with no effects, on userChanged.
+  const unknown = await rejection(harness({answer: failing('userIntervened', {beforeInput: true, interruption: {phase: 'unknown', effects: []}}, CHANGED)})
+    .service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  mayHaveEntered(unknown, 'an unknown phase');
+  for (const [label, interruption] of [['an unknown effect', {phase: 'inFlight', effects: ['focus', 'somethingNew']}],
+    ['effects not an array', {phase: 'inFlight', effects: 'focus'}], ['an effect not a string', {phase: 'inFlight', effects: [['focus']]}],
+    ['an input effect', {phase: 'beforeAction', effects: ['input']}], ['a value effect', {phase: 'inFlight', effects: ['scroll', 'value']}]]) {
+    for (const name of ['userIntervened', 'eventCreationFailed']) {
+      const error = await rejection(harness({answer: failing(name, {...NOTHING_POSTED, interruption}, CHANGED)}).service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+      mayHaveEntered(error, `${name}: ${label}`);
+    }
+  }
+  for (const effect of ['scroll', 'activation', 'activationClick', 'focus', 'focusClick', 'activationRelease']) {
+    const error = await rejection(harness({answer: failing('userIntervened', {...NOTHING_POSTED, interruption: {phase: 'inFlight', effects: [effect]}}, CHANGED)})
+      .service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    assert.match(error.message, /re-query its state \(getAXState\) before sending more actions; nothing was entered/, effect);
+  }
+});
+
+test('P2-4: the record is read only from cua\'s engine as the selected backend, never from the vendor\'s service', async t => {
+  for (const [name, message] of [['userIntervened', CHANGED], ['userIntervened', STILL], ['eventCreationFailed', undefined], ['valueNotSettable', undefined]]) {
+    const error = await rejection(harness({answer: failing(name, NOTHING_POSTED, message), cuaEngine: false}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    mayHaveEntered(error, `the vendor backend: ${name}`);
+  }
+  // The selection is the module CUA_SKY_SERVICE names: cua's engine service by any path to the same file, nothing else.
+  const engine = fileURLToPath(new URL('../src/services/engine/service.mjs', import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), 'cua-sky-engine-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  symlinkSync(engine, join(dir, 'service.mjs'));
+  writeFileSync(join(dir, 'vendor.mjs'), 'export const handleRpc = async () => null;\n');
+  assert.equal(isCuaEngineService(engine), true);
+  assert.equal(isCuaEngineService(join(dir, 'service.mjs')), true, 'a link to it');
+  for (const other of [join(dir, 'vendor.mjs'), join(dir, 'missing.mjs'), 'src/services/engine/service.mjs', undefined, '']) {
+    assert.equal(isCuaEngineService(other), false, String(other));
   }
 });
 
@@ -313,7 +418,10 @@ test('userIntervened after substitution says which of its two sentences the mode
     // #602: a stop before the first key is "changed" as one between keys is; only the record tells them apart.
     ...UNRECORDED_METAS.map(([, meta]) => ({message: changed, meta, wait: false, entered: true})),
     ...RECORDED_METAS.map(([, meta]) => ({message: changed, meta, wait: false, entered: false})),
-    {message: still, meta: null, wait: true, entered: false},
+    // Ruling 1268: the sentence alone records nothing; the vendor's still interacting may have entered it.
+    {message: still, meta: null, wait: true, entered: true},
+    {message: still, meta: UNRECORDED, wait: true, entered: true},
+    {message: still, meta: {...NOTHING_POSTED, interruption: {phase: 'beforeAction', effects: ['input']}}, wait: true, entered: true},
     {message: changed, meta: null, wait: false, entered: true},
   ];
   for (const {message, meta, wait, entered} of cases) {
@@ -323,7 +431,11 @@ test('userIntervened after substitution says which of its two sentences the mode
       const label = `${request.method} ${wait ? 'still' : 'changed'} ${meta ? JSON.stringify(meta) : 'vendor'}`;
       assert.equal(error.code, 'secret_input_failed', label);
       assert.match(error.message, /\(userIntervened\)/, label);
-      if (wait) {
+      if (wait && entered) {
+        // Ruling 1268: no wait and retry once it may be in; the user's check instead.
+        assert.match(error.message, /the user is interacting with the app, and the secret may have gone in; ask the user to check where it went and to clear it if it shows/, label);
+        assert.doesNotMatch(error.message, /wait 5 seconds|retry|getAXState|screenshot|re-query/i, label);
+      } else if (wait) {
         assert.match(error.message, /the user is still interacting with the app; wait 5 seconds and retry/, label);
         assert.doesNotMatch(error.message, /re-query/i, label);
       } else if (entered) {
@@ -359,7 +471,7 @@ test('cua\'s engine-only error names are admitted value-free; concealedInputUnav
     assertValueFree(error);
   }
   for (const request of [typeText(REF('WORK_PASSWORD')), paste(REF('WORK_PASSWORD'))]) {
-    const {service} = harness({answer: () => { throw new EngineError('concealedInputUnavailable', `the source (com.apple.inputmethod.Korean.2SetKorean) cannot key ${value}`); }});
+    const {service} = harness({answer: () => { throw new EngineError('concealedInputUnavailable', `the source (com.apple.inputmethod.Korean.2SetKorean) cannot key ${value}`, NOTHING_POSTED); }});
     const error = await rejection(service.handleRpc(request));
     assert.equal(error.code, 'concealed_input_unavailable', request.method);
     assert.match(error.message, /\[concealed_input_unavailable\]$/);
